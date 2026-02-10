@@ -104,7 +104,7 @@ class FourColorStrategy(ColorModeStrategy):
         ref_stacks = np.array(valid_stacks)
         kdtree = KDTree(lut_rgb)
 
-        print(f"✅ LUT loaded: {len(lut_rgb)} colors (filtered {dropped} outliers)")
+        print(f"[OK] LUT loaded: {len(lut_rgb)} colors (filtered {dropped} outliers)")
 
         return lut_rgb, ref_stacks, kdtree
 

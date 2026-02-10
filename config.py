@@ -9,6 +9,7 @@ os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 class PrinterConfig:
     """Physical printer parameters (layer height, nozzle, backing)."""
+
     LAYER_HEIGHT: float = 0.08
     NOZZLE_WIDTH: float = 0.42
     COLOR_LAYERS: int = 5
@@ -18,33 +19,54 @@ class PrinterConfig:
 
 class SmartConfig:
     """Configuration for the Smart 1296 (36x36) System."""
+
     GRID_DIM: int = 36
     TOTAL_BLOCKS: int = 1296
-    
+
     DEFAULT_BLOCK_SIZE: float = 5.0  # mm (Face Down mode)
     DEFAULT_GAP: float = 0.8  # mm
 
     FILAMENTS = {
-        0: {"name": "White",   "hex": "#FFFFFF", "rgb": [255, 255, 255], "td": 5.0},
-        1: {"name": "Cyan",    "hex": "#0086D6", "rgb": [0, 134, 214],   "td": 3.5},
-        2: {"name": "Magenta", "hex": "#EC008C", "rgb": [236, 0, 140],   "td": 3.0},
-        3: {"name": "Green",   "hex": "#00AE42", "rgb": [0, 174, 66],    "td": 2.0},
-        4: {"name": "Yellow",  "hex": "#F4EE2A", "rgb": [244, 238, 42],  "td": 6.0},
-        5: {"name": "Black",   "hex": "#000000", "rgb": [0, 0, 0],       "td": 0.6},
+        0: {"name": "White", "hex": "#FFFFFF", "rgb": [255, 255, 255], "td": 5.0},
+        1: {"name": "Cyan", "hex": "#0086D6", "rgb": [0, 134, 214], "td": 3.5},
+        2: {"name": "Magenta", "hex": "#EC008C", "rgb": [236, 0, 140], "td": 3.0},
+        3: {"name": "Green", "hex": "#00AE42", "rgb": [0, 174, 66], "td": 2.0},
+        4: {"name": "Yellow", "hex": "#F4EE2A", "rgb": [244, 238, 42], "td": 6.0},
+        5: {"name": "Black", "hex": "#000000", "rgb": [0, 0, 0], "td": 0.6},
     }
+
 
 class ModelingMode(str, Enum):
     """建模模式枚举"""
+
     HIGH_FIDELITY = "high-fidelity"  # 高保真模式
     PIXEL = "pixel"  # 像素模式
     VECTOR = "vector"
-    
+
     def get_display_name(self) -> str:
         """获取模式的显示名称"""
         display_names = {
             ModelingMode.HIGH_FIDELITY: "High-Fidelity",
             ModelingMode.PIXEL: "Pixel Art",
-            ModelingMode.VECTOR: "Vector"
+            ModelingMode.VECTOR: "Vector",
+        }
+        return display_names.get(self, self.value)
+
+
+class MatchStrategy(str, Enum):
+    """LUT 匹配策略枚举
+
+    仅在 High-Fidelity 模式下有效,控制颜色匹配算法选择。
+    """
+
+    RGB_EUCLIDEAN = "rgb_euclidean"  # RGB 欧几里得距离匹配
+    DELTAE2000 = "deltae2000"  # CIEDE2000 感知距离匹配
+
+    def get_display_name(self) -> str:
+        """获取策略的显示名称"""
+        display_names = {
+            MatchStrategy.RGB_EUCLIDEAN: "RGB Euclidean",
+            MatchStrategy.DELTAE2000: "CIEDE2000",
         }
         return display_names.get(self, self.value)
 
@@ -53,60 +75,91 @@ class ColorSystem:
     """Color model definitions for CMYW, RYBW, and 6-Color systems."""
 
     CMYW = {
-        'name': 'CMYW',
-        'slots': ["White", "Cyan", "Magenta", "Yellow"],
-        'preview': {
+        "name": "CMYW",
+        "slots": ["White", "Cyan", "Magenta", "Yellow"],
+        "preview": {
             0: [255, 255, 255, 255],
             1: [0, 134, 214, 255],
             2: [236, 0, 140, 255],
-            3: [244, 238, 42, 255]
+            3: [244, 238, 42, 255],
         },
-        'map': {"White": 0, "Cyan": 1, "Magenta": 2, "Yellow": 3},
-        'corner_labels': ["白色 (左上)", "青色 (右上)", "品红 (右下)", "黄色 (左下)"],
-        'corner_labels_en': ["White (TL)", "Cyan (TR)", "Magenta (BR)", "Yellow (BL)"]
+        "map": {"White": 0, "Cyan": 1, "Magenta": 2, "Yellow": 3},
+        "corner_labels": ["白色 (左上)", "青色 (右上)", "品红 (右下)", "黄色 (左下)"],
+        "corner_labels_en": ["White (TL)", "Cyan (TR)", "Magenta (BR)", "Yellow (BL)"],
     }
 
     RYBW = {
-        'name': 'RYBW',
-        'slots': ["White", "Red", "Yellow", "Blue"],
-        'preview': {
+        "name": "RYBW",
+        "slots": ["White", "Red", "Yellow", "Blue"],
+        "preview": {
             0: [255, 255, 255, 255],
             1: [220, 20, 60, 255],
             2: [255, 230, 0, 255],
-            3: [0, 100, 240, 255]
+            3: [0, 100, 240, 255],
         },
-        'map': {"White": 0, "Red": 1, "Yellow": 2, "Blue": 3},
-        'corner_labels': ["白色 (左上)", "红色 (右上)", "蓝色 (右下)", "黄色 (左下)"],
-        'corner_labels_en': ["White (TL)", "Red (TR)", "Blue (BR)", "Yellow (BL)"]
+        "map": {"White": 0, "Red": 1, "Yellow": 2, "Blue": 3},
+        "corner_labels": ["白色 (左上)", "红色 (右上)", "蓝色 (右下)", "黄色 (左下)"],
+        "corner_labels_en": ["White (TL)", "Red (TR)", "Blue (BR)", "Yellow (BL)"],
     }
 
     SIX_COLOR = {
-        'name': '6-Color',
-        'base': 6,
-        'layer_count': 5,
-        'slots': ["White", "Cyan", "Magenta", "Green", "Yellow", "Black"],
-        'preview': {
+        "name": "6-Color",
+        "base": 6,
+        "layer_count": 5,
+        "slots": ["White", "Cyan", "Magenta", "Green", "Yellow", "Black"],
+        "preview": {
             0: [255, 255, 255, 255],  # White
-            1: [0, 134, 214, 255],    # Cyan
-            2: [236, 0, 140, 255],    # Magenta
-            3: [0, 174, 66, 255],     # Green
-            4: [244, 238, 42, 255],   # Yellow
-            5: [20, 20, 20, 255]      # Black
+            1: [0, 134, 214, 255],  # Cyan
+            2: [236, 0, 140, 255],  # Magenta
+            3: [0, 174, 66, 255],  # Green
+            4: [244, 238, 42, 255],  # Yellow
+            5: [20, 20, 20, 255],  # Black
         },
-        'map': {"White": 0, "Cyan": 1, "Magenta": 2, "Green": 3, "Yellow": 4, "Black": 5},
-        'corner_labels': ["白色 (左上)", "青色 (右上)", "品红 (右下)", "黄色 (左下)"],
-        'corner_labels_en': ["White (TL)", "Cyan (TR)", "Magenta (BR)", "Yellow (BL)"]
+        "map": {
+            "White": 0,
+            "Cyan": 1,
+            "Magenta": 2,
+            "Green": 3,
+            "Yellow": 4,
+            "Black": 5,
+        },
+        "corner_labels": ["白色 (左上)", "青色 (右上)", "品红 (右下)", "黄色 (左下)"],
+        "corner_labels_en": ["White (TL)", "Cyan (TR)", "Magenta (BR)", "Yellow (BL)"],
     }
 
     EIGHT_COLOR = {
-        'name': '8-Color Max',
-        'slots': ['Slot 1 (White)', 'Slot 2 (Cyan)', 'Slot 3 (Magenta)', 'Slot 4 (Yellow)', 'Slot 5 (Black)', 'Slot 6 (Red)', 'Slot 7 (Deep Blue)', 'Slot 8 (Green)'],
-        'preview': {
-            0: [255, 255, 255, 255], 1: [0, 134, 214, 255], 2: [236, 0, 140, 255], 3: [244, 238, 42, 255],
-            4: [20, 20, 20, 255], 5: [193, 46, 31, 255], 6: [10, 41, 137, 255], 7: [0, 174, 66, 255]
+        "name": "8-Color Max",
+        "slots": [
+            "Slot 1 (White)",
+            "Slot 2 (Cyan)",
+            "Slot 3 (Magenta)",
+            "Slot 4 (Yellow)",
+            "Slot 5 (Black)",
+            "Slot 6 (Red)",
+            "Slot 7 (Deep Blue)",
+            "Slot 8 (Green)",
+        ],
+        "preview": {
+            0: [255, 255, 255, 255],
+            1: [0, 134, 214, 255],
+            2: [236, 0, 140, 255],
+            3: [244, 238, 42, 255],
+            4: [20, 20, 20, 255],
+            5: [193, 46, 31, 255],
+            6: [10, 41, 137, 255],
+            7: [0, 174, 66, 255],
         },
-        'map': {'White': 0, 'Cyan': 1, 'Magenta': 2, 'Yellow': 3, 'Black': 4, 'Red': 5, 'Deep Blue': 6, 'Green': 7},
-        'corner_labels': ['TL', 'TR', 'BR', 'BL']
+        "map": {
+            "White": 0,
+            "Cyan": 1,
+            "Magenta": 2,
+            "Yellow": 3,
+            "Black": 4,
+            "Red": 5,
+            "Deep Blue": 6,
+            "Green": 7,
+        },
+        "corner_labels": ["TL", "TR", "BR", "BL"],
     }
 
     @staticmethod
@@ -116,6 +169,7 @@ class ColorSystem:
         if "6-Color" in mode:
             return ColorSystem.SIX_COLOR
         return ColorSystem.CMYW if "CMYW" in mode else ColorSystem.RYBW
+
 
 # ========== Global Constants ==========
 
@@ -133,24 +187,25 @@ PREVIEW_MARGIN = 30
 
 # ========== Vector Engine Configuration ==========
 
+
 class VectorConfig:
     """Configuration for native vector engine."""
-    
+
     # Curve approximation precision
     DEFAULT_SAMPLING_MM: float = 0.05  # High quality (default)
-    MIN_SAMPLING_MM: float = 0.01      # Ultra-high quality
-    MAX_SAMPLING_MM: float = 0.20      # Low quality (faster)
-    
+    MIN_SAMPLING_MM: float = 0.01  # Ultra-high quality
+    MAX_SAMPLING_MM: float = 0.20  # Low quality (faster)
+
     # Performance limits
-    MAX_POLYGONS: int = 10000          # Prevent memory issues
+    MAX_POLYGONS: int = 10000  # Prevent memory issues
     MAX_VERTICES_PER_POLY: int = 5000  # Prevent degenerate geometry
-    
+
     # Boolean operation tolerance
-    BUFFER_TOLERANCE: float = 0.0      # Shapely buffer precision
-    
+    BUFFER_TOLERANCE: float = 0.0  # Shapely buffer precision
+
     # Coordinate system
-    FLIP_Y_AXIS: bool = False          # SVG Y-down → 3D Y-up (disabled by default)
-    
+    FLIP_Y_AXIS: bool = False  # SVG Y-down → 3D Y-up (disabled by default)
+
     # Parallel processing
-    ENABLE_PARALLEL: bool = False      # Parallel layer processing (experimental)
-    MAX_WORKERS: int = 5               # Thread pool size
+    ENABLE_PARALLEL: bool = False  # Parallel layer processing (experimental)
+    MAX_WORKERS: int = 5  # Thread pool size

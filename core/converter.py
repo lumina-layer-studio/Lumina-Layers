@@ -16,6 +16,7 @@ from config import (
     PrinterConfig,
     ColorSystem,
     ModelingMode,
+    MatchStrategy,
     PREVIEW_SCALE,
     PREVIEW_MARGIN,
     OUTPUT_DIR,
@@ -288,6 +289,7 @@ def convert_image_to_3d(
     blur_kernel=0,
     smooth_sigma=10,
     color_replacements=None,
+    match_strategy=MatchStrategy.RGB_EUCLIDEAN,
 ):
     """
     Main conversion function: Convert image to 3D model.
@@ -525,6 +527,7 @@ def convert_image_to_3d(
             bg_tol=bg_tol,
             blur_kernel=blur_kernel,
             smooth_sigma=smooth_sigma,
+            match_strategy=match_strategy,
         )
     except Exception as e:
         return None, None, None, f"❌ Image processing failed: {e}"
@@ -1007,6 +1010,7 @@ def generate_preview_cached(
     color_mode,
     modeling_mode: ModelingMode = ModelingMode.HIGH_FIDELITY,
     quantize_colors: int = 64,
+    match_strategy: MatchStrategy = MatchStrategy.RGB_EUCLIDEAN,
 ):
     """
     Generate preview and cache data
@@ -1055,6 +1059,7 @@ def generate_preview_cached(
             bg_tol=bg_tol,
             blur_kernel=0,
             smooth_sigma=10,
+            match_strategy=match_strategy,
         )
     except Exception as e:
         return None, None, f"❌ Preview generation failed: {e}"
@@ -1323,6 +1328,7 @@ def generate_final_model(
     modeling_mode=ModelingMode.VECTOR,
     quantize_colors=64,
     color_replacements=None,
+    match_strategy=MatchStrategy.RGB_EUCLIDEAN,
 ):
     """
     Wrapper function for generating final model.
@@ -1354,6 +1360,7 @@ def generate_final_model(
         blur_kernel=0,
         smooth_sigma=10,
         color_replacements=color_replacements,
+        match_strategy=match_strategy,
     )
 
 

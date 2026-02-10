@@ -18,7 +18,7 @@ import numpy as np
 from PIL import Image
 from typing import Dict, Any
 
-from config import PrinterConfig, ModelingMode
+from config import PrinterConfig, ModelingMode, MatchStrategy
 
 # Import strategies using relative imports to avoid circular dependency
 from .image_processing_factory import ProcessorFactory, ImageLoader, LUTManager
@@ -79,6 +79,7 @@ class LuminaImageProcessor:
         bg_tol: int,
         blur_kernel: int = 0,
         smooth_sigma: float = 10,
+        match_strategy: MatchStrategy = MatchStrategy.RGB_EUCLIDEAN,
     ) -> Dict[str, Any]:
         """
         Main image processing method (Refactored).
@@ -171,6 +172,7 @@ class LuminaImageProcessor:
                 quantize_colors=quantize_colors,
                 blur_kernel=blur_kernel,
                 smooth_sigma=smooth_sigma,
+                match_strategy=match_strategy,
             )
         )
 

@@ -13,7 +13,7 @@ import numpy as np
 import cv2
 from scipy.spatial import KDTree
 
-from config import PrinterConfig
+from config import PrinterConfig, MatchStrategy
 
 
 class ProcessingModeStrategy(ABC):
@@ -40,7 +40,6 @@ class ProcessingModeStrategy(ABC):
         """
         pass
 
-    @abstractmethod
     def process(
         self,
         rgb_arr: np.ndarray,
@@ -52,65 +51,7 @@ class ProcessingModeStrategy(ABC):
         quantize_colors: int,
         blur_kernel: int,
         smooth_sigma: float,
-    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, Dict[str, Any]]:
-        """
-        Process image and match to LUT colors.
-
-        Args:
-            rgb_arr: Input RGB array (H, W, 3)
-            target_h: Target height
-            target_w: Target width
-            lut_rgb: LUT RGB colors (N, 3)
-            ref_stacks: Reference stacking sequences (N, 5)
-            kdtree: KD-Tree for color matching
-            quantize_colors: Number of colors for K-Means
-            blur_kernel: Median blur kernel size
-            smooth_sigma: Bilateral filter sigma
-
-        Returns:
-            Tuple of (matched_rgb, material_matrix, bg_reference, debug_data):
-            - matched_rgb: Matched RGB array (H, W, 3)
-            - material_matrix: Material index matrix (H, W, 5)
-            - bg_reference: Background reference image (H, W, 3)
-            - debug_data: Optional debug information dict
-        """
-        pass
-
-    @abstractmethod
-    def get_mode_name(self) -> str:
-        """Return the display name of this processing mode."""
-        pass
-
-
-class HighFidelityStrategy(ProcessingModeStrategy):
-    """
-    Strategy for high-fidelity mode.
-
-    Features:
-    - 10 pixels/mm resolution
-    - Bilateral and median filtering
-    - K-Means color quantization
-    - Optimized color matching
-    """
-
-    def get_resolution(self, target_width_mm: float) -> Tuple[int, int, float]:
-        """Calculate resolution for high-fidelity mode (10 px/mm)."""
-        PIXELS_PER_MM = 10
-        target_w = int(target_width_mm * PIXELS_PER_MM)
-        pixel_to_mm_scale = 1.0 / PIXELS_PER_MM
-        return target_w, None, pixel_to_mm_scale  # height calculated later
-
-    def process(
-        self,
-        rgb_arr: np.ndarray,
-        target_h: int,
-        target_w: int,
-        lut_rgb: np.ndarray,
-        ref_stacks: np.ndarray,
-        kdtree: KDTree,
-        quantize_colors: int,
-        blur_kernel: int,
-        smooth_sigma: float,
+        match_strategy: MatchStrategy = MatchStrategy.RGB_EUCLIDEAN,
     ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, Dict[str, Any]]:
         """Process image with high-fidelity pipeline."""
         import time
@@ -134,7 +75,9 @@ class HighFidelityStrategy(ProcessingModeStrategy):
         else:
             print(f"[HighFidelityStrategy] Bilateral filter disabled (sigma=0)")
             rgb_processed = rgb_arr.astype(np.uint8)
-        print(f"[HighFidelityStrategy] ⏱️ Bilateral filter: {time.time() - t0:.2f}s")
+        print(
+            f"[HighFidelityStrategy] [TIME] Bilateral filter: {time.time() - t0:.2f}s"
+        )
 
         # Step 2: Optional median filter
         t0 = time.time()
@@ -146,7 +89,7 @@ class HighFidelityStrategy(ProcessingModeStrategy):
             rgb_processed = cv2.medianBlur(rgb_processed, kernel_size)
         else:
             print(f"[HighFidelityStrategy] Median blur disabled (kernel=0)")
-        print(f"[HighFidelityStrategy] ⏱️ Median blur: {time.time() - t0:.2f}s")
+        print(f"[HighFidelityStrategy] [TIME] Median blur: {time.time() - t0:.2f}s")
 
         # Step 3: Skip sharpening to prevent noise amplification
         print(f"[HighFidelityStrategy] Skipping sharpening to reduce noise...")
@@ -184,7 +127,9 @@ class HighFidelityStrategy(ProcessingModeStrategy):
             _, _, centers = cv2.kmeans(
                 pixels_small, quantize_colors, None, criteria, 5, flags
             )
-            print(f"[HighFidelityStrategy] ⏱️ K-Means: {time.time() - t_kmeans:.2f}s")
+            print(
+                f"[HighFidelityStrategy] [TIME] K-Means: {time.time() - t_kmeans:.2f}s"
+            )
 
             # Map centers to full image using KDTree
             t_map = time.time()
@@ -194,7 +139,9 @@ class HighFidelityStrategy(ProcessingModeStrategy):
 
             centers_tree = KDTree(centers)
             _, labels = centers_tree.query(pixels_full)
-            print(f"[HighFidelityStrategy] ⏱️ KDTree query: {time.time() - t_map:.2f}s")
+            print(
+                f"[HighFidelityStrategy] [TIME] KDTree query: {time.time() - t_map:.2f}s"
+            )
 
             centers = centers.astype(np.uint8)
             quantized_pixels = centers[labels]
@@ -217,27 +164,42 @@ class HighFidelityStrategy(ProcessingModeStrategy):
             centers = centers.astype(np.uint8)
             quantized_pixels = centers[labels.flatten()]
             quantized_image = quantized_pixels.reshape(h, w, 3)
-        print(f"[HighFidelityStrategy] ⏱️ Total quantization: {time.time() - t0:.2f}s")
+        print(
+            f"[HighFidelityStrategy] [TIME] Total quantization: {time.time() - t0:.2f}s"
+        )
 
         # Post-quantization cleanup
         t0 = time.time()
         print(f"[HighFidelityStrategy] Applying post-quantization cleanup...")
         quantized_image = cv2.medianBlur(quantized_image, 3)
         print(
-            f"[HighFidelityStrategy] ⏱️ Post-quantization cleanup: {time.time() - t0:.2f}s"
+            f"[HighFidelityStrategy] [TIME] Post-quantization cleanup: {time.time() - t0:.2f}s"
         )
 
         # Find unique colors
         t0 = time.time()
         unique_colors = np.unique(quantized_image.reshape(-1, 3), axis=0)
         print(f"[HighFidelityStrategy] Found {len(unique_colors)} unique colors")
-        print(f"[HighFidelityStrategy] ⏱️ Find unique colors: {time.time() - t0:.2f}s")
+        print(
+            f"[HighFidelityStrategy] [TIME] Find unique colors: {time.time() - t0:.2f}s"
+        )
 
         # Match to LUT
         t0 = time.time()
-        print(f"[HighFidelityStrategy] Matching colors to LUT...")
-        _, unique_indices = kdtree.query(unique_colors.astype(float))
-        print(f"[HighFidelityStrategy] ⏱️ LUT matching: {time.time() - t0:.2f}s")
+        print(
+            f"[HighFidelityStrategy] Matching colors to LUT with {match_strategy} strategy..."
+        )
+        if match_strategy == MatchStrategy.RGB_EUCLIDEAN:
+            _, unique_indices = kdtree.query(unique_colors.astype(float))
+        elif match_strategy == MatchStrategy.DELTAE2000:
+            from core.color_matchers import match_colors_deltae2000
+
+            unique_indices = match_colors_deltae2000(unique_colors, lut_rgb)
+        else:
+            raise ValueError(
+                f"Invalid match_strategy: {match_strategy}. Valid values: {list(MatchStrategy)}"
+            )
+        print(f"[HighFidelityStrategy] [TIME] LUT matching: {time.time() - t0:.2f}s")
 
         # Build color lookup table and map
         t0 = time.time()
@@ -267,10 +229,10 @@ class HighFidelityStrategy(ProcessingModeStrategy):
         material_matrix = ref_stacks[lut_indices_for_pixels].reshape(
             target_h, target_w, PrinterConfig.COLOR_LAYERS
         )
-        print(f"[HighFidelityStrategy] ⏱️ Color mapping: {time.time() - t0:.2f}s")
+        print(f"[HighFidelityStrategy] [TIME] Color mapping: {time.time() - t0:.2f}s")
 
         print(
-            f"[HighFidelityStrategy] ✅ Total processing time: {time.time() - total_start:.2f}s"
+            f"[HighFidelityStrategy] [OK] Total processing time: {time.time() - total_start:.2f}s"
         )
 
         # Prepare debug data
@@ -286,6 +248,28 @@ class HighFidelityStrategy(ProcessingModeStrategy):
         }
 
         return matched_rgb, material_matrix, quantized_image, debug_data
+
+    def get_mode_name(self) -> str:
+        return "High-Fidelity"
+
+
+class HighFidelityStrategy(ProcessingModeStrategy):
+    """
+    Strategy for high-fidelity mode.
+
+    Features:
+    - High resolution (10 px/mm)
+    - Edge-preserving bilateral filtering
+    - Optional median denoising
+    - K-Means color quantization
+    - Smart color mapping with lookup table optimization
+    """
+
+    def get_resolution(self, target_width_mm: float) -> Tuple[int, int, float]:
+        """Calculate resolution for high-fidelity mode (10 px/mm)."""
+        target_w = int(target_width_mm * 10)
+        pixel_to_mm_scale = 0.1
+        return target_w, None, pixel_to_mm_scale
 
     def get_mode_name(self) -> str:
         return "High-Fidelity"
@@ -386,6 +370,7 @@ class VectorStrategy(ProcessingModeStrategy):
             quantize_colors,
             blur_kernel=0,
             smooth_sigma=0,  # Force disable filters
+            match_strategy=match_strategy,
         )
 
     def get_mode_name(self) -> str:

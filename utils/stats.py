@@ -10,6 +10,7 @@ from config import OUTPUT_DIR
 
 class Stats:
     """Usage statistics (local counter)"""
+
     _file = os.path.join(OUTPUT_DIR, "lumina_stats.txt")
     _cache_dirs = [
         os.path.join(OUTPUT_DIR, ".gradio_cache"),
@@ -89,16 +90,18 @@ class Stats:
     @staticmethod
     def _load() -> dict:
         try:
-            with open(Stats._file, 'r') as f:
+            with open(Stats._file, "r") as f:
                 lines = f.readlines()
-                return {l.split(':')[0]: int(l.split(':')[1]) for l in lines if ':' in l}
+                return {
+                    l.split(":")[0]: int(l.split(":")[1]) for l in lines if ":" in l
+                }
         except:
             return {"calibrations": 0, "extractions": 0, "conversions": 0}
 
     @staticmethod
     def _save(data: dict):
         try:
-            with open(Stats._file, 'w') as f:
+            with open(Stats._file, "w") as f:
                 for k, v in data.items():
                     f.write(f"{k}:{v}\n")
         except:

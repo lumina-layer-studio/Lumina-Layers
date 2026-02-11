@@ -13,15 +13,15 @@ from core.image_preprocessor import ImagePreprocessor
 
 def get_crop_modal_html(lang: str) -> str:
     """Return the crop modal HTML for the given language."""
-    title = I18n.get('crop_title', lang)
-    original_size = I18n.get('crop_original_size', lang)
-    selection_size = I18n.get('crop_selection_size', lang)
-    label_x = I18n.get('crop_x', lang)
-    label_y = I18n.get('crop_y', lang)
-    label_w = I18n.get('crop_width', lang)
-    label_h = I18n.get('crop_height', lang)
-    btn_use_original = I18n.get('crop_use_original', lang)
-    btn_confirm = I18n.get('crop_confirm', lang)
+    title = I18n.get("crop_title", lang)
+    original_size = I18n.get("crop_original_size", lang)
+    selection_size = I18n.get("crop_selection_size", lang)
+    label_x = I18n.get("crop_x", lang)
+    label_y = I18n.get("crop_y", lang)
+    label_w = I18n.get("crop_width", lang)
+    label_h = I18n.get("crop_height", lang)
+    btn_use_original = I18n.get("crop_use_original", lang)
+    btn_confirm = I18n.get("crop_confirm", lang)
 
     # Cropper.js Modal HTML (CSS only, JS is loaded via head parameter in main.py)
     template = """
@@ -81,6 +81,7 @@ def get_crop_modal_html(lang: str) -> str:
         btn_use_original=btn_use_original,
         btn_confirm=btn_confirm,
     )
+
 
 # JavaScript for Cropper.js (to be injected via head parameter)
 CROP_MODAL_JS = """

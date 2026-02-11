@@ -20,6 +20,7 @@ def patch_asscalar(a):
     """Replace deprecated numpy.asscalar for colormath."""
     return a.item()
 
+
 setattr(np, "asscalar", patch_asscalar)
 
 _PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
@@ -31,7 +32,7 @@ import time
 import threading
 import webbrowser
 import socket
-import gradio as gr     # type:ignore
+import gradio as gr  # type:ignore
 from ui.layout_new import create_app
 from ui.styles import CUSTOM_CSS
 
@@ -41,10 +42,12 @@ if HAS_DISPLAY:
         from core.tray import LuminaTray
     except ImportError:
         HAS_DISPLAY = False
-        
+
+
 def find_available_port(start_port=7860, max_attempts=1000):
     """Return first free port in [start_port, start_port + max_attempts)."""
     import socket
+
     for i in range(max_attempts):
         port = start_port + i
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
@@ -52,10 +55,12 @@ def find_available_port(start_port=7860, max_attempts=1000):
                 return port
     raise RuntimeError(f"No available port found after {max_attempts} attempts")
 
+
 def start_browser(port):
     """Launch the default web browser after a short delay."""
     time.sleep(2)
     webbrowser.open(f"http://127.0.0.1:{port}")
+
 
 if __name__ == "__main__":
     tray = None
@@ -72,8 +77,10 @@ if __name__ == "__main__":
 
     try:
         from ui.layout_new import HEADER_CSS
+
         # Import crop extension for head JS injection
         from ui.crop_extension import get_crop_head_js
+
         app.launch(
             inbrowser=False,
             server_name="0.0.0.0",
@@ -83,7 +90,7 @@ if __name__ == "__main__":
             favicon_path="icon.ico" if os.path.exists("icon.ico") else None,
             css=CUSTOM_CSS + HEADER_CSS,
             theme=gr.themes.Soft(),
-            head=get_crop_head_js()
+            head=get_crop_head_js(),
         )
     except Exception as e:
         raise

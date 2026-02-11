@@ -16,6 +16,7 @@ from PIL import Image
 from scipy.spatial import KDTree
 import cv2
 
+
 class ImageLoader:
     """
     Helper class for image loading operations.
@@ -85,13 +86,17 @@ class ImageLoader:
         try:
             # Pass 1: 白底渲染 (0xFFFFFF)
             # 强制不使用透明通道，完全模拟打印在白纸上的效果
-            pil_white = renderPM.drawToPIL(drawing, bg=0xFFFFFF, configPIL={'transparent': False})
-            arr_white = np.array(pil_white.convert('RGB'))  # 丢弃 Alpha，只看颜色
+            pil_white = renderPM.drawToPIL(
+                drawing, bg=0xFFFFFF, configPIL={"transparent": False}
+            )
+            arr_white = np.array(pil_white.convert("RGB"))  # 丢弃 Alpha，只看颜色
 
             # Pass 2: 黑底渲染 (0x000000)
             # 强制不使用透明通道，完全模拟打印在黑纸上的效果
-            pil_black = renderPM.drawToPIL(drawing, bg=0x000000, configPIL={'transparent': False})
-            arr_black = np.array(pil_black.convert('RGB'))
+            pil_black = renderPM.drawToPIL(
+                drawing, bg=0x000000, configPIL={"transparent": False}
+            )
+            arr_black = np.array(pil_black.convert("RGB"))
 
             # 计算差异 (Difference)
             # diff = |白底图 - 黑底图|
@@ -132,19 +137,22 @@ class ImageLoader:
             else:
                 print("[SVG] Warning: Image appears fully transparent.")
 
-            print(f"[SVG] Final resolution: {img_final.shape[1]}x{img_final.shape[0]} px")
+            print(
+                f"[SVG] Final resolution: {img_final.shape[1]}x{img_final.shape[0]} px"
+            )
             return img_final
 
         except Exception as e:
             print(f"[SVG] Dual-Pass failed: {e}")
             import traceback
+
             traceback.print_exc()
 
             # 最后的保底：如果双重渲染失败，回退到普通渲染
-            pil_img = renderPM.drawToPIL(drawing, bg=None, configPIL={'transparent': True})
-            return np.array(pil_img.convert('RGBA'))
-
-
+            pil_img = renderPM.drawToPIL(
+                drawing, bg=None, configPIL={"transparent": True}
+            )
+            return np.array(pil_img.convert("RGBA"))
 
     @staticmethod
     def load_bitmap(image_path: str) -> Image.Image:

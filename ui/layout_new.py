@@ -40,7 +40,7 @@ from core.converter import (
     detect_lut_color_mode,
     detect_image_type,
 )
-from .i18n import I18n
+from core.i18n import I18n
 from .layout_css import HEADER_CSS, LUT_GRID_CSS
 from .callbacks import (
     get_first_hint,

@@ -36,6 +36,21 @@ class I18n:
             "zh": "**两种建模模式**：高保真（RLE无缝拼接）、像素艺术（方块风格）\n\n**流程**: 上传LUT和图像 → 选择建模模式 → 调整色彩细节 → 预览 → 生成",
             "en": "**Two Modeling Modes**: High-Fidelity (RLE seamless) and Pixel Art (blocky style)\n\n**Workflow**: Upload LUT & Image → Select Mode → Adjust Color Detail → Preview → Generate",
         },
+        "conv_advanced": {"zh": "🛠️ 高级设置", "en": "🛠️ Advanced Settings"},
+        "conv_stop": {"zh": "🛑 停止生成", "en": "🛑 Stop Generation"},
+        "conv_batch_mode": {"zh": "📦 批量模式", "en": "📦 Batch Mode"},
+        "conv_batch_mode_info": {
+            "zh": "一次生成多个模型 (参数共享)",
+            "en": "Generate multiple models (Shared Settings)",
+        },
+        "conv_batch_input": {
+            "zh": "📤 批量上传图片",
+            "en": "📤 Batch Upload Images",
+        },
+        "conv_lut_status": {
+            "zh": "💡 拖放.npy文件自动添加",
+            "en": "💡 Drop .npy file to load",
+        },
         "conv_input_section": {"zh": "#### 📁 输入", "en": "#### 📁 Input"},
         "conv_lut_title": {
             "zh": "**校准数据 (.npy)**",

@@ -30,6 +30,7 @@ from core.extractor import (
     manual_fix_cell,
 )
 from core.converter import (
+    ConversionRequest,
     generate_preview_cached,
     render_preview,
     update_preview_with_loop,
@@ -646,28 +647,29 @@ def process_batch_generation(
         tuple: (file_or_zip_path, model3d_value, preview_image, status_text).
     """
     modeling_mode = ModelingMode(modeling_mode)
-    args = (
-        lut_path,
-        target_width_mm,
-        spacer_thick,
-        structure_mode,
-        auto_bg,
-        bg_tol,
-        color_mode,
-        add_loop,
-        loop_width,
-        loop_length,
-        loop_hole,
-        loop_pos,
-        modeling_mode,
-        quantize_colors,
-        color_replacements,
-        match_strategy,
+    match_strategy = MatchStrategy(match_strategy)
+    request = ConversionRequest(
+        lut_path=lut_path,
+        target_width_mm=target_width_mm,
+        spacer_thick=spacer_thick,
+        structure_mode=structure_mode,
+        auto_bg=auto_bg,
+        bg_tol=bg_tol,
+        color_mode=color_mode,
+        add_loop=add_loop,
+        loop_width=loop_width,
+        loop_length=loop_length,
+        loop_hole=loop_hole,
+        loop_pos=loop_pos,
+        modeling_mode=modeling_mode,
+        quantize_colors=quantize_colors,
+        color_replacements=color_replacements,
+        match_strategy=match_strategy,
     )
 
     if not is_batch:
         out_path, glb_path, preview_img, status = generate_final_model(
-            single_image, *args
+            single_image, request
         )
         return out_path, glb_path, _preview_update(preview_img), status
 
@@ -692,7 +694,7 @@ def process_batch_generation(
         logs.append(f"[{i + 1}/{total_files}] 正在生成: {filename}")
 
         try:
-            result_3mf, _, _, _ = generate_final_model(path, *args)
+            result_3mf, _, _, _ = generate_final_model(path, request)
 
             if result_3mf and os.path.exists(result_3mf):
                 new_name = os.path.splitext(filename)[0] + ".3mf"
@@ -1948,17 +1950,17 @@ def create_converter_tab_content(lang: str, lang_state=None) -> dict:
         quantize_colors,
         match_strategy,
     ):
-        display, cache, status = generate_preview_cached(
-            image_path,
-            lut_path,
-            target_width_mm,
-            auto_bg,
-            bg_tol,
-            color_mode,
-            modeling_mode,
-            quantize_colors,
-            match_strategy,
+        request = ConversionRequest(
+            lut_path=lut_path,
+            target_width_mm=target_width_mm,
+            auto_bg=auto_bg,
+            bg_tol=bg_tol,
+            color_mode=color_mode,
+            modeling_mode=modeling_mode,
+            quantize_colors=quantize_colors,
+            match_strategy=match_strategy,
         )
+        display, cache, status = generate_preview_cached(image_path, request)
         return _preview_update(display), cache, status
 
     preview_event = (

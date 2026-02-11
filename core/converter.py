@@ -5,6 +5,7 @@ Coordinates modules to complete image-to-3D model conversion.
 """
 
 import os
+from dataclasses import dataclass
 import numpy as np
 import cv2
 import trimesh
@@ -271,26 +272,33 @@ def _save_debug_preview(
 # ========== Main Conversion Function ==========
 
 
+@dataclass(frozen=True)
+class ConversionRequest:
+    """Shared conversion parameters to avoid deep argument forwarding."""
+
+    lut_path: object
+    target_width_mm: float
+    auto_bg: bool
+    bg_tol: float
+    color_mode: str
+    modeling_mode: ModelingMode = ModelingMode.HIGH_FIDELITY
+    quantize_colors: int = 64
+    match_strategy: MatchStrategy = MatchStrategy.RGB_EUCLIDEAN
+    spacer_thick: float = 1.2
+    structure_mode: str = "Double-sided"
+    add_loop: bool = False
+    loop_width: float = 4.0
+    loop_length: float = 8.0
+    loop_hole: float = 2.5
+    loop_pos: Optional[Tuple[float, float]] = None
+    color_replacements: Optional[dict] = None
+
+
 def convert_image_to_3d(
     image_path,
-    lut_path,
-    target_width_mm,
-    spacer_thick,
-    structure_mode,
-    auto_bg,
-    bg_tol,
-    color_mode,
-    add_loop,
-    loop_width,
-    loop_length,
-    loop_hole,
-    loop_pos,
-    modeling_mode=ModelingMode.VECTOR,
-    quantize_colors=32,
+    request: ConversionRequest,
     blur_kernel=0,
     smooth_sigma=10,
-    color_replacements=None,
-    match_strategy=MatchStrategy.RGB_EUCLIDEAN,
 ):
     """
     Main conversion function: Convert image to 3D model.
@@ -329,16 +337,32 @@ def convert_image_to_3d(
     # Input validation
     if image_path is None:
         return None, None, None, "❌ Please upload an image"
-    if lut_path is None:
+    if request.lut_path is None:
         return None, None, None, "⚠️ Please select or upload a .npy calibration file!"
 
     # Handle LUT path (supports string path or Gradio File object)
-    if isinstance(lut_path, str):
-        actual_lut_path = lut_path
-    elif hasattr(lut_path, "name"):
-        actual_lut_path = lut_path.name
+    if isinstance(request.lut_path, str):
+        actual_lut_path = request.lut_path
+    elif hasattr(request.lut_path, "name"):
+        actual_lut_path = request.lut_path.name
     else:
         return None, None, None, "❌ Invalid LUT file format"
+
+    modeling_mode = ModelingMode(request.modeling_mode)
+    target_width_mm = request.target_width_mm
+    spacer_thick = request.spacer_thick
+    structure_mode = request.structure_mode
+    auto_bg = request.auto_bg
+    bg_tol = request.bg_tol
+    color_mode = request.color_mode
+    add_loop = request.add_loop
+    loop_width = request.loop_width
+    loop_length = request.loop_length
+    loop_hole = request.loop_hole
+    loop_pos = request.loop_pos
+    quantize_colors = request.quantize_colors
+    color_replacements = request.color_replacements
+    match_strategy = request.match_strategy
 
     print(f"[CONVERTER] Starting conversion...")
     print(
@@ -1003,14 +1027,7 @@ def _create_preview_mesh(matched_rgb, mask_solid, total_layers):
 
 def generate_preview_cached(
     image_path,
-    lut_path,
-    target_width_mm,
-    auto_bg,
-    bg_tol,
-    color_mode,
-    modeling_mode: ModelingMode = ModelingMode.HIGH_FIDELITY,
-    quantize_colors: int = 64,
-    match_strategy: MatchStrategy = MatchStrategy.RGB_EUCLIDEAN,
+    request: ConversionRequest,
 ):
     """
     Generate preview and cache data
@@ -1031,17 +1048,23 @@ def generate_preview_cached(
     """
     if image_path is None:
         return None, None, "❌ Please upload an image"
-    if lut_path is None:
+    if request.lut_path is None:
         return None, None, "⚠️ Please select or upload calibration file"
 
-    if isinstance(lut_path, str):
-        actual_lut_path = lut_path
-    elif hasattr(lut_path, "name"):
-        actual_lut_path = lut_path.name
+    if isinstance(request.lut_path, str):
+        actual_lut_path = request.lut_path
+    elif hasattr(request.lut_path, "name"):
+        actual_lut_path = request.lut_path.name
     else:
         return None, None, "❌ Invalid LUT file format"
 
-    modeling_mode = ModelingMode(modeling_mode)
+    modeling_mode = ModelingMode(request.modeling_mode)
+    target_width_mm = request.target_width_mm
+    auto_bg = request.auto_bg
+    bg_tol = request.bg_tol
+    color_mode = request.color_mode
+    quantize_colors = request.quantize_colors
+    match_strategy = request.match_strategy
 
     # Clamp quantize_colors to valid range
     quantize_colors = max(8, min(256, quantize_colors))
@@ -1313,22 +1336,7 @@ def on_remove_loop():
 
 def generate_final_model(
     image_path,
-    lut_path,
-    target_width_mm,
-    spacer_thick,
-    structure_mode,
-    auto_bg,
-    bg_tol,
-    color_mode,
-    add_loop,
-    loop_width,
-    loop_length,
-    loop_hole,
-    loop_pos,
-    modeling_mode=ModelingMode.VECTOR,
-    quantize_colors=64,
-    color_replacements=None,
-    match_strategy=MatchStrategy.RGB_EUCLIDEAN,
+    request: ConversionRequest,
 ):
     """
     Wrapper function for generating final model.
@@ -1343,24 +1351,9 @@ def generate_final_model(
     """
     return convert_image_to_3d(
         image_path,
-        lut_path,
-        target_width_mm,
-        spacer_thick,
-        structure_mode,
-        auto_bg,
-        bg_tol,
-        color_mode,
-        add_loop,
-        loop_width,
-        loop_length,
-        loop_hole,
-        loop_pos,
-        modeling_mode,
-        quantize_colors,
+        request,
         blur_kernel=0,
         smooth_sigma=10,
-        color_replacements=color_replacements,
-        match_strategy=match_strategy,
     )
 
 

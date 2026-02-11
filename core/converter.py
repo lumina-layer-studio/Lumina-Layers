@@ -21,6 +21,7 @@ from config import (
     PREVIEW_MARGIN,
     OUTPUT_DIR,
 )
+from core.image_processing_factory import ImageLoader
 from utils import Stats, safe_fix_3mf_names
 
 from core.image_processing import LuminaImageProcessor
@@ -394,7 +395,6 @@ def convert_image_to_3d(
             if HAS_SVG_LIB:
                 try:
                     # Use SVG-safe rasterization with bounds normalization
-                    from core.strategies import ImageLoader
 
                     preview_rgba = ImageLoader.load_svg(image_path, target_width_mm)
 

@@ -269,7 +269,7 @@ class HighFidelityStrategy(ProcessingModeStrategy):
         """Calculate resolution for high-fidelity mode (10 px/mm)."""
         target_w = int(target_width_mm * 10)
         pixel_to_mm_scale = 0.1
-        return target_w, None, pixel_to_mm_scale
+        return target_w, 0, pixel_to_mm_scale
 
     def get_mode_name(self) -> str:
         return "High-Fidelity"
@@ -289,7 +289,7 @@ class PixelStrategy(ProcessingModeStrategy):
         """Calculate resolution for pixel mode (based on nozzle width)."""
         target_w = int(target_width_mm / PrinterConfig.NOZZLE_WIDTH)
         pixel_to_mm_scale = PrinterConfig.NOZZLE_WIDTH
-        return target_w, None, pixel_to_mm_scale
+        return target_w, 0, pixel_to_mm_scale
 
     def process(
         self,
@@ -302,6 +302,7 @@ class PixelStrategy(ProcessingModeStrategy):
         quantize_colors: int,
         blur_kernel: int,
         smooth_sigma: float,
+        match_strategy: MatchStrategy = MatchStrategy.RGB_EUCLIDEAN,
     ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, Dict[str, Any]]:
         """Process image with direct pixel matching."""
         print(f"[PixelStrategy] Direct pixel-level matching...")
@@ -316,7 +317,7 @@ class PixelStrategy(ProcessingModeStrategy):
 
         print(f"[PixelStrategy] Direct matching complete!")
 
-        return matched_rgb, material_matrix, rgb_arr, None
+        return matched_rgb, material_matrix, rgb_arr, {}
 
     def get_mode_name(self) -> str:
         return "Pixel Art"
@@ -337,7 +338,7 @@ class VectorStrategy(ProcessingModeStrategy):
         PIXELS_PER_MM = 20.0
         target_w = int(target_width_mm * PIXELS_PER_MM)
         pixel_to_mm_scale = 1.0 / PIXELS_PER_MM
-        return target_w, None, pixel_to_mm_scale
+        return target_w, 0, pixel_to_mm_scale
 
     def process(
         self,
@@ -350,6 +351,7 @@ class VectorStrategy(ProcessingModeStrategy):
         quantize_colors: int,
         blur_kernel: int,
         smooth_sigma: float,
+        match_strategy: MatchStrategy = MatchStrategy.RGB_EUCLIDEAN,
     ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, Dict[str, Any]]:
         """
         Process image with vector-specific pipeline.

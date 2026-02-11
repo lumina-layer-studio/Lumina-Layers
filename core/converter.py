@@ -274,24 +274,32 @@ def _save_debug_preview(
 
 @dataclass(frozen=True)
 class ConversionRequest:
-    """Shared conversion parameters to avoid deep argument forwarding."""
+    """Shared conversion/preview parameters to avoid deep argument forwarding.
 
-    lut_path: object
-    target_width_mm: float
-    auto_bg: bool
-    bg_tol: float
-    color_mode: str
-    modeling_mode: ModelingMode = ModelingMode.HIGH_FIDELITY
-    quantize_colors: int = 64
-    match_strategy: MatchStrategy = MatchStrategy.RGB_EUCLIDEAN
-    spacer_thick: float = 1.2
-    structure_mode: str = "Double-sided"
-    add_loop: bool = False
-    loop_width: float = 4.0
-    loop_length: float = 8.0
-    loop_hole: float = 2.5
-    loop_pos: Optional[Tuple[float, float]] = None
-    color_replacements: Optional[dict] = None
+    Notes:
+        - `lut_path` supports both string file path and Gradio file-like object.
+        - Some fields are preview-only (e.g. quantize/match strategy), while
+          others are final-model-only (e.g. spacer/structure/loop settings).
+        - `loop_pos` uses image-space coordinates `(x, y)` in pixel units.
+        - `color_replacements` maps hex colors, e.g. `{"#ff0000": "#00ff00"}`.
+    """
+
+    lut_path: object  # LUT path string or Gradio file-like object
+    target_width_mm: float  # Target model width in millimeters
+    auto_bg: bool  # Enable automatic background removal
+    bg_tol: float  # Background removal tolerance
+    color_mode: str  # Color system key (CMYW / RYBW / 6-Color ...)
+    modeling_mode: ModelingMode = ModelingMode.HIGH_FIDELITY  # Engine mode
+    quantize_colors: int = 64  # K-Means color count (preview + conversion)
+    match_strategy: MatchStrategy = MatchStrategy.RGB_EUCLIDEAN  # Color match metric
+    spacer_thick: float = 1.2  # Backing/spacer thickness in mm
+    structure_mode: str = "Double-sided"  # Structure mode label
+    add_loop: bool = False  # Whether to add keychain loop
+    loop_width: float = 4.0  # Loop outer width in mm
+    loop_length: float = 8.0  # Loop outer length in mm
+    loop_hole: float = 2.5  # Loop hole diameter in mm
+    loop_pos: Optional[Tuple[float, float]] = None  # Loop attach point (x, y)
+    color_replacements: Optional[dict] = None  # Optional color replacement mapping
 
 
 def convert_image_to_3d(

@@ -33,10 +33,13 @@ import threading
 import webbrowser
 import socket
 import gradio as gr  # type:ignore
+from gradio.themes import Soft
 from ui.layout_new import create_app
+from ui.layout_css import HEADER_CSS, LUT_GRID_CSS
 from ui.styles import CUSTOM_CSS
 
 HAS_DISPLAY = os.environ.get("DISPLAY") or os.name == "nt"
+LuminaTray = None
 if HAS_DISPLAY:
     try:
         from core.tray import LuminaTray
@@ -67,7 +70,8 @@ if __name__ == "__main__":
     PORT = 7860
     try:
         PORT = find_available_port(7860)
-        tray = LuminaTray(port=PORT)
+        if LuminaTray is not None:
+            tray = LuminaTray(port=PORT)
     except Exception as e:
         print(f"⚠️ Warning: Failed to initialize tray: {e}")
 
@@ -76,8 +80,6 @@ if __name__ == "__main__":
     app = create_app()
 
     try:
-        from ui.layout_new import HEADER_CSS
-
         # Import crop extension for head JS injection
         from ui.crop_extension import get_crop_head_js
 
@@ -88,8 +90,8 @@ if __name__ == "__main__":
             show_error=True,
             prevent_thread_lock=True,
             favicon_path="icon.ico" if os.path.exists("icon.ico") else None,
-            css=CUSTOM_CSS + HEADER_CSS,
-            theme=gr.themes.Soft(),
+            css=CUSTOM_CSS + HEADER_CSS + LUT_GRID_CSS,
+            theme=Soft(),
             head=get_crop_head_js(),
         )
     except Exception as e:

@@ -84,6 +84,10 @@ if hasattr(I18n, "TEXTS"):
         }
     )
 
+# ============================================================================
+# LUT Settings Helper Functions
+# ============================================================================
+
 CONFIG_FILE = "user_settings.json"
 
 
@@ -479,7 +483,9 @@ PREVIEW_ZOOM_JS = """
 </script>
 """
 
-# ---------- Image size and aspect-ratio helpers ----------
+# ============================================================================
+# Image Dimension Helper Functions
+# ============================================================================
 
 
 def _get_image_size(img):
@@ -501,6 +507,8 @@ def _get_image_size(img):
                     from svglib.svglib import svg2rlg
 
                     drawing = svg2rlg(img)
+                    if drawing is None:
+                        return None
                     return (drawing.width, drawing.height)
                 except ImportError:
                     print("⚠️ svglib not installed, cannot read SVG size")
@@ -748,22 +756,33 @@ def create_app():
         with gr.Tabs() as tabs:
             components = {}
 
-            # Converter tab
+            # ============================================================================
+            # Tab 1: Image Converter (图像转换)
+            # ============================================================================
             with gr.TabItem(label=I18n.get("tab_converter", "zh"), id=0) as tab_conv:
                 conv_components = create_converter_tab_content("zh", lang_state)
                 components.update(conv_components)
             tab_components["tab_converter"] = tab_conv
 
+            # ============================================================================
+            # Tab 2: Calibration Board (校准板生成)
+            # ============================================================================
             with gr.TabItem(label=I18n.get("tab_calibration", "zh"), id=1) as tab_cal:
                 cal_components = create_calibration_tab_content("zh")
                 components.update(cal_components)
             tab_components["tab_calibration"] = tab_cal
 
+            # ============================================================================
+            # Tab 3: Color Extractor (色彩提取)
+            # ============================================================================
             with gr.TabItem(label=I18n.get("tab_extractor", "zh"), id=2) as tab_ext:
                 ext_components = create_extractor_tab_content("zh")
                 components.update(ext_components)
             tab_components["tab_extractor"] = tab_ext
 
+            # ============================================================================
+            # Tab 4: About (关于)
+            # ============================================================================
             with gr.TabItem(label=I18n.get("tab_about", "zh"), id=3) as tab_about:
                 about_components = create_about_tab_content("zh")
                 components.update(about_components)
@@ -771,6 +790,9 @@ def create_app():
 
         footer_html = gr.HTML(value=_get_footer_html("zh"), elem_id="footer")
 
+        # ============================================================================
+        # Internal Callback Functions - Language & Theme
+        # ============================================================================
         def change_language(current_lang, is_dark):
             """Switch UI language and return updates for all i18n components."""
             new_lang = "en" if current_lang == "zh" else "zh"
@@ -800,6 +822,9 @@ def create_app():
             updates.append(new_lang)
             return updates
 
+        # ============================================================================
+        # Global Event Bindings (全局事件绑定)
+        # ============================================================================
         output_list = [
             lang_btn,
             theme_btn,
@@ -824,7 +849,7 @@ def create_app():
             js="() => { const url = new URL(window.location.href); const current = url.searchParams.get('__theme'); const next = current === 'dark' ? 'light' : 'dark'; url.searchParams.set('__theme', next); url.searchParams.delete('view'); window.location.href = url.toString(); return []; }",
         )
 
-        def init_theme(current_lang, request: gr.Request = None):
+        def init_theme(current_lang, request: gr.Request | None = None):
             theme = None
             try:
                 if request is not None:
@@ -855,6 +880,9 @@ def create_app():
             outputs=[components["conv_lut_grid_view"]],
         )
 
+        # ============================================================================
+        # Internal Callback Functions - Settings & Stats
+        # ============================================================================
         # Settings: cache clearing and counter reset
         def on_clear_cache(lang):
             cache_size_before = Stats.get_cache_size()
@@ -1672,7 +1700,7 @@ def create_converter_tab_content(lang: str, lang_state=None) -> dict:
                     )
 
                     conv_3d_preview = gr.Model3D(
-                        label="3D", clear_color=[0.9, 0.9, 0.9, 1.0], height=600
+                        label="3D", clear_color=(0.9, 0.9, 0.9, 1.0), height=600
                     )
 
                     components["md_conv_download_section"] = gr.Markdown(
@@ -2689,8 +2717,9 @@ def _format_bytes(size_bytes: int) -> str:
     """Format bytes to human readable string."""
     if size_bytes == 0:
         return "0 B"
+    size = float(size_bytes)
     for unit in ["B", "KB", "MB", "GB"]:
-        if size_bytes < 1024:
-            return f"{size_bytes:.1f} {unit}"
-        size_bytes /= 1024
-    return f"{size_bytes:.1f} TB"
+        if size < 1024:
+            return f"{size:.1f} {unit}"
+        size /= 1024
+    return f"{size:.1f} TB"

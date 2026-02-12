@@ -1,0 +1,320 @@
+/* Global Theme */
+.gradio-container {
+    max-width: 1400px !important;
+    margin: auto;
+}
+
+/* Header Styling */
+.header-banner {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    padding: 20px 30px;
+    border-radius: 16px;
+    margin-bottom: 20px;
+    box-shadow: 0 10px 40px rgba(102, 126, 234, 0.3);
+}
+
+.header-banner h1 {
+    color: white !important;
+    font-size: 2.5em !important;
+    margin: 0 !important;
+    text-shadow: 2px 2px 4px rgba(0,0,0,0.2);
+}
+
+.header-banner p {
+    color: rgba(255,255,255,0.9) !important;
+    margin: 5px 0 0 0 !important;
+}
+
+/* Stats Bar */
+.stats-bar {
+    background: linear-gradient(90deg, #1a1a2e 0%, #16213e 100%);
+    padding: 12px 20px;
+    border-radius: 10px;
+    color: #a0a0ff;
+    font-family: 'Courier New', monospace;
+    text-align: center;
+    margin-bottom: 15px;
+}
+
+.stats-bar strong {
+    color: #a0a0ff;
+}
+
+/* Tab Styling */
+.tab-nav button {
+    font-size: 1.1em !important;
+    padding: 12px 24px !important;
+    border-radius: 10px 10px 0 0 !important;
+}
+
+.tab-nav button.selected {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
+    color: white !important;
+}
+
+/* Card Styling */
+.input-card, .output-card {
+    background: var(--background-fill-primary, #fafafa);
+    border-radius: 12px;
+    padding: 15px;
+    border: 1px solid var(--border-color-primary, #e0e0e0);
+}
+
+/* Button Styling */
+.primary-btn {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
+    border: none !important;
+    font-size: 1.1em !important;
+    padding: 12px 24px !important;
+    border-radius: 10px !important;
+    box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4) !important;
+}
+
+.primary-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(102, 126, 234, 0.5) !important;
+}
+
+/* Mode indicator */
+.mode-indicator {
+    background: var(--background-fill-secondary, #f0f0ff);
+    border: 2px solid #667eea;
+    border-radius: 8px;
+    padding: 10px;
+    margin: 10px 0;
+    font-weight: bold;
+}
+
+/* Language Button */
+#lang-btn {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
+    color: white !important;
+    border: none !important;
+    padding: 8px 20px !important;
+    border-radius: 20px !important;
+    font-weight: bold !important;
+    font-size: 0.95em !important;
+    box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3) !important;
+    transition: all 0.3s ease !important;
+    cursor: pointer !important;
+}
+
+#lang-btn:hover {
+    transform: translateY(-2px) !important;
+    box-shadow: 0 4px 12px rgba(102, 126, 234, 0.5) !important;
+}
+
+#lang-btn:active {
+    transform: translateY(0) !important;
+}
+
+#theme-btn {
+    background: linear-gradient(135deg, #4f46e5 0%, #4338ca 100%) !important;
+    color: white !important;
+    border: none !important;
+    padding: 6px 18px !important;
+    border-radius: 20px !important;
+    font-weight: bold !important;
+    font-size: 0.9em !important;
+    box-shadow: 0 2px 8px rgba(79, 70, 229, 0.3) !important;
+    transition: all 0.3s ease !important;
+    cursor: pointer !important;
+}
+
+#theme-btn:hover {
+    transform: translateY(-2px) !important;
+    box-shadow: 0 4px 12px rgba(79, 70, 229, 0.5) !important;
+}
+
+#theme-btn:active {
+    transform: translateY(0) !important;
+}
+
+/* Footer */
+.footer {
+    text-align: center;
+    padding: 20px;
+    color: #888;
+    font-size: 0.9em;
+}
+
+/* Vertical Radio Button Layout */
+.vertical-radio fieldset {
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 8px !important;
+}
+
+.vertical-radio .wrap {
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 8px !important;
+}
+
+.vertical-radio label {
+    display: flex !important;
+    align-items: center !important;
+    padding: 8px 12px !important;
+    border-radius: 6px !important;
+    background: var(--background-fill-secondary, #f8f8f8) !important;
+    transition: all 0.2s ease !important;
+}
+
+.vertical-radio label:hover {
+    background: #f0f0ff !important;
+    border-color: #667eea !important;
+}
+
+.vertical-radio input[type="radio"]:checked + label {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
+    color: white !important;
+}
+
+/* Micro Upload Dropzone - Ultra Compact */
+.micro-upload {
+    min-height: 60px !important;
+    max-height: 60px !important;
+    height: 60px !important;
+    padding: 0 !important;
+    margin: 8px 0 !important;
+}
+
+.micro-upload > div {
+    min-height: 60px !important;
+    max-height: 60px !important;
+    height: 60px !important;
+    border: 1.5px dashed #999 !important;
+    border-radius: 6px !important;
+    background: #fafafa !important;
+    transition: all 0.2s ease !important;
+    padding: 0 !important;
+}
+
+.micro-upload > div:hover {
+    border-color: #667eea !important;
+    background: #f5f5ff !important;
+}
+
+/* Center the content */
+.micro-upload .wrap {
+    min-height: 60px !important;
+    max-height: 60px !important;
+    height: 60px !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    padding: 0 12px !important;
+}
+
+/* Shrink the upload icon */
+.micro-upload svg {
+    width: 14px !important;
+    height: 14px !important;
+    min-width: 14px !important;
+    min-height: 14px !important;
+    margin: 0 6px 0 0 !important;
+    flex-shrink: 0 !important;
+}
+
+/* Shrink the text */
+.micro-upload span {
+    font-size: 11px !important;
+    line-height: 1.2 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    white-space: nowrap !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+}
+
+/* Hide any extra padding/margins */
+.micro-upload .file-preview {
+    display: none !important;
+}
+
+.micro-upload button {
+    font-size: 10px !important;
+    padding: 2px 6px !important;
+    height: auto !important;
+}
+
+/* Hidden Number Components - for crop data */
+.hidden-number,
+.hidden-number *,
+#crop-data-x,
+#crop-data-y,
+#crop-data-w,
+#crop-data-h {
+    display: none !important;
+    visibility: hidden !important;
+    position: absolute !important;
+    left: -9999px !important;
+    width: 0 !important;
+    height: 0 !important;
+    overflow: hidden !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
+}
+
+/* Hidden Button Components - for JavaScript triggers */
+.hidden-button,
+.hidden-button *,
+#use-original-hidden-btn,
+#confirm-crop-hidden-btn {
+    display: none !important;
+    visibility: hidden !important;
+    position: absolute !important;
+    left: -9999px !important;
+    width: 0 !important;
+    height: 0 !important;
+    overflow: hidden !important;
+    opacity: 0 !important;
+}
+
+/* Hidden crop components - must be in DOM but invisible */
+.hidden-crop-component,
+.hidden-crop-component *,
+div.hidden-crop-component,
+div[class*="hidden-crop-component"] {
+    position: absolute !important;
+    left: -9999px !important;
+    top: -9999px !important;
+    width: 1px !important;
+    height: 1px !important;
+    overflow: hidden !important;
+    opacity: 0 !important;
+    pointer-events: auto !important;
+    visibility: hidden !important;
+}
+
+/* Crop modal host: keep in DOM without occupying layout, allow overlay to show */
+.crop-modal-container {
+    position: absolute !important;
+    left: -9999px !important;
+    top: -9999px !important;
+    width: 0 !important;
+    height: 0 !important;
+    overflow: visible !important;
+    pointer-events: auto !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+}
+
+#crop-data-json,
+#crop-data-json *,
+div#crop-data-json,
+#use-original-hidden-btn,
+#use-original-hidden-btn *,
+div#use-original-hidden-btn,
+#confirm-crop-hidden-btn,
+#confirm-crop-hidden-btn *,
+div#confirm-crop-hidden-btn {
+    position: absolute !important;
+    left: -9999px !important;
+    top: -9999px !important;
+    width: 1px !important;
+    height: 1px !important;
+    overflow: hidden !important;
+    opacity: 0 !important;
+    visibility: hidden !important;
+}

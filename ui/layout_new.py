@@ -41,7 +41,13 @@ from core.converter import (
     detect_image_type,
 )
 from core.i18n import I18n
-from .layout_css import HEADER_CSS, LUT_GRID_CSS
+from .layout_css import HEADER_CSS, LUT_GRID_CSS, PREVIEW_ZOOM_CSS
+from .layout_js import (
+    LUT_GRID_JS,
+    PREVIEW_ZOOM_JS,
+    OPEN_CROP_MODAL_JS,
+    SHOW_COLOR_TOAST_JS,
+)
 from .callbacks import (
     get_first_hint,
     get_next_hint,
@@ -108,174 +114,7 @@ def save_last_lut_setting(lut_name):
         print(f"Failed to save settings: {e}")
 
 
-# CSS constants moved to ui/layout_css.py (HEADER_CSS, LUT_GRID_CSS)
-
-# Preview zoom/scroll styles
-PREVIEW_ZOOM_CSS = """
-#conv-preview {
-    overflow: auto !important;
-}
-#conv-preview .image-container,
-#conv-preview .wrap,
-#conv-preview .container {
-    overflow: auto !important;
-}
-#conv-preview canvas,
-#conv-preview img {
-    display: block !important;
-    max-width: none !important;
-    height: auto !important;
-}
-"""
-
-# [新增] JavaScript 注入：点击 LUT 色块写入隐藏 Textbox 并触发按钮
-LUT_GRID_JS = """
-<script>
-function selectLutColor(hexColor) {
-    const container = document.getElementById("conv-lut-color-selected-hidden");
-    if (!container) return;
-    const input = container.querySelector("textarea, input");
-    if (!input) return;
-
-    input.value = hexColor;
-    input.dispatchEvent(new Event("input", { bubbles: true }));
-
-    const btn = document.getElementById("conv-lut-color-trigger-btn");
-    if (btn) btn.click();
-}
-</script>
-"""
-
-# Preview zoom JS (wheel to zoom, double-click to fit)
-PREVIEW_ZOOM_JS = """
-<script>
-(function() {
-    function getRootFromEvent(event) {
-        const target = event && event.target;
-        if (!target || !target.closest) return null;
-        return target.closest("#conv-preview");
-    }
-
-    function getRoot() {
-        return document.getElementById("conv-preview");
-    }
-
-    function getViewport(root) {
-        return root.querySelector(".image-container") || root;
-    }
-
-    function getMedia(root) {
-        return root.querySelector("canvas, img");
-    }
-
-    function ensureBase(media) {
-        const baseW = media.naturalWidth || media.width;
-        const baseH = media.naturalHeight || media.height;
-        if (!baseW || !baseH) return false;
-        const sizeKey = `${baseW}x${baseH}`;
-        if (media.dataset.baseSize !== sizeKey) {
-            media.dataset.baseSize = sizeKey;
-            media.dataset.baseW = baseW;
-            media.dataset.baseH = baseH;
-        }
-        return true;
-    }
-
-    function setZoom(media, zoom) {
-        const bw = parseFloat(media.dataset.baseW || media.width);
-        const bh = parseFloat(media.dataset.baseH || media.height);
-        const z = Math.max(0.2, Math.min(4, zoom));
-        media.style.width = `${bw * z}px`;
-        media.style.height = `${bh * z}px`;
-        media.dataset.zoom = z.toFixed(3);
-    }
-
-    function fitToView(root, media) {
-        const viewport = getViewport(root);
-        const bw = parseFloat(media.dataset.baseW || media.width);
-        const bh = parseFloat(media.dataset.baseH || media.height);
-        const vw = viewport.clientWidth || root.clientWidth;
-        const vh = viewport.clientHeight || root.clientHeight;
-        if (!vw || !vh) {
-            setZoom(media, 1);
-            return;
-        }
-        const fitZoom = Math.min(vw / bw, vh / bh, 1);
-        setZoom(media, fitZoom);
-    }
-
-    function handleWheel(e) {
-        const root = getRootFromEvent(e);
-        if (!root) return;
-        const media = getMedia(root);
-        if (!media) return;
-        if (!ensureBase(media)) return;
-        e.preventDefault();
-        const current = parseFloat(media.dataset.zoom || "1");
-        const delta = e.deltaY < 0 ? 0.1 : -0.1;
-        setZoom(media, current + delta);
-    }
-
-    function handleDoubleClick(e) {
-        const root = getRootFromEvent(e);
-        if (!root) return;
-        const media = getMedia(root);
-        if (!media) return;
-        if (!ensureBase(media)) return;
-        e.preventDefault();
-        fitToView(root, media);
-    }
-
-    function bindGlobalHandlers() {
-        if (document.body && !document.body.dataset.previewZoomBound) {
-            document.body.dataset.previewZoomBound = "1";
-            document.addEventListener("wheel", handleWheel, { passive: false });
-            document.addEventListener("dblclick", handleDoubleClick);
-        }
-    }
-
-    function observeRoot() {
-        const root = getRoot();
-        if (!root) return false;
-        if (root.dataset.zoomObserver) return true;
-        root.dataset.zoomObserver = "1";
-        const observer = new MutationObserver(() => {
-            const media = getMedia(root);
-            if (!media) return;
-            if (!ensureBase(media)) return;
-            const sizeKey = media.dataset.baseSize || "";
-            const currentZoom = parseFloat(media.dataset.zoom || "0");
-            if (currentZoom === 0 || media.dataset.lastFitSize !== sizeKey) {
-                media.dataset.lastFitSize = sizeKey;
-                setTimeout(() => fitToView(root, media), 0);
-            }
-        });
-        observer.observe(root, { childList: true, subtree: true });
-        return true;
-    }
-
-    function waitForRoot() {
-        if (observeRoot()) return;
-        const bodyObserver = new MutationObserver(() => {
-            if (observeRoot()) {
-                bodyObserver.disconnect();
-            }
-        });
-        bodyObserver.observe(document.body, { childList: true, subtree: true });
-    }
-
-    if (document.readyState === "loading") {
-        document.addEventListener("DOMContentLoaded", () => {
-            bindGlobalHandlers();
-            waitForRoot();
-        });
-    } else {
-        bindGlobalHandlers();
-        waitForRoot();
-    }
-})();
-</script>
-"""
+# CSS/JS constants moved to ui/layout_css.py and ui/layout_js.py
 
 # ============================================================================
 # Image Dimension Helper Functions
@@ -1548,28 +1387,6 @@ def create_converter_tab_content(lang: str, lang_state=None) -> dict:
                 '<div id="preprocess-dimensions-data" data-width="0" data-height="0" style="display:none;"></div>',
             )
 
-    # JavaScript to open crop modal (不传递颜色推荐，弹窗中不显示)
-    open_crop_modal_js = """
-    () => {
-        setTimeout(() => {
-            const dimElement = document.querySelector('#preprocess-dimensions-data');
-            if (dimElement) {
-                const width = parseInt(dimElement.dataset.width) || 0;
-                const height = parseInt(dimElement.dataset.height) || 0;
-                if (width > 0 && height > 0) {
-                    const imgContainer = document.querySelector('#conv-image-input');
-                    if (imgContainer) {
-                        const img = imgContainer.querySelector('img');
-                        if (img && img.src && typeof window.openCropModal === 'function') {
-                            window.openCropModal(img.src, width, height, 0, 0);
-                        }
-                    }
-                }
-            }
-        }, 300);
-    }
-    """
-
     components["image_conv_image_label"].upload(
         on_image_upload_process_with_html,
         inputs=[components["image_conv_image_label"]],
@@ -1579,7 +1396,7 @@ def create_converter_tab_content(lang: str, lang_state=None) -> dict:
             preprocess_processed_path,
             preprocess_dimensions_html,
         ],
-    ).then(fn=None, inputs=None, outputs=None, js=open_crop_modal_js)
+    ).then(fn=None, inputs=None, outputs=None, js=OPEN_CROP_MODAL_JS)
 
     def use_original_image_simple(processed_path, w, h, crop_json):
         """Use original image without cropping"""
@@ -1645,30 +1462,6 @@ def create_converter_tab_content(lang: str, lang_state=None) -> dict:
         value="", visible=True, elem_classes=["hidden-crop-component"]
     )
 
-    # JavaScript to show color recommendation toast
-    show_toast_js = """
-    () => {
-        setTimeout(() => {
-            const trigger = document.querySelector('#color-rec-trigger');
-            if (trigger) {
-                const recommended = parseInt(trigger.dataset.recommended) || 0;
-                const maxSafe = parseInt(trigger.dataset.maxsafe) || 0;
-                if (recommended > 0 && typeof window.showColorRecommendationToast === 'function') {
-                    const lang = document.documentElement.lang || 'zh';
-                    let msg;
-                    if (lang === 'en') {
-                        msg = '💡 Color detail set to <b>' + recommended + '</b> (max safe: ' + maxSafe + ')';
-                    } else {
-                        msg = '💡 色彩细节已设置为 <b>' + recommended + '</b>（最大安全值: ' + maxSafe + '）';
-                    }
-                    window.showColorRecommendationToast(msg);
-                }
-                trigger.remove();
-            }
-        }, 100);
-    }
-    """
-
     def auto_detect_colors(image_path, target_width_mm):
         """自动检测推荐的色彩细节值"""
         if image_path is None:
@@ -1700,7 +1493,7 @@ def create_converter_tab_content(lang: str, lang_state=None) -> dict:
         auto_detect_colors,
         inputs=[components["image_conv_image_label"], components["slider_conv_width"]],
         outputs=[components["slider_conv_quantize_colors"], color_toast_trigger],
-    ).then(fn=None, inputs=None, outputs=None, js=show_toast_js)
+    ).then(fn=None, inputs=None, outputs=None, js=SHOW_COLOR_TOAST_JS)
     # ========== END Image Crop Extension Events ==========
 
     components["dropdown_conv_lut_dropdown"].change(

@@ -268,6 +268,30 @@ class I18n:
             "zh": "ℹ️ 3D预览已简化",
             "en": "ℹ️ 3D preview simplified",
         },
+        "conv_err_modeling_mode_required": {
+            "zh": "❌ 未选择建模模式，请先选择后再生成",
+            "en": "❌ Modeling mode is required before generation",
+        },
+        "conv_err_color_mode_required": {
+            "zh": "❌ 未选择色彩模式，请先选择后再生成",
+            "en": "❌ Color mode is required before generation",
+        },
+        "conv_err_modeling_mode_invalid": {
+            "zh": "❌ 建模模式无效，请重新选择",
+            "en": "❌ Invalid modeling mode, please reselect",
+        },
+        "conv_err_match_strategy_required": {
+            "zh": "❌ 未选择匹配策略，请先选择后再生成",
+            "en": "❌ Match strategy is required before generation",
+        },
+        "conv_err_match_strategy_invalid": {
+            "zh": "❌ 匹配策略无效，请重新选择",
+            "en": "❌ Invalid match strategy, please reselect",
+        },
+        "conv_err_batch_no_images": {
+            "zh": "❌ 请先上传图片",
+            "en": "❌ Please upload images first",
+        },
         # ==================== Palette / Replacement ====================
         "palette_empty": {
             "zh": "暂无颜色，请先生成预览。",

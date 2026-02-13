@@ -206,6 +206,7 @@ def process_batch_generation(
     quantize_colors,
     color_replacements=None,
     match_strategy=MatchStrategy.RGB_EUCLIDEAN,
+    lang="zh",
     progress=gr.Progress(),
 ):
     """Dispatch to single-image or batch generation; batch writes a ZIP of 3MFs."""
@@ -213,8 +214,52 @@ def process_batch_generation(
     import shutil
     import zipfile
 
-    modeling_mode = ModelingMode(modeling_mode)
-    match_strategy = MatchStrategy(match_strategy)
+    if modeling_mode in (None, ""):
+        return (
+            None,
+            None,
+            _preview_update(None),
+            I18n.get("conv_err_modeling_mode_required", lang),
+        )
+
+    if color_mode in (None, ""):
+        return (
+            None,
+            None,
+            _preview_update(None),
+            I18n.get("conv_err_color_mode_required", lang),
+        )
+
+    try:
+        modeling_mode = ModelingMode(modeling_mode)
+    except Exception:
+        return (
+            None,
+            None,
+            _preview_update(None),
+            I18n.get("conv_err_modeling_mode_invalid", lang),
+        )
+
+    if match_strategy in (None, "") and modeling_mode in (
+        ModelingMode.HIGH_FIDELITY,
+        ModelingMode.HIGH_FIDELITY.value,
+    ):
+        return (
+            None,
+            None,
+            _preview_update(None),
+            I18n.get("conv_err_match_strategy_required", lang),
+        )
+
+    try:
+        match_strategy = MatchStrategy(match_strategy)
+    except Exception:
+        return (
+            None,
+            None,
+            _preview_update(None),
+            I18n.get("conv_err_match_strategy_invalid", lang),
+        )
     request = ConversionRequest(
         lut_path=lut_path,
         target_width_mm=target_width_mm,
@@ -241,7 +286,7 @@ def process_batch_generation(
         return out_path, glb_path, _preview_update(preview_img), status
 
     if not batch_files:
-        return None, None, None, "❌ 请先上传图片 / Please upload images first"
+        return None, None, None, I18n.get("conv_err_batch_no_images", lang)
 
     generated_files = []
     total_files = len(batch_files)
@@ -467,18 +512,18 @@ def create_converter_tab_content(lang: str, lang_state=None) -> dict:
                     choices=[
                         (
                             I18n.get("conv_modeling_mode_hifi", lang),
-                            ModelingMode.HIGH_FIDELITY,
+                            ModelingMode.HIGH_FIDELITY.value,
                         ),
                         (
                             I18n.get("conv_modeling_mode_pixel", lang),
-                            ModelingMode.PIXEL,
+                            ModelingMode.PIXEL.value,
                         ),
                         (
                             I18n.get("conv_modeling_mode_vector", lang),
-                            ModelingMode.VECTOR,
+                            ModelingMode.VECTOR.value,
                         ),
                     ],
-                    value=ModelingMode.HIGH_FIDELITY,
+                    value=ModelingMode.HIGH_FIDELITY.value,
                     label=I18n.get("conv_modeling_mode", lang),
                     info=I18n.get("conv_modeling_mode_info", lang),
                     elem_classes=["vertical-radio"],
@@ -986,16 +1031,60 @@ def create_converter_tab_content(lang: str, lang_state=None) -> dict:
         modeling_mode,
         quantize_colors,
         match_strategy,
+        lang_val,
     ):
+        if modeling_mode in (None, ""):
+            return (
+                _preview_update(None),
+                None,
+                I18n.get("conv_err_modeling_mode_required", lang_val),
+            )
+
+        if color_mode in (None, ""):
+            return (
+                _preview_update(None),
+                None,
+                I18n.get("conv_err_color_mode_required", lang_val),
+            )
+
+        is_hifi_mode = modeling_mode in (
+            ModelingMode.HIGH_FIDELITY,
+            ModelingMode.HIGH_FIDELITY.value,
+        )
+        if match_strategy in (None, "") and is_hifi_mode:
+            return (
+                _preview_update(None),
+                None,
+                I18n.get("conv_err_match_strategy_required", lang_val),
+            )
+
+        try:
+            parsed_modeling_mode = ModelingMode(modeling_mode)
+        except Exception:
+            return (
+                _preview_update(None),
+                None,
+                I18n.get("conv_err_modeling_mode_invalid", lang_val),
+            )
+
+        try:
+            parsed_match_strategy = MatchStrategy(match_strategy)
+        except Exception:
+            return (
+                _preview_update(None),
+                None,
+                I18n.get("conv_err_match_strategy_invalid", lang_val),
+            )
+
         request = ConversionRequest(
             lut_path=lut_path,
             target_width_mm=target_width_mm,
             auto_bg=auto_bg,
             bg_tol=bg_tol,
             color_mode=color_mode,
-            modeling_mode=modeling_mode,
+            modeling_mode=parsed_modeling_mode,
             quantize_colors=quantize_colors,
-            match_strategy=match_strategy,
+            match_strategy=parsed_match_strategy,
         )
         display, cache, status = generate_preview_cached(image_path, request)
         return _preview_update(display), cache, status
@@ -1014,6 +1103,7 @@ def create_converter_tab_content(lang: str, lang_state=None) -> dict:
                 components["radio_conv_modeling_mode"],
                 components["slider_conv_quantize_colors"],
                 components["radio_conv_match_strategy"],
+                lang_state,
             ],
             outputs=[
                 conv_preview,
@@ -1352,6 +1442,7 @@ def create_converter_tab_content(lang: str, lang_state=None) -> dict:
             components["slider_conv_quantize_colors"],
             conv_replacement_map,
             components["radio_conv_match_strategy"],
+            lang_state,
         ],
         outputs=[
             components["file_conv_download_file"],
@@ -1369,7 +1460,10 @@ def create_converter_tab_content(lang: str, lang_state=None) -> dict:
     # Match strategy visibility control (only enabled in High-Fidelity mode)
     def update_match_strategy_visibility(modeling_mode):
         """Enable match strategy radio only in High-Fidelity mode."""
-        is_hifi = modeling_mode == ModelingMode.HIGH_FIDELITY
+        is_hifi = modeling_mode in (
+            ModelingMode.HIGH_FIDELITY,
+            ModelingMode.HIGH_FIDELITY.value,
+        )
         return gr.update(interactive=is_hifi)
 
     components["radio_conv_modeling_mode"].change(

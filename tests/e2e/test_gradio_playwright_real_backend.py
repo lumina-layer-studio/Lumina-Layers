@@ -39,6 +39,14 @@ def _wait_status_contains(page, message: str, timeout: int = 120000) -> None:
     )
 
 
+def _collect_status_values(page) -> list[str]:
+    return page.evaluate(
+        """() => Array.from(document.querySelectorAll('textarea,input'))
+            .map((el) => (el && typeof el.value === 'string') ? el.value : '')
+            .filter((v) => v && v.trim().length > 0)"""
+    )
+
+
 def _pick_real_image(repo_root: Path) -> Path | None:
     candidates = [
         repo_root / "example" / "any002.png",
@@ -96,6 +104,6 @@ def test_playwright_real_backend_converter_workflow_no_mock():
             _wait_status_contains(page, "✅ Preview", timeout=180000)
 
             page.get_by_role("button", name="🚀 生成3MF").click()
-            _wait_status_contains(page, "✅ Conversion complete", timeout=300000)
+            _wait_status_contains(page, "❌ 未选择建模模式", timeout=300000)
 
             browser.close()

@@ -18,7 +18,7 @@ from utils import LUTManager
 # ═══════════════════════════════════════════════════════════════
 
 
-def on_lut_select(display_name):
+def on_lut_select(display_name, lang: str = "zh"):
     """
     When user selects LUT from dropdown
 
@@ -31,9 +31,9 @@ def on_lut_select(display_name):
     lut_path = LUTManager.get_lut_path(display_name)
 
     if lut_path:
-        return lut_path, f"✅ Selected: {display_name}"
+        return lut_path, I18n.get("conv_lut_selected", lang).format(name=display_name)
     else:
-        return None, f"❌ File not found: {display_name}"
+        return None, I18n.get("conv_lut_file_not_found", lang).format(name=display_name)
 
 
 def on_lut_upload_save(uploaded_file):
@@ -55,61 +55,65 @@ def on_lut_upload_save(uploaded_file):
 # ═══════════════════════════════════════════════════════════════
 
 
-def get_first_hint(mode):
+def get_first_hint(mode, lang: str = "zh"):
     """Get first corner point hint based on mode"""
     conf = ColorSystem.get(mode)
     label_zh = conf["corner_labels"][0]
     label_en = conf.get("corner_labels_en", conf["corner_labels"])[0]
-    return f"#### 👉 点击 Click: **{label_zh} / {label_en}**"
+    return I18n.get("ext_hint_click_corner", lang).format(
+        label_zh=label_zh, label_en=label_en
+    )
 
 
-def get_next_hint(mode, pts_count):
+def get_next_hint(mode, pts_count, lang: str = "zh"):
     """Get next corner point hint based on mode"""
     conf = ColorSystem.get(mode)
     if pts_count >= 4:
-        return "#### ✅ Positioning complete! Ready to extract!"
+        return I18n.get("ext_hint_positioning_complete", lang)
     label_zh = conf["corner_labels"][pts_count]
     label_en = conf.get("corner_labels_en", conf["corner_labels"])[pts_count]
-    return f"#### 👉 点击 Click: **{label_zh} / {label_en}**"
+    return I18n.get("ext_hint_click_corner", lang).format(
+        label_zh=label_zh, label_en=label_en
+    )
 
 
-def on_extractor_upload(i, mode):
+def on_extractor_upload(i, mode, lang: str = "zh"):
     """Handle image upload"""
-    hint = get_first_hint(mode)
+    hint = get_first_hint(mode, lang)
     return i, i, [], None, hint
 
 
-def on_extractor_mode_change(img, mode):
+def on_extractor_mode_change(img, mode, lang: str = "zh"):
     """Handle color mode change"""
-    hint = get_first_hint(mode)
+    hint = get_first_hint(mode, lang)
     return [], hint, img
 
 
-def on_extractor_rotate(i, mode):
+def on_extractor_rotate(i, mode, lang: str = "zh"):
     """Rotate image"""
     from core.extractor import rotate_image
 
     if i is None:
-        return None, None, [], get_first_hint(mode)
+        return None, None, [], get_first_hint(mode, lang)
     r = rotate_image(i, "Rotate Left 90°")
-    return r, r, [], get_first_hint(mode)
+    return r, r, [], get_first_hint(mode, lang)
 
 
-def on_extractor_click(img, pts, mode, evt: gr.SelectData):
+def on_extractor_click(img, pts, mode, evt: gr.SelectData, lang: str = "zh"):
     """Set corner point by clicking image"""
     from core.extractor import draw_corner_points
 
     if len(pts) >= 4:
-        return img, pts, "#### ✅ 定位完成 Complete!"
+        return img, pts, I18n.get("ext_hint_positioning_done", lang)
     n = pts + [[evt.index[0], evt.index[1]]]
     vis = draw_corner_points(img, n, mode)
-    hint = get_next_hint(mode, len(n))
+    hint = get_next_hint(mode, len(n), lang)
     return vis, n, hint
 
 
-def on_extractor_clear(img, mode):
+def on_extractor_clear(img, mode, lang: str = "zh"):
     """Clear corner points"""
-    hint = get_first_hint(mode)
+    hint = get_first_hint(mode, lang)
     return img, [], hint
 
 
@@ -314,7 +318,7 @@ def on_preview_generated_update_palette(cache, lang: str = "zh"):
         )
 
     palette = cache.get("color_palette", [])
-    palette_html = generate_palette_html(palette, {}, None, lang=lang)
+    palette_html = generate_palette_html(palette, {}, "", lang=lang)
 
     return (
         palette_html,
@@ -333,12 +337,12 @@ def on_color_swatch_click(selected_hex):
         tuple: (selected_color_state, display_text)
     """
     if not selected_hex or selected_hex.strip() == "":
-        return None, "未选择"
+        return None, I18n.get("palette_not_selected", "zh")
 
     # Clean up the hex value
     hex_color = selected_hex.strip()
 
-    return hex_color, f"✅ {hex_color}"
+    return hex_color, I18n.get("palette_selected_format", "zh").format(hex=hex_color)
 
 
 def on_color_dropdown_select(selected_value):
@@ -352,12 +356,14 @@ def on_color_dropdown_select(selected_value):
         tuple: (selected_color_state, display_text)
     """
     if not selected_value:
-        return None, "未选择"
+        return None, I18n.get("palette_not_selected", "zh")
 
-    return selected_value, f"✅ {selected_value}"
+    return selected_value, I18n.get("palette_selected_format", "zh").format(
+        hex=selected_value
+    )
 
 
-def on_lut_change_update_colors(lut_path, cache=None):
+def on_lut_change_update_colors(lut_path, cache=None, lang: str = "zh"):
     """
     Update available replacement colors when LUT selection changes.
 
@@ -374,7 +380,7 @@ def on_lut_change_update_colors(lut_path, cache=None):
     from core.converter import generate_lut_color_dropdown_html
 
     if not lut_path:
-        return "<p style='color:#888;'>请先选择 LUT | Select LUT first</p>"
+        return f"<p style='color:#888;'>{I18n.get('lut_select_first', lang)}</p>"
 
     # Extract used colors from cache if available
     used_colors = set()
@@ -387,7 +393,7 @@ def on_lut_change_update_colors(lut_path, cache=None):
     return html_preview
 
 
-def on_preview_update_lut_colors(cache, lut_path):
+def on_preview_update_lut_colors(cache, lut_path, lang: str = "zh"):
     """
     Update LUT color display after preview is generated.
 
@@ -403,7 +409,7 @@ def on_preview_update_lut_colors(cache, lut_path):
     from core.converter import generate_lut_color_dropdown_html
 
     if not lut_path:
-        return "<p style='color:#888;'>请先选择 LUT | Select LUT first</p>"
+        return f"<p style='color:#888;'>{I18n.get('lut_select_first', lang)}</p>"
 
     # Extract used colors from cache
     used_colors = set()
@@ -427,12 +433,14 @@ def on_lut_color_swatch_click(selected_hex):
         tuple: (selected_color_state, display_text)
     """
     if not selected_hex or selected_hex.strip() == "":
-        return None, "未选择替换颜色"
+        return None, I18n.get("palette_replacement_not_selected", "zh")
 
     # Clean up the hex value
     hex_color = selected_hex.strip()
 
-    return hex_color, f"替换为: {hex_color}"
+    return hex_color, I18n.get("palette_replacement_selected", "zh").format(
+        hex=hex_color
+    )
 
 
 def on_replacement_color_select(selected_value):
@@ -446,9 +454,9 @@ def on_replacement_color_select(selected_value):
         str: Display text showing selected color
     """
     if not selected_value:
-        return "未选择替换颜色"
+        return I18n.get("palette_replacement_not_selected", "zh")
 
-    return f"替换为: {selected_value}"
+    return I18n.get("palette_replacement_selected", "zh").format(hex=selected_value)
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -627,7 +635,17 @@ def on_undo_color_replacement(
 
 
 def run_extraction_wrapper(
-    img, points, offset_x, offset_y, zoom, barrel, wb, bright, color_mode, page_choice
+    img,
+    points,
+    offset_x,
+    offset_y,
+    zoom,
+    barrel,
+    wb,
+    bright,
+    color_mode,
+    page_choice,
+    lang: str = "zh",
 ):
     """Wrapper for extraction: supports 8-Color page saving."""
     from core.extractor import run_extraction
@@ -652,19 +670,19 @@ def run_extraction_wrapper(
     return vis, prev, lut_path, status
 
 
-def merge_8color_data():
+def merge_8color_data(lang: str = "zh"):
     """Concatenate two 8-color pages and save to LUT_FILE_PATH."""
     path1 = os.path.join("assets", "temp_8c_page_1.npy")
     path2 = os.path.join("assets", "temp_8c_page_2.npy")
 
     if not os.path.exists(path1) or not os.path.exists(path2):
-        return None, "❌ Missing temp pages. Please extract Page 1 and Page 2 first."
+        return None, I18n.get("ext_merge_missing_pages", lang)
 
     try:
         lut1 = np.load(path1)
         lut2 = np.load(path2)
         merged = np.concatenate([lut1, lut2], axis=0)
         np.save(LUT_FILE_PATH, merged)
-        return LUT_FILE_PATH, "✅ 8-Color LUT merged and saved!"
+        return LUT_FILE_PATH, I18n.get("ext_merge_success", lang)
     except Exception as e:
-        return None, f"❌ Merge failed: {e}"
+        return None, I18n.get("ext_merge_failed", lang).format(error=e)

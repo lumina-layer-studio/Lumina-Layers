@@ -51,6 +51,18 @@ class I18n:
             "zh": "💡 拖放.npy文件自动添加",
             "en": "💡 Drop .npy file to load",
         },
+        "conv_lut_dropdown_label": {
+            "zh": "校准数据 (.npy)",
+            "en": "Calibration Data (.npy)",
+        },
+        "conv_lut_selected": {
+            "zh": "✅ 已选择: {name}",
+            "en": "✅ Selected: {name}",
+        },
+        "conv_lut_file_not_found": {
+            "zh": "❌ 文件不存在: {name}",
+            "en": "❌ File not found: {name}",
+        },
         "conv_input_section": {"zh": "#### 📁 输入", "en": "#### 📁 Input"},
         "conv_lut_title": {
             "zh": "**校准数据 (.npy)**",
@@ -75,6 +87,7 @@ class I18n:
         "crop_height": {"zh": "高度", "en": "Height"},
         "crop_use_original": {"zh": "使用原图", "en": "Use original"},
         "crop_confirm": {"zh": "确认裁剪", "en": "Confirm crop"},
+        "crop_preview_alt": {"zh": "裁剪预览", "en": "Crop Preview"},
         "crop_auto_color": {
             "zh": "🎨 计算最佳色彩细节",
             "en": "🎨 Calculate optimal color detail",
@@ -103,6 +116,25 @@ class I18n:
         "conv_modeling_mode_hifi": {"zh": "🎨 高保真", "en": "🎨 High-Fidelity"},
         "conv_modeling_mode_pixel": {"zh": "🧱 像素艺术", "en": "🧱 Pixel Art"},
         "conv_modeling_mode_vector": {"zh": "📐 SVG模式", "en": "📐 SVG Mode"},
+        "conv_match_strategy": {"zh": "匹配策略", "en": "Match Strategy"},
+        "conv_match_strategy_info": {
+            "zh": "仅 High-Fidelity 模式可用",
+            "en": "High-Fidelity mode only",
+        },
+        "conv_match_strategy_rgb": {
+            "zh": "RGB 欧氏距离",
+            "en": "RGB Euclidean",
+        },
+        "conv_match_strategy_deltae": {
+            "zh": "CIEDE2000 感知距离",
+            "en": "CIEDE2000",
+        },
+        "conv_3d_label": {"zh": "3D", "en": "3D"},
+        "color_mode_6color": {
+            "zh": "6色 (Smart 1296)",
+            "en": "6-Color (Smart 1296)",
+        },
+        "color_mode_8color": {"zh": "8色 Max", "en": "8-Color Max"},
         "conv_quantize_colors": {"zh": "🎨 色彩细节", "en": "🎨 Color Detail"},
         "conv_quantize_info": {
             "zh": "颜色数量越多细节越丰富，但生成越慢",
@@ -199,6 +231,13 @@ class I18n:
         "cal_status": {"zh": "状态", "en": "Status"},
         "cal_preview": {"zh": "#### 👁️ 预览", "en": "#### 👁️ Preview"},
         "cal_download": {"zh": "下载 3MF", "en": "Download 3MF"},
+        "cal_preview_label": {"zh": "校准预览", "en": "Calibration Preview"},
+        "backing_white": {"zh": "白色", "en": "White"},
+        "backing_cyan": {"zh": "青色", "en": "Cyan"},
+        "backing_magenta": {"zh": "品红", "en": "Magenta"},
+        "backing_yellow": {"zh": "黄色", "en": "Yellow"},
+        "backing_red": {"zh": "红色", "en": "Red"},
+        "backing_blue": {"zh": "蓝色", "en": "Blue"},
         # ==================== Color Extractor Tab ====================
         "ext_title": {
             "zh": "### 第三步：提取颜色数据",
@@ -241,6 +280,35 @@ class I18n:
         "ext_override": {"zh": "替换颜色", "en": "Override Color"},
         "ext_apply_btn": {"zh": "🔧 应用", "en": "🔧 Apply"},
         "ext_download_npy": {"zh": "下载 .npy", "en": "Download .npy"},
+        "ext_8color_page": {"zh": "8色页面", "en": "8-Color Page"},
+        "ext_page_1": {"zh": "第 1 页", "en": "Page 1"},
+        "ext_page_2": {"zh": "第 2 页", "en": "Page 2"},
+        "ext_merge_8color": {"zh": "合并 8 色", "en": "Merge 8-Color"},
+        "ext_merge_btn": {"zh": "合并 8 色", "en": "Merge 8-Color"},
+        "ext_hint_click_corner": {
+            "zh": "#### 👉 点击: **{label_zh} / {label_en}**",
+            "en": "#### 👉 Click: **{label_zh} / {label_en}**",
+        },
+        "ext_hint_positioning_complete": {
+            "zh": "#### ✅ 定位完成！可开始提取",
+            "en": "#### ✅ Positioning complete! Ready to extract!",
+        },
+        "ext_hint_positioning_done": {
+            "zh": "#### ✅ 定位完成",
+            "en": "#### ✅ Positioning complete!",
+        },
+        "ext_merge_missing_pages": {
+            "zh": "❌ 缺少临时页面，请先提取第 1 页和第 2 页",
+            "en": "❌ Missing temp pages. Please extract Page 1 and Page 2 first.",
+        },
+        "ext_merge_success": {
+            "zh": "✅ 8色 LUT 已合并并保存",
+            "en": "✅ 8-Color LUT merged and saved!",
+        },
+        "ext_merge_failed": {
+            "zh": "❌ 合并失败: {error}",
+            "en": "❌ Merge failed: {error}",
+        },
         # ==================== Footer ====================
         "footer_tip": {
             "zh": "💡 提示: 使用高质量的PLA/PETG basic材料可获得最佳效果",
@@ -292,6 +360,30 @@ class I18n:
             "zh": "❌ 请先上传图片",
             "en": "❌ Please upload images first",
         },
+        "conv_batch_start": {
+            "zh": "🚀 开始批量处理 {count} 张图片...",
+            "en": "🚀 Starting batch processing for {count} images...",
+        },
+        "conv_batch_progress_desc": {
+            "zh": "处理中: {filename}",
+            "en": "Processing: {filename}",
+        },
+        "conv_batch_progress": {
+            "zh": "[{current}/{total}] 正在生成: {filename}",
+            "en": "[{current}/{total}] Generating: {filename}",
+        },
+        "conv_batch_failed_item": {
+            "zh": "❌ 失败 {filename}: {error}",
+            "en": "❌ Failed {filename}: {error}",
+        },
+        "conv_batch_done": {
+            "zh": "✅ 批量完成: {count} 个模型",
+            "en": "✅ Batch done: {count} model(s)",
+        },
+        "conv_batch_failed_no_valid": {
+            "zh": "❌ 批量失败: 未生成有效模型",
+            "en": "❌ Batch failed: no valid models",
+        },
         # ==================== Palette / Replacement ====================
         "palette_empty": {
             "zh": "暂无颜色，请先生成预览。",
@@ -333,6 +425,20 @@ class I18n:
         },
         "palette_undo_empty": {"zh": "❌ 没有可撤销的操作", "en": "❌ Nothing to undo"},
         "palette_undone": {"zh": "↩️ 已撤销", "en": "↩️ Undone"},
+        "palette_not_selected": {"zh": "未选择", "en": "Not selected"},
+        "palette_selected_format": {"zh": "✅ {hex}", "en": "✅ {hex}"},
+        "palette_replacement_not_selected": {
+            "zh": "未选择替换颜色",
+            "en": "Replacement color not selected",
+        },
+        "palette_replacement_selected": {
+            "zh": "替换为: {hex}",
+            "en": "Replace with: {hex}",
+        },
+        "lut_select_first": {
+            "zh": "请先选择 LUT",
+            "en": "Please select LUT first",
+        },
         "lut_grid_load_hint": {
             "zh": "加载 LUT 后显示可用颜色",
             "en": "Load LUT to see available colors",

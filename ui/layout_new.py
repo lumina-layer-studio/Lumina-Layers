@@ -123,7 +123,9 @@ def create_app():
                     elem_id="app-header",
                 )
             with gr.Column(scale=1, min_width=140, elem_classes=["header-controls"]):
-                lang_btn = gr.Button(value="🌐 English", size="sm", elem_id="lang-btn")
+                lang_btn = gr.Button(
+                    value=I18n.get("lang_btn_en", "zh"), size="sm", elem_id="lang-btn"
+                )
                 theme_btn = gr.Button(
                     value=I18n.get("theme_toggle_night", "zh"),
                     size="sm",
@@ -250,7 +252,7 @@ def create_app():
 
         app.load(
             fn=on_lut_select,
-            inputs=[components["dropdown_conv_lut_dropdown"]],
+            inputs=[components["dropdown_conv_lut_dropdown"], lang_state],
             outputs=[
                 components["state_conv_lut_path"],
                 components["md_conv_lut_status"],
@@ -426,7 +428,14 @@ def _get_all_component_updates(lang: str, components: dict) -> list:
                                 I18n.get("conv_color_mode_rybw", lang),
                                 I18n.get("conv_color_mode_rybw", "en"),
                             ),
-                            ("6-Color (Smart 1296)", "6-Color (Smart 1296)"),
+                            (
+                                I18n.get("color_mode_6color", lang),
+                                I18n.get("color_mode_6color", "en"),
+                            ),
+                            (
+                                I18n.get("color_mode_8color", lang),
+                                I18n.get("color_mode_8color", "en"),
+                            ),
                         ],
                     )
                 )
@@ -454,16 +463,43 @@ def _get_all_component_updates(lang: str, components: dict) -> list:
                         choices=[
                             (
                                 I18n.get("conv_modeling_mode_hifi", lang),
-                                ModelingMode.HIGH_FIDELITY,
+                                ModelingMode.HIGH_FIDELITY.value,
                             ),
                             (
                                 I18n.get("conv_modeling_mode_pixel", lang),
-                                ModelingMode.PIXEL,
+                                ModelingMode.PIXEL.value,
                             ),
                             (
                                 I18n.get("conv_modeling_mode_vector", lang),
-                                ModelingMode.VECTOR,
+                                ModelingMode.VECTOR.value,
                             ),
+                        ],
+                    )
+                )
+            elif choice_key == "conv_match_strategy":
+                updates.append(
+                    gr.update(
+                        label=I18n.get("conv_match_strategy", lang),
+                        info=I18n.get("conv_match_strategy_info", lang),
+                        choices=[
+                            (
+                                I18n.get("conv_match_strategy_rgb", lang),
+                                MatchStrategy.RGB_EUCLIDEAN,
+                            ),
+                            (
+                                I18n.get("conv_match_strategy_deltae", lang),
+                                MatchStrategy.DELTAE2000,
+                            ),
+                        ],
+                    )
+                )
+            elif choice_key == "ext_page":
+                updates.append(
+                    gr.update(
+                        label=I18n.get("ext_8color_page", lang),
+                        choices=[
+                            (I18n.get("ext_page_1", lang), "Page 1"),
+                            (I18n.get("ext_page_2", lang), "Page 2"),
                         ],
                     )
                 )
@@ -491,7 +527,21 @@ def _get_all_component_updates(lang: str, components: dict) -> list:
         elif key.startswith("dropdown_"):
             dropdown_key = key[9:]
             info_key = dropdown_key + "_info"
-            if info_key in I18n.TEXTS:
+            if dropdown_key == "cal_backing":
+                updates.append(
+                    gr.update(
+                        label=I18n.get("cal_backing", lang),
+                        choices=[
+                            (I18n.get("backing_white", lang), "White"),
+                            (I18n.get("backing_cyan", lang), "Cyan"),
+                            (I18n.get("backing_magenta", lang), "Magenta"),
+                            (I18n.get("backing_yellow", lang), "Yellow"),
+                            (I18n.get("backing_red", lang), "Red"),
+                            (I18n.get("backing_blue", lang), "Blue"),
+                        ],
+                    )
+                )
+            elif info_key in I18n.TEXTS:
                 updates.append(
                     gr.update(
                         label=I18n.get(dropdown_key, lang),

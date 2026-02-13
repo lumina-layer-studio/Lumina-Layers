@@ -23,6 +23,7 @@ def get_crop_modal_html(lang: str) -> str:
     label_h = I18n.get("crop_height", lang)
     btn_use_original = I18n.get("crop_use_original", lang)
     btn_confirm = I18n.get("crop_confirm", lang)
+    crop_preview_alt = I18n.get("crop_preview_alt", lang)
     crop_modal_css = load_asset_text("css", "crop_modal.css")
 
     # Cropper.js Modal HTML (CSS only, JS is loaded via head parameter in main.py)
@@ -36,7 +37,7 @@ def get_crop_modal_html(lang: str) -> str:
             <h3>{title}</h3>
             <button class="crop-modal-close" onclick="window.closeCropModal()">&times;</button>
         </div>
-        <div class="crop-image-container"><img id="crop-image" src="" alt="Crop Preview"></div>
+        <div class="crop-image-container"><img id="crop-image" src="" alt="{crop_preview_alt}"></div>
         <div class="crop-info-bar">
             <span id="crop-original-size" data-prefix="{original_size}">{original_size}: -- × -- px</span>
             <span id="crop-selection-size" data-prefix="{selection_size}">{selection_size}: -- × -- px</span>
@@ -64,6 +65,7 @@ def get_crop_modal_html(lang: str) -> str:
         label_h=label_h,
         btn_use_original=btn_use_original,
         btn_confirm=btn_confirm,
+        crop_preview_alt=crop_preview_alt,
         crop_modal_css=crop_modal_css,
     )
 

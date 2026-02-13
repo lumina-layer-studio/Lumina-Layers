@@ -295,15 +295,22 @@ def process_batch_generation(
     output_dir = os.path.join("outputs", f"batch_{int(time.time())}")
     os.makedirs(output_dir, exist_ok=True)
 
-    logs.append(f"🚀 开始批量处理 {total_files} 张图片...")
+    logs.append(I18n.get("conv_batch_start", lang).format(count=total_files))
 
     for i, file_obj in enumerate(batch_files):
         path = getattr(file_obj, "name", file_obj) if file_obj else None
         if not path or not os.path.isfile(path):
             continue
         filename = os.path.basename(path)
-        progress(i / total_files, desc=f"Processing {filename}...")
-        logs.append(f"[{i + 1}/{total_files}] 正在生成: {filename}")
+        progress(
+            i / total_files,
+            desc=I18n.get("conv_batch_progress_desc", lang).format(filename=filename),
+        )
+        logs.append(
+            I18n.get("conv_batch_progress", lang).format(
+                current=i + 1, total=total_files, filename=filename
+            )
+        )
 
         try:
             result_3mf, _, _, _ = generate_final_model(path, request)
@@ -314,7 +321,11 @@ def process_batch_generation(
                 shutil.copy2(result_3mf, dest_path)
                 generated_files.append(dest_path)
         except Exception as e:
-            logs.append(f"❌ 失败 {filename}: {str(e)}")
+            logs.append(
+                I18n.get("conv_batch_failed_item", lang).format(
+                    filename=filename, error=str(e)
+                )
+            )
             print(f"Batch error on {filename}: {e}")
 
     if generated_files:
@@ -322,13 +333,15 @@ def process_batch_generation(
         with zipfile.ZipFile(zip_path, "w") as zipf:
             for f in generated_files:
                 zipf.write(f, os.path.basename(f))
-        logs.append(f"✅ Batch done: {len(generated_files)} model(s).")
+        logs.append(
+            I18n.get("conv_batch_done", lang).format(count=len(generated_files))
+        )
         return zip_path, None, _preview_update(None), "\n".join(logs)
     return (
         None,
         None,
         _preview_update(None),
-        "❌ Batch failed: no valid models.\n" + "\n".join(logs),
+        I18n.get("conv_batch_failed_no_valid", lang) + "\n" + "\n".join(logs),
     )
 
 
@@ -360,7 +373,7 @@ def create_converter_tab_content(lang: str, lang_state=None) -> dict:
             with gr.Row():
                 components["dropdown_conv_lut_dropdown"] = gr.Dropdown(
                     choices=current_choices,
-                    label="校准数据 (.npy) / Calibration Data",
+                    label=I18n.get("conv_lut_dropdown_label", lang),
                     value=default_lut_value,
                     interactive=True,
                     scale=2,
@@ -485,8 +498,14 @@ def create_converter_tab_content(lang: str, lang_state=None) -> dict:
                             I18n.get("conv_color_mode_rybw", lang),
                             I18n.get("conv_color_mode_rybw", "en"),
                         ),
-                        ("6-Color (Smart 1296)", "6-Color (Smart 1296)"),
-                        ("8-Color Max", "8-Color Max"),
+                        (
+                            I18n.get("color_mode_6color", lang),
+                            I18n.get("color_mode_6color", "en"),
+                        ),
+                        (
+                            I18n.get("color_mode_8color", lang),
+                            I18n.get("color_mode_8color", "en"),
+                        ),
                     ],
                     value=I18n.get("conv_color_mode_rybw", "en"),
                     label=I18n.get("conv_color_mode", lang),
@@ -567,12 +586,18 @@ def create_converter_tab_content(lang: str, lang_state=None) -> dict:
                 with gr.Row():
                     components["radio_conv_match_strategy"] = gr.Radio(
                         choices=[
-                            ("RGB Euclidean", MatchStrategy.RGB_EUCLIDEAN),
-                            ("CIEDE2000", MatchStrategy.DELTAE2000),
+                            (
+                                I18n.get("conv_match_strategy_rgb", lang),
+                                MatchStrategy.RGB_EUCLIDEAN,
+                            ),
+                            (
+                                I18n.get("conv_match_strategy_deltae", lang),
+                                MatchStrategy.DELTAE2000,
+                            ),
                         ],
                         value=MatchStrategy.RGB_EUCLIDEAN,
-                        label="匹配策略 / Match Strategy",
-                        info="仅 High-Fidelity 模式可用 | High-Fidelity mode only",
+                        label=I18n.get("conv_match_strategy", lang),
+                        info=I18n.get("conv_match_strategy_info", lang),
                         interactive=True,
                     )
             gr.Markdown("---")
@@ -802,7 +827,9 @@ def create_converter_tab_content(lang: str, lang_state=None) -> dict:
                     )
 
                     conv_3d_preview = gr.Model3D(
-                        label="3D", clear_color=(0.9, 0.9, 0.9, 1.0), height=600
+                        label=I18n.get("conv_3d_label", lang),
+                        clear_color=(0.9, 0.9, 0.9, 1.0),
+                        height=600,
                     )
 
                     components["md_conv_download_section"] = gr.Markdown(
@@ -965,7 +992,7 @@ def create_converter_tab_content(lang: str, lang_state=None) -> dict:
 
     components["dropdown_conv_lut_dropdown"].change(
         on_lut_select,
-        inputs=[components["dropdown_conv_lut_dropdown"]],
+        inputs=[components["dropdown_conv_lut_dropdown"], lang_state],
         outputs=[conv_lut_path, components["md_conv_lut_status"]],
     ).then(
         fn=save_last_lut_setting,

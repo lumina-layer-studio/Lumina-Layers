@@ -118,8 +118,14 @@ def create_extractor_tab_content(lang: str) -> dict:
                         I18n.get("conv_color_mode_rybw", lang),
                         I18n.get("conv_color_mode_rybw", "en"),
                     ),
-                    ("6-Color (Smart 1296)", "6-Color (Smart 1296)"),
-                    ("8-Color Max", "8-Color Max"),
+                    (
+                        I18n.get("color_mode_6color", lang),
+                        I18n.get("color_mode_6color", "en"),
+                    ),
+                    (
+                        I18n.get("color_mode_8color", lang),
+                        I18n.get("color_mode_8color", "en"),
+                    ),
                 ],
                 value=I18n.get("conv_color_mode_rybw", "en"),
                 label=I18n.get("ext_color_mode", lang),
@@ -166,7 +172,12 @@ def create_extractor_tab_content(lang: str) -> dict:
             )
 
             components["radio_ext_page"] = gr.Radio(
-                choices=["Page 1", "Page 2"], value="Page 1", label="8-Color Page"
+                choices=[
+                    (I18n.get("ext_page_1", lang), "Page 1"),
+                    (I18n.get("ext_page_2", lang), "Page 2"),
+                ],
+                value="Page 1",
+                label=I18n.get("ext_8color_page", lang),
             )
 
             components["btn_ext_extract_btn"] = gr.Button(
@@ -176,7 +187,7 @@ def create_extractor_tab_content(lang: str) -> dict:
             )
 
             components["btn_ext_merge_btn"] = gr.Button(
-                "Merge 8-Color",
+                I18n.get("ext_merge_8color", lang),
             )
 
             components["textbox_ext_status"] = gr.Textbox(
@@ -231,13 +242,13 @@ def create_extractor_tab_content(lang: str) -> dict:
                     )
 
     ext_img_in.upload(
-        on_extractor_upload,
+        lambda i, mode: on_extractor_upload(i, mode, lang),
         [ext_img_in, components["radio_ext_color_mode"]],
         [ext_state_img, ext_work_img, ext_state_pts, ext_curr_coord, ext_hint],
     )
 
     components["radio_ext_color_mode"].change(
-        on_extractor_mode_change,
+        lambda img, mode: on_extractor_mode_change(img, mode, lang),
         [ext_state_img, components["radio_ext_color_mode"]],
         [ext_state_pts, ext_hint, ext_work_img],
     )
@@ -249,19 +260,22 @@ def create_extractor_tab_content(lang: str) -> dict:
     )
 
     components["btn_ext_rotate_btn"].click(
-        on_extractor_rotate,
+        lambda i, mode: on_extractor_rotate(i, mode, lang),
         [ext_state_img, components["radio_ext_color_mode"]],
         [ext_state_img, ext_work_img, ext_state_pts, ext_hint],
     )
 
+    def on_extractor_click_with_lang(img, pts, mode, evt: gr.SelectData):
+        return on_extractor_click(img, pts, mode, evt, lang)
+
     ext_work_img.select(
-        on_extractor_click,
+        on_extractor_click_with_lang,
         [ext_state_img, ext_state_pts, components["radio_ext_color_mode"]],
         [ext_work_img, ext_state_pts, ext_hint],
     )
 
     components["btn_ext_reset_btn"].click(
-        on_extractor_clear,
+        lambda img, mode: on_extractor_clear(img, mode, lang),
         [ext_state_img, components["radio_ext_color_mode"]],
         [ext_work_img, ext_state_pts, ext_hint],
     )
@@ -286,12 +300,14 @@ def create_extractor_tab_content(lang: str) -> dict:
     ]
 
     ext_event = components["btn_ext_extract_btn"].click(
-        run_extraction_wrapper, extract_inputs, extract_outputs
+        lambda *args: run_extraction_wrapper(*args, lang=lang),
+        extract_inputs,
+        extract_outputs,
     )
     components["ext_event"] = ext_event
 
     components["btn_ext_merge_btn"].click(
-        merge_8color_data,
+        lambda: merge_8color_data(lang),
         inputs=[],
         outputs=[components["file_ext_download_npy"], components["textbox_ext_status"]],
     )
@@ -302,7 +318,11 @@ def create_extractor_tab_content(lang: str) -> dict:
         components["slider_ext_zoom"],
         components["slider_ext_distortion"],
     ]:
-        s.release(run_extraction_wrapper, extract_inputs, extract_outputs)
+        s.release(
+            lambda *args: run_extraction_wrapper(*args, lang=lang),
+            extract_inputs,
+            extract_outputs,
+        )
 
     ext_lut_view.select(
         probe_lut_cell,

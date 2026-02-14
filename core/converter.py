@@ -22,6 +22,7 @@ from config import (
     PREVIEW_MARGIN,
     OUTPUT_DIR,
 )
+from .ui_status import make_status_tag
 from core.image_processing_factory import ImageLoader
 from utils import Stats, safe_fix_3mf_names
 
@@ -344,9 +345,9 @@ def convert_image_to_3d(
     """
     # Input validation
     if image_path is None:
-        return None, None, None, "❌ Please upload an image"
+        return None, None, None, make_status_tag("msg_no_image")
     if request.lut_path is None:
-        return None, None, None, "⚠️ Please select or upload a .npy calibration file!"
+        return None, None, None, make_status_tag("msg_no_lut")
 
     # Handle LUT path (supports string path or Gradio File object)
     if isinstance(request.lut_path, str):
@@ -354,7 +355,7 @@ def convert_image_to_3d(
     elif hasattr(request.lut_path, "name"):
         actual_lut_path = request.lut_path.name
     else:
-        return None, None, None, "❌ Invalid LUT file format"
+        return None, None, None, make_status_tag("conv_err_invalid_lut_file")
 
     modeling_mode = ModelingMode(request.modeling_mode)
     target_width_mm = request.target_width_mm
@@ -513,16 +514,11 @@ def convert_image_to_3d(
             Stats.increment("conversions")
 
             # Return results
-            msg = f"✅ Vector conversion complete! Objects merged by material."
+            msg = make_status_tag("conv_vector_conversion_complete")
             return out_path, glb_path, preview_img, msg
 
         except Exception as e:
-            error_msg = f"❌ Vector processing failed: {e}\n\n"
-            error_msg += "Suggestions:\n"
-            error_msg += "• Ensure SVG has filled paths (not just strokes)\n"
-            error_msg += "• Try opening in Inkscape and re-saving as 'Plain SVG'\n"
-            error_msg += "• Convert text to paths (Path → Object to Path)\n"
-            error_msg += "• Or switch to 'High-Fidelity' mode for rasterization"
+            error_msg = make_status_tag("conv_vector_processing_failed", error=str(e))
 
             print(f"[CONVERTER] {error_msg}")
             return None, None, None, error_msg
@@ -533,12 +529,7 @@ def convert_image_to_3d(
             None,
             None,
             None,
-            (
-                "⚠️ Vector Native mode requires SVG files!\n\n"
-                "Your file is not an SVG. Please either:\n"
-                "• Upload an SVG file, or\n"
-                "• Switch to 'High-Fidelity' or 'Pixel Art' mode"
-            ),
+            make_status_tag("conv_vector_mode_requires_svg"),
         )
 
     # ========== [EXISTING] Raster-based Processing ==========
@@ -562,7 +553,12 @@ def convert_image_to_3d(
             match_strategy=match_strategy,
         )
     except Exception as e:
-        return None, None, None, f"❌ Image processing failed: {e}"
+        return (
+            None,
+            None,
+            None,
+            make_status_tag("conv_image_processing_failed", error=str(e)),
+        )
 
     matched_rgb = result["matched_rgb"]
     material_matrix = result["material_matrix"]
@@ -668,10 +664,10 @@ def convert_image_to_3d(
 
     # Step 7: Add Keychain Loop
     loop_added = False
+    loop_thickness = total_layers * PrinterConfig.LAYER_HEIGHT
 
     if add_loop and loop_info is not None:
         try:
-            loop_thickness = total_layers * PrinterConfig.LAYER_HEIGHT
             loop_mesh = create_keychain_loop(
                 width_mm=loop_info["width_mm"],
                 length_mm=loop_info["length_mm"],
@@ -749,16 +745,23 @@ def convert_image_to_3d(
     Stats.increment("conversions")
 
     mode_name = mode_info["mode"].get_display_name()
-    msg = f"✅ Conversion complete ({mode_name})! Resolution: {target_w}×{target_h}px"
+    msg = make_status_tag(
+        "conv_conversion_complete",
+        mode_name=mode_name,
+        target_w=target_w,
+        target_h=target_h,
+    )
 
-    if loop_added:
-        msg += f" | Loop: {slot_names[loop_info['color_id']]}"
+    if loop_added and loop_info is not None:
+        msg += "\n" + make_status_tag(
+            "conv_loop_added", loop_material=slot_names[loop_info["color_id"]]
+        )
 
     total_pixels = target_w * target_h
     if glb_path is None and total_pixels > 2_000_000:
-        msg += " | ⚠️ Model too large, 3D preview disabled"
+        msg += "\n" + make_status_tag("msg_model_too_large")
     elif glb_path and total_pixels > 500_000:
-        msg += " | ℹ️ 3D preview simplified"
+        msg += "\n" + make_status_tag("msg_preview_simplified")
 
     return out_path, glb_path, preview_img, msg
 
@@ -1055,16 +1058,16 @@ def generate_preview_cached(
         tuple: (preview_image, cache_data, status_message)
     """
     if image_path is None:
-        return None, None, "❌ Please upload an image"
+        return None, None, make_status_tag("msg_no_image")
     if request.lut_path is None:
-        return None, None, "⚠️ Please select or upload calibration file"
+        return None, None, make_status_tag("msg_no_lut")
 
     if isinstance(request.lut_path, str):
         actual_lut_path = request.lut_path
     elif hasattr(request.lut_path, "name"):
         actual_lut_path = request.lut_path.name
     else:
-        return None, None, "❌ Invalid LUT file format"
+        return None, None, make_status_tag("conv_err_invalid_lut_file")
 
     modeling_mode = ModelingMode(request.modeling_mode)
     target_width_mm = request.target_width_mm
@@ -1093,7 +1096,11 @@ def generate_preview_cached(
             match_strategy=match_strategy,
         )
     except Exception as e:
-        return None, None, f"❌ Preview generation failed: {e}"
+        return (
+            None,
+            None,
+            make_status_tag("conv_preview_generation_failed", error=str(e)),
+        )
 
     matched_rgb = result["matched_rgb"]
     material_matrix = result["material_matrix"]
@@ -1125,7 +1132,12 @@ def generate_preview_cached(
     return (
         display,
         cache,
-        f"✅ Preview ({target_w}×{target_h}px, {num_colors} colors) | Click image to place loop",
+        make_status_tag(
+            "conv_preview_generated",
+            target_w=target_w,
+            target_h=target_h,
+            num_colors=num_colors,
+        ),
     )
 
 
@@ -1277,7 +1289,11 @@ def _draw_loop_on_canvas(
 def on_preview_click(cache, loop_pos, evt: gr.SelectData):
     """Handle preview image click event."""
     if evt is None or cache is None:
-        return loop_pos, False, "Invalid click - please generate preview first"
+        return (
+            loop_pos,
+            False,
+            make_status_tag("conv_invalid_click_generate_preview_first"),
+        )
 
     click_x, click_y = evt.index
 
@@ -1310,7 +1326,9 @@ def on_preview_click(cache, loop_pos, evt: gr.SelectData):
     orig_x = max(0, min(target_w - 1, orig_x))
     orig_y = max(0, min(target_h - 1, orig_y))
 
-    pos_info = f"Position: ({orig_x:.1f}, {orig_y:.1f}) px"
+    pos_info = make_status_tag(
+        "conv_loop_position", x=f"{orig_x:.1f}", y=f"{orig_y:.1f}"
+    )
     return (orig_x, orig_y), True, pos_info
 
 
@@ -1339,7 +1357,7 @@ def update_preview_with_loop(
 
 def on_remove_loop():
     """Remove keychain loop."""
-    return None, False, 0, "Loop removed"
+    return None, False, 0, make_status_tag("conv_loop_removed")
 
 
 def generate_final_model(
@@ -1491,13 +1509,13 @@ def generate_highlight_preview(
         tuple: (display_image, status_message)
     """
     if cache is None:
-        return None, "❌ 请先生成预览 | Generate preview first"
+        return None, make_status_tag("palette_need_preview")
 
     if not highlight_color:
         # No highlight - return normal preview
         preview_rgba = cache.get("preview_rgba")
         if preview_rgba is None:
-            return None, "❌ 缓存数据无效 | Invalid cache"
+            return None, make_status_tag("conv_err_invalid_cache")
 
         color_conf = cache["color_conf"]
         display = render_preview(
@@ -1510,7 +1528,7 @@ def generate_highlight_preview(
             add_loop,
             color_conf,
         )
-        return display, "✅ 预览已恢复 | Preview restored"
+        return display, make_status_tag("conv_preview_restored")
 
     # Parse highlight color
     highlight_hex = highlight_color.strip().lower()
@@ -1524,7 +1542,7 @@ def generate_highlight_preview(
         b = int(highlight_hex[5:7], 16)
         highlight_rgb = np.array([r, g, b], dtype=np.uint8)
     except (ValueError, IndexError):
-        return None, f"❌ 无效的颜色值 | Invalid color: {highlight_color}"
+        return None, make_status_tag("conv_err_invalid_color", color=highlight_color)
 
     # Get data from cache
     matched_rgb = cache.get("matched_rgb")
@@ -1532,7 +1550,7 @@ def generate_highlight_preview(
     color_conf = cache.get("color_conf")
 
     if matched_rgb is None or mask_solid is None:
-        return None, "❌ 缓存数据不完整 | Incomplete cache"
+        return None, make_status_tag("conv_err_incomplete_cache")
 
     target_h, target_w = matched_rgb.shape[:2]
 
@@ -1545,7 +1563,7 @@ def generate_highlight_preview(
     total_solid = np.sum(mask_solid)
 
     if highlight_count == 0:
-        return None, f"⚠️ 未找到颜色 {highlight_hex} | Color not found"
+        return None, make_status_tag("conv_color_not_found", color=highlight_hex)
 
     highlight_percentage = round(highlight_count / total_solid * 100, 2)
 
@@ -1601,7 +1619,12 @@ def generate_highlight_preview(
 
     return (
         display,
-        f"🔍 高亮 {highlight_hex} ({highlight_percentage}%, {highlight_count:,} 像素)",
+        make_status_tag(
+            "conv_highlight_result",
+            color=highlight_hex,
+            percent=highlight_percentage,
+            pixels=f"{highlight_count:,}",
+        ),
     )
 
 
@@ -1635,12 +1658,12 @@ def clear_highlight_preview(
 
     if cache is None:
         print("[CLEAR_HIGHLIGHT] Cache is None!")
-        return None, "❌ 请先生成预览 | Generate preview first"
+        return None, make_status_tag("palette_need_preview")
 
     preview_rgba = cache.get("preview_rgba")
     if preview_rgba is None:
         print("[CLEAR_HIGHLIGHT] preview_rgba is None!")
-        return None, "❌ 缓存数据无效 | Invalid cache"
+        return None, make_status_tag("conv_err_invalid_cache")
 
     print(f"[CLEAR_HIGHLIGHT] preview_rgba shape: {preview_rgba.shape}")
 
@@ -1660,7 +1683,7 @@ def clear_highlight_preview(
         f"[CLEAR_HIGHLIGHT] display shape: {display.shape if display is not None else None}"
     )
 
-    return display, "✅ 预览已恢复 | Preview restored"
+    return display, make_status_tag("conv_preview_restored")
 
 
 # [新增] 预览图点击吸取颜色并高亮
@@ -1672,10 +1695,20 @@ def on_preview_click_select_color(cache, evt: gr.SelectData):
     3. 返回颜色信息给 UI
     """
     if cache is None:
-        return None, "未选择", None, "❌ 请先生成预览"
+        return (
+            None,
+            make_status_tag("palette_not_selected"),
+            None,
+            make_status_tag("palette_need_preview"),
+        )
 
     if evt is None or evt.index is None:
-        return gr.update(), gr.update(), gr.update(), "⚠️ 无效点击"
+        return (
+            gr.update(),
+            gr.update(),
+            gr.update(),
+            make_status_tag("conv_invalid_click"),
+        )
 
     # 1. 获取点击坐标（Gradio返回的是显示图像上的像素坐标）
     display_click_x, display_click_y = evt.index
@@ -1685,7 +1718,12 @@ def on_preview_click_select_color(cache, evt: gr.SelectData):
     target_h = cache.get("target_h")
 
     if target_w is None or target_h is None:
-        return gr.update(), gr.update(), gr.update(), "❌ 缓存数据不完整"
+        return (
+            gr.update(),
+            gr.update(),
+            gr.update(),
+            make_status_tag("conv_err_incomplete_cache"),
+        )
 
     # 3. 计算canvas的实际尺寸（包含margin和scale）
     canvas_w = target_w * PREVIEW_SCALE + PREVIEW_MARGIN * 2
@@ -1713,7 +1751,12 @@ def on_preview_click_select_color(cache, evt: gr.SelectData):
     matched_rgb = cache.get("matched_rgb")
     mask_solid = cache.get("mask_solid")
     if matched_rgb is None or mask_solid is None:
-        return None, "未选择", None, "❌ 缓存无效"
+        return (
+            None,
+            make_status_tag("palette_not_selected"),
+            None,
+            make_status_tag("conv_err_invalid_cache"),
+        )
 
     h, w = matched_rgb.shape[:2]
 
@@ -1723,12 +1766,17 @@ def on_preview_click_select_color(cache, evt: gr.SelectData):
             gr.update(),
             gr.update(),
             gr.update(),
-            f"⚠️ 点击了无效区域 ({orig_x}, {orig_y})",
+            make_status_tag("conv_click_invalid_area", x=orig_x, y=orig_y),
         )
 
     # 检查是否点击了透明/背景区域
     if not mask_solid[orig_y, orig_x]:
-        return gr.update(), gr.update(), gr.update(), "⚠️ 点击了背景区域"
+        return (
+            gr.update(),
+            gr.update(),
+            gr.update(),
+            make_status_tag("conv_click_background"),
+        )
 
     # 2. 获取像素颜色
     rgb = matched_rgb[orig_y, orig_x]
@@ -1747,8 +1795,18 @@ def on_preview_click_select_color(cache, evt: gr.SelectData):
     # 3. "已选颜色"内部状态变量
     # 4. 状态栏消息
     if display_img is None:
-        return gr.update(), f"{hex_color} (点击处)", hex_color, status_msg
-    return display_img, f"{hex_color} (点击处)", hex_color, status_msg
+        return (
+            gr.update(),
+            make_status_tag("conv_selected_color_at_click", color=hex_color),
+            hex_color,
+            status_msg,
+        )
+    return (
+        display_img,
+        make_status_tag("conv_selected_color_at_click", color=hex_color),
+        hex_color,
+        status_msg,
+    )
 
 
 def generate_lut_grid_html(lut_path, lang: str = "zh"):

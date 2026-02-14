@@ -19,6 +19,7 @@ from colormath.color_diff import delta_e_cie2000
 
 from config import PrinterConfig, ColorSystem, SmartConfig, OUTPUT_DIR
 from utils import Stats, safe_fix_3mf_names
+from .ui_status import make_status_tag
 
 
 def _generate_voxel_mesh(
@@ -206,7 +207,7 @@ def generate_calibration_board(
     return (
         output_path,
         Image.fromarray(preview_arr),
-        f"✅ 校准板已生成！已组合为一个对象 | 颜色: {', '.join(slot_names)}",
+        make_status_tag("cal_board_generated", slots=", ".join(slot_names)),
     )
 
 
@@ -437,7 +438,11 @@ def generate_smart_board(block_size_mm=5.0, gap_mm=0.8):
     return (
         output_path,
         Image.fromarray(preview_arr),
-        f"✅ Smart 1296 (38x38边框版) 生成完毕 | 尺寸: {board_w:.1f}mm | 颜色: {', '.join(slot_names)}",
+        make_status_tag(
+            "cal_smart_generated",
+            board_w=f"{board_w:.1f}",
+            slots=", ".join(slot_names),
+        ),
     )
 
 
@@ -457,7 +462,7 @@ def generate_8color_board(page_index=0):
         )
     except Exception as e:
         print(f"[8COLOR] Error loading data: {e}")
-        return None, None, "❌ Data not found. Run analyze_colors.py first."
+        return None, None, make_status_tag("cal_8color_data_not_found")
 
     # 2. Slice Data (1369 per page for 37x37)
     per_page = 1369
@@ -547,7 +552,7 @@ def generate_8color_board(page_index=0):
             f"  {mat_name} (ID={mid}): {pixel_count} pixels = ~{block_count:.1f} blocks ({percentage:.1f}%)"
         )
 
-    return out_path, Image.fromarray(prev), "OK"
+    return out_path, Image.fromarray(prev), make_status_tag("cal_ok")
 
 
 def generate_8color_batch_zip():
@@ -556,7 +561,7 @@ def generate_8color_batch_zip():
     f2, _, _ = generate_8color_board(1)
 
     if not f1 or not f2:
-        return None, None, "❌ Generation failed"
+        return None, None, make_status_tag("cal_generation_failed")
 
     zip_path = os.path.join(OUTPUT_DIR, "Lumina_8Color_Kit.zip")
     with zipfile.ZipFile(zip_path, "w") as zf:
@@ -564,4 +569,4 @@ def generate_8color_batch_zip():
         zf.write(f2, os.path.basename(f2))
 
     _, prev, _ = generate_8color_board(0)  # Show Page 1 as preview
-    return zip_path, prev, "✅ 8-Color Kit (Page 1 & 2) Generated!"
+    return zip_path, prev, make_status_tag("cal_8color_kit_generated")

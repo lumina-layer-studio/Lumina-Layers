@@ -9,6 +9,7 @@ import gradio as gr
 
 from config import ColorSystem, LUT_FILE_PATH
 from core.i18n import I18n
+from ui.i18n_bridge import resolve_i18n_text
 from core.extractor import generate_simulated_reference
 from utils import LUTManager
 
@@ -667,7 +668,7 @@ def run_extraction_wrapper(
         except Exception:
             pass
 
-    return vis, prev, lut_path, status
+    return vis, prev, lut_path, resolve_i18n_text(status, lang)
 
 
 def merge_8color_data(lang: str = "zh"):

@@ -101,7 +101,7 @@ def test_playwright_real_backend_converter_workflow_no_mock():
             )
 
             page.get_by_role("button", name="👁️ 生成预览").click()
-            _wait_status_contains(page, "✅ Preview", timeout=180000)
+            _wait_status_contains(page, "✅ 预览", timeout=180000)
 
             page.get_by_role("button", name="🚀 生成3MF").click()
             _wait_status_contains(page, "❌ 未选择建模模式", timeout=300000)

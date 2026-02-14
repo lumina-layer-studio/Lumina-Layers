@@ -16,6 +16,7 @@ from core.extractor import (
     manual_fix_cell,
 )
 from core.i18n import I18n
+from ui.i18n_bridge import resolve_i18n_text
 from ui.callbacks import (
     get_first_hint,
     get_next_hint,
@@ -324,13 +325,22 @@ def create_extractor_tab_content(lang: str) -> dict:
             extract_outputs,
         )
 
+    def probe_lut_cell_i18n(lut_path, evt: gr.SelectData):
+        html, hex_val, coord = probe_lut_cell(lut_path, evt)
+        return resolve_i18n_text(html, lang), hex_val, coord
+
     ext_lut_view.select(
-        probe_lut_cell,
+        probe_lut_cell_i18n,
         [components["file_ext_download_npy"]],
         [ext_probe_html, ext_picker, ext_curr_coord],
     )
+
+    def manual_fix_cell_i18n(coord, color_input, lut_path):
+        lut_img, status = manual_fix_cell(coord, color_input, lut_path)
+        return lut_img, resolve_i18n_text(status, lang)
+
     components["btn_ext_apply_btn"].click(
-        manual_fix_cell,
+        manual_fix_cell_i18n,
         [ext_curr_coord, ext_picker, components["file_ext_download_npy"]],
         [ext_lut_view, components["textbox_ext_status"]],
     )

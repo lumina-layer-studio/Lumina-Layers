@@ -18,6 +18,7 @@ from config import (
     LUT_FILE_PATH,
 )
 from utils import Stats
+from .ui_status import make_status_tag
 
 
 def generate_simulated_reference():
@@ -177,9 +178,9 @@ def run_extraction(
         Tuple of (visualization, preview, lut_path, status_message)
     """
     if img is None:
-        return None, None, None, "❌ 请先上传图片"
+        return None, None, None, make_status_tag("msg_no_image")
     if len(points) != 4:
-        return None, None, None, "❌ 请点击4个角点"
+        return None, None, None, make_status_tag("ext_err_need_four_points")
 
     # 动态确定网格大小
     if "8-Color" in color_mode:
@@ -262,7 +263,9 @@ def run_extraction(
         vis,
         prev,
         LUT_FILE_PATH,
-        f"✅ 提取完成！({grid_size}x{grid_size}, {total_cells}色) LUT已保存",
+        make_status_tag(
+            "ext_extract_complete", grid_size=grid_size, total_cells=total_cells
+        ),
     )
 
 
@@ -275,11 +278,11 @@ def probe_lut_cell(lut_path, evt: gr.SelectData):
         actual_path = lut_path.name
 
     if not actual_path or not os.path.exists(actual_path):
-        return "⚠️ 无数据", None, None
+        return make_status_tag("ext_probe_no_data"), None, None
     try:
         lut = np.load(actual_path)
     except Exception:
-        return "⚠️ 数据损坏", None, None
+        return make_status_tag("ext_probe_corrupted"), None, None
 
     x, y = evt.index
     scale = 512 / DATA_GRID_SIZE
@@ -289,14 +292,7 @@ def probe_lut_cell(lut_path, evt: gr.SelectData):
     rgb = lut[r, c]
     hex_c = "#{:02x}{:02x}{:02x}".format(*rgb)
 
-    html = f"""
-    <div style='background:#1a1a2e; padding:10px; border-radius:8px; color:white;'>
-        <b>行 {r + 1} / 列 {c + 1}</b><br>
-        <div style='background:{hex_c}; width:60px; height:30px; border:2px solid white; 
-             display:inline-block; vertical-align:middle; border-radius:4px;'></div>
-        <span style='margin-left:10px; font-family:monospace;'>{hex_c}</span>
-    </div>
-    """
+    html = make_status_tag("ext_probe_cell_html", row=r + 1, col=c + 1, color=hex_c)
     return html, hex_c, (r, c)
 
 
@@ -309,7 +305,7 @@ def manual_fix_cell(coord, color_input, lut_path=None):
         actual_path = lut_path.name
 
     if not coord or not actual_path or not os.path.exists(actual_path):
-        return None, "⚠️ 错误"
+        return None, make_status_tag("ext_manual_fix_error")
 
     try:
         lut = np.load(actual_path)
@@ -335,6 +331,10 @@ def manual_fix_cell(coord, color_input, lut_path=None):
 
         lut[r, c] = new_color
         np.save(actual_path, lut)
-        return cv2.resize(lut, (512, 512), interpolation=cv2.INTER_NEAREST), "✅ 已修正"
+        return cv2.resize(
+            lut, (512, 512), interpolation=cv2.INTER_NEAREST
+        ), make_status_tag("ext_manual_fix_done")
     except Exception as e:
-        return None, f"❌ 格式错误: {color_input}"
+        return None, make_status_tag(
+            "ext_manual_fix_invalid_color", color_input=color_input
+        )

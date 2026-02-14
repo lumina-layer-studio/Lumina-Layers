@@ -384,6 +384,132 @@ class I18n:
             "zh": "❌ 批量失败: 未生成有效模型",
             "en": "❌ Batch failed: no valid models",
         },
+        "conv_err_invalid_lut_file": {
+            "zh": "❌ LUT 文件格式无效",
+            "en": "❌ Invalid LUT file format",
+        },
+        "conv_vector_conversion_complete": {
+            "zh": "✅ 矢量转换完成！对象已按材料合并",
+            "en": "✅ Vector conversion complete! Objects merged by material.",
+        },
+        "conv_vector_processing_failed": {
+            "zh": "❌ 矢量处理失败: {error}",
+            "en": "❌ Vector processing failed: {error}",
+        },
+        "conv_vector_mode_requires_svg": {
+            "zh": "⚠️ 矢量模式仅支持 SVG 文件，请上传 SVG 或切换到高保真/像素艺术模式",
+            "en": "⚠️ Vector mode requires SVG files. Upload an SVG or switch to High-Fidelity/Pixel Art mode.",
+        },
+        "conv_image_processing_failed": {
+            "zh": "❌ 图像处理失败: {error}",
+            "en": "❌ Image processing failed: {error}",
+        },
+        "conv_conversion_complete": {
+            "zh": "✅ 转换完成（{mode_name}）！分辨率: {target_w}×{target_h}px",
+            "en": "✅ Conversion complete ({mode_name})! Resolution: {target_w}×{target_h}px",
+        },
+        "conv_loop_added": {
+            "zh": "🔗 挂孔材质: {loop_material}",
+            "en": "🔗 Loop material: {loop_material}",
+        },
+        "conv_preview_generation_failed": {
+            "zh": "❌ 预览生成失败: {error}",
+            "en": "❌ Preview generation failed: {error}",
+        },
+        "conv_preview_generated": {
+            "zh": "✅ 预览 ({target_w}×{target_h}px, {num_colors} 色) | 点击图像放置挂孔",
+            "en": "✅ Preview ({target_w}×{target_h}px, {num_colors} colors) | Click image to place loop",
+        },
+        "conv_invalid_click_generate_preview_first": {
+            "zh": "⚠️ 点击无效，请先生成预览",
+            "en": "⚠️ Invalid click, generate preview first",
+        },
+        "conv_loop_position": {
+            "zh": "位置: ({x}, {y}) px",
+            "en": "Position: ({x}, {y}) px",
+        },
+        "conv_loop_removed": {"zh": "挂孔已移除", "en": "Loop removed"},
+        "conv_preview_restored": {
+            "zh": "✅ 预览已恢复",
+            "en": "✅ Preview restored",
+        },
+        "conv_err_invalid_cache": {
+            "zh": "❌ 缓存数据无效",
+            "en": "❌ Invalid cache data",
+        },
+        "conv_err_incomplete_cache": {
+            "zh": "❌ 缓存数据不完整",
+            "en": "❌ Incomplete cache data",
+        },
+        "conv_err_invalid_color": {
+            "zh": "❌ 无效颜色值: {color}",
+            "en": "❌ Invalid color value: {color}",
+        },
+        "conv_color_not_found": {
+            "zh": "⚠️ 未找到颜色 {color}",
+            "en": "⚠️ Color not found: {color}",
+        },
+        "conv_highlight_result": {
+            "zh": "🔍 高亮 {color} ({percent}%, {pixels} 像素)",
+            "en": "🔍 Highlight {color} ({percent}%, {pixels} pixels)",
+        },
+        "conv_invalid_click": {"zh": "⚠️ 无效点击", "en": "⚠️ Invalid click"},
+        "conv_click_invalid_area": {
+            "zh": "⚠️ 点击了无效区域 ({x}, {y})",
+            "en": "⚠️ Clicked invalid area ({x}, {y})",
+        },
+        "conv_click_background": {
+            "zh": "⚠️ 点击了背景区域",
+            "en": "⚠️ Clicked background area",
+        },
+        "conv_selected_color_at_click": {
+            "zh": "{color} (点击处)",
+            "en": "{color} (clicked)",
+        },
+        "ext_err_need_four_points": {
+            "zh": "❌ 请点击 4 个角点",
+            "en": "❌ Please click 4 corner points",
+        },
+        "ext_extract_complete": {
+            "zh": "✅ 提取完成！({grid_size}x{grid_size}, {total_cells} 色) LUT 已保存",
+            "en": "✅ Extraction complete! ({grid_size}x{grid_size}, {total_cells} colors) LUT saved",
+        },
+        "ext_probe_no_data": {"zh": "⚠️ 无数据", "en": "⚠️ No data"},
+        "ext_probe_corrupted": {
+            "zh": "⚠️ 数据损坏",
+            "en": "⚠️ Corrupted data",
+        },
+        "ext_manual_fix_error": {"zh": "⚠️ 修正失败", "en": "⚠️ Fix failed"},
+        "ext_manual_fix_done": {"zh": "✅ 已修正", "en": "✅ Fixed"},
+        "ext_manual_fix_invalid_color": {
+            "zh": "❌ 颜色格式错误: {color_input}",
+            "en": "❌ Invalid color format: {color_input}",
+        },
+        "ext_probe_cell_html": {
+            "zh": "<div style='background:#1a1a2e; padding:10px; border-radius:8px; color:white;'><b>行 {row} / 列 {col}</b><br><div style='background:{color}; width:60px; height:30px; border:2px solid white; display:inline-block; vertical-align:middle; border-radius:4px;'></div><span style='margin-left:10px; font-family:monospace;'>{color}</span></div>",
+            "en": "<div style='background:#1a1a2e; padding:10px; border-radius:8px; color:white;'><b>Row {row} / Col {col}</b><br><div style='background:{color}; width:60px; height:30px; border:2px solid white; display:inline-block; vertical-align:middle; border-radius:4px;'></div><span style='margin-left:10px; font-family:monospace;'>{color}</span></div>",
+        },
+        "cal_board_generated": {
+            "zh": "✅ 校准板已生成！颜色: {slots}",
+            "en": "✅ Calibration board generated! Colors: {slots}",
+        },
+        "cal_smart_generated": {
+            "zh": "✅ Smart 1296 生成完成 | 尺寸: {board_w}mm | 颜色: {slots}",
+            "en": "✅ Smart 1296 generated | Size: {board_w}mm | Colors: {slots}",
+        },
+        "cal_8color_data_not_found": {
+            "zh": "❌ 未找到 8 色数据，请先运行 analyze_colors.py",
+            "en": "❌ 8-color data not found. Run analyze_colors.py first.",
+        },
+        "cal_ok": {"zh": "OK", "en": "OK"},
+        "cal_generation_failed": {
+            "zh": "❌ 生成失败",
+            "en": "❌ Generation failed",
+        },
+        "cal_8color_kit_generated": {
+            "zh": "✅ 8 色套件（第 1/2 页）已生成",
+            "en": "✅ 8-Color Kit (Page 1 & 2) Generated!",
+        },
         # ==================== Palette / Replacement ====================
         "palette_empty": {
             "zh": "暂无颜色，请先生成预览。",

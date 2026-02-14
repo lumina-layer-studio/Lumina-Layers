@@ -24,6 +24,7 @@ from core.converter import (
     detect_image_type,
 )
 from core.i18n import I18n
+from ui.i18n_bridge import resolve_i18n_text
 from ui.layout_js import LUT_GRID_JS, OPEN_CROP_MODAL_JS, SHOW_COLOR_TOAST_JS
 from ui.callbacks import (
     on_lut_select,
@@ -283,7 +284,12 @@ def process_batch_generation(
         out_path, glb_path, preview_img, status = generate_final_model(
             single_image, request
         )
-        return out_path, glb_path, _preview_update(preview_img), status
+        return (
+            out_path,
+            glb_path,
+            _preview_update(preview_img),
+            resolve_i18n_text(status, lang),
+        )
 
     if not batch_files:
         return None, None, None, I18n.get("conv_err_batch_no_images", lang)
@@ -1114,7 +1120,7 @@ def create_converter_tab_content(lang: str, lang_state=None) -> dict:
             match_strategy=parsed_match_strategy,
         )
         display, cache, status = generate_preview_cached(image_path, request)
-        return _preview_update(display), cache, status
+        return _preview_update(display), cache, resolve_i18n_text(status, lang_val)
 
     preview_event = (
         components["btn_conv_preview_btn"]
@@ -1156,6 +1162,7 @@ def create_converter_tab_content(lang: str, lang_state=None) -> dict:
         loop_length,
         loop_hole,
         loop_angle,
+        lang_val,
     ):
         display, status = on_highlight_color_change(
             highlight_hex,
@@ -1167,7 +1174,7 @@ def create_converter_tab_content(lang: str, lang_state=None) -> dict:
             loop_hole,
             loop_angle,
         )
-        return _preview_update(display), status
+        return _preview_update(display), resolve_i18n_text(status, lang_val)
 
     conv_highlight_trigger_btn.click(
         on_highlight_color_change_with_fit,
@@ -1180,6 +1187,7 @@ def create_converter_tab_content(lang: str, lang_state=None) -> dict:
             components["slider_conv_loop_length"],
             components["slider_conv_loop_hole"],
             components["slider_conv_loop_angle"],
+            lang_state,
         ],
         outputs=[conv_preview, components["textbox_conv_status"]],
     )
@@ -1381,15 +1389,17 @@ def create_converter_tab_content(lang: str, lang_state=None) -> dict:
     )
 
     # [修改] 预览图点击事件同步到 UI
-    def on_preview_click_sync_ui(cache, evt: gr.SelectData):
+    def on_preview_click_sync_ui(cache, lang_val, evt: gr.SelectData):
         img, display_text, hex_val, msg = on_preview_click_select_color(cache, evt)
+        resolved_display_text = resolve_i18n_text(display_text, lang_val)
+        resolved_msg = resolve_i18n_text(msg, lang_val)
         if hex_val is None:
-            return _preview_update(img), gr.update(), gr.update(), msg
-        return _preview_update(img), hex_val, hex_val, msg
+            return _preview_update(img), gr.update(), gr.update(), resolved_msg
+        return _preview_update(img), resolved_display_text, hex_val, resolved_msg
 
     conv_preview.select(
         fn=on_preview_click_sync_ui,
-        inputs=[conv_preview_cache],
+        inputs=[conv_preview_cache, lang_state],
         outputs=[
             conv_preview,
             conv_selected_display,
@@ -1406,8 +1416,18 @@ def create_converter_tab_content(lang: str, lang_state=None) -> dict:
         )
         return _preview_update(display)
 
+    def on_remove_loop_i18n(lang_val):
+        loop_pos_val, loop_enable_val, loop_angle_val, loop_info_val = on_remove_loop()
+        return (
+            loop_pos_val,
+            loop_enable_val,
+            loop_angle_val,
+            resolve_i18n_text(loop_info_val, lang_val),
+        )
+
     components["btn_conv_loop_remove"].click(
-        on_remove_loop,
+        on_remove_loop_i18n,
+        inputs=[lang_state],
         outputs=[
             conv_loop_pos,
             components["checkbox_conv_loop_enable"],

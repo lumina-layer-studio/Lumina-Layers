@@ -11,6 +11,7 @@ from core.calibration import (
     generate_8color_batch_zip,
 )
 from core.i18n import I18n
+from ui.i18n_bridge import resolve_i18n_text
 
 
 def create_calibration_tab_content(lang: str) -> dict:
@@ -90,13 +91,18 @@ def create_calibration_tab_content(lang: str) -> dict:
     def generate_board_wrapper(color_mode, block_size, gap, backing):
         """Wrapper function to call appropriate generator based on mode"""
         if color_mode == "8-Color Max":
-            return generate_8color_batch_zip()
+            out, prev, status = generate_8color_batch_zip()
+            return out, prev, resolve_i18n_text(status, lang)
         if "6-Color" in color_mode:
             # Call Smart 1296 generator
-            return generate_smart_board(block_size, gap)
+            out, prev, status = generate_smart_board(block_size, gap)
+            return out, prev, resolve_i18n_text(status, lang)
         else:
             # Call traditional 4-color generator
-            return generate_calibration_board(color_mode, block_size, gap, backing)
+            out, prev, status = generate_calibration_board(
+                color_mode, block_size, gap, backing
+            )
+            return out, prev, resolve_i18n_text(status, lang)
 
     cal_event = components["btn_cal_generate_btn"].click(
         generate_board_wrapper,

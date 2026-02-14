@@ -3,7 +3,7 @@ from pathlib import Path
 import pytest
 
 from config import ColorMode, MatchStrategy, ModelingMode
-from core.converter import ConversionRequest, generate_final_model
+from core.converter import ConversionRequest, convert_image_to_3d
 
 
 def _pick_real_image(repo_root: Path) -> Path | None:
@@ -56,7 +56,7 @@ def test_real_backend_converter_pipeline_no_mock(
         match_strategy=MatchStrategy.RGB_EUCLIDEAN,
     )
 
-    out_path, glb_path, preview_img, status = generate_final_model(
+    out_path, glb_path, preview_img, status = convert_image_to_3d(
         str(image_path), request
     )
 

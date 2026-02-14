@@ -34,7 +34,6 @@ def __getattr__(name):
         "on_preview_click",
         "update_preview_with_loop",
         "on_remove_loop",
-        "generate_final_model",
     ]:
         from . import converter
 
@@ -61,7 +60,6 @@ __all__ = [
     "on_preview_click",
     "update_preview_with_loop",
     "on_remove_loop",
-    "generate_final_model",
     # Refactored modules (for advanced usage)
     "LuminaImageProcessor",
     "get_mesher",

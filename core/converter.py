@@ -139,6 +139,8 @@ class ConversionRequest:
     loop_hole: float = 2.5  # Loop hole diameter in mm
     loop_pos: Optional[Tuple[float, float]] = None  # Loop attach point (x, y)
     color_replacements: Optional[dict] = None  # Optional color replacement mapping
+    blur_kernel: int = 0  # Median filter kernel size (0=disabled)
+    smooth_sigma: float = 10.0  # Bilateral filter sigma value
 
 
 def _run_vector_svg_flow(image_path, actual_lut_path, request: ConversionRequest):
@@ -543,14 +545,12 @@ def _run_raster_flow(
 def convert_image_to_3d(
     image_path,
     request: ConversionRequest,
-    blur_kernel=0,
-    smooth_sigma=10,
 ):
     """
     Main conversion function: Convert image to 3D model.
 
     This refactored coordinator function is responsible for:
-    1. Calling LuminaImageProcessor to process the image
+    1. Calling LuminaImageProcessor to process image
     2. Calling get_mesher to get the mesh generator
     3. Generating meshes for each material
     4. Adding keychain loop (if needed)
@@ -558,24 +558,7 @@ def convert_image_to_3d(
 
     Args:
         image_path: Path to input image
-        lut_path: LUT file path (string) or Gradio File object
-        target_width_mm: Target width in millimeters
-        spacer_thick: Backing thickness in mm
-        structure_mode: "Double-sided" or "Single-sided"
-        auto_bg: Enable automatic background removal
-        bg_tol: Background tolerance value
-        color_mode: Color system mode (CMYW/RYBW/6-Color)
-        add_loop: Enable keychain loop
-        loop_width: Loop width in mm
-        loop_length: Loop length in mm
-        loop_hole: Loop hole diameter in mm
-        loop_pos: Loop position (x, y) tuple
-        modeling_mode: Modeling mode ("vector"/"pixel")
-        quantize_colors: Number of colors for K-Means quantization
-        blur_kernel: Median filter kernel size (0=disabled, recommended 0-5, default 0)
-        smooth_sigma: Bilateral filter sigma value (recommended 5-20, default 10)
-        color_replacements: Optional dict of color replacements {hex: hex}
-                           e.g., {'#ff0000': '#00ff00'}
+        request: ConversionRequest containing all conversion parameters
 
     Returns:
         Tuple of (3mf_path, glb_path, preview_image, status_message)
@@ -597,6 +580,8 @@ def convert_image_to_3d(
     modeling_mode = ModelingMode(request.modeling_mode)
     target_width_mm = request.target_width_mm
     quantize_colors = request.quantize_colors
+    blur_kernel = request.blur_kernel
+    smooth_sigma = request.smooth_sigma
 
     print(f"[CONVERTER] Starting conversion...")
     print(
@@ -899,30 +884,3 @@ def _create_preview_mesh(matched_rgb, mask_solid, total_layers):
     )
 
     return mesh
-
-
-# ========== Preview Related Functions ==========
-
-
-def generate_final_model(
-    image_path,
-    request: ConversionRequest,
-):
-    """
-    Wrapper function for generating final model.
-
-    Directly calls main conversion function with smart defaults:
-    - blur_kernel=0 (disable median filter, preserve details)
-    - smooth_sigma=10 (gentle bilateral filter, preserve edges)
-
-    Args:
-        color_replacements: Optional dict of color replacements {hex: hex}
-                           e.g., {'#ff0000': '#00ff00'}
-    """
-    return convert_image_to_3d(
-        image_path,
-        request,
-        blur_kernel=0,
-        smooth_sigma=10,
-    )
-

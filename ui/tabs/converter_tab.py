@@ -13,7 +13,7 @@ from config import ColorMode, ModelingMode, StructureMode, MatchStrategy
 from utils import LUTManager
 from core.converter import (
     ConversionRequest,
-    generate_final_model,
+    convert_image_to_3d,
 )
 from ui.converter_ui import (
     generate_preview_cached,
@@ -21,7 +21,9 @@ from ui.converter_ui import (
     update_preview_with_loop,
     on_remove_loop,
     on_preview_click_select_color,
-    generate_lut_grid_html, detect_lut_color_mode, detect_image_type,
+    generate_lut_grid_html,
+    detect_lut_color_mode,
+    detect_image_type,
 )
 from core.i18n import I18n
 from ui.i18n_bridge import resolve_i18n_text
@@ -293,7 +295,7 @@ def process_batch_generation(
     )
 
     if not is_batch:
-        out_path, glb_path, preview_img, status = generate_final_model(
+        out_path, glb_path, preview_img, status = convert_image_to_3d(
             single_image, request
         )
         return (
@@ -331,7 +333,7 @@ def process_batch_generation(
         )
 
         try:
-            result_3mf, _, _, _ = generate_final_model(path, request)
+            result_3mf, _, _, _ = convert_image_to_3d(path, request)
 
             if result_3mf and os.path.exists(result_3mf):
                 new_name = os.path.splitext(filename)[0] + ".3mf"

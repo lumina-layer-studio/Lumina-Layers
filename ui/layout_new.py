@@ -12,16 +12,10 @@ from core.calibration import (
     generate_8color_batch_zip,
 )
 from core.i18n import I18n
-from ui.converter_ui import (
-    generate_preview_cached,
-    generate_lut_grid_html,
-)
+from ui.converter_ui import generate_lut_grid_html
 from utils import Stats
 from .callbacks import (
     on_lut_select,
-    on_preview_generated_update_palette,
-    run_extraction_wrapper,
-    merge_8color_data,
 )
 from .tabs import calibration_tab as _calibration_tab
 from .tabs import converter_tab as _converter_tab
@@ -69,25 +63,6 @@ process_batch_generation = _converter_tab.process_batch_generation
 
 def create_app():
     """Build the Gradio app (tabs, i18n, events) and return the Blocks instance."""
-
-    def _merge_8color_data_compat(lang: str = "zh"):
-        try:
-            return merge_8color_data(lang)
-        except TypeError:
-            return merge_8color_data()
-
-    # Keep legacy monkeypatch paths working after tab modularization.
-    _converter_tab.generate_preview_cached = generate_preview_cached
-    _converter_tab.on_preview_generated_update_palette = (
-        on_preview_generated_update_palette
-    )
-    _converter_tab.process_batch_generation = process_batch_generation
-    _calibration_tab.generate_calibration_board = generate_calibration_board
-    _calibration_tab.generate_smart_board = generate_smart_board
-    _calibration_tab.generate_8color_batch_zip = generate_8color_batch_zip
-    _extractor_tab.get_extractor_reference_image = get_extractor_reference_image
-    _extractor_tab.run_extraction_wrapper = run_extraction_wrapper
-    _extractor_tab.merge_8color_data = _merge_8color_data_compat
 
     with gr.Blocks(title="Lumina Studio") as app:
         lang_state = gr.State(value="zh")

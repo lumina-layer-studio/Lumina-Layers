@@ -114,6 +114,10 @@ def _about_heading(index: int, lang: str = "zh") -> str:
 
 def _build_stubbed_app(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> gr.Blocks:
     import ui.layout_new as layout
+    import ui.tabs.converter_tab as converter_tab
+    import ui.tabs.calibration_tab as calibration_tab
+    import ui.tabs.extractor_tab as extractor_tab
+    import ui.converter_ui as converter_ui
     from core.image_preprocessor import ImagePreprocessor
 
     preview_img = np.full((32, 48, 3), 127, dtype=np.uint8)
@@ -157,22 +161,22 @@ def _build_stubbed_app(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> gr.Bl
     )
 
     monkeypatch.setattr(
-        layout,
+        converter_tab,
         "generate_preview_cached",
         lambda image_path, request: (preview_img, {"mock": True}, "E2E_PREVIEW_OK"),
     )
     monkeypatch.setattr(
-        layout,
+        converter_tab,
         "on_preview_generated_update_palette",
         lambda cache, lang: ("<div>E2E_PALETTE_OK</div>", "#112233"),
     )
     monkeypatch.setattr(
-        layout,
+        converter_tab,
         "process_batch_generation",
         lambda *args, **kwargs: (str(model_3mf), None, preview_img, "E2E_GENERATE_OK"),
     )
     monkeypatch.setattr(
-        layout,
+        calibration_tab,
         "generate_calibration_board",
         lambda color_mode, block_size, gap, backing: (
             str(cal_3mf),
@@ -181,27 +185,32 @@ def _build_stubbed_app(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> gr.Bl
         ),
     )
     monkeypatch.setattr(
-        layout,
+        calibration_tab,
         "generate_smart_board",
         lambda block_size, gap: (str(cal_3mf), preview_img, "E2E_CAL_OK"),
     )
     monkeypatch.setattr(
-        layout,
+        calibration_tab,
         "generate_8color_batch_zip",
         lambda: (str(cal_zip), preview_img, "E2E_CAL_OK"),
     )
     monkeypatch.setattr(
-        layout, "get_extractor_reference_image", lambda mode_str: preview_img
+        extractor_tab, "get_extractor_reference_image", lambda mode_str: preview_img
     )
     monkeypatch.setattr(
-        layout,
+        extractor_tab,
         "run_extraction_wrapper",
         lambda *args, **kwargs: (warp_img, lut_img, str(ext_npy), "E2E_EXT_OK"),
     )
     monkeypatch.setattr(
-        layout,
+        extractor_tab,
         "merge_8color_data",
         lambda *args, **kwargs: (str(ext_npy), "E2E_MERGE_OK"),
+    )
+    monkeypatch.setattr(
+        converter_ui,
+        "generate_preview_cached",
+        lambda image_path, request: (preview_img, {"mock": True}, "E2E_PREVIEW_OK"),
     )
 
     return layout.create_app()

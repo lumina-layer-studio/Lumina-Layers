@@ -6,6 +6,8 @@ from config import ColorMode, MatchStrategy, ModelingMode, StructureMode
 from core.converter import (
     ConversionRequest,
     convert_image_to_3d,
+)
+from ui.converter_ui import (
     _preview_click_to_original_coords,
     on_preview_click_select_color,
 )
@@ -127,7 +129,7 @@ def test_preview_click_select_color_uses_scaled_coords_correctly(
 
     # avoid heavy highlight rendering path in unit test
     monkeypatch.setattr(
-        "core.converter.generate_highlight_preview",
+        "ui.converter_ui.generate_highlight_preview",
         lambda *_args, **_kwargs: (None, "ok"),
     )
 

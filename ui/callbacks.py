@@ -179,7 +179,7 @@ def on_apply_color_replacement(
         tuple: (preview_image, updated_cache, palette_html, updated_replacement_map,
                 updated_history, status)
     """
-    from core.converter import update_preview_with_replacements, generate_palette_html
+    from ui.converter_ui import update_preview_with_replacements, generate_palette_html
 
     if cache is None:
         return (
@@ -268,7 +268,7 @@ def on_clear_color_replacements(
         tuple: (preview_image, updated_cache, palette_html, empty_replacement_map,
                 updated_history, status)
     """
-    from core.converter import update_preview_with_replacements, generate_palette_html
+    from ui.converter_ui import update_preview_with_replacements, generate_palette_html
 
     if cache is None:
         return None, None, "", {}, [], I18n.get("palette_need_preview", lang)
@@ -311,7 +311,7 @@ def on_preview_generated_update_palette(cache, lang: str = "zh"):
     Returns:
         tuple: (palette_html, selected_color_state)
     """
-    from core.converter import generate_palette_html
+    from ui.converter_ui import generate_palette_html
 
     if cache is None:
         placeholder = I18n.get("conv_palette_replacements_placeholder", lang)
@@ -380,7 +380,7 @@ def on_lut_change_update_colors(lut_path, cache=None, lang: str = "zh"):
     Returns:
         str: HTML preview of LUT colors
     """
-    from core.converter import generate_lut_color_dropdown_html
+    from ui.converter_ui import generate_lut_color_dropdown_html
 
     if not lut_path:
         return f"<p style='color:#888;'>{I18n.get('lut_select_first', lang)}</p>"
@@ -409,7 +409,7 @@ def on_preview_update_lut_colors(cache, lut_path, lang: str = "zh"):
     Returns:
         str: HTML preview of LUT colors with grouping
     """
-    from core.converter import generate_lut_color_dropdown_html
+    from ui.converter_ui import generate_lut_color_dropdown_html
 
     if not lut_path:
         return f"<p style='color:#888;'>{I18n.get('lut_select_first', lang)}</p>"
@@ -496,11 +496,11 @@ def on_highlight_color_change(
     Returns:
         tuple: (preview_image, status_message)
     """
-    from core.converter import generate_highlight_preview
+    from ui.converter_ui import generate_highlight_preview
 
     if not highlight_hex or highlight_hex.strip() == "":
         # No highlight - return normal preview
-        from core.converter import clear_highlight_preview
+        from ui.converter_ui import clear_highlight_preview
 
         return clear_highlight_preview(
             cache, loop_pos, add_loop, loop_width, loop_length, loop_hole, loop_angle
@@ -536,7 +536,7 @@ def on_clear_highlight(
     Returns:
         tuple: (preview_image, status_message, cleared_highlight_state)
     """
-    from core.converter import clear_highlight_preview
+    from ui.converter_ui import clear_highlight_preview
 
     print(
         f"[ON_CLEAR_HIGHLIGHT] Called with cache={cache is not None}, loop_pos={loop_pos}, add_loop={add_loop}"
@@ -588,7 +588,7 @@ def on_undo_color_replacement(
         tuple: (preview_image, updated_cache, palette_html, updated_replacement_map,
                 updated_history, status)
     """
-    from core.converter import update_preview_with_replacements, generate_palette_html
+    from ui.converter_ui import update_preview_with_replacements, generate_palette_html
 
     if cache is None:
         return (

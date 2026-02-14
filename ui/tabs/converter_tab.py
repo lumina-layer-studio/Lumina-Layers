@@ -13,15 +13,17 @@ from config import ColorMode, ModelingMode, StructureMode, MatchStrategy
 from utils import LUTManager
 from core.converter import (
     ConversionRequest,
+    generate_final_model,
+)
+from ui.converter_ui import (
     generate_preview_cached,
     render_preview,
     update_preview_with_loop,
     on_remove_loop,
-    generate_final_model,
     on_preview_click_select_color,
     generate_lut_grid_html,
 )
-from core.ui_detection import (
+from ui.ui_detection import (
     detect_lut_color_mode,
     detect_image_type,
 )

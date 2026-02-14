@@ -44,6 +44,42 @@ except ImportError:
 # Import palette HTML generator from extension (non-invasive)
 from ui.palette_extension import generate_palette_html, generate_lut_color_grid_html
 
+# Keep in sync with ui/tabs/converter_tab.py::_scale_preview_image defaults.
+PREVIEW_UI_MAX_W = 900
+PREVIEW_UI_MAX_H = 560
+
+
+def _preview_click_to_original_coords(
+    click_x: float, click_y: float, target_w: int, target_h: int
+) -> tuple[float, float]:
+    """Convert preview click coords to original image coords.
+
+    The preview shown in UI may be additionally downscaled by
+    `ui/tabs/converter_tab.py::_scale_preview_image`. We support both
+    coordinate semantics seen across Gradio versions:
+    1) click in scaled preview data coords
+    2) click in render-canvas coords
+    """
+    canvas_w = target_w * PREVIEW_SCALE + PREVIEW_MARGIN * 2
+    canvas_h = target_h * PREVIEW_SCALE + PREVIEW_MARGIN * 2
+    ui_scale = min(1.0, PREVIEW_UI_MAX_W / canvas_w, PREVIEW_UI_MAX_H / canvas_h)
+
+    canvas_click_x = click_x
+    canvas_click_y = click_y
+
+    # If click is within scaled preview bounds, treat it as scaled coords.
+    # This avoids systematic bias when preview array is downscaled before UI render.
+    if ui_scale < 0.999:
+        scaled_w = canvas_w * ui_scale
+        scaled_h = canvas_h * ui_scale
+        if 0 <= click_x <= scaled_w + 1 and 0 <= click_y <= scaled_h + 1:
+            canvas_click_x = click_x / ui_scale
+            canvas_click_y = click_y / ui_scale
+
+    orig_x = (canvas_click_x - PREVIEW_MARGIN) / PREVIEW_SCALE
+    orig_y = (canvas_click_y - PREVIEW_MARGIN) / PREVIEW_SCALE
+    return orig_x, orig_y
+
 
 # ========== LUT Color Extraction Functions ==========
 
@@ -1328,32 +1364,12 @@ def on_preview_click(cache, loop_pos, evt: gr.SelectData):
         )
 
     click_x, click_y = evt.index
-
-    # 获取图像尺寸
     target_w = cache["target_w"]
     target_h = cache["target_h"]
 
-    # 计算canvas大小
-    canvas_w = target_w * PREVIEW_SCALE + PREVIEW_MARGIN + PREVIEW_MARGIN
-    canvas_h = target_h * PREVIEW_SCALE + PREVIEW_MARGIN + PREVIEW_MARGIN
-
-    # 计算Gradio缩放比例（同时考虑宽度和高度）
-    gradio_display_height = 600
-    gradio_display_width = 900
-    scale_by_height = gradio_display_height / canvas_h
-    scale_by_width = gradio_display_width / canvas_w
-    gradio_scale = min(1.0, scale_by_height, scale_by_width)
-
-    # 转换回canvas坐标
-    canvas_click_x = click_x / gradio_scale
-    canvas_click_y = click_y / gradio_scale
-
-    # Remove margin offset - image starts at (margin, margin)
-    click_x = canvas_click_x - PREVIEW_MARGIN
-    click_y = canvas_click_y - PREVIEW_MARGIN
-
-    orig_x = click_x / PREVIEW_SCALE
-    orig_y = click_y / PREVIEW_SCALE
+    orig_x, orig_y = _preview_click_to_original_coords(
+        click_x, click_y, target_w, target_h
+    )
 
     orig_x = max(0, min(target_w - 1, orig_x))
     orig_y = max(0, min(target_h - 1, orig_y))
@@ -1757,28 +1773,12 @@ def on_preview_click_select_color(cache, evt: gr.SelectData):
             make_status_tag("conv_err_incomplete_cache"),
         )
 
-    # 3. 计算canvas的实际尺寸（包含margin和scale）
-    canvas_w = target_w * PREVIEW_SCALE + PREVIEW_MARGIN * 2
-    canvas_h = target_h * PREVIEW_SCALE + PREVIEW_MARGIN * 2
-
-    # 4. Gradio Image组件设置了height=600，会自动缩放图像以适应显示
-    # 计算Gradio的缩放比例
-    gradio_display_height = 600  # 从ui/layout_new.py中的height参数
-
-    # Gradio会保持宽高比缩放，取较小的缩放比例
-    gradio_scale = min(1.0, gradio_display_height / canvas_h)
-
-    # 5. 将显示坐标转换回canvas坐标
-    canvas_click_x = display_click_x / gradio_scale
-    canvas_click_y = display_click_y / gradio_scale
-
-    # 6. 移除margin得到缩放后图像上的坐标
-    scaled_img_x = canvas_click_x - PREVIEW_MARGIN
-    scaled_img_y = canvas_click_y - PREVIEW_MARGIN
-
-    # 7. 除以PREVIEW_SCALE得到原始图像坐标
-    orig_x = int(scaled_img_x / PREVIEW_SCALE)
-    orig_y = int(scaled_img_y / PREVIEW_SCALE)
+    # 3. 转换显示坐标 -> 原图坐标
+    orig_x_f, orig_y_f = _preview_click_to_original_coords(
+        display_click_x, display_click_y, target_w, target_h
+    )
+    orig_x = int(orig_x_f)
+    orig_y = int(orig_y_f)
 
     matched_rgb = cache.get("matched_rgb")
     mask_solid = cache.get("mask_solid")

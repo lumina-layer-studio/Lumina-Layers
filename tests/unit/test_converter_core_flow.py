@@ -1,7 +1,14 @@
 import pytest
+import numpy as np
+import gradio as gr
 
 from config import ColorMode, MatchStrategy, ModelingMode, StructureMode
-from core.converter import ConversionRequest, convert_image_to_3d
+from core.converter import (
+    ConversionRequest,
+    convert_image_to_3d,
+    _preview_click_to_original_coords,
+    on_preview_click_select_color,
+)
 
 
 def _make_request(modeling_mode: ModelingMode) -> ConversionRequest:
@@ -77,3 +84,60 @@ def test_convert_image_to_3d_vector_mode_requires_svg_without_fallback(
     assert out_glb is None
     assert preview is None
     assert status
+
+
+@pytest.mark.unit
+def test_preview_click_coords_scaled_preview_maps_back_correctly():
+    target_w, target_h = 1000, 1000
+    x, y = 400, 300
+
+    # canvas -> scaled preview coords (same formula as UI downscale)
+    canvas_w = target_w * 2 + 30 * 2
+    canvas_h = target_h * 2 + 30 * 2
+    ui_scale = min(1.0, 900 / canvas_w, 560 / canvas_h)
+    click_x = (x * 2 + 30) * ui_scale
+    click_y = (y * 2 + 30) * ui_scale
+
+    mapped_x, mapped_y = _preview_click_to_original_coords(
+        click_x, click_y, target_w, target_h
+    )
+
+    assert mapped_x == pytest.approx(x, abs=0.6)
+    assert mapped_y == pytest.approx(y, abs=0.6)
+
+
+@pytest.mark.unit
+def test_preview_click_select_color_uses_scaled_coords_correctly(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    target_w, target_h = 1000, 1000
+    x, y = 400, 300
+    target_rgb = np.array([18, 171, 52], dtype=np.uint8)
+
+    matched_rgb = np.zeros((target_h, target_w, 3), dtype=np.uint8)
+    matched_rgb[y, x] = target_rgb
+    mask_solid = np.ones((target_h, target_w), dtype=bool)
+
+    cache = {
+        "target_w": target_w,
+        "target_h": target_h,
+        "matched_rgb": matched_rgb,
+        "mask_solid": mask_solid,
+    }
+
+    # avoid heavy highlight rendering path in unit test
+    monkeypatch.setattr(
+        "core.converter.generate_highlight_preview",
+        lambda *_args, **_kwargs: (None, "ok"),
+    )
+
+    canvas_w = target_w * 2 + 30 * 2
+    canvas_h = target_h * 2 + 30 * 2
+    ui_scale = min(1.0, 900 / canvas_w, 560 / canvas_h)
+    evt = gr.SelectData(
+        None,
+        {"index": ((x * 2 + 30) * ui_scale, (y * 2 + 30) * ui_scale), "value": None},
+    )
+
+    _img, _display_text, hex_val, _msg = on_preview_click_select_color(cache, evt)
+    assert hex_val == "#12ab34"

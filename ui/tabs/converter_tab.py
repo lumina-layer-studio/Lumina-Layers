@@ -20,6 +20,8 @@ from core.converter import (
     generate_final_model,
     on_preview_click_select_color,
     generate_lut_grid_html,
+)
+from core.ui_detection import (
     detect_lut_color_mode,
     detect_image_type,
 )

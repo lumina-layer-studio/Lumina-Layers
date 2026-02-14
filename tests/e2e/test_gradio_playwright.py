@@ -43,13 +43,13 @@ def _wait_status_contains(page, message: str, timeout: int = 5000) -> None:
     )
 
 
-def _assert_visible_texts(page, texts: list[str], timeout: int = 3000) -> None:
+def _assert_visible_texts(page, texts: list[str], timeout: int = 2000) -> None:
     # NOTE: Restrict to visible nodes to avoid hidden duplicates taking `.first`.
     for text in texts:
         page.locator(":visible", has_text=text).first.wait_for(timeout=timeout)
 
 
-def _assert_visible_buttons(page, names: list[str], timeout: int = 3000) -> None:
+def _assert_visible_buttons(page, names: list[str], timeout: int = 2000) -> None:
     for name in names:
         try:
             page.get_by_role("button", name=name).first.wait_for(timeout=timeout)
@@ -58,15 +58,13 @@ def _assert_visible_buttons(page, names: list[str], timeout: int = 3000) -> None
             _assert_visible_texts(page, [name], timeout=timeout)
 
 
-def _assert_visible_labels(page, labels: list[str], timeout: int = 3000) -> None:
+def _assert_visible_labels(page, labels: list[str], timeout: int = 2000) -> None:
     for label in labels:
-        try:
-            page.get_by_label(label, exact=False).first.wait_for(timeout=timeout)
-        except Exception:
-            _assert_visible_texts(page, [label], timeout=timeout)
+        # UI smoke tests only need visible copy checks.
+        _assert_visible_texts(page, [label], timeout=timeout)
 
 
-def _assert_attached_selectors(page, selectors: list[str], timeout: int = 3000) -> None:
+def _assert_attached_selectors(page, selectors: list[str], timeout: int = 2000) -> None:
     for selector in selectors:
         page.wait_for_selector(selector, state="attached", timeout=timeout)
 
@@ -221,22 +219,22 @@ def test_playwright_e2e_all_tabs_ui_elements(
                     _i18n("app_subtitle", "zh").split("|")[0].strip(),
                     _i18n_ui("stats_total", "zh"),
                 ],
-                timeout=8000,
+                timeout=5000,
             )
             _assert_visible_buttons(
                 page, [_i18n("lang_btn_en", "zh"), _i18n("theme_toggle_night", "zh")]
             )
             page.get_by_role("tab", name=_i18n("tab_converter", "zh")).wait_for(
-                timeout=5000
+                timeout=3000
             )
             page.get_by_role("tab", name=_i18n("tab_calibration", "zh")).wait_for(
-                timeout=5000
+                timeout=3000
             )
             page.get_by_role("tab", name=_i18n("tab_extractor", "zh")).wait_for(
-                timeout=5000
+                timeout=3000
             )
             page.get_by_role("tab", name=_i18n("tab_about", "zh")).wait_for(
-                timeout=5000
+                timeout=3000
             )
 
             # Converter tab: all visible controls
@@ -390,7 +388,7 @@ def test_playwright_e2e_full_workflow(monkeypatch: pytest.MonkeyPatch, tmp_path:
             page.goto(base_url, wait_until="domcontentloaded")
 
             page.wait_for_selector(
-                "#conv-image-input input[type='file']", state="attached", timeout=8000
+                "#conv-image-input input[type='file']", state="attached", timeout=5000
             )
             page.locator("#conv-image-input input[type='file']").set_input_files(
                 str(test_image)
@@ -416,13 +414,13 @@ def test_playwright_e2e_full_workflow(monkeypatch: pytest.MonkeyPatch, tmp_path:
             page.get_by_role("button", name=_i18n("settings_clear_cache", "zh")).click()
             page.get_by_text(
                 _i18n("settings_cache_cleared", "zh").split("，")[0], exact=False
-            ).wait_for(timeout=5000)
+            ).wait_for(timeout=3000)
 
             page.get_by_role(
                 "button", name=_i18n("settings_reset_counters", "zh")
             ).click()
             page.get_by_text(
                 _i18n("settings_counters_reset", "zh").split("：")[0], exact=False
-            ).wait_for(timeout=5000)
+            ).wait_for(timeout=3000)
 
             browser.close()

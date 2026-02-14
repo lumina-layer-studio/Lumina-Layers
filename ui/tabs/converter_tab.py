@@ -1040,10 +1040,11 @@ def create_converter_tab_content(lang: str, lang_state=None) -> dict:
         fn=lambda: gr.update(), outputs=[components["dropdown_conv_lut_dropdown"]]
     ).then(
         # 自动检测并切换颜色模式
-        fn=lambda lut_file: (
-            detect_lut_color_mode(lut_file.name if lut_file else None) or gr.update()
+        fn=lambda lut_file, current_color_mode: (
+            detect_lut_color_mode(lut_file.name if lut_file else None)
+            or current_color_mode
         ),
-        inputs=[conv_lut_upload],
+        inputs=[conv_lut_upload, components["radio_conv_color_mode"]],
         outputs=[components["radio_conv_color_mode"]],
     )
 
@@ -1053,8 +1054,13 @@ def create_converter_tab_content(lang: str, lang_state=None) -> dict:
         outputs=[components["slider_conv_width"], conv_target_height_mm],
     ).then(
         # 自动检测图像类型并切换建模模式
-        fn=detect_image_type,
-        inputs=[components["image_conv_image_label"]],
+        fn=lambda image_file, current_modeling_mode: (
+            detect_image_type(image_file) or current_modeling_mode
+        ),
+        inputs=[
+            components["image_conv_image_label"],
+            components["radio_conv_modeling_mode"],
+        ],
         outputs=[components["radio_conv_modeling_mode"]],
     )
     components["slider_conv_width"].input(

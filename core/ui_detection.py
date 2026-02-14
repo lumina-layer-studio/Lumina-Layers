@@ -47,10 +47,19 @@ def detect_lut_color_mode(lut_path):
 
         # 4色模式：1024色 (4^5 = 1024)
         elif total_colors >= 900 and total_colors <= 1100:
-            print(
-                f"[AUTO_DETECT] Detected 4-Color mode (1024 colors) - keeping current selection"
-            )
-            return None  # 不自动切换4色模式，保持用户选择
+            print(f"[AUTO_DETECT] Detected 4-Color mode (1024 colors)")
+            # 尝试从文件名推断CMYW或RYBW
+            filename = os.path.basename(lut_path)
+            name_lower = filename.lower()
+            if "cmyw" in name_lower:
+                print(f"[AUTO_DETECT] Filename suggests CMYW mode")
+                return ColorMode.CMYW.value
+            if "rybw" in name_lower:
+                print(f"[AUTO_DETECT] Filename suggests RYBW mode")
+                return ColorMode.RYBW.value
+            # 无法推断时返回None，保持当前选择
+            print(f"[AUTO_DETECT] Cannot infer 4-Color subtype from filename")
+            return None
 
         else:
             print(f"[AUTO_DETECT] Unknown LUT format with {total_colors} colors")

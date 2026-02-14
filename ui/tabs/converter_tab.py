@@ -21,11 +21,7 @@ from ui.converter_ui import (
     update_preview_with_loop,
     on_remove_loop,
     on_preview_click_select_color,
-    generate_lut_grid_html,
-)
-from ui.ui_detection import (
-    detect_lut_color_mode,
-    detect_image_type,
+    generate_lut_grid_html, detect_lut_color_mode, detect_image_type,
 )
 from core.i18n import I18n
 from ui.i18n_bridge import resolve_i18n_text

@@ -3,82 +3,34 @@ Lumina Studio - UI Layout (Refactored with i18n)
 UI layout definition - Refactored version with language switching support
 """
 
-import json
-import os
-import shutil
-import time
-import zipfile
-from pathlib import Path
-
 import gradio as gr
-import numpy as np
-from PIL import Image as PILImage
 
-from config import ColorSystem, ColorMode, ModelingMode, StructureMode, MatchStrategy
-from utils import Stats, LUTManager
+from config import ColorMode, ModelingMode, StructureMode, MatchStrategy
 from core.calibration import (
     generate_calibration_board,
     generate_smart_board,
     generate_8color_batch_zip,
 )
-from core.extractor import (
-    rotate_image,
-    draw_corner_points,
-    run_extraction,
-    probe_lut_cell,
-    manual_fix_cell,
-)
-from core.converter import (
-    ConversionRequest,
-    generate_final_model,
-)
+from core.i18n import I18n
 from ui.converter_ui import (
     generate_preview_cached,
-    render_preview,
-    update_preview_with_loop,
-    on_remove_loop,
-    on_preview_click_select_color,
     generate_lut_grid_html,
 )
-from ui.ui_detection import (
-    detect_lut_color_mode,
-    detect_image_type,
-)
-from core.i18n import I18n
-from .assets import HEADER_CSS, LUT_GRID_CSS, PREVIEW_ZOOM_CSS
-from .assets import (
-    LUT_GRID_JS,
-    PREVIEW_ZOOM_JS,
-    OPEN_CROP_MODAL_JS,
-    SHOW_COLOR_TOAST_JS,
-)
+from utils import Stats
 from .callbacks import (
-    get_first_hint,
-    get_next_hint,
-    on_extractor_upload,
-    on_extractor_mode_change,
-    on_extractor_rotate,
-    on_extractor_click,
-    on_extractor_clear,
     on_lut_select,
-    on_lut_upload_save,
-    on_apply_color_replacement,
-    on_clear_color_replacements,
-    on_undo_color_replacement,
     on_preview_generated_update_palette,
-    on_highlight_color_change,
-    on_clear_highlight,
     run_extraction_wrapper,
     merge_8color_data,
 )
+from .tabs import calibration_tab as _calibration_tab
+from .tabs import converter_tab as _converter_tab
 from .tabs import (
     create_converter_tab_content,
     create_calibration_tab_content,
     create_extractor_tab_content,
     create_about_tab_content,
 )
-from .tabs import converter_tab as _converter_tab
-from .tabs import calibration_tab as _calibration_tab
 from .tabs import extractor_tab as _extractor_tab
 
 # CSS/JS constants moved to ui/layout_css.py and ui/layout_js.py

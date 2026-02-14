@@ -6,6 +6,7 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 from PIL import Image
+from core.i18n import I18n
 
 pytest.importorskip("gradio")
 import gradio as gr
@@ -84,6 +85,31 @@ def _assert_visible_labels(page, labels: list[str], timeout: int = 5000) -> None
 def _assert_attached_selectors(page, selectors: list[str], timeout: int = 5000) -> None:
     for selector in selectors:
         page.wait_for_selector(selector, state="attached", timeout=timeout)
+
+
+def _i18n(key: str, lang: str = "zh") -> str:
+    return I18n.get(key, lang)
+
+
+def _i18n_ui(key: str, lang: str = "zh") -> str:
+    text = _i18n(key, lang).strip().replace("**", "")
+    while text.startswith("#"):
+        text = text[1:].strip()
+    return text
+
+
+def _about_heading(index: int, lang: str = "zh") -> str:
+    headings = []
+    for line in _i18n("about_content", lang).splitlines():
+        s = line.strip()
+        if s.startswith("#"):
+            while s.startswith("#"):
+                s = s[1:].strip()
+            if s:
+                headings.append(s)
+    if not headings:
+        return ""
+    return headings[min(index, len(headings) - 1)]
 
 
 def _build_stubbed_app(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> gr.Blocks:
@@ -173,7 +199,9 @@ def _build_stubbed_app(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> gr.Bl
         lambda *args, **kwargs: (warp_img, lut_img, str(ext_npy), "E2E_EXT_OK"),
     )
     monkeypatch.setattr(
-        layout, "merge_8color_data", lambda: (str(ext_npy), "E2E_MERGE_OK")
+        layout,
+        "merge_8color_data",
+        lambda *args, **kwargs: (str(ext_npy), "E2E_MERGE_OK"),
     )
 
     return layout.create_app()
@@ -197,74 +225,102 @@ def test_playwright_e2e_all_tabs_ui_elements(
                 page,
                 [
                     "Lumina Studio",
-                    "多材料3D打印色彩系统",
-                    "累计生成",
-                    "校准板",
-                    "颜色提取",
-                    "模型转换",
+                    _i18n("app_subtitle", "zh").split("|")[0].strip(),
+                    _i18n_ui("stats_total", "zh"),
+                    _i18n("stats_calibrations", "zh"),
+                    _i18n("stats_extractions", "zh"),
+                    _i18n("stats_conversions", "zh"),
                 ],
                 timeout=8000,
             )
-            _assert_visible_buttons(page, ["🌐 English", "🌙 夜间模式"])
-            page.get_by_role("tab", name="💎 图像转换").wait_for(timeout=5000)
-            page.get_by_role("tab", name="📐 校准板生成").wait_for(timeout=5000)
-            page.get_by_role("tab", name="🎨 颜色提取").wait_for(timeout=5000)
-            page.get_by_role("tab", name="ℹ️ 关于").wait_for(timeout=5000)
+            _assert_visible_buttons(
+                page, [_i18n("lang_btn_en", "zh"), _i18n("theme_toggle_night", "zh")]
+            )
+            page.get_by_role("tab", name=_i18n("tab_converter", "zh")).wait_for(
+                timeout=5000
+            )
+            page.get_by_role("tab", name=_i18n("tab_calibration", "zh")).wait_for(
+                timeout=5000
+            )
+            page.get_by_role("tab", name=_i18n("tab_extractor", "zh")).wait_for(
+                timeout=5000
+            )
+            page.get_by_role("tab", name=_i18n("tab_about", "zh")).wait_for(
+                timeout=5000
+            )
 
             # Converter tab: all visible controls
             _assert_visible_texts(
                 page,
                 [
-                    "📁 输入",
-                    "⚙️ 参数",
-                    "🎨 2D预览",
-                    "🎮 3D预览",
-                    "下载【务必合并对象后再切片】",
-                    "状态",
+                    _i18n_ui("conv_input_section", "zh"),
+                    _i18n_ui("conv_params_section", "zh"),
+                    _i18n_ui("conv_preview_section", "zh"),
+                    _i18n_ui("conv_3d_preview", "zh"),
+                    _i18n_ui("conv_download_section", "zh"),
+                    _i18n("conv_status", "zh"),
                 ],
             )
             _assert_visible_labels(
                 page,
                 [
-                    "校准数据 (.npy) / Calibration Data",
-                    "📦 批量模式",
-                    "输入图像",
-                    "宽度 (mm)",
-                    "高度 (mm)",
-                    "背板 (mm)",
-                    "色彩模式",
-                    "结构",
-                    "🎨 建模模式",
-                    "🗑️ 移除背景",
-                    "3MF文件",
+                    _i18n("conv_lut_dropdown_label", "zh"),
+                    _i18n("conv_batch_mode", "zh"),
+                    _i18n("conv_image_label", "zh"),
+                    _i18n("conv_width", "zh"),
+                    _i18n("conv_height", "zh"),
+                    _i18n("conv_thickness", "zh"),
+                    _i18n("conv_color_mode", "zh"),
+                    _i18n("conv_structure", "zh"),
+                    _i18n("conv_modeling_mode", "zh"),
+                    _i18n("conv_auto_bg", "zh"),
+                    _i18n("conv_download_file", "zh"),
                 ],
             )
             _assert_visible_buttons(
                 page,
                 [
-                    "👁️ 生成预览",
-                    "🚀 生成3MF",
-                    "🛑 停止生成",
+                    _i18n("conv_preview_btn", "zh"),
+                    _i18n("conv_generate_btn", "zh"),
+                    _i18n("conv_stop", "zh"),
                 ],
             )
 
-            page.get_by_role("button", name="🛠️ 高级设置").click()
+            page.get_by_role("button", name=_i18n("conv_advanced", "zh")).click()
             _assert_visible_labels(
-                page, ["🎨 色彩细节", "容差", "匹配策略 / Match Strategy"]
+                page,
+                [
+                    _i18n("conv_quantize_colors", "zh"),
+                    _i18n("conv_tolerance", "zh"),
+                    _i18n("conv_match_strategy", "zh"),
+                ],
             )
-            _assert_visible_buttons(page, ["🔍 自动计算"])
+            _assert_visible_buttons(page, [_i18n("conv_auto_color_btn", "zh")])
 
-            page.get_by_role("button", name="🎨 颜色调色板").click()
+            page.get_by_role("button", name=_i18n("conv_palette", "zh")).click()
             _assert_visible_texts(
                 page,
                 [
-                    "原图颜色",
-                    "替换为",
-                    "已生效的替换",
+                    _i18n_ui("conv_palette_step1", "zh"),
+                    _i18n_ui("conv_palette_step2", "zh"),
+                    _i18n_ui("conv_palette_replacements_label", "zh"),
                 ],
             )
-            _assert_visible_labels(page, ["当前选中", "将替换为"])
-            _assert_visible_buttons(page, ["✅ 确认替换", "↩️ 撤销", "🗑️ 清除所有"])
+            _assert_visible_labels(
+                page,
+                [
+                    _i18n("conv_palette_selected_label", "zh"),
+                    _i18n("conv_palette_replace_label", "zh"),
+                ],
+            )
+            _assert_visible_buttons(
+                page,
+                [
+                    _i18n("conv_palette_apply_btn", "zh"),
+                    _i18n("conv_palette_undo_btn", "zh"),
+                    _i18n("conv_palette_clear_btn", "zh"),
+                ],
+            )
 
             # Hidden trigger elements still exist in DOM and are test covered.
             _assert_attached_selectors(
@@ -288,105 +344,151 @@ def test_playwright_e2e_all_tabs_ui_elements(
             )
 
             # Calibration tab
-            page.get_by_role("tab", name="📐 校准板生成").click()
+            page.get_by_role("tab", name=_i18n("tab_calibration", "zh")).click()
             _assert_visible_labels(
                 page,
                 [
-                    "色彩模式",
-                    "色块尺寸 (mm)",
-                    "间隙 (mm)",
-                    "底板颜色",
-                    "状态",
+                    _i18n("cal_color_mode", "zh"),
+                    _i18n("cal_block_size", "zh"),
+                    _i18n("cal_gap", "zh"),
+                    _i18n("cal_backing", "zh"),
+                    _i18n("cal_status", "zh"),
                 ],
             )
-            _assert_visible_texts(page, ["👁️ 预览", "下载 3MF"])
-            _assert_visible_buttons(page, ["🚀 生成"])
+            _assert_visible_texts(
+                page, [_i18n_ui("cal_preview", "zh"), _i18n("cal_download", "zh")]
+            )
+            _assert_visible_buttons(page, [_i18n("cal_generate_btn", "zh")])
 
             # Extractor tab
-            page.get_by_role("tab", name="🎨 颜色提取").click()
+            page.get_by_role("tab", name=_i18n("tab_extractor", "zh")).click()
             _assert_visible_texts(
                 page,
                 [
-                    "📸 上传照片",
-                    "🔧 校正参数",
-                    "📍 采样预览",
-                    "🎯 参考",
-                    "📊 结果",
-                    "🛠️ 手动修正",
+                    _i18n_ui("ext_upload_section", "zh"),
+                    _i18n_ui("ext_correction_section", "zh"),
+                    _i18n_ui("ext_sampling", "zh"),
+                    _i18n_ui("ext_reference", "zh"),
+                    _i18n_ui("ext_result", "zh"),
+                    _i18n_ui("ext_manual_fix", "zh"),
                 ],
             )
             _assert_visible_labels(
                 page,
                 [
-                    "🎨 色彩模式",
-                    "校准板照片",
-                    "自动白平衡",
-                    "暗角校正",
-                    "缩放",
-                    "畸变",
-                    "X偏移",
-                    "Y偏移",
-                    "8-Color Page",
-                    "状态",
-                    "替换颜色",
-                    "下载 .npy",
+                    _i18n("ext_color_mode", "zh"),
+                    _i18n("ext_photo", "zh"),
+                    _i18n("ext_wb", "zh"),
+                    _i18n("ext_vignette", "zh"),
+                    _i18n("ext_zoom", "zh"),
+                    _i18n("ext_distortion", "zh"),
+                    _i18n("ext_offset_x", "zh"),
+                    _i18n("ext_offset_y", "zh"),
+                    _i18n("ext_8color_page", "zh"),
+                    _i18n("ext_status", "zh"),
+                    _i18n("ext_override", "zh"),
+                    _i18n("ext_download_npy", "zh"),
                 ],
             )
             _assert_visible_buttons(
-                page, ["↺ 旋转", "🗑️ 重置", "🚀 提取", "Merge 8-Color", "🔧 应用"]
+                page,
+                [
+                    _i18n("ext_rotate_btn", "zh"),
+                    _i18n("ext_reset_btn", "zh"),
+                    _i18n("ext_extract_btn", "zh"),
+                    _i18n("ext_merge_8color", "zh"),
+                    _i18n("ext_apply_btn", "zh"),
+                ],
             )
 
             # About tab
-            page.get_by_role("tab", name="ℹ️ 关于").click()
-            _assert_visible_texts(page, ["⚙️ 设置", "Lumina Studio v1.5.6", "技术原理"])
-            _assert_visible_buttons(page, ["🗑️ 清空缓存", "🔢 使用计数归零"])
-
-            # Switch language and re-check core UI labels in all tabs.
-            page.get_by_role("button", name="🌐 English").click()
-            page.get_by_role("tab", name="💎 Image Converter").wait_for(timeout=5000)
-            _assert_visible_buttons(page, ["🌐 English", "🌙 Night Mode"])
+            page.get_by_role("tab", name=_i18n("tab_about", "zh")).click()
             _assert_visible_texts(
                 page,
-                ["📊 Total Generated", "Calibrations", "Extractions", "Conversions"],
-            )
-
-            page.get_by_role("tab", name="💎 Image Converter").click()
-            _assert_visible_labels(
-                page,
                 [
-                    "Input Image",
-                    "Width (mm)",
-                    "Height (mm)",
-                    "Backing (mm)",
-                    "Color Mode",
-                    "Structure",
-                    "🎨 Modeling Mode",
-                    "🗑️ Remove Background",
-                    "3MF File",
+                    _i18n_ui("settings_title", "zh"),
+                    _about_heading(0, "zh"),
+                    _about_heading(2, "zh"),
                 ],
             )
             _assert_visible_buttons(
-                page, ["👁️ Generate Preview", "🚀 Generate 3MF", "🛑 Stop Generation"]
+                page,
+                [
+                    _i18n("settings_clear_cache", "zh"),
+                    _i18n("settings_reset_counters", "zh"),
+                ],
             )
 
-            page.get_by_role("button", name="🛠️ Advanced Settings").click()
+            # Switch language and re-check core UI labels in all tabs.
+            page.get_by_role("button", name=_i18n("lang_btn_en", "zh")).click()
+            page.get_by_role("tab", name=_i18n("tab_converter", "en")).wait_for(
+                timeout=5000
+            )
+            _assert_visible_buttons(
+                page, [_i18n("lang_btn_en", "en"), _i18n("theme_toggle_night", "en")]
+            )
+            _assert_visible_texts(
+                page,
+                [
+                    _i18n_ui("stats_total", "en"),
+                    _i18n("stats_calibrations", "en"),
+                    _i18n("stats_extractions", "en"),
+                    _i18n("stats_conversions", "en"),
+                ],
+            )
+
+            page.get_by_role("tab", name=_i18n("tab_converter", "en")).click()
+            _assert_visible_labels(
+                page,
+                [
+                    _i18n("conv_image_label", "en"),
+                    _i18n("conv_width", "en"),
+                    _i18n("conv_height", "en"),
+                    _i18n("conv_thickness", "en"),
+                    _i18n("conv_color_mode", "en"),
+                    _i18n("conv_structure", "en"),
+                    _i18n("conv_modeling_mode", "en"),
+                    _i18n("conv_auto_bg", "en"),
+                    _i18n("conv_download_file", "en"),
+                ],
+            )
+            _assert_visible_buttons(
+                page,
+                [
+                    _i18n("conv_preview_btn", "en"),
+                    _i18n("conv_generate_btn", "en"),
+                    _i18n("conv_stop", "en"),
+                ],
+            )
+
+            page.get_by_role("button", name=_i18n("conv_advanced", "en")).click()
             try:
                 _assert_visible_labels(
-                    page, ["🎨 Color Detail", "Tolerance", "Match Strategy"]
+                    page,
+                    [
+                        _i18n("conv_quantize_colors", "en"),
+                        _i18n("conv_tolerance", "en"),
+                        _i18n("conv_match_strategy", "en"),
+                    ],
                 )
             except Exception:
                 # Accordion may be toggled closed after language refresh; click again to open.
-                page.get_by_role("button", name="🛠️ Advanced Settings").click()
+                page.get_by_role("button", name=_i18n("conv_advanced", "en")).click()
                 _assert_visible_labels(
-                    page, ["🎨 Color Detail", "Tolerance", "Match Strategy"]
+                    page,
+                    [
+                        _i18n("conv_quantize_colors", "en"),
+                        _i18n("conv_tolerance", "en"),
+                        _i18n("conv_match_strategy", "en"),
+                    ],
                 )
             # Button text can vary after language toggle, already covered in Chinese assertions above.
 
-            page.get_by_role("button", name="🎨 Color Palette").click()
+            page.get_by_role("button", name=_i18n("conv_palette", "en")).click()
             # Palette detail labels are validated in Chinese mode above.
 
-            page.get_by_role("tab", name="📐 Calibration").click()
-            _assert_visible_buttons(page, ["🚀 Generate"])
+            page.get_by_role("tab", name=_i18n("tab_calibration", "en")).click()
+            _assert_visible_buttons(page, [_i18n("cal_generate_btn", "en")])
 
             browser.close()
 
@@ -411,28 +513,34 @@ def test_playwright_e2e_full_workflow(monkeypatch: pytest.MonkeyPatch, tmp_path:
             page.locator("#conv-image-input input[type='file']").set_input_files(
                 str(test_image)
             )
-            page.get_by_role("button", name="👁️ 生成预览").click()
+            page.get_by_role("button", name=_i18n("conv_preview_btn", "zh")).click()
             _wait_status_contains(page, "E2E_PREVIEW_OK")
 
-            page.get_by_role("button", name="🚀 生成3MF").click()
+            page.get_by_role("button", name=_i18n("conv_generate_btn", "zh")).click()
             _wait_status_contains(page, "E2E_GENERATE_OK")
 
-            page.get_by_role("tab", name="📐 校准板生成").click()
-            page.get_by_role("button", name="🚀 生成").click()
+            page.get_by_role("tab", name=_i18n("tab_calibration", "zh")).click()
+            page.get_by_role("button", name=_i18n("cal_generate_btn", "zh")).click()
             _wait_status_contains(page, "E2E_CAL_OK")
 
-            page.get_by_role("tab", name="🎨 颜色提取").click()
-            page.get_by_role("button", name="🚀 提取").click()
+            page.get_by_role("tab", name=_i18n("tab_extractor", "zh")).click()
+            page.get_by_role("button", name=_i18n("ext_extract_btn", "zh")).click()
             _wait_status_contains(page, "E2E_EXT_OK")
 
-            page.get_by_role("button", name="Merge 8-Color").click()
+            page.get_by_role("button", name=_i18n("ext_merge_8color", "zh")).click()
             _wait_status_contains(page, "E2E_MERGE_OK")
 
-            page.get_by_role("tab", name="ℹ️ 关于").click()
-            page.get_by_role("button", name="🗑️ 清空缓存").click()
-            page.get_by_text("缓存已清空", exact=False).wait_for(timeout=5000)
+            page.get_by_role("tab", name=_i18n("tab_about", "zh")).click()
+            page.get_by_role("button", name=_i18n("settings_clear_cache", "zh")).click()
+            page.get_by_text(
+                _i18n("settings_cache_cleared", "zh").split("，")[0], exact=False
+            ).wait_for(timeout=5000)
 
-            page.get_by_role("button", name="🔢 使用计数归零").click()
-            page.get_by_text("计数器已归零", exact=False).wait_for(timeout=5000)
+            page.get_by_role(
+                "button", name=_i18n("settings_reset_counters", "zh")
+            ).click()
+            page.get_by_text(
+                _i18n("settings_counters_reset", "zh").split("：")[0], exact=False
+            ).wait_for(timeout=5000)
 
             browser.close()

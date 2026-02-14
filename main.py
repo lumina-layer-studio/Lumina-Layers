@@ -35,8 +35,7 @@ import socket
 import gradio as gr  # type:ignore
 from gradio.themes import Soft
 from ui.layout_new import create_app
-from ui.layout_css import HEADER_CSS, LUT_GRID_CSS
-from ui.styles import CUSTOM_CSS
+from ui.assets import CUSTOM_CSS, HEADER_CSS, LUT_GRID_CSS
 
 HAS_DISPLAY = os.environ.get("DISPLAY") or os.name == "nt"
 LuminaTray = None

@@ -9,7 +9,7 @@ It uses a decorator pattern to wrap the original create_app function.
 import gradio as gr
 from core.i18n import I18n
 from core.image_preprocessor import ImagePreprocessor
-from .asset_loader import load_asset_text
+from .assets import load_asset_text
 
 
 def get_crop_modal_html(lang: str) -> str:

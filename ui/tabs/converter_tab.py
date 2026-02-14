@@ -25,7 +25,7 @@ from core.converter import (
 )
 from core.i18n import I18n
 from ui.i18n_bridge import resolve_i18n_text
-from ui.layout_js import LUT_GRID_JS, OPEN_CROP_MODAL_JS, SHOW_COLOR_TOAST_JS
+from ui.assets import LUT_GRID_JS, OPEN_CROP_MODAL_JS, SHOW_COLOR_TOAST_JS
 from ui.callbacks import (
     on_lut_select,
     on_lut_upload_save,

@@ -41,8 +41,8 @@ from core.converter import (
     detect_image_type,
 )
 from core.i18n import I18n
-from .layout_css import HEADER_CSS, LUT_GRID_CSS, PREVIEW_ZOOM_CSS
-from .layout_js import (
+from .assets import HEADER_CSS, LUT_GRID_CSS, PREVIEW_ZOOM_CSS
+from .assets import (
     LUT_GRID_JS,
     PREVIEW_ZOOM_JS,
     OPEN_CROP_MODAL_JS,
@@ -74,6 +74,7 @@ from .tabs import (
     create_about_tab_content,
 )
 from .tabs import converter_tab as _converter_tab
+from .tabs import calibration_tab as _calibration_tab
 from .tabs import extractor_tab as _extractor_tab
 
 # CSS/JS constants moved to ui/layout_css.py and ui/layout_js.py
@@ -98,9 +99,10 @@ def _get_image_size(img):
     return _converter_tab._get_image_size(img)
 
 
-def get_extractor_reference_image(mode_str):
-    """Compatibility wrapper for legacy helper import path."""
-    return _extractor_tab.get_extractor_reference_image(mode_str)
+get_extractor_reference_image = _extractor_tab.get_extractor_reference_image
+
+
+process_batch_generation = _converter_tab.process_batch_generation
 
 
 # ============================================================================
@@ -111,6 +113,26 @@ def get_extractor_reference_image(mode_str):
 
 def create_app():
     """Build the Gradio app (tabs, i18n, events) and return the Blocks instance."""
+
+    def _merge_8color_data_compat(lang: str = "zh"):
+        try:
+            return merge_8color_data(lang)
+        except TypeError:
+            return merge_8color_data()
+
+    # Keep legacy monkeypatch paths working after tab modularization.
+    _converter_tab.generate_preview_cached = generate_preview_cached
+    _converter_tab.on_preview_generated_update_palette = (
+        on_preview_generated_update_palette
+    )
+    _converter_tab.process_batch_generation = process_batch_generation
+    _calibration_tab.generate_calibration_board = generate_calibration_board
+    _calibration_tab.generate_smart_board = generate_smart_board
+    _calibration_tab.generate_8color_batch_zip = generate_8color_batch_zip
+    _extractor_tab.get_extractor_reference_image = get_extractor_reference_image
+    _extractor_tab.run_extraction_wrapper = run_extraction_wrapper
+    _extractor_tab.merge_8color_data = _merge_8color_data_compat
+
     with gr.Blocks(title="Lumina Studio") as app:
         lang_state = gr.State(value="zh")
         theme_state = gr.State(value=False)  # False=light, True=dark

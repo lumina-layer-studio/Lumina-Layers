@@ -9,7 +9,7 @@ import time
 import gradio as gr
 from PIL import Image as PILImage
 
-from config import ColorMode, ModelingMode, MatchStrategy
+from config import ColorMode, ModelingMode, StructureMode, MatchStrategy
 from utils import LUTManager
 from core.converter import (
     ConversionRequest,
@@ -240,6 +240,8 @@ def process_batch_generation(
             _preview_update(None),
             I18n.get("conv_err_color_mode_required", lang),
         )
+
+    structure_mode = StructureMode(structure_mode)
 
     try:
         modeling_mode = ModelingMode(modeling_mode)
@@ -531,14 +533,14 @@ def create_converter_tab_content(lang: str, lang_state=None) -> dict:
                     choices=[
                         (
                             I18n.get("conv_structure_double", lang),
-                            I18n.get("conv_structure_double", "en"),
+                            StructureMode.DOUBLE_SIDED.value,
                         ),
                         (
                             I18n.get("conv_structure_single", lang),
-                            I18n.get("conv_structure_single", "en"),
+                            StructureMode.SINGLE_SIDED.value,
                         ),
                     ],
-                    value=I18n.get("conv_structure_double", "en"),
+                    value=StructureMode.DOUBLE_SIDED.value,
                     label=I18n.get("conv_structure", lang),
                 )
 

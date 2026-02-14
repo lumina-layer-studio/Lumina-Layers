@@ -1,6 +1,6 @@
 import pytest
 
-from config import ColorMode, MatchStrategy
+from config import ColorMode, MatchStrategy, StructureMode
 from ui.tabs.converter_tab import process_batch_generation
 
 
@@ -13,7 +13,7 @@ def test_process_batch_generation_returns_friendly_error_when_modeling_mode_miss
         lut_path="dummy.npy",
         target_width_mm=60,
         spacer_thick=1.2,
-        structure_mode="Double-sided",
+        structure_mode=StructureMode.DOUBLE_SIDED.value,
         auto_bg=False,
         bg_tol=40,
         color_mode=ColorMode.RYBW,

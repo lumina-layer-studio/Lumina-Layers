@@ -14,7 +14,7 @@ import gradio as gr
 import numpy as np
 from PIL import Image as PILImage
 
-from config import ColorSystem, ColorMode, ModelingMode, MatchStrategy
+from config import ColorSystem, ColorMode, ModelingMode, StructureMode, MatchStrategy
 from utils import Stats, LUTManager
 from core.calibration import (
     generate_calibration_board,
@@ -468,11 +468,11 @@ def _get_all_component_updates(lang: str, components: dict) -> list:
                         choices=[
                             (
                                 I18n.get("conv_structure_double", lang),
-                                I18n.get("conv_structure_double", "en"),
+                                StructureMode.DOUBLE_SIDED.value,
                             ),
                             (
                                 I18n.get("conv_structure_single", lang),
-                                I18n.get("conv_structure_single", "en"),
+                                StructureMode.SINGLE_SIDED.value,
                             ),
                         ],
                     )

@@ -18,6 +18,7 @@ from config import (
     ColorMode,
     ColorSystem,
     ModelingMode,
+    StructureMode,
     MatchStrategy,
     PREVIEW_SCALE,
     PREVIEW_MARGIN,
@@ -295,7 +296,7 @@ class ConversionRequest:
     quantize_colors: int = 64  # K-Means color count (preview + conversion)
     match_strategy: MatchStrategy = MatchStrategy.RGB_EUCLIDEAN  # Color match metric
     spacer_thick: float = 1.2  # Backing/spacer thickness in mm
-    structure_mode: str = "Double-sided"  # Structure mode label
+    structure_mode: StructureMode = StructureMode.DOUBLE_SIDED  # Structure mode
     add_loop: bool = False  # Whether to add keychain loop
     loop_width: float = 4.0  # Loop outer width in mm
     loop_length: float = 8.0  # Loop outer length in mm
@@ -692,7 +693,7 @@ def convert_image_to_3d(
 
     # ========== Step 8: Export 3MF ==========
     # 单面模式需要 X 轴镜像修正，使 3MF 输出与预览/GLB 一致
-    is_single_sided = "单面" in structure_mode or "Single" in structure_mode
+    is_single_sided = structure_mode == StructureMode.SINGLE_SIDED
     if is_single_sided:
         model_width_mm = target_w * pixel_scale
         mirror_transform = np.array(
@@ -888,7 +889,9 @@ def _draw_loop_on_preview(preview_rgba, loop_info, color_conf, pixel_scale):
     return np.array(preview_pil)
 
 
-def _build_voxel_matrix(material_matrix, mask_solid, spacer_thick, structure_mode):
+def _build_voxel_matrix(
+    material_matrix, mask_solid, spacer_thick, structure_mode: StructureMode
+):
     """Build complete voxel matrix."""
     target_h, target_w = material_matrix.shape[:2]
     mask_transparent = ~mask_solid
@@ -897,7 +900,7 @@ def _build_voxel_matrix(material_matrix, mask_solid, spacer_thick, structure_mod
 
     spacer_layers = max(1, int(round(spacer_thick / PrinterConfig.LAYER_HEIGHT)))
 
-    if "双面" in structure_mode or "Double" in structure_mode:
+    if structure_mode == StructureMode.DOUBLE_SIDED:
         top_voxels = np.transpose(material_matrix[..., ::-1], (2, 0, 1))
         total_layers = 5 + spacer_layers + 5
         full_matrix = np.full((total_layers, target_h, target_w), -1, dtype=int)

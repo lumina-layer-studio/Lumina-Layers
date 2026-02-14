@@ -53,6 +53,20 @@ class ModelingMode(str, Enum):
         return display_names.get(self, self.value)
 
 
+class StructureMode(str, Enum):
+    """结构模式枚举"""
+
+    DOUBLE_SIDED = "double-sided"
+    SINGLE_SIDED = "single-sided"
+
+    def get_display_name(self) -> str:
+        display_names = {
+            StructureMode.DOUBLE_SIDED: "Double-sided",
+            StructureMode.SINGLE_SIDED: "Single-sided",
+        }
+        return display_names.get(self, self.value)
+
+
 class ColorMode(str, Enum):
     """色彩模式枚举"""
 

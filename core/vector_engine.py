@@ -26,7 +26,7 @@ from shapely import affinity  # <--- 【新增】用于几何变换
 from shapely.ops import unary_union
 import os
 
-from config import PrinterConfig, ColorMode, ColorSystem
+from config import PrinterConfig, ColorMode, ColorSystem, StructureMode
 
 # Reuse image processor for color matching infrastructure
 from core.image_processing import LuminaImageProcessor
@@ -83,7 +83,7 @@ class VectorProcessor:
         svg_path: str,
         target_width_mm: float,
         thickness_mm: float,
-        structure_mode: str = "Single-sided",
+        structure_mode: StructureMode = StructureMode.SINGLE_SIDED,
         color_replacements: dict = None,
     ) -> trimesh.Scene:
         """
@@ -370,7 +370,7 @@ class VectorProcessor:
                 meshes_by_slot[backing_name]["meshes"].extend(backing_meshes)
 
         # Step 8: Handle double-sided structure
-        is_double_sided = "双面" in structure_mode or "Double" in structure_mode
+        is_double_sided = structure_mode == StructureMode.DOUBLE_SIDED
 
         if is_double_sided:
             print("[VECTOR] Adding top color layers (double-sided mode)...")

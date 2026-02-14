@@ -9,7 +9,7 @@ import time
 import gradio as gr
 from PIL import Image as PILImage
 
-from config import ModelingMode, MatchStrategy
+from config import ColorMode, ModelingMode, MatchStrategy
 from utils import LUTManager
 from core.converter import (
     ConversionRequest,
@@ -224,6 +224,16 @@ def process_batch_generation(
         )
 
     if color_mode in (None, ""):
+        return (
+            None,
+            None,
+            _preview_update(None),
+            I18n.get("conv_err_color_mode_required", lang),
+        )
+
+    try:
+        color_mode = ColorMode(color_mode)
+    except Exception:
         return (
             None,
             None,
@@ -498,22 +508,22 @@ def create_converter_tab_content(lang: str, lang_state=None) -> dict:
                     choices=[
                         (
                             I18n.get("conv_color_mode_cmyw", lang),
-                            I18n.get("conv_color_mode_cmyw", "en"),
+                            ColorMode.CMYW.value,
                         ),
                         (
                             I18n.get("conv_color_mode_rybw", lang),
-                            I18n.get("conv_color_mode_rybw", "en"),
+                            ColorMode.RYBW.value,
                         ),
                         (
                             I18n.get("color_mode_6color", lang),
-                            I18n.get("color_mode_6color", "en"),
+                            ColorMode.SIX_COLOR.value,
                         ),
                         (
                             I18n.get("color_mode_8color", lang),
-                            I18n.get("color_mode_8color", "en"),
+                            ColorMode.EIGHT_COLOR_MAX.value,
                         ),
                     ],
-                    value=I18n.get("conv_color_mode_rybw", "en"),
+                    value=ColorMode.RYBW.value,
                     label=I18n.get("conv_color_mode", lang),
                 )
 
@@ -1080,6 +1090,15 @@ def create_converter_tab_content(lang: str, lang_state=None) -> dict:
                 I18n.get("conv_err_color_mode_required", lang_val),
             )
 
+        try:
+            parsed_color_mode = ColorMode(color_mode)
+        except Exception:
+            return (
+                _preview_update(None),
+                None,
+                I18n.get("conv_err_color_mode_required", lang_val),
+            )
+
         is_hifi_mode = modeling_mode in (
             ModelingMode.HIGH_FIDELITY,
             ModelingMode.HIGH_FIDELITY.value,
@@ -1114,7 +1133,7 @@ def create_converter_tab_content(lang: str, lang_state=None) -> dict:
             target_width_mm=target_width_mm,
             auto_bg=auto_bg,
             bg_tol=bg_tol,
-            color_mode=color_mode,
+            color_mode=parsed_color_mode,
             modeling_mode=parsed_modeling_mode,
             quantize_colors=quantize_colors,
             match_strategy=parsed_match_strategy,

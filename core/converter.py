@@ -15,6 +15,7 @@ from typing import List, Dict, Tuple, Optional
 
 from config import (
     PrinterConfig,
+    ColorMode,
     ColorSystem,
     ModelingMode,
     MatchStrategy,
@@ -289,7 +290,7 @@ class ConversionRequest:
     target_width_mm: float  # Target model width in millimeters
     auto_bg: bool  # Enable automatic background removal
     bg_tol: float  # Background removal tolerance
-    color_mode: str  # Color system key (CMYW / RYBW / 6-Color ...)
+    color_mode: ColorMode  # Color system key
     modeling_mode: ModelingMode = ModelingMode.HIGH_FIDELITY  # Engine mode
     quantize_colors: int = 64  # K-Means color count (preview + conversion)
     match_strategy: MatchStrategy = MatchStrategy.RGB_EUCLIDEAN  # Color match metric
@@ -1867,7 +1868,7 @@ def detect_lut_color_mode(lut_path):
         lut_path: LUT文件路径
 
     Returns:
-        str: 颜色模式 ("CMYW (Cyan/Magenta/Yellow)", "RYBW (Red/Yellow/Blue)", "6-Color (Smart 1296)", "8-Color Max")
+        str: 颜色模式枚举值（用于 UI Radio 的 value）
     """
     if not lut_path or not os.path.exists(lut_path):
         return None
@@ -1887,12 +1888,12 @@ def detect_lut_color_mode(lut_path):
         # 8色模式：2738色 (8^5 = 32768, 但实际智能选择2738)
         if total_colors >= 2600 and total_colors <= 2800:
             print(f"[AUTO_DETECT] Detected 8-Color mode (2738 colors)")
-            return "8-Color Max"
+            return ColorMode.EIGHT_COLOR_MAX.value
 
         # 6色模式：1296色 (6^5 = 7776, 但实际选择1296)
         elif total_colors >= 1200 and total_colors <= 1400:
             print(f"[AUTO_DETECT] Detected 6-Color mode (1296 colors)")
-            return "6-Color (Smart 1296)"
+            return ColorMode.SIX_COLOR.value
 
         # 4色模式：1024色 (4^5 = 1024)
         elif total_colors >= 900 and total_colors <= 1100:

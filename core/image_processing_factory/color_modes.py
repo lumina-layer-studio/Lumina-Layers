@@ -12,6 +12,8 @@ from typing import Tuple
 import numpy as np
 from scipy.spatial import KDTree
 
+from config import ColorMode
+
 
 class ColorModeStrategy(ABC):
     """
@@ -56,7 +58,7 @@ class FourColorStrategy(ColorModeStrategy):
     - Standard 5-layer stacking
     """
 
-    def __init__(self, color_mode: str):
+    def __init__(self, color_mode: ColorMode):
         self.color_mode = color_mode
 
     def load_lut(self, lut_path: str) -> Tuple[np.ndarray, np.ndarray, KDTree]:
@@ -122,7 +124,7 @@ class SixColorStrategy(ColorModeStrategy):
     - No outlier filtering (colors too complex)
     """
 
-    def __init__(self, color_mode: str):
+    def __init__(self, color_mode: ColorMode):
         self.color_mode = color_mode
 
     def load_lut(self, lut_path: str) -> Tuple[np.ndarray, np.ndarray, KDTree]:
@@ -178,7 +180,7 @@ class EightColorStrategy(ColorModeStrategy):
     - Extended color support
     """
 
-    def __init__(self, color_mode: str):
+    def __init__(self, color_mode: ColorMode):
         self.color_mode = color_mode
 
     def load_lut(self, lut_path: str) -> Tuple[np.ndarray, np.ndarray, KDTree]:

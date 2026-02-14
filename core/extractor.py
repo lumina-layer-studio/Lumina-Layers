@@ -10,6 +10,7 @@ import cv2
 import gradio as gr
 
 from config import (
+    ColorMode,
     ColorSystem,
     PHYSICAL_GRID_SIZE,
     DATA_GRID_SIZE,
@@ -56,30 +57,31 @@ def rotate_image(img, direction):
     return img
 
 
-def draw_corner_points(img, points, color_mode: str):
+def draw_corner_points(img, points, color_mode: ColorMode):
     """Draw corner points with mode-specific colors and labels."""
     if img is None:
         return None
 
     vis = img.copy()
-    color_conf = ColorSystem.get(color_mode)
+    mode_enum = color_mode
+    color_conf = ColorSystem.get(mode_enum)
     labels = color_conf["corner_labels"]
 
-    if "8-Color" in color_mode:
+    if mode_enum == ColorMode.EIGHT_COLOR_MAX:
         draw_colors = [
             (255, 255, 255),  # White (TL)
             (255, 255, 0),  # Cyan/Magenta (TR)
             (0, 0, 0),  # Black (BR)
             (0, 255, 255),  # Yellow (BL)
         ]
-    elif "6-Color" in color_mode:
+    elif mode_enum == ColorMode.SIX_COLOR:
         draw_colors = [
             (255, 255, 255),  # White
             (214, 134, 0),  # Cyan (BGR)
             (140, 0, 236),  # Magenta (BGR)
             (42, 238, 244),  # Yellow (BGR)
         ]
-    elif "CMYW" in color_mode:
+    elif mode_enum == ColorMode.CMYW:
         draw_colors = [
             (255, 255, 255),  # White
             (214, 134, 0),  # Cyan (BGR)
@@ -158,7 +160,15 @@ def apply_brightness_correction(img):
 
 
 def run_extraction(
-    img, points, offset_x, offset_y, zoom, barrel, wb, bright, color_mode="CMYW"
+    img,
+    points,
+    offset_x,
+    offset_y,
+    zoom,
+    barrel,
+    wb,
+    bright,
+    color_mode=ColorMode.CMYW,
 ):
     """
     Main extraction pipeline with dynamic grid size support.
@@ -183,11 +193,13 @@ def run_extraction(
         return None, None, None, make_status_tag("ext_err_need_four_points")
 
     # 动态确定网格大小
-    if "8-Color" in color_mode:
+    mode_enum = color_mode
+
+    if mode_enum == ColorMode.EIGHT_COLOR_MAX:
         grid_size = 37  # Data: 37x37 (1369色)
         physical_grid = 39  # Physical: 39x39
         total_cells = 1369
-    elif "6-Color" in color_mode:
+    elif mode_enum == ColorMode.SIX_COLOR:
         grid_size = 36  # 核心数据还是 36x36 (1296色)
         physical_grid = 38  # 物理上有 38x38 (含边框)
         total_cells = 1296
@@ -197,7 +209,7 @@ def run_extraction(
         total_cells = 1024
 
     print(
-        f"[EXTRACTOR] Mode: {color_mode}, Logic: {grid_size}x{grid_size} inside {physical_grid}x{physical_grid}"
+        f"[EXTRACTOR] Mode: {mode_enum.value}, Logic: {grid_size}x{grid_size} inside {physical_grid}x{physical_grid}"
     )
 
     # Perspective transform

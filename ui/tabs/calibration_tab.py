@@ -5,6 +5,7 @@ Calibration board tab UI and event handlers
 
 import gradio as gr
 
+from config import ColorMode
 from core.calibration import (
     generate_calibration_board,
     generate_smart_board,
@@ -26,22 +27,22 @@ def create_calibration_tab_content(lang: str) -> dict:
                 choices=[
                     (
                         I18n.get("conv_color_mode_cmyw", lang),
-                        I18n.get("conv_color_mode_cmyw", "en"),
+                        ColorMode.CMYW.value,
                     ),
                     (
                         I18n.get("conv_color_mode_rybw", lang),
-                        I18n.get("conv_color_mode_rybw", "en"),
+                        ColorMode.RYBW.value,
                     ),
                     (
                         I18n.get("color_mode_6color", lang),
-                        I18n.get("color_mode_6color", "en"),
+                        ColorMode.SIX_COLOR.value,
                     ),
                     (
                         I18n.get("color_mode_8color", lang),
-                        I18n.get("color_mode_8color", "en"),
+                        ColorMode.EIGHT_COLOR_MAX.value,
                     ),
                 ],
-                value=I18n.get("conv_color_mode_rybw", "en"),
+                value=ColorMode.RYBW.value,
                 label=I18n.get("cal_color_mode", lang),
             )
 
@@ -90,10 +91,11 @@ def create_calibration_tab_content(lang: str) -> dict:
     # Event binding - Call different generator based on mode
     def generate_board_wrapper(color_mode, block_size, gap, backing):
         """Wrapper function to call appropriate generator based on mode"""
-        if color_mode == "8-Color Max":
+        mode_enum = ColorMode(color_mode)
+        if mode_enum == ColorMode.EIGHT_COLOR_MAX:
             out, prev, status = generate_8color_batch_zip()
             return out, prev, resolve_i18n_text(status, lang)
-        if "6-Color" in color_mode:
+        if mode_enum == ColorMode.SIX_COLOR:
             # Call Smart 1296 generator
             out, prev, status = generate_smart_board(block_size, gap)
             return out, prev, resolve_i18n_text(status, lang)

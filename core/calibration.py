@@ -17,7 +17,7 @@ from colormath.color_objects import sRGBColor, LabColor
 from colormath.color_conversions import convert_color
 from colormath.color_diff import delta_e_cie2000
 
-from config import PrinterConfig, ColorSystem, SmartConfig, OUTPUT_DIR
+from config import PrinterConfig, ColorMode, ColorSystem, SmartConfig, OUTPUT_DIR
 from utils import Stats, safe_fix_3mf_names
 from .ui_status import make_status_tag
 
@@ -101,7 +101,7 @@ def _generate_voxel_mesh(
 
 
 def generate_calibration_board(
-    color_mode: str, block_size_mm: float, gap_mm: float, backing_color: str
+    color_mode: ColorMode, block_size_mm: float, gap_mm: float, backing_color: str
 ):
     """
     Generate a 1024-color calibration board as 3MF.
@@ -156,7 +156,7 @@ def generate_calibration_board(
             )
 
     # Set corner markers with mode-specific colors
-    if "RYBW" in color_mode:
+    if color_mode == ColorMode.RYBW:
         corners = [
             (0, 0, 0),  # TL = White
             (0, total_w - 1, 1),  # TR = Red

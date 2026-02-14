@@ -14,7 +14,7 @@ import gradio as gr
 import numpy as np
 from PIL import Image as PILImage
 
-from config import ColorSystem, ModelingMode, MatchStrategy
+from config import ColorSystem, ColorMode, ModelingMode, MatchStrategy
 from utils import Stats, LUTManager
 from core.calibration import (
     generate_calibration_board,
@@ -444,19 +444,19 @@ def _get_all_component_updates(lang: str, components: dict) -> list:
                         choices=[
                             (
                                 I18n.get("conv_color_mode_cmyw", lang),
-                                I18n.get("conv_color_mode_cmyw", "en"),
+                                ColorMode.CMYW.value,
                             ),
                             (
                                 I18n.get("conv_color_mode_rybw", lang),
-                                I18n.get("conv_color_mode_rybw", "en"),
+                                ColorMode.RYBW.value,
                             ),
                             (
                                 I18n.get("color_mode_6color", lang),
-                                I18n.get("color_mode_6color", "en"),
+                                ColorMode.SIX_COLOR.value,
                             ),
                             (
                                 I18n.get("color_mode_8color", lang),
-                                I18n.get("color_mode_8color", "en"),
+                                ColorMode.EIGHT_COLOR_MAX.value,
                             ),
                         ],
                     )

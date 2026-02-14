@@ -1,6 +1,6 @@
 import pytest
 
-from config import MatchStrategy
+from config import ColorMode, MatchStrategy
 from ui.tabs.converter_tab import process_batch_generation
 
 
@@ -16,7 +16,7 @@ def test_process_batch_generation_returns_friendly_error_when_modeling_mode_miss
         structure_mode="Double-sided",
         auto_bg=False,
         bg_tol=40,
-        color_mode="RYBW",
+        color_mode=ColorMode.RYBW,
         add_loop=False,
         loop_width=4,
         loop_length=8,

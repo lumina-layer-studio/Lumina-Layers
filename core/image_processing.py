@@ -18,7 +18,7 @@ import numpy as np
 from PIL import Image
 from typing import Dict, Any
 
-from config import PrinterConfig, ModelingMode, MatchStrategy
+from config import PrinterConfig, ColorMode, ModelingMode, MatchStrategy
 
 # Import strategies using relative imports to avoid circular dependency
 from .image_processing_factory import ProcessorFactory, ImageLoader, LUTManager
@@ -37,7 +37,7 @@ class LuminaImageProcessor:
     3. Using helper classes for common operations
     """
 
-    def __init__(self, lut_path: str, color_mode: str):
+    def __init__(self, lut_path: str, color_mode: ColorMode):
         """
         Initialize image processor.
 
@@ -48,10 +48,12 @@ class LuminaImageProcessor:
         self.color_mode = color_mode
 
         # Create color mode strategy
-        self.color_strategy = ProcessorFactory.create_color_strategy(color_mode)
+        self.color_strategy = ProcessorFactory.create_color_strategy(self.color_mode)
 
         # Load LUT using strategy
-        print(f"[LuminaImageProcessor] Initializing with color mode: {color_mode}")
+        print(
+            f"[LuminaImageProcessor] Initializing with color mode: {self.color_mode.value}"
+        )
         self.lut_manager = LUTManager.from_strategy(self.color_strategy, lut_path)
 
     @property

@@ -6,6 +6,7 @@ import numpy as np
 import pytest
 from PIL import Image
 
+from config import ColorMode
 from ui import layout_new
 
 
@@ -184,7 +185,7 @@ def test_helper_get_extractor_reference_image_uses_cached_file(temp_cwd: Path):
     cache_path = assets / "ref_cmyw_standard.png"
     Image.new("RGB", (16, 16), color=(1, 2, 3)).save(cache_path)
 
-    img = layout_new.get_extractor_reference_image("CMYW")
+    img = layout_new.get_extractor_reference_image(ColorMode.CMYW)
 
     assert isinstance(img, Image.Image)
     assert img.size == (16, 16)
@@ -207,7 +208,7 @@ def test_helper_get_extractor_reference_image_generates_and_saves_cmyw(
         _fake_generate_calibration_board,
     )
 
-    img = layout_new.get_extractor_reference_image("CMYW")
+    img = layout_new.get_extractor_reference_image(ColorMode.CMYW)
     cache_file = temp_cwd / "assets" / "ref_cmyw_standard.png"
 
     assert isinstance(img, Image.Image)
@@ -227,7 +228,7 @@ def test_helper_get_extractor_reference_image_returns_none_on_generate_error(
 
     monkeypatch.setattr(calibration, "generate_calibration_board", _raise_generate)
 
-    result = layout_new.get_extractor_reference_image("CMYW")
+    result = layout_new.get_extractor_reference_image(ColorMode.CMYW)
 
     assert result is None
 

@@ -11,7 +11,7 @@ from typing import Tuple
 import numpy as np
 from scipy.spatial import KDTree
 
-from config import ModelingMode
+from config import ColorMode, ModelingMode
 
 from .color_modes import (
     ColorModeStrategy,
@@ -37,7 +37,7 @@ class ProcessorFactory:
     """
 
     @staticmethod
-    def create_color_strategy(color_mode: str) -> ColorModeStrategy:
+    def create_color_strategy(color_mode: ColorMode) -> ColorModeStrategy:
         """
         Create color mode strategy based on color_mode string.
 
@@ -50,13 +50,14 @@ class ProcessorFactory:
         Raises:
             ValueError: If color_mode is not recognized
         """
-        if "8-Color" in color_mode:
-            return EightColorStrategy(color_mode)
-        elif "6-Color" in color_mode:
-            return SixColorStrategy(color_mode)
+        mode_enum = color_mode
+        if mode_enum == ColorMode.EIGHT_COLOR_MAX:
+            return EightColorStrategy(mode_enum)
+        elif mode_enum == ColorMode.SIX_COLOR:
+            return SixColorStrategy(mode_enum)
         else:
             # Default to 4-color for CMYW and RYBW
-            return FourColorStrategy(color_mode)
+            return FourColorStrategy(mode_enum)
 
     @staticmethod
     def create_processing_strategy(
@@ -85,7 +86,7 @@ class ProcessorFactory:
 
     @staticmethod
     def create_processor(
-        color_mode: str, modeling_mode: ModelingMode
+        color_mode: ColorMode, modeling_mode: ModelingMode
     ) -> Tuple[ColorModeStrategy, ProcessingModeStrategy]:
         """
         Create both strategies for a complete processing pipeline.

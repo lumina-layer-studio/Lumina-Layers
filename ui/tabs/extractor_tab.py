@@ -8,6 +8,7 @@ import os
 import gradio as gr
 from PIL import Image as PILImage
 
+from config import ColorMode
 from core.extractor import (
     rotate_image,
     draw_corner_points,
@@ -46,15 +47,17 @@ def get_extractor_reference_image(mode_str):
     if not os.path.exists(cache_dir):
         os.makedirs(cache_dir, exist_ok=True)
 
-    if "6-Color" in mode_str or "1296" in mode_str:
+    mode_enum = ColorMode(mode_str)
+
+    if mode_enum == ColorMode.SIX_COLOR:
         filename = "ref_6color_smart.png"
-        gen_mode = "6-Color"
-    elif "CMYW" in mode_str:
+        gen_mode = ColorMode.SIX_COLOR
+    elif mode_enum == ColorMode.CMYW:
         filename = "ref_cmyw_standard.png"
-        gen_mode = "CMYW"
+        gen_mode = ColorMode.CMYW
     else:
         filename = "ref_rybw_standard.png"
-        gen_mode = "RYBW"
+        gen_mode = ColorMode.RYBW
 
     filepath = os.path.join(cache_dir, filename)
 
@@ -73,7 +76,7 @@ def get_extractor_reference_image(mode_str):
         gap = 0
         backing = "White"
 
-        if gen_mode == "6-Color":
+        if gen_mode == ColorMode.SIX_COLOR:
             _, img, _ = generate_smart_board(block_size, gap)
         else:
             _, img, _ = generate_calibration_board(gen_mode, block_size, gap, backing)
@@ -100,7 +103,7 @@ def create_extractor_tab_content(lang: str) -> dict:
     ext_state_img = gr.State(None)
     ext_state_pts = gr.State([])
     ext_curr_coord = gr.State(None)
-    default_mode = I18n.get("conv_color_mode_rybw", "en")
+    default_mode = ColorMode.RYBW.value
     ref_img = get_extractor_reference_image(default_mode)
 
     with gr.Row():
@@ -113,22 +116,22 @@ def create_extractor_tab_content(lang: str) -> dict:
                 choices=[
                     (
                         I18n.get("conv_color_mode_cmyw", lang),
-                        I18n.get("conv_color_mode_cmyw", "en"),
+                        ColorMode.CMYW.value,
                     ),
                     (
                         I18n.get("conv_color_mode_rybw", lang),
-                        I18n.get("conv_color_mode_rybw", "en"),
+                        ColorMode.RYBW.value,
                     ),
                     (
                         I18n.get("color_mode_6color", lang),
-                        I18n.get("color_mode_6color", "en"),
+                        ColorMode.SIX_COLOR.value,
                     ),
                     (
                         I18n.get("color_mode_8color", lang),
-                        I18n.get("color_mode_8color", "en"),
+                        ColorMode.EIGHT_COLOR_MAX.value,
                     ),
                 ],
-                value=I18n.get("conv_color_mode_rybw", "en"),
+                value=ColorMode.RYBW.value,
                 label=I18n.get("ext_color_mode", lang),
             )
 

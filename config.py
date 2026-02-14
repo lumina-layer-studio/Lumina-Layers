@@ -53,6 +53,24 @@ class ModelingMode(str, Enum):
         return display_names.get(self, self.value)
 
 
+class ColorMode(str, Enum):
+    """色彩模式枚举"""
+
+    CMYW = "CMYW"
+    RYBW = "RYBW"
+    SIX_COLOR = "6-Color"
+    EIGHT_COLOR_MAX = "8-Color Max"
+
+    def get_display_name(self) -> str:
+        display_names = {
+            ColorMode.CMYW: "CMYW",
+            ColorMode.RYBW: "RYBW",
+            ColorMode.SIX_COLOR: "6-Color",
+            ColorMode.EIGHT_COLOR_MAX: "8-Color Max",
+        }
+        return display_names.get(self, self.value)
+
+
 class MatchStrategy(str, Enum):
     """LUT 匹配策略枚举
 
@@ -163,12 +181,12 @@ class ColorSystem:
     }
 
     @staticmethod
-    def get(mode: str):
-        if "8-Color" in mode:
+    def get(mode: "ColorMode"):
+        if mode == ColorMode.EIGHT_COLOR_MAX:
             return ColorSystem.EIGHT_COLOR
-        if "6-Color" in mode:
+        if mode == ColorMode.SIX_COLOR:
             return ColorSystem.SIX_COLOR
-        return ColorSystem.CMYW if "CMYW" in mode else ColorSystem.RYBW
+        return ColorSystem.CMYW if mode == ColorMode.CMYW else ColorSystem.RYBW
 
 
 # ========== Global Constants ==========

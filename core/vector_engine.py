@@ -26,7 +26,7 @@ from shapely import affinity  # <--- 【新增】用于几何变换
 from shapely.ops import unary_union
 import os
 
-from config import PrinterConfig, ColorSystem
+from config import PrinterConfig, ColorMode, ColorSystem
 
 # Reuse image processor for color matching infrastructure
 from core.image_processing import LuminaImageProcessor
@@ -50,7 +50,7 @@ class VectorProcessor:
         >>> scene.export("output.3mf")
     """
 
-    def __init__(self, lut_path: str, color_mode: str):
+    def __init__(self, lut_path: str, color_mode: ColorMode):
         """
         Initialize vector processor with LUT and color mode.
 
@@ -63,7 +63,9 @@ class VectorProcessor:
             ValueError: If color mode is invalid
         """
         self.color_mode = color_mode
-        print(f"[VECTOR] Initializing Native Vector Engine ({color_mode})...")
+        print(
+            f"[VECTOR] Initializing Native Vector Engine ({self.color_mode.value})..."
+        )
 
         # Reuse ImageProcessor for LUT loading and KD-Tree
         # We only use its color matching infrastructure, not image processing
@@ -264,7 +266,7 @@ class VectorProcessor:
             print("[VECTOR] 🧠 Auto-detected 6-Color LUT (1296). Forcing 6-Color mode.")
             # 强制切换到 6 色配置，覆盖 UI 选择
             color_conf = ColorSystem.SIX_COLOR
-            self.color_mode = "6-Color"  # 更新内部状态
+            self.color_mode = ColorMode.SIX_COLOR  # 更新内部状态
         else:
             # 否则使用 UI 传入的模式
             color_conf = ColorSystem.get(self.color_mode)

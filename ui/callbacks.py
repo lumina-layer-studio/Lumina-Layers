@@ -7,7 +7,7 @@ import os
 import numpy as np
 import gradio as gr
 
-from config import ColorSystem, LUT_FILE_PATH
+from config import ColorMode, ColorSystem, LUT_FILE_PATH
 from core.i18n import I18n
 from ui.i18n_bridge import resolve_i18n_text
 from core.extractor import generate_simulated_reference
@@ -58,7 +58,8 @@ def on_lut_upload_save(uploaded_file):
 
 def get_first_hint(mode, lang: str = "zh"):
     """Get first corner point hint based on mode"""
-    conf = ColorSystem.get(mode)
+    mode_enum = ColorMode(mode)
+    conf = ColorSystem.get(mode_enum)
     label_zh = conf["corner_labels"][0]
     label_en = conf.get("corner_labels_en", conf["corner_labels"])[0]
     return I18n.get("ext_hint_click_corner", lang).format(
@@ -68,7 +69,8 @@ def get_first_hint(mode, lang: str = "zh"):
 
 def get_next_hint(mode, pts_count, lang: str = "zh"):
     """Get next corner point hint based on mode"""
-    conf = ColorSystem.get(mode)
+    mode_enum = ColorMode(mode)
+    conf = ColorSystem.get(mode_enum)
     if pts_count >= 4:
         return I18n.get("ext_hint_positioning_complete", lang)
     label_zh = conf["corner_labels"][pts_count]
@@ -651,13 +653,13 @@ def run_extraction_wrapper(
     """Wrapper for extraction: supports 8-Color page saving."""
     from core.extractor import run_extraction
 
-    run_mode = color_mode
+    run_mode = ColorMode(color_mode)
 
     vis, prev, lut_path, status = run_extraction(
         img, points, offset_x, offset_y, zoom, barrel, wb, bright, run_mode
     )
 
-    if "8-Color" in color_mode and lut_path:
+    if run_mode == ColorMode.EIGHT_COLOR_MAX and lut_path:
         os.makedirs("assets", exist_ok=True)
         page_idx = 1 if "1" in str(page_choice) else 2
         temp_path = os.path.join("assets", f"temp_8c_page_{page_idx}.npy")

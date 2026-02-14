@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from config import MatchStrategy, ModelingMode
+from config import ColorMode, MatchStrategy, ModelingMode
 from core.converter import ConversionRequest, generate_final_model
 
 
@@ -50,7 +50,7 @@ def test_real_backend_converter_pipeline_no_mock(
         target_width_mm=20,
         auto_bg=False,
         bg_tol=40,
-        color_mode="CMYW",
+        color_mode=ColorMode.CMYW,
         modeling_mode=ModelingMode.HIGH_FIDELITY,
         quantize_colors=16,
         match_strategy=MatchStrategy.RGB_EUCLIDEAN,

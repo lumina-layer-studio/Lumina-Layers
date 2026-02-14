@@ -1,6 +1,8 @@
 import pytest
+import inspect
 
 from config import ColorMode, MatchStrategy, StructureMode
+from ui.tabs import converter_tab
 from ui.tabs.converter_tab import process_batch_generation
 
 
@@ -32,4 +34,10 @@ def test_process_batch_generation_returns_friendly_error_when_modeling_mode_miss
     assert out_3mf is None
     assert out_glb is None
     assert isinstance(preview, dict)
-    assert "建模模式" in status
+    assert "建模模式" in str(status)
+
+
+@pytest.mark.unit
+def test_preview_click_sync_ui_uses_hex_for_colorpicker_binding():
+    source = inspect.getsource(converter_tab.create_converter_tab_content)
+    assert "return _preview_update(img), hex_val, hex_val, resolved_msg" in source

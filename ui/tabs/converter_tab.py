@@ -1420,11 +1420,11 @@ def create_converter_tab_content(lang: str, lang_state=None) -> dict:
     # [修改] 预览图点击事件同步到 UI
     def on_preview_click_sync_ui(cache, lang_val, evt: gr.SelectData):
         img, display_text, hex_val, msg = on_preview_click_select_color(cache, evt)
-        resolved_display_text = resolve_i18n_text(display_text, lang_val)
         resolved_msg = resolve_i18n_text(msg, lang_val)
         if hex_val is None:
             return _preview_update(img), gr.update(), gr.update(), resolved_msg
-        return _preview_update(img), resolved_display_text, hex_val, resolved_msg
+        # conv_selected_display is a ColorPicker, so it must receive hex color value.
+        return _preview_update(img), hex_val, hex_val, resolved_msg
 
     conv_preview.select(
         fn=on_preview_click_sync_ui,

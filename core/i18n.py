@@ -185,6 +185,10 @@ class I18n:
             "en": "Applied Replacements",
         },
         "conv_palette_apply_btn": {"zh": "✅ 确认替换", "en": "✅ Apply"},
+        "conv_palette_unselect_btn": {
+            "zh": "◻️ 取消选中",
+            "en": "◻️ Clear Selection",
+        },
         "conv_palette_undo_btn": {"zh": "↩️ 撤销", "en": "↩️ Undo"},
         "conv_palette_clear_btn": {"zh": "🗑️ 清除所有", "en": "🗑️ Clear"},
         "lut_grid_invalid": {

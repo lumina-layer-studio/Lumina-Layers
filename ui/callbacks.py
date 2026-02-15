@@ -329,6 +329,10 @@ def on_preview_generated_update_palette(cache, lang: str = "zh"):
     )
 
 
+def on_clear_selected_original_color(lang: str = "zh"):
+    return None, None, I18n.get("palette_not_selected", lang)
+
+
 def on_color_swatch_click(selected_hex):
     """
     Handle color selection from clicking palette swatch.

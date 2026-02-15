@@ -32,6 +32,7 @@ from ui.callbacks import (
     on_lut_select,
     on_lut_upload_save,
     on_apply_color_replacement,
+    on_clear_selected_original_color,
     on_clear_color_replacements,
     on_undo_color_replacement,
     on_preview_generated_update_palette,
@@ -732,6 +733,12 @@ def create_converter_tab_content(lang: str, lang_state=None) -> dict:
                                 components["color_conv_palette_selected_label"] = (
                                     conv_selected_display
                                 )
+                                conv_clear_selected = gr.Button(
+                                    I18n.get("conv_palette_unselect_btn", lang)
+                                )
+                                components["btn_conv_palette_unselect_btn"] = (
+                                    conv_clear_selected
+                                )
 
                             # 右侧：LUT 真实色盘
                             with gr.Column(scale=2):
@@ -1297,6 +1304,52 @@ def create_converter_tab_content(lang: str, lang_state=None) -> dict:
             conv_palette_html,
             conv_replacement_map,
             conv_replacement_history,
+            components["textbox_conv_status"],
+        ],
+    )
+
+    def on_clear_selected_and_highlight_with_fit(
+        cache,
+        loop_pos,
+        add_loop,
+        loop_width,
+        loop_length,
+        loop_hole,
+        loop_angle,
+        lang_state_val,
+    ):
+        selected_display, selected_state, status = on_clear_selected_original_color(
+            lang_state_val
+        )
+        display, _ = on_highlight_color_change(
+            "",
+            cache,
+            loop_pos,
+            add_loop,
+            loop_width,
+            loop_length,
+            loop_hole,
+            loop_angle,
+        )
+        return _preview_update(display), selected_display, selected_state, "", status
+
+    conv_clear_selected.click(
+        on_clear_selected_and_highlight_with_fit,
+        inputs=[
+            conv_preview_cache,
+            conv_loop_pos,
+            components["checkbox_conv_loop_enable"],
+            components["slider_conv_loop_width"],
+            components["slider_conv_loop_length"],
+            components["slider_conv_loop_hole"],
+            components["slider_conv_loop_angle"],
+            lang_state,
+        ],
+        outputs=[
+            conv_preview,
+            conv_selected_display,
+            conv_selected_color,
+            conv_highlight_color_hidden,
             components["textbox_conv_status"],
         ],
     )

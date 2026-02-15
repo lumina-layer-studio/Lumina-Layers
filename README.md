@@ -8,7 +8,7 @@ Physics-Based Multi-Material FDM Color System
 
 ## Project Status
 
-**Current Version**: v1.5.6  
+**Current Version**: v1.5.7  
 **License**: CC BY-NC-SA 4.0 (with Commercial Exemption)  
 **Nature**: Non-profit independent implementation, open-source community project
 
@@ -105,10 +105,17 @@ Lumina Studio v1.5.4 integrates three major modules into a unified interface:
 
 Generates precision calibration boards to physically test filament mixing.
 
-- **1024-Color Matrix**: Full permutation of 4 base filaments across 5 layers (0.4mm total)
-- **Dual Color Modes**: Supports both CMYW (Cyan/Magenta/Yellow/White) and RYBW (Red/Yellow/Blue/White)
+- **Multiple Color Systems**: 
+  - **4-Color (CMYW/RYBW)**: 1024 colors (4 base filaments × 5 layers)
+  - **6-Color**: 1296 colors (6 base filaments × 3 layers) - Extended color gamut
+  - **8-Color**: 2738 colors (8 base filaments × 2 pages) - Professional wide gamut
+  - **BW Mode**: 32 grayscale levels for monochrome prints
+- **Smart Calibration Workflow**:
+  - 4-Color: Single board, full permutation
+  - 6-Color: Single board with extended palette
+  - 8-Color: Two-page system with merge function
 - **Face-Down Optimization**: Viewing surface prints directly on the build plate for a smooth finish
-- **Solid Backing**: Automatically generates a 1.6mm opaque backing to ensure color consistency and structural rigidity
+- **Solid Backing**: Automatically generates opaque backing to ensure color consistency and structural rigidity
 - **Anti-Overlap Geometry**: Applies 0.02mm micro-shrinkage to voxels to prevent slicer line-width conflicts
 
 ### 🎨 Module 2: Color Extractor
@@ -116,9 +123,15 @@ Generates precision calibration boards to physically test filament mixing.
 Digitizes the physical reality of your printer.
 
 - **Computer Vision**: Perspective warp + lens distortion correction for automatic grid alignment
-- **Mode-Aware Alignment**: Corner markers follow the correct color sequence based on your selected mode (CMYW vs RYBW)
+- **Multi-Mode Support**: 
+  - 4-Color (CMYW/RYBW): Standard calibration
+  - 6-Color: Extended palette extraction
+  - 8-Color: Two-page extraction with manual correction support
+  - BW Mode: Grayscale calibration
+- **Mode-Aware Alignment**: Corner markers follow the correct color sequence based on your selected mode
 - **Digital Twin**: Extracts RGB values from the print and generates a .npy LUT file
-- **Human-in-the-Loop**: Interactive probe tools allow manual verification/correction of specific color block readings (e.g., removing glare/shadows)
+- **Human-in-the-Loop**: Interactive probe tools allow manual verification/correction of specific color block readings
+- **8-Color Workflow**: Extract Page 1 → Manual corrections → Extract Page 2 → Merge into single LUT
 
 ### 💎 Module 3: Image Converter
 
@@ -134,6 +147,35 @@ Converts images into printable 3D models using calibrated data.
 - **Structure Options**: Double-sided (keychain) or Single-sided (relief) modes
 - **Smart Background Removal**: Automatic transparency detection with adjustable tolerance
 - **Correct 3MF Naming**: Objects are named by color (e.g., "Cyan", "Magenta") instead of "geometry_0" for easy slicer identification
+
+---
+
+## What's New in v1.5.7 🚀
+
+### 6-Color and 8-Color Mode Support
+
+- 🎨 **6-Color Extended Mode** - 1296 colors (6 base filaments × 3 layers) for wider color gamut
+- 🌈 **8-Color Professional Mode** - 2738 colors (8 base filaments × 2 pages) for maximum color range
+- � **Two-Page Workflow** - 8-color mode uses two calibration boards that merge into a single LUT
+- 🔧 **Manual Color Correction** - Click any color cell to manually adjust RGB values before merging
+- 🎯 **Smart Corner Detection** - Automatic corner marker colors based on selected mode
+- ⚫ **BW Grayscale Mode** - 32-level grayscale calibration for monochrome prints
+
+### LUT Merging with Stacking Preservation
+
+- 🎨 **Merged LUT Support** - Combine multiple LUTs (8-color + 6-color + 4-color + BW) to expand color gamut
+- � **Stacking Information Preservation** - Merged LUTs now preserve original stacking data from calibration prints
+- 🔄 **NPZ Format** - Merged LUTs saved as `.npz` files containing both colors and stacking arrays
+- 🎯 **Intelligent Reconstruction** - Automatic stacking reconstruction for all LUT types (BW/4-color/6-color/8-color)
+- 🖼️ **Color Replacement Support** - Merged LUTs fully compatible with color replacement feature
+- 📤 **Upload Support** - All file upload components now accept both `.npy` and `.npz` formats
+
+### Technical Improvements
+
+- ✅ **Multi-Object 3MF Export** - Merged LUTs now correctly export separate objects for each material
+- 🔍 **Format Auto-Detection** - System automatically detects and loads `.npy` or `.npz` format
+- 🏷️ **Visual Indicators** - Merged LUTs display `[Merged]` tag in dropdown for easy identification
+- 🐛 **Bug Fixes** - Fixed 8-color manual correction persistence issue
 
 ---
 
@@ -274,13 +316,14 @@ Traditional methods match 1 million pixels to LUT individually. v1.4 instead:
   - Adaptive dithering algorithms
   - Perceptual color difference optimization
 
-### Phase 4: Extended Color Modes
+### Phase 4: Extended Color Modes ✅ COMPLETE
 
 **Target**: Professional multi-material printing
 
-- 6-color extended mode
-- 8-color professional mode
-- Perler bead mode
+- ✅ 6-color extended mode (1296 colors)
+- ✅ 8-color professional mode (2738 colors)
+- ✅ BW grayscale mode (32 levels)
+- 🚧 Perler bead mode (in progress)
 
 ---
 
@@ -334,20 +377,28 @@ This launches the web interface with all three modules in tabs.
 
 1. Open the **📐 Calibration** tab
 2. Select your color mode:
-   - **RYBW** (Red/Yellow/Blue/White) - Traditional primaries
-   - **CMYW** (Cyan/Magenta/Yellow/White) - Print colors, wider gamut
+   - **4-Color RYBW** (Red/Yellow/Blue/White) - Traditional primaries, 1024 colors
+   - **4-Color CMYW** (Cyan/Magenta/Yellow/White) - Print colors, wider gamut, 1024 colors
+   - **6-Color** - Extended palette with 1296 colors (requires 6-filament printer)
+   - **8-Color** - Professional mode with 2738 colors (two-page workflow)
+   - **BW** - Grayscale mode with 32 levels
 3. Adjust block size (default: 5mm) and gap (default: 0.82mm)
-4. Click **Generate** and download the `.3mf` file
+4. Click **Generate** and download the `.3mf` file(s)
+   - 4-Color/6-Color/BW: Single file
+   - 8-Color: Two files (Page 1 and Page 2)
 
 **Print Settings**:
 
 - Layer height: 0.08mm (color layers), backing can use 0.2mm
 - Filament slots must match your selected mode
 
-| Mode | Slot 1 | Slot 2 | Slot 3 | Slot 4 |
-|------|--------|--------|--------|--------|
-| RYBW | White | Red | Yellow | Blue |
-| CMYW | White | Cyan | Magenta | Yellow |
+| Mode | Total Colors | Filament Slots |
+|------|--------------|----------------|
+| 4-Color RYBW | 1024 | White, Red, Yellow, Blue |
+| 4-Color CMYW | 1024 | White, Cyan, Magenta, Yellow |
+| 6-Color | 1296 | White, Cyan, Magenta, Yellow, Lime, Black |
+| 8-Color | 2738 | White, Cyan, Magenta, Yellow, Lime, Black (+ 2 more) |
+| BW | 32 | Black, White |
 
 ---
 
@@ -357,15 +408,23 @@ This launches the web interface with all three modules in tabs.
 2. Open the **🎨 Color Extractor** tab
 3. Select the same color mode as your calibration board
 4. Upload your photo
-5. Click the four corner blocks in order:
+5. Click the four corner blocks in order (colors vary by mode):
 
-| Mode | Corner 1 (TL) | Corner 2 (TR) | Corner 3 (BR) | Corner 4 (BL) |
-|------|---------------|---------------|---------------|---------------|
-| RYBW | ⬜ White | 🟥 Red | 🟦 Blue | 🟨 Yellow |
-| CMYW | ⬜ White | 🔵 Cyan | 🟣 Magenta | 🟨 Yellow |
+| Mode | ⬜ White Top-Left | Top-Right | Bottom-Right | Bottom-Left |
+|------|------------------|-----------|--------------|-------------|
+| 4-Color RYBW | ⬜ White | Red | Blue | Yellow |
+| 4-Color CMYW | ⬜ White | Cyan | Magenta | Yellow |
+| 6-Color | ⬜ White | Cyan | Magenta | Yellow |
+| 8-Color | ⬜ White | Yellow | Black | Cyan |
+| BW | ⬜ White | Black | Black | Black |
 
-6. Adjust correction sliders if needed (white balance, vignette, distortion)
-7. Click **Extract** and download `my_printer_lut.npy`
+6. Adjust correction sliders if needed (white balance OFF by default, vignette, distortion)
+7. Click **Extract** 
+8. **For 8-Color Mode Only**:
+   - After extracting Page 1, you can click any color cell to manually correct it
+   - Extract Page 2 with the same process
+   - Click **Merge 8-Color Pages** to combine into final LUT
+9. Download the `.npy` LUT file
 
 ---
 

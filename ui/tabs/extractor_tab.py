@@ -17,7 +17,7 @@ from core.extractor import (
     manual_fix_cell,
 )
 from core.i18n import I18n
-from ui.i18n_bridge import resolve_i18n_text
+from utils.i18n_help import resolve_i18n_text
 from ui.callbacks import (
     get_first_hint,
     get_next_hint,

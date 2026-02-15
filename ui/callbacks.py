@@ -9,7 +9,7 @@ import gradio as gr
 
 from config import ColorMode, ColorSystem, LUT_FILE_PATH
 from core.i18n import I18n
-from ui.i18n_bridge import resolve_i18n_text
+from utils.i18n_help import resolve_i18n_text
 from core.extractor import generate_simulated_reference
 from utils import LUTManager
 

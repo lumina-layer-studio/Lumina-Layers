@@ -13,7 +13,7 @@ from core.calibration import (
     generate_8color_batch_zip,
 )
 from core.i18n import I18n
-from ui.i18n_bridge import resolve_i18n_text
+from utils.i18n_help import resolve_i18n_text
 
 
 def create_calibration_tab_content(lang: str) -> dict:

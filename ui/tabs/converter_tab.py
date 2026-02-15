@@ -26,7 +26,7 @@ from ui.converter_ui import (
     detect_image_type,
 )
 from core.i18n import I18n
-from ui.i18n_bridge import resolve_i18n_text
+from utils.i18n_help import resolve_i18n_text
 from ui.assets import LUT_GRID_JS, OPEN_CROP_MODAL_JS, SHOW_COLOR_TOAST_JS
 from ui.callbacks import (
     on_lut_select,

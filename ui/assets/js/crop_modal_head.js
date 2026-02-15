@@ -63,19 +63,6 @@ window.updateCropDataJson = function(x, y, w, h) {
         return;
     }
 
-    function handleRemoveReplacementClick(e) {
-        var btn = e.target.closest('.palette-remove-replacement-btn');
-        if (!btn) return;
-
-        var originalColor = btn.getAttribute('data-original-color');
-        if (!originalColor) return;
-
-        updateGradioTextbox('conv-remove-replacement-hidden', originalColor);
-
-        setTimeout(function() {
-            window.clickGradioButton('conv-remove-replacement-trigger-btn');
-        }, 50);
-    }
     var textarea = container.querySelector('textarea');
     if (textarea) {
         textarea.value = jsonData;
@@ -229,6 +216,23 @@ console.log('Crop modal JS loaded, openCropModal:', typeof window.openCropModal)
         }
         console.warn('[Palette] Input not found in container:', elemId);
         return false;
+    }
+
+    function handleRemoveReplacementClick(e) {
+        var btn = e.target.closest('.palette-remove-replacement-btn');
+        if (!btn) return;
+
+        e.preventDefault();
+        e.stopPropagation();
+
+        var originalColor = btn.getAttribute('data-original-color');
+        if (!originalColor) return;
+
+        updateGradioTextbox('conv-remove-replacement-hidden', originalColor);
+
+        setTimeout(function() {
+            window.clickGradioButton('conv-remove-replacement-trigger-btn');
+        }, 50);
     }
     
     // Handle palette swatch click

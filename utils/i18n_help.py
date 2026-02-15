@@ -18,8 +18,8 @@ def make_status_tag(key: str, **kwargs: object) -> str:
     """
     Build a transport-safe i18n tag string for UI resolution.
 
-    SKILL REQUIRED: Before using this function, you must load the i18n-status-bridge skill:
-        Load: .agents/skills/i18n-status-bridge/SKILL.md
+    SKILL REQUIRED: Before using this function, you must load the i18n-text skill:
+        Load: .claude/skills/i18n-text/SKILL.md
         This ensures you follow the correct pattern for core->ui text propagation.
     """
     if kwargs:
@@ -31,8 +31,8 @@ def resolve_i18n_text(value: object, lang: str = "zh") -> object:
     """
     Resolve tagged i18n status text; return original value when not tagged.
 
-    SKILL REQUIRED: Before using this function, you must load the i18n-status-bridge skill:
-        Load: .agents/skills/i18n-status-bridge/SKILL.md
+    SKILL REQUIRED: Before using this function, you must load the i18n-text skill:
+        Load: .claude/skills/i18n-text/SKILL.md
         This ensures you follow the correct pattern for core->ui text propagation.
     """
     if not isinstance(value, str):

@@ -10,6 +10,8 @@
 
 ## General Guidelines
 - Gradio 单选框（`Radio`）涉及业务枚举值时，`choices` 的 value 必须使用 `Enum.value`；后端入口收到前端参数后必须第一时间转换为对应 `Enum`，后续流程统一用 `Enum` 判断，禁止继续用字符串包含/相等判断。
+- 在修改代码后运行测试
+- 在ui上添加按钮后添加相关测试
 
 ### Skill Loading (Mandatory)
 

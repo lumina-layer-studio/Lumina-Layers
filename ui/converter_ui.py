@@ -5,12 +5,10 @@ UI-facing helpers moved from core/converter.py.
 """
 
 import os
-from typing import List, Dict, Tuple, Optional
+from typing import List, Optional
 
-import cv2
 import gradio as gr
 import numpy as np
-import trimesh
 from PIL import Image, ImageDraw, ImageFont
 
 from config import (
@@ -21,9 +19,9 @@ from config import (
     PREVIEW_MARGIN,
     ColorMode,
 )
-from core.converter import convert_image_to_3d, ConversionRequest
+from core.converter import ConversionRequest
 from core.image_processing import LuminaImageProcessor
-from core.ui_status import make_status_tag
+from utils.i18n_help import make_status_tag
 from ui.palette_extension import generate_palette_html, generate_lut_color_grid_html
 
 # Keep in sync with ui/tabs/converter_tab.py::_scale_preview_image defaults.
@@ -933,7 +931,6 @@ def generate_lut_grid_html(lut_path, lang: str = "zh"):
     """
     生成 LUT 可用颜色的 HTML 网格
     """
-    from core.i18n import I18n
 
     colors = extract_lut_available_colors(lut_path)
 

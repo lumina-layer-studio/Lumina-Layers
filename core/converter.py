@@ -9,8 +9,8 @@ from dataclasses import dataclass
 import numpy as np
 import cv2
 import trimesh
-from PIL import Image, ImageDraw, ImageFont
-from typing import List, Dict, Tuple, Optional
+from PIL import Image, ImageDraw
+from typing import Tuple, Optional
 
 from config import (
     PrinterConfig,
@@ -21,7 +21,7 @@ from config import (
     MatchStrategy,
     OUTPUT_DIR,
 )
-from .ui_status import make_status_tag
+from utils.i18n_help import make_status_tag
 from core.image_processing_factory import ImageLoader
 from utils import Stats, safe_fix_3mf_names
 

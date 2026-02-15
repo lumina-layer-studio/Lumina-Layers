@@ -15,11 +15,10 @@ from PIL import Image
 
 from colormath.color_objects import sRGBColor, LabColor
 from colormath.color_conversions import convert_color
-from colormath.color_diff import delta_e_cie2000
 
 from config import PrinterConfig, ColorMode, ColorSystem, SmartConfig, OUTPUT_DIR
 from utils import Stats, safe_fix_3mf_names
-from .ui_status import make_status_tag
+from utils.i18n_help import make_status_tag
 
 
 def _generate_voxel_mesh(

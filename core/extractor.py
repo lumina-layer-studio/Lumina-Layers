@@ -15,11 +15,10 @@ from config import (
     PHYSICAL_GRID_SIZE,
     DATA_GRID_SIZE,
     DST_SIZE,
-    CELL_SIZE,
     LUT_FILE_PATH,
 )
 from utils import Stats
-from .ui_status import make_status_tag
+from utils.i18n_help import make_status_tag
 
 
 def generate_simulated_reference():

@@ -593,6 +593,26 @@ class I18n:
             "en": "Other colors ({count})",
         },
         "lut_grid_tooltip": {"zh": "点击选择: {hex}", "en": "Click to select: {hex}"},
+        # ==================== LUT Manager ====================
+        "lut_err_no_file": {"zh": "❌ 未选择文件", "en": "❌ No file selected"},
+        "lut_saved": {
+            "zh": "✅ LUT已保存: {name}\n请从下拉菜单中选择",
+            "en": "✅ LUT saved: {name}\nPlease select from dropdown to use",
+        },
+        "lut_err_save_failed": {
+            "zh": "❌ 保存失败: {error}",
+            "en": "❌ Save failed: {error}",
+        },
+        "lut_err_not_found": {"zh": "❌ 文件不存在", "en": "❌ File not found"},
+        "lut_err_custom_only": {
+            "zh": "❌ 只能删除自定义LUT",
+            "en": "❌ Can only delete custom LUTs",
+        },
+        "lut_deleted": {"zh": "✅ 已删除: {name}", "en": "✅ Deleted: {name}"},
+        "lut_err_delete_failed": {
+            "zh": "❌ 删除失败: {error}",
+            "en": "❌ Delete failed: {error}",
+        },
         # ==================== Settings ====================
         "settings_title": {"zh": "## ⚙️ 设置", "en": "## ⚙️ Settings"},
         "settings_clear_cache": {"zh": "🗑️ 清空缓存", "en": "🗑️ Clear Cache"},

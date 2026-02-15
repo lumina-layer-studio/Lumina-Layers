@@ -8,6 +8,8 @@ import shutil
 import glob
 from pathlib import Path
 
+from utils.i18n_help import make_status_tag
+
 
 class LUTManager:
     """LUT preset manager"""
@@ -96,7 +98,7 @@ class LUTManager:
             tuple: (success_flag, message, new_choice_list)
         """
         if uploaded_file is None:
-            return False, "❌ No file selected", cls.get_lut_choices()
+            return False, make_status_tag("lut_err_no_file"), cls.get_lut_choices()
 
         try:
             # Ensure preset folder exists
@@ -139,13 +141,17 @@ class LUTManager:
 
             return (
                 True,
-                f"✅ LUT saved: {display_name}\nPlease select from dropdown to use",
+                make_status_tag("lut_saved", name=display_name),
                 cls.get_lut_choices(),
             )
 
         except Exception as e:
             print(f"[LUT_MANAGER] Error saving LUT: {e}")
-            return False, f"❌ Save failed: {e}", cls.get_lut_choices()
+            return (
+                False,
+                make_status_tag("lut_err_save_failed", error=str(e)),
+                cls.get_lut_choices(),
+            )
 
     @classmethod
     def delete_lut(cls, display_name):
@@ -161,16 +167,24 @@ class LUTManager:
         file_path = cls.get_lut_path(display_name)
 
         if not file_path:
-            return False, "❌ File not found", cls.get_lut_choices()
+            return False, make_status_tag("lut_err_not_found"), cls.get_lut_choices()
 
         # Only allow deleting files in Custom folder
         if "Custom" not in file_path:
-            return False, "❌ Can only delete custom LUTs", cls.get_lut_choices()
+            return False, make_status_tag("lut_err_custom_only"), cls.get_lut_choices()
 
         try:
             os.remove(file_path)
             print(f"[LUT_MANAGER] Deleted LUT: {file_path}")
-            return True, f"✅ Deleted: {display_name}", cls.get_lut_choices()
+            return (
+                True,
+                make_status_tag("lut_deleted", name=display_name),
+                cls.get_lut_choices(),
+            )
         except Exception as e:
             print(f"[LUT_MANAGER] Error deleting LUT: {e}")
-            return False, f"❌ Delete failed: {e}", cls.get_lut_choices()
+            return (
+                False,
+                make_status_tag("lut_err_delete_failed", error=str(e)),
+                cls.get_lut_choices(),
+            )

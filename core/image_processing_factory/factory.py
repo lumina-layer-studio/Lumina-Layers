@@ -15,6 +15,7 @@ from config import ColorMode, ModelingMode
 
 from .color_modes import (
     ColorModeStrategy,
+    TwoColorStrategy,
     FourColorStrategy,
     SixColorStrategy,
     EightColorStrategy,
@@ -53,6 +54,8 @@ class ProcessorFactory:
         mode_enum = color_mode
         if mode_enum == ColorMode.EIGHT_COLOR_MAX:
             return EightColorStrategy(mode_enum)
+        elif mode_enum == ColorMode.BW:
+            return TwoColorStrategy(mode_enum)
         elif mode_enum == ColorMode.SIX_COLOR:
             return SixColorStrategy(mode_enum)
         else:

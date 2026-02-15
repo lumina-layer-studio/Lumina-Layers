@@ -15,8 +15,8 @@ class I18n:
         # ==================== Application Title and Header ====================
         "app_title": {"zh": "✨ Lumina Studio", "en": "✨ Lumina Studio"},
         "app_subtitle": {
-            "zh": "多材料3D打印色彩系统 | v1.5.6",
-            "en": "Multi-Material 3D Print Color System | v1.5.6",
+            "zh": "多材料3D打印色彩系统 | v1.5.7",
+            "en": "Multi-Material 3D Print Color System | v1.5.7",
         },
         "lang_btn_zh": {"zh": "🌐 中文", "en": "🌐 中文"},
         "lang_btn_en": {"zh": "🌐 English", "en": "🌐 English"},
@@ -102,6 +102,7 @@ class I18n:
             "zh": "RYBW (红/黄/蓝)",
             "en": "RYBW (Red/Yellow/Blue)",
         },
+        "color_mode_bw": {"zh": "BW (黑/白)", "en": "BW (Black/White)"},
         "conv_structure": {"zh": "结构", "en": "Structure"},
         "conv_structure_double": {
             "zh": "双面 (钥匙扣)",
@@ -238,6 +239,7 @@ class I18n:
         "backing_yellow": {"zh": "黄色", "en": "Yellow"},
         "backing_red": {"zh": "红色", "en": "Red"},
         "backing_blue": {"zh": "蓝色", "en": "Blue"},
+        "backing_black": {"zh": "黑色", "en": "Black"},
         # ==================== Color Extractor Tab ====================
         "ext_title": {
             "zh": "### 第三步：提取颜色数据",
@@ -604,7 +606,7 @@ class I18n:
         "theme_toggle_day": {"zh": "☀️ 日间模式", "en": "☀️ Day Mode"},
         # ==================== About Page Content ====================
         "about_content": {
-            "zh": """## 🌟 Lumina Studio v1.5.6
+            "zh": """## 🌟 Lumina Studio v1.5.7
 
 **多材料3D打印色彩系统**
 
@@ -624,6 +626,7 @@ class I18n:
 
 | 模式 | 左上 | 右上 | 右下 | 左下 |
 |------|------|------|------|------|
+| **BW** | ⬜ 白色 | ⬛ 黑色 | ⬛ 黑色 | ⬛ 黑色 |
 | **RYBW** | ⬜ 白色 | 🟥 红色 | 🟦 蓝色 | 🟨 黄色 |
 | **CMYW** | ⬜ 白色 | 🔵 青色 | 🟣 品红 | 🟨 黄色 |
 
@@ -638,7 +641,7 @@ class I18n:
 
 ---
 
-### 📝 v1.5.6 更新日志
+### 📝 v1.5.7 更新日志
 
 #### 🔧 8色模式叠色效果修复
 - **核心修复**：修复8色模式图像转换时堆叠顺序错误导致的叠色效果不正确
@@ -746,10 +749,10 @@ class I18n:
 
 <div style="text-align:center; color:#888; margin-top:20px;">
     Made with ❤️ by [MIN]<br>
-    v1.5.6 | 2025
+    v1.5.7 | 2025
 </div>
 """,
-            "en": """## 🌟 Lumina Studio v1.5.6
+            "en": """## 🌟 Lumina Studio v1.5.7
 
 **Multi-Material 3D Print Color System**
 
@@ -769,6 +772,7 @@ Accurate color reproduction for FDM printing
 
 | Mode | Top-Left | Top-Right | Bottom-Right | Bottom-Left |
 |------|----------|-----------|--------------|-------------|
+| **BW** | ⬜ White | ⬛ Black | ⬛ Black | ⬛ Black |
 | **RYBW** | ⬜ White | 🟥 Red | 🟦 Blue | 🟨 Yellow |
 | **CMYW** | ⬜ White | 🔵 Cyan | 🟣 Magenta | 🟨 Yellow |
 
@@ -783,7 +787,7 @@ Accurate color reproduction for FDM printing
 
 ---
 
-### 📝 v1.5.6 Changelog
+### 📝 v1.5.7 Changelog
 
 #### 🔧 8-Color Mode Stacking Fix
 - **Core Fix**: Fixed incorrect stacking order in 8-color image conversion causing wrong color layering
@@ -891,7 +895,7 @@ Special thanks to:
 
 <div style="text-align:center; color:#888; margin-top:20px;">
     Made with ❤️ by [MIN]<br>
-    v1.5.6 | 2025
+    v1.5.7 | 2025
 </div>
 """,
         },

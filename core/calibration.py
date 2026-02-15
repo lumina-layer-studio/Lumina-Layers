@@ -570,3 +570,99 @@ def generate_8color_batch_zip():
 
     _, prev, _ = generate_8color_board(0)  # Show Page 1 as preview
     return zip_path, prev, make_status_tag("cal_8color_kit_generated")
+
+
+def generate_bw_calibration_board(
+    block_size_mm: float = 5.0, gap_mm: float = 0.8, backing_color: str = "White"
+):
+    """Generate BW (2-color) calibration board with 8x8 border layout."""
+    print("[BW] Generating Black & White calibration board (8x8 Layout)...")
+
+    color_conf = ColorSystem.BW
+    preview_colors = color_conf["preview"]
+    slot_names = color_conf["slots"]
+    color_map = color_conf["map"]
+    backing_id = color_map.get(backing_color, 0)
+
+    data_dim = 6
+    padding = 1
+    total_dim = data_dim + 2 * padding
+    block_w = float(block_size_mm)
+    gap = float(gap_mm)
+    margin = 5.0
+
+    board_w = margin * 2 + total_dim * block_w + (total_dim - 1) * gap
+
+    pixels_per_block = max(1, int(block_w / PrinterConfig.NOZZLE_WIDTH))
+    pixels_gap = max(1, int(gap / PrinterConfig.NOZZLE_WIDTH))
+    voxel_w = total_dim * (pixels_per_block + pixels_gap)
+    voxel_h = total_dim * (pixels_per_block + pixels_gap)
+
+    color_layers = 5
+    backing_layers = int(PrinterConfig.BACKING_MM / PrinterConfig.LAYER_HEIGHT)
+    total_layers = color_layers + backing_layers
+    full_matrix = np.full((total_layers, voxel_h, voxel_w), backing_id, dtype=int)
+
+    stacks = []
+    for i in range(32):
+        digits = []
+        temp = i
+        for _ in range(5):
+            digits.append(temp % 2)
+            temp //= 2
+        stacks.append(digits[::-1])
+
+    for idx in range(32):
+        r_data = idx // data_dim
+        c_data = idx % data_dim
+        row = r_data + padding
+        col = c_data + padding
+        stack = stacks[idx]
+
+        px = col * (pixels_per_block + pixels_gap)
+        py = row * (pixels_per_block + pixels_gap)
+
+        for z in range(color_layers):
+            mat_id = stack[z]
+            full_matrix[z, py : py + pixels_per_block, px : px + pixels_per_block] = (
+                mat_id
+            )
+
+    corners = [
+        (0, 0, 0),
+        (0, total_dim - 1, 1),
+        (total_dim - 1, total_dim - 1, 1),
+        (total_dim - 1, 0, 1),
+    ]
+    for r, c, mat_id in corners:
+        px = c * (pixels_per_block + pixels_gap)
+        py = r * (pixels_per_block + pixels_gap)
+        for z in range(color_layers):
+            full_matrix[z, py : py + pixels_per_block, px : px + pixels_per_block] = (
+                mat_id
+            )
+
+    scene = trimesh.Scene()
+    for mat_id in range(2):
+        mesh = _generate_voxel_mesh(full_matrix, mat_id, voxel_h, voxel_w)
+        if mesh:
+            mesh.visual.face_colors = preview_colors[mat_id]
+            name = slot_names[mat_id]
+            mesh.metadata["name"] = name
+            scene.add_geometry(mesh, node_name=name, geom_name=name)
+
+    output_path = os.path.join(OUTPUT_DIR, "Lumina_BW_Calibration.3mf")
+    scene.export(output_path)
+    safe_fix_3mf_names(output_path, slot_names)
+
+    bottom_layer = full_matrix[0].astype(np.uint8)
+    preview_arr = np.zeros((voxel_h, voxel_w, 3), dtype=np.uint8)
+    for mat_id, rgba in preview_colors.items():
+        preview_arr[bottom_layer == mat_id] = rgba[:3]
+
+    Stats.increment("calibrations")
+    return (
+        output_path,
+        Image.fromarray(preview_arr),
+        f"✅ BW (8x8边框版) 生成完毕 | 尺寸: {board_w:.1f}mm | 颜色: {', '.join(slot_names)}",
+    )

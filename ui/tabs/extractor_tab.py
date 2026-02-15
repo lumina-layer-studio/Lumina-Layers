@@ -34,11 +34,12 @@ from ui.callbacks import (
 def get_extractor_reference_image(mode_str):
     """Load or generate reference image for color extractor (disk-cached).
 
-    Uses assets/ with filenames ref_6color_smart.png, ref_cmyw_standard.png,
-    or ref_rybw_standard.png. Generates via calibration board logic if missing.
+    Uses assets/ with filenames ref_bw_standard.png, ref_cmyw_standard.png,
+    ref_rybw_standard.png, ref_6color_smart.png, or ref_8color_smart.png.
+    Generates via calibration board logic if missing.
 
     Args:
-        mode_str: Color mode label (e.g. "6-Color", "CMYW", "RYBW").
+        mode_str: Color mode label (e.g. "BW", "CMYW", "RYBW", "6-Color", "8-Color").
 
     Returns:
         PIL.Image.Image | None: Reference image or None on error.
@@ -49,9 +50,15 @@ def get_extractor_reference_image(mode_str):
 
     mode_enum = ColorMode(mode_str)
 
-    if mode_enum == ColorMode.SIX_COLOR:
+    if mode_enum == ColorMode.BW:
+        filename = "ref_bw_standard.png"
+        gen_mode = ColorMode.BW
+    elif mode_enum == ColorMode.SIX_COLOR:
         filename = "ref_6color_smart.png"
         gen_mode = ColorMode.SIX_COLOR
+    elif mode_enum == ColorMode.EIGHT_COLOR_MAX:
+        filename = "ref_8color_smart.png"
+        gen_mode = ColorMode.EIGHT_COLOR_MAX
     elif mode_enum == ColorMode.CMYW:
         filename = "ref_cmyw_standard.png"
         gen_mode = ColorMode.CMYW
@@ -70,14 +77,23 @@ def get_extractor_reference_image(mode_str):
 
     print(f"[UI] Generating new reference for {gen_mode}...")
     try:
-        from core.calibration import generate_smart_board, generate_calibration_board
+        from core.calibration import (
+            generate_bw_calibration_board,
+            generate_smart_board,
+            generate_8color_board,
+            generate_calibration_board,
+        )
 
         block_size = 10
         gap = 0
         backing = "White"
 
-        if gen_mode == ColorMode.SIX_COLOR:
+        if gen_mode == ColorMode.EIGHT_COLOR_MAX:
+            _, img, _ = generate_8color_board(0)
+        elif gen_mode == ColorMode.SIX_COLOR:
             _, img, _ = generate_smart_board(block_size, gap)
+        elif gen_mode == ColorMode.BW:
+            _, img, _ = generate_bw_calibration_board(block_size, gap, backing)
         else:
             _, img, _ = generate_calibration_board(gen_mode, block_size, gap, backing)
 
@@ -114,6 +130,10 @@ def create_extractor_tab_content(lang: str) -> dict:
 
             components["radio_ext_color_mode"] = gr.Radio(
                 choices=[
+                    (
+                        I18n.get("color_mode_bw", lang),
+                        ColorMode.BW.value,
+                    ),
                     (
                         I18n.get("conv_color_mode_cmyw", lang),
                         ColorMode.CMYW.value,
@@ -153,7 +173,7 @@ def create_extractor_tab_content(lang: str) -> dict:
 
             with gr.Row():
                 components["checkbox_ext_wb"] = gr.Checkbox(
-                    label=I18n.get("ext_wb", lang), value=True
+                    label=I18n.get("ext_wb", lang), value=False
                 )
                 components["checkbox_ext_vignette"] = gr.Checkbox(
                     label=I18n.get("ext_vignette", lang), value=False

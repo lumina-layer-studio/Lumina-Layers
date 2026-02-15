@@ -7,6 +7,7 @@ import gradio as gr
 
 from config import ColorMode
 from core.calibration import (
+    generate_bw_calibration_board,
     generate_calibration_board,
     generate_smart_board,
     generate_8color_batch_zip,
@@ -25,6 +26,10 @@ def create_calibration_tab_content(lang: str) -> dict:
 
             components["radio_cal_color_mode"] = gr.Radio(
                 choices=[
+                    (
+                        I18n.get("color_mode_bw", lang),
+                        ColorMode.BW.value,
+                    ),
                     (
                         I18n.get("conv_color_mode_cmyw", lang),
                         ColorMode.CMYW.value,
@@ -62,6 +67,7 @@ def create_calibration_tab_content(lang: str) -> dict:
                     (I18n.get("backing_yellow", lang), "Yellow"),
                     (I18n.get("backing_red", lang), "Red"),
                     (I18n.get("backing_blue", lang), "Blue"),
+                    (I18n.get("backing_black", lang), "Black"),
                 ],
                 value="White",
                 label=I18n.get("cal_backing", lang),
@@ -92,6 +98,9 @@ def create_calibration_tab_content(lang: str) -> dict:
     def generate_board_wrapper(color_mode, block_size, gap, backing):
         """Wrapper function to call appropriate generator based on mode"""
         mode_enum = ColorMode(color_mode)
+        if mode_enum == ColorMode.BW:
+            out, prev, status = generate_bw_calibration_board(block_size, gap, backing)
+            return out, prev, resolve_i18n_text(status, lang)
         if mode_enum == ColorMode.EIGHT_COLOR_MAX:
             out, prev, status = generate_8color_batch_zip()
             return out, prev, resolve_i18n_text(status, lang)

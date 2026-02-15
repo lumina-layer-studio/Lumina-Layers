@@ -511,6 +511,10 @@ def create_converter_tab_content(lang: str, lang_state=None) -> dict:
                 components["radio_conv_color_mode"] = gr.Radio(
                     choices=[
                         (
+                            I18n.get("color_mode_bw", lang),
+                            ColorMode.BW.value,
+                        ),
+                        (
                             I18n.get("conv_color_mode_cmyw", lang),
                             ColorMode.CMYW.value,
                         ),

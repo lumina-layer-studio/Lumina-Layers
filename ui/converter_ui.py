@@ -18,7 +18,8 @@ from config import (
     ColorSystem,
     ModelingMode,
     PREVIEW_SCALE,
-    PREVIEW_MARGIN, ColorMode,
+    PREVIEW_MARGIN,
+    ColorMode,
 )
 from core.converter import convert_image_to_3d, ConversionRequest
 from core.image_processing import LuminaImageProcessor
@@ -1004,6 +1005,11 @@ def detect_lut_color_mode(lut_path):
         if total_colors >= 2600 and total_colors <= 2800:
             print(f"[AUTO_DETECT] Detected 8-Color mode (2738 colors)")
             return ColorMode.EIGHT_COLOR_MAX.value
+
+        # BW 模式：32色 (2^5 = 32)
+        elif total_colors >= 30 and total_colors <= 36:
+            print(f"[AUTO_DETECT] Detected BW mode (32 colors)")
+            return ColorMode.BW.value
 
         # 6色模式：1296色 (6^5 = 7776)，但实际选择1296)
         elif total_colors >= 1200 and total_colors <= 1400:

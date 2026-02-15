@@ -67,7 +67,14 @@ def draw_corner_points(img, points, color_mode: ColorMode):
     color_conf = ColorSystem.get(mode_enum)
     labels = color_conf["corner_labels"]
 
-    if mode_enum == ColorMode.EIGHT_COLOR_MAX:
+    if mode_enum == ColorMode.BW:
+        draw_colors = [
+            (255, 255, 255),  # White (TL)
+            (0, 0, 0),  # Black (TR)
+            (0, 0, 0),  # Black (BR)
+            (0, 0, 0),  # Black (BL)
+        ]
+    elif mode_enum == ColorMode.EIGHT_COLOR_MAX:
         draw_colors = [
             (255, 255, 255),  # White (TL)
             (255, 255, 0),  # Cyan/Magenta (TR)
@@ -195,7 +202,11 @@ def run_extraction(
     # 动态确定网格大小
     mode_enum = color_mode
 
-    if mode_enum == ColorMode.EIGHT_COLOR_MAX:
+    if mode_enum == ColorMode.BW:
+        grid_size = 6
+        physical_grid = 8
+        total_cells = 32
+    elif mode_enum == ColorMode.EIGHT_COLOR_MAX:
         grid_size = 37  # Data: 37x37 (1369色)
         physical_grid = 39  # Physical: 39x39
         total_cells = 1369
@@ -296,10 +307,12 @@ def probe_lut_cell(lut_path, evt: gr.SelectData):
     except Exception:
         return make_status_tag("ext_probe_corrupted"), None, None
 
+    lut_height, lut_width = lut.shape[:2]
+
     x, y = evt.index
-    scale = 512 / DATA_GRID_SIZE
-    c = min(max(int(x / scale), 0), DATA_GRID_SIZE - 1)
-    r = min(max(int(y / scale), 0), DATA_GRID_SIZE - 1)
+    scale = 512 / lut_width
+    c = min(max(int(x / scale), 0), lut_width - 1)
+    r = min(max(int(y / scale), 0), lut_height - 1)
 
     rgb = lut[r, c]
     hex_c = "#{:02x}{:02x}{:02x}".format(*rgb)

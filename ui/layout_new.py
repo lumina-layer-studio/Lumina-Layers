@@ -374,6 +374,10 @@ def _get_all_component_updates(lang: str, components: dict) -> list:
                         label=I18n.get(choice_key, lang),
                         choices=[
                             (
+                                I18n.get("color_mode_bw", lang),
+                                ColorMode.BW.value,
+                            ),
+                            (
                                 I18n.get("conv_color_mode_cmyw", lang),
                                 ColorMode.CMYW.value,
                             ),
@@ -491,6 +495,7 @@ def _get_all_component_updates(lang: str, components: dict) -> list:
                             (I18n.get("backing_yellow", lang), "Yellow"),
                             (I18n.get("backing_red", lang), "Red"),
                             (I18n.get("backing_blue", lang), "Blue"),
+                            (I18n.get("backing_black", lang), "Black"),
                         ],
                     )
                 )

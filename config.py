@@ -70,6 +70,7 @@ class StructureMode(str, Enum):
 class ColorMode(str, Enum):
     """色彩模式枚举"""
 
+    BW = "BW"
     CMYW = "CMYW"
     RYBW = "RYBW"
     SIX_COLOR = "6-Color"
@@ -77,6 +78,7 @@ class ColorMode(str, Enum):
 
     def get_display_name(self) -> str:
         display_names = {
+            ColorMode.BW: "BW",
             ColorMode.CMYW: "CMYW",
             ColorMode.RYBW: "RYBW",
             ColorMode.SIX_COLOR: "6-Color",
@@ -104,7 +106,19 @@ class MatchStrategy(str, Enum):
 
 
 class ColorSystem:
-    """Color model definitions for CMYW, RYBW, and 6-Color systems."""
+    """Color model definitions for BW, CMYW, RYBW, 6-Color and 8-Color systems."""
+
+    BW = {
+        "name": "BW",
+        "slots": ["White", "Black"],
+        "preview": {
+            0: [255, 255, 255, 255],
+            1: [0, 0, 0, 255],
+        },
+        "map": {"White": 0, "Black": 1},
+        "corner_labels": ["白色 (左上)", "黑色 (右上)", "黑色 (右下)", "黑色 (左下)"],
+        "corner_labels_en": ["White (TL)", "Black (TR)", "Black (BR)", "Black (BL)"],
+    }
 
     CMYW = {
         "name": "CMYW",
@@ -200,6 +214,8 @@ class ColorSystem:
             return ColorSystem.EIGHT_COLOR
         if mode == ColorMode.SIX_COLOR:
             return ColorSystem.SIX_COLOR
+        if mode == ColorMode.BW:
+            return ColorSystem.BW
         return ColorSystem.CMYW if mode == ColorMode.CMYW else ColorSystem.RYBW
 
 

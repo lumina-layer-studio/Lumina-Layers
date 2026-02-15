@@ -16,6 +16,7 @@ LuminaImageProcessor class.
 
 from .color_modes import (
     ColorModeStrategy,
+    TwoColorStrategy,
     FourColorStrategy,
     SixColorStrategy,
     EightColorStrategy,
@@ -35,6 +36,7 @@ from .factory import ProcessorFactory
 __all__ = [
     # Color Mode Strategies
     "ColorModeStrategy",
+    "TwoColorStrategy",
     "FourColorStrategy",
     "SixColorStrategy",
     "EightColorStrategy",

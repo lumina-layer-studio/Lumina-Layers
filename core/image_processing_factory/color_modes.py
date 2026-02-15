@@ -2,6 +2,7 @@
 Color Mode Strategies
 
 Each strategy handles LUT loading for a specific color mode:
+- TwoColorStrategy: BW (32 colors)
 - FourColorStrategy: CMYW/RYBW (1024 colors)
 - SixColorStrategy: 6-Color Smart 1296 (1296 colors)
 - EightColorStrategy: 8-Color Max (2738 colors)
@@ -46,6 +47,51 @@ class ColorModeStrategy(ABC):
     def get_mode_name(self) -> str:
         """Return the display name of this color mode."""
         pass
+
+
+class TwoColorStrategy(ColorModeStrategy):
+    """Strategy for BW (Black & White) mode with 32 combinations."""
+
+    def __init__(self, color_mode: ColorMode):
+        self.color_mode = color_mode
+
+    def load_lut(self, lut_path: str) -> Tuple[np.ndarray, np.ndarray, KDTree]:
+        """Load 2-color LUT and rebuild 2-base stacks."""
+        try:
+            lut_grid = np.load(lut_path)
+            measured_colors = lut_grid.reshape(-1, 3)
+            total_colors = measured_colors.shape[0]
+        except Exception as e:
+            raise ValueError(f"❌ LUT file corrupted: {e}")
+
+        print(f"[TwoColorStrategy] Loading BW LUT ({total_colors} points)...")
+
+        valid_rgb = []
+        valid_stacks = []
+
+        for i in range(32):
+            if i >= total_colors:
+                break
+
+            digits = []
+            temp = i
+            for _ in range(5):
+                digits.append(temp % 2)
+                temp //= 2
+            stack = digits[::-1]
+
+            valid_rgb.append(measured_colors[i])
+            valid_stacks.append(stack)
+
+        lut_rgb = np.array(valid_rgb)
+        ref_stacks = np.array(valid_stacks)
+        kdtree = KDTree(lut_rgb)
+
+        print(f"✅ LUT loaded: {len(lut_rgb)} colors (BW mode)")
+        return lut_rgb, ref_stacks, kdtree
+
+    def get_mode_name(self) -> str:
+        return "BW (Black & White)"
 
 
 class FourColorStrategy(ColorModeStrategy):

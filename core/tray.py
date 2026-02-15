@@ -1,6 +1,6 @@
 """
 ╔═══════════════════════════════════════════════════════════════════════════════╗
-║                          LUMINA STUDIO v1.5.6                                 ║
+║                          LUMINA STUDIO v1.5.7                                 ║
 ║                    Multi-Material 3D Print Color System                       ║
 ╠═══════════════════════════════════════════════════════════════════════════════╣
 ║  Author: [MIN]                                                                ║
@@ -103,7 +103,7 @@ class LuminaTray:
             pystray.MenuItem(self._get_text("exit"), self.exit_app),
         )
 
-        self.icon = pystray.Icon("LuminaStudio", image, "Lumina Studio v1.5.6", menu)
+        self.icon = pystray.Icon("LuminaStudio", image, "Lumina Studio v1.5.7", menu)
 
     def run(self):
         """Start the tray icon in a daemon thread."""

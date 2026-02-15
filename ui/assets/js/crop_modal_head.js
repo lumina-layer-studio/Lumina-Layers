@@ -62,6 +62,20 @@ window.updateCropDataJson = function(x, y, w, h) {
         console.error('crop-data-json element not found');
         return;
     }
+
+    function handleRemoveReplacementClick(e) {
+        var btn = e.target.closest('.palette-remove-replacement-btn');
+        if (!btn) return;
+
+        var originalColor = btn.getAttribute('data-original-color');
+        if (!originalColor) return;
+
+        updateGradioTextbox('conv-remove-replacement-hidden', originalColor);
+
+        setTimeout(function() {
+            window.clickGradioButton('conv-remove-replacement-trigger-btn');
+        }, 50);
+    }
     var textarea = container.querySelector('textarea');
     if (textarea) {
         textarea.value = jsonData;
@@ -275,6 +289,11 @@ console.log('Crop modal JS loaded, openCropModal:', typeof window.openCropModal)
     
     // Use event delegation on document body - this survives Gradio re-renders
     document.addEventListener('click', function(e) {
+        if (e.target.closest('.palette-remove-replacement-btn')) {
+            handleRemoveReplacementClick(e);
+            return;
+        }
+
         // Check for palette swatch
         if (e.target.closest('.palette-swatch')) {
             handlePaletteSwatchClick(e);

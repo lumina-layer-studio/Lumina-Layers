@@ -181,8 +181,8 @@ class I18n:
             "en": "Generate preview to see replacements",
         },
         "conv_palette_replacements_label": {
-            "zh": "已生效的替换",
-            "en": "Applied Replacements",
+            "zh": "颜色映射",
+            "en": "Color Mapping",
         },
         "conv_palette_apply_btn": {"zh": "✅ 确认替换", "en": "✅ Apply"},
         "conv_palette_unselect_btn": {
@@ -535,6 +535,19 @@ class I18n:
             "en": "Click to highlight: {hex} ({pct}%)",
         },
         "palette_replaced_with": {"zh": "替换为 {hex}", "en": "Replaced with {hex}"},
+        "palette_applied_section": {
+            "zh": "已生效的替换",
+            "en": "Applied Replacements",
+        },
+        "palette_original_section": {
+            "zh": "原始颜色",
+            "en": "Original Colors",
+        },
+        "palette_none_applied": {
+            "zh": "暂无已生效替换",
+            "en": "No applied replacements",
+        },
+        "palette_remove_one": {"zh": "撤销此项", "en": "Undo This"},
         "palette_click_to_select": {
             "zh": "点击调色板选择颜色",
             "en": "Click palette to select",
@@ -561,6 +574,14 @@ class I18n:
         },
         "palette_undo_empty": {"zh": "❌ 没有可撤销的操作", "en": "❌ Nothing to undo"},
         "palette_undone": {"zh": "↩️ 已撤销", "en": "↩️ Undone"},
+        "palette_removed_one": {
+            "zh": "↩️ 已撤销 {src} → {dst}",
+            "en": "↩️ Undid {src} → {dst}",
+        },
+        "palette_remove_missing": {
+            "zh": "❌ 未找到该替换项",
+            "en": "❌ Replacement not found",
+        },
         "palette_not_selected": {"zh": "未选择", "en": "Not selected"},
         "palette_selected_format": {"zh": "✅ {hex}", "en": "✅ {hex}"},
         "palette_replacement_not_selected": {

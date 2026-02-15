@@ -16,6 +16,7 @@ def generate_palette_html(
     palette: List[dict],
     replacements: dict = None,
     selected_color: str = None,
+    original_palette: List[dict] = None,
     lang: str = "zh",
 ) -> str:
     """
@@ -36,63 +37,78 @@ def generate_palette_html(
         return f"<p style='color:#888;'>{I18n.get('palette_empty', lang)}</p>"
 
     replacements = replacements or {}
+    original_palette = original_palette or palette
 
-    # Note: JavaScript click handlers are now in crop_extension.py (global head JS)
-    # The script tags here are kept for reference but won't execute via innerHTML
-
-    # Show total color count with highlight hint
-    count_text = I18n.get("palette_count", lang).format(count=len(palette))
+    count_text = I18n.get("palette_count", lang).format(count=len(original_palette))
     hint_text = I18n.get("palette_hint", lang)
+    applied_title = I18n.get("palette_applied_section", lang)
+    original_title = I18n.get("palette_original_section", lang)
+    remove_one_text = I18n.get("palette_remove_one", lang)
+    none_applied_text = I18n.get("palette_none_applied", lang)
+    applied_items = list(replacements.items())
+
     html_parts = [
         f'<p style="color:#666; margin:4px 8px;">{count_text}</p>',
         f'<p style="color:#888; margin:2px 8px; font-size:11px;">💡 {hint_text}</p>',
-        '<div id="palette-grid-container" style="display:flex; flex-wrap:wrap; gap:8px; padding:8px; max-height:400px; overflow-y:auto;">',
+        '<div id="palette-grid-container" style="display:grid; grid-template-columns:minmax(260px, 1fr) minmax(260px, 1fr); gap:12px; align-items:start;">',
+        '<div style="border:1px solid #ddd; border-radius:8px; padding:8px; background:#fafafa;">',
+        f'<div style="font-size:12px; font-weight:600; color:#444; margin-bottom:8px;">{applied_title} ({len(applied_items)})</div>',
     ]
 
-    for entry in palette:
+    if applied_items:
+        html_parts.append('<div style="display:flex; flex-direction:column; gap:8px;">')
+        for original_hex, replacement_hex in applied_items:
+            html_parts.append(f'''
+            <div style="display:grid; grid-template-columns:auto 16px auto 1fr auto; align-items:center; gap:6px; border:1px solid #eee; border-radius:8px; padding:6px; background:#fff;">
+                <div class="palette-swatch" data-color="{original_hex}" title="{original_hex}" style="width:28px; height:28px; border:1px solid #ccc; border-radius:6px; background:{original_hex}; cursor:pointer;"></div>
+                <div style="font-size:12px; color:#888; text-align:center;">→</div>
+                <div title="{replacement_hex}" style="width:28px; height:28px; border:1px solid #4CAF50; border-radius:6px; background:{replacement_hex};"></div>
+                <div style="font-size:10px; color:#666; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">{original_hex} → {replacement_hex}</div>
+                <button class="palette-remove-replacement-btn" data-original-color="{original_hex}" style="font-size:10px; border:1px solid #ddd; border-radius:6px; background:#fff; color:#555; padding:4px 6px; cursor:pointer;">{remove_one_text}</button>
+            </div>
+            ''')
+    else:
+        html_parts.append(
+            f'<p style="font-size:12px; color:#888; margin:0;">{none_applied_text}</p>'
+        )
+
+    if applied_items:
+        html_parts.append("</div>")
+
+    html_parts.append("</div>")
+    html_parts.append(
+        '<div style="border:1px solid #ddd; border-radius:8px; padding:8px; background:#fff;">'
+    )
+    html_parts.append(
+        f'<div style="font-size:12px; font-weight:600; color:#444; margin-bottom:8px;">{original_title}</div>'
+    )
+    html_parts.append(
+        '<div style="display:flex; flex-wrap:wrap; gap:8px; max-height:360px; overflow-y:auto;">'
+    )
+
+    for entry in original_palette:
         hex_color = entry["hex"]
         percentage = entry["percentage"]
-
-        # Check if this color has a replacement
         replacement_hex = replacements.get(hex_color)
-
-        # Build color swatch HTML - text BELOW the swatch
-        border_style = "3px solid #ff6b6b" if replacement_hex else "1px solid #ccc"
-
-        # Check if this is the selected color
+        border_style = "2px solid #ff6b6b" if replacement_hex else "1px solid #ccc"
         is_selected = selected_color and hex_color.lower() == selected_color.lower()
         outline_style = (
             "outline: 3px solid #2196F3; outline-offset: 2px;" if is_selected else ""
         )
-
-        # Container with flex-direction:column to put text BELOW swatch
-        # No onclick - handled by event delegation
         tooltip = I18n.get("palette_tooltip", lang).format(
             hex=hex_color, pct=percentage
         )
         html_parts.append(f'''
         <div class="palette-swatch-container" style="display:flex; flex-direction:column; align-items:center; gap:4px;">
-            <div class="palette-swatch" style="width:50px; height:50px; background:{hex_color}; border:{border_style}; border-radius:8px; cursor:pointer; transition: all 0.2s ease; {outline_style}" data-color="{hex_color}" title="{tooltip}"></div>
-            <div style="text-align:center; font-size:10px; color:#333;">
+            <div class="palette-swatch" style="width:44px; height:44px; background:{hex_color}; border:{border_style}; border-radius:8px; cursor:pointer; transition: all 0.2s ease; {outline_style}" data-color="{hex_color}" title="{tooltip}"></div>
+            <div style="text-align:center; font-size:9px; color:#333;">
                 <div style="font-weight:bold;">{percentage}%</div>
                 <div style="font-size:8px; color:#666;">{hex_color}</div>
             </div>
         </div>
         ''')
 
-        # Show replacement indicator if exists
-        if replacement_hex:
-            replacement_title = I18n.get("palette_replaced_with", lang).format(
-                hex=replacement_hex
-            )
-            html_parts.append(f'''
-            <div style="width:20px; height:60px; display:flex; align-items:center; font-size:16px; color:#666;">→</div>
-            <div style="width:40px; height:40px; background:{replacement_hex}; border:2px solid #4CAF50; border-radius:8px;" title="{replacement_title}"></div>
-            ''')
-
-    html_parts.append("</div>")
-    # Note: JavaScript handlers are now global in crop_extension.py
-
+    html_parts.append("</div></div></div>")
     return "".join(html_parts)
 
 

@@ -49,3 +49,12 @@ def test_palette_has_clear_selected_button_binding():
     assert 'I18n.get("conv_palette_unselect_btn", lang)' in source
     assert "conv_clear_selected.click(" in source
     assert "on_clear_selected_and_highlight_with_fit" in source
+
+
+@pytest.mark.unit
+def test_palette_has_color_select_and_single_remove_bindings():
+    source = inspect.getsource(converter_tab.create_converter_tab_content)
+    assert "conv_color_trigger_btn.click(" in source
+    assert "on_original_color_click" in source
+    assert "conv_remove_replacement_trigger_btn.click(" in source
+    assert "on_remove_single_replacement_with_fit" in source

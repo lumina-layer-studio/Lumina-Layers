@@ -32,8 +32,10 @@ from ui.callbacks import (
     on_lut_select,
     on_lut_upload_save,
     on_apply_color_replacement,
+    on_color_swatch_click,
     on_clear_selected_original_color,
     on_clear_color_replacements,
+    on_remove_single_color_replacement,
     on_undo_color_replacement,
     on_preview_generated_update_palette,
     on_highlight_color_change,
@@ -717,6 +719,22 @@ def create_converter_tab_content(lang: str, lang_state=None) -> dict:
                             elem_classes=["hidden-textbox-trigger"],
                             visible=True,
                         )
+                        conv_remove_replacement_hidden = gr.Textbox(
+                            value="",
+                            visible=True,
+                            interactive=True,
+                            elem_id="conv-remove-replacement-hidden",
+                            elem_classes=["hidden-textbox-trigger"],
+                            label="",
+                            show_label=False,
+                            container=False,
+                        )
+                        conv_remove_replacement_trigger_btn = gr.Button(
+                            "trigger_remove_replacement",
+                            elem_id="conv-remove-replacement-trigger-btn",
+                            elem_classes=["hidden-textbox-trigger"],
+                            visible=True,
+                        )
 
                         # --- 新 UI 布局 ---
                         with gr.Row():
@@ -1233,6 +1251,16 @@ def create_converter_tab_content(lang: str, lang_state=None) -> dict:
     )
 
     # [新增] 处理 LUT 色块点击事件 (JS -> Hidden Textbox -> Python)
+    def on_original_color_click(hex_color, lang_val):
+        selected_color, _ = on_color_swatch_click(hex_color, lang=lang_val)
+        return selected_color, selected_color
+
+    conv_color_trigger_btn.click(
+        fn=on_original_color_click,
+        inputs=[conv_color_selected_hidden, lang_state],
+        outputs=[conv_selected_color, conv_selected_display],
+    )
+
     def on_lut_color_click(hex_color):
         return hex_color, hex_color
 
@@ -1349,6 +1377,80 @@ def create_converter_tab_content(lang: str, lang_state=None) -> dict:
             conv_preview,
             conv_selected_display,
             conv_selected_color,
+            conv_highlight_color_hidden,
+            components["textbox_conv_status"],
+        ],
+    )
+
+    def on_remove_single_replacement_with_fit(
+        cache,
+        selected_original_color,
+        replacement_map,
+        replacement_history,
+        loop_pos,
+        add_loop,
+        loop_width,
+        loop_length,
+        loop_hole,
+        loop_angle,
+        lang_state_val,
+    ):
+        (
+            display,
+            updated_cache,
+            palette_html,
+            new_map,
+            new_history,
+            selected_color,
+            status,
+        ) = on_remove_single_color_replacement(
+            cache,
+            selected_original_color,
+            replacement_map,
+            replacement_history,
+            loop_pos,
+            add_loop,
+            loop_width,
+            loop_length,
+            loop_hole,
+            loop_angle,
+            lang_state_val,
+        )
+        return (
+            _preview_update(display),
+            updated_cache,
+            palette_html,
+            new_map,
+            new_history,
+            selected_color,
+            selected_color,
+            "",
+            status,
+        )
+
+    conv_remove_replacement_trigger_btn.click(
+        on_remove_single_replacement_with_fit,
+        inputs=[
+            conv_preview_cache,
+            conv_remove_replacement_hidden,
+            conv_replacement_map,
+            conv_replacement_history,
+            conv_loop_pos,
+            components["checkbox_conv_loop_enable"],
+            components["slider_conv_loop_width"],
+            components["slider_conv_loop_length"],
+            components["slider_conv_loop_hole"],
+            components["slider_conv_loop_angle"],
+            lang_state,
+        ],
+        outputs=[
+            conv_preview,
+            conv_preview_cache,
+            conv_palette_html,
+            conv_replacement_map,
+            conv_replacement_history,
+            conv_selected_color,
+            conv_selected_display,
             conv_highlight_color_hidden,
             components["textbox_conv_status"],
         ],

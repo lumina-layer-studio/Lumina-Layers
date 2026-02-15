@@ -321,7 +321,13 @@ def on_preview_generated_update_palette(cache, lang: str = "zh"):
         )
 
     palette = cache.get("color_palette", [])
-    palette_html = generate_palette_html(palette, {}, "", lang=lang)
+    palette_html = generate_palette_html(
+        palette,
+        {},
+        "",
+        original_palette=cache.get("original_color_palette", palette),
+        lang=lang,
+    )
 
     return (
         palette_html,
@@ -333,7 +339,7 @@ def on_clear_selected_original_color(lang: str = "zh"):
     return None, None, I18n.get("palette_not_selected", lang)
 
 
-def on_color_swatch_click(selected_hex):
+def on_color_swatch_click(selected_hex, lang: str = "zh"):
     """
     Handle color selection from clicking palette swatch.
 
@@ -344,12 +350,90 @@ def on_color_swatch_click(selected_hex):
         tuple: (selected_color_state, display_text)
     """
     if not selected_hex or selected_hex.strip() == "":
-        return None, I18n.get("palette_not_selected", "zh")
+        return None, I18n.get("palette_not_selected", lang)
 
     # Clean up the hex value
     hex_color = selected_hex.strip()
 
-    return hex_color, I18n.get("palette_selected_format", "zh").format(hex=hex_color)
+    return hex_color, I18n.get("palette_selected_format", lang).format(hex=hex_color)
+
+
+def on_remove_single_color_replacement(
+    cache,
+    original_color,
+    replacement_map,
+    replacement_history,
+    loop_pos,
+    add_loop,
+    loop_width,
+    loop_length,
+    loop_hole,
+    loop_angle,
+    lang: str = "zh",
+):
+    from ui.converter_ui import update_preview_with_replacements
+
+    if cache is None:
+        return (
+            None,
+            None,
+            "",
+            replacement_map,
+            replacement_history,
+            None,
+            I18n.get("palette_need_preview", lang),
+        )
+
+    if not original_color:
+        return (
+            gr.update(),
+            cache,
+            gr.update(),
+            replacement_map,
+            replacement_history,
+            None,
+            I18n.get("palette_remove_missing", lang),
+        )
+
+    new_map = replacement_map.copy() if replacement_map else {}
+    if original_color not in new_map:
+        return (
+            gr.update(),
+            cache,
+            gr.update(),
+            replacement_map,
+            replacement_history,
+            original_color,
+            I18n.get("palette_remove_missing", lang),
+        )
+
+    removed_target = new_map.pop(original_color)
+    new_history = replacement_history.copy() if replacement_history else []
+    new_history.append(replacement_map.copy() if replacement_map else {})
+
+    display, updated_cache, palette_html = update_preview_with_replacements(
+        cache,
+        new_map,
+        loop_pos,
+        add_loop,
+        loop_width,
+        loop_length,
+        loop_hole,
+        loop_angle,
+        lang=lang,
+    )
+
+    return (
+        display,
+        updated_cache,
+        palette_html,
+        new_map,
+        new_history,
+        original_color,
+        I18n.get("palette_removed_one", lang).format(
+            src=original_color, dst=removed_target
+        ),
+    )
 
 
 def on_color_dropdown_select(selected_value):

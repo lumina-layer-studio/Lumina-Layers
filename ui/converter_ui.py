@@ -309,6 +309,7 @@ def generate_preview_cached(
     # Extract color palette from cache
     color_palette = extract_color_palette(cache)
     cache["color_palette"] = color_palette
+    cache["original_color_palette"] = color_palette
 
     display = render_preview(preview_rgba, None, 0, 0, 0, 0, False, color_conf)
 
@@ -594,6 +595,9 @@ def update_preview_with_replacements(
     # Re-extract palette with new colors
     color_palette = extract_color_palette(updated_cache)
     updated_cache["color_palette"] = color_palette
+    if "original_color_palette" not in updated_cache:
+        original_cache = {"matched_rgb": original_rgb, "mask_solid": mask_solid}
+        updated_cache["original_color_palette"] = extract_color_palette(original_cache)
 
     # Render display with loop if enabled
     display = render_preview(
@@ -608,7 +612,12 @@ def update_preview_with_replacements(
     )
 
     # Generate palette HTML for display
-    palette_html = generate_palette_html(color_palette, color_replacements, lang=lang)
+    palette_html = generate_palette_html(
+        color_palette,
+        color_replacements,
+        original_palette=updated_cache.get("original_color_palette", color_palette),
+        lang=lang,
+    )
 
     return display, updated_cache, palette_html
 

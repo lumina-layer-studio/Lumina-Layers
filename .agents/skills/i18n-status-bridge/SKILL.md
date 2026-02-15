@@ -1,6 +1,6 @@
 ---
 name: i18n-status-bridge
-description: Lumina Studio i18n 文案传递规范（core 返回 tag，ui 统一解析）
+description: 所有面向用户显示的文案（按钮、标签、状态提示、错误提示、占位文本等）需要遵循本技能
 allowed-tools: Read, Grep, Edit, Write, Bash, LSP
 ---
 

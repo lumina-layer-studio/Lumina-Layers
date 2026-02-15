@@ -663,5 +663,9 @@ def generate_bw_calibration_board(
     return (
         output_path,
         Image.fromarray(preview_arr),
-        f"✅ BW (8x8边框版) 生成完毕 | 尺寸: {board_w:.1f}mm | 颜色: {', '.join(slot_names)}",
+        make_status_tag(
+            "cal_bw_generated",
+            board_w=f"{board_w:.1f}",
+            slots=", ".join(slot_names),
+        ),
     )

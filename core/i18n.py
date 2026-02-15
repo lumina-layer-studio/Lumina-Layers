@@ -512,6 +512,10 @@ class I18n:
             "zh": "✅ 8 色套件（第 1/2 页）已生成",
             "en": "✅ 8-Color Kit (Page 1 & 2) Generated!",
         },
+        "cal_bw_generated": {
+            "zh": "✅ BW (8x8边框版) 生成完毕 | 尺寸: {board_w}mm | 颜色: {slots}",
+            "en": "✅ BW (8x8 border) generated | Size: {board_w}mm | Colors: {slots}",
+        },
         # ==================== Palette / Replacement ====================
         "palette_empty": {
             "zh": "暂无颜色，请先生成预览。",

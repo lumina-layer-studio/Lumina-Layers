@@ -20,6 +20,13 @@ from config import (
     ColorMode,
 )
 from core.converter import ConversionRequest
+from core.color_replacement import (
+    apply_replacements_with_selection,
+    build_selection_mask,
+    make_group_selection_token,
+    make_region_selection_token,
+    parse_selection_token,
+)
 from core.image_processing import LuminaImageProcessor
 from utils.i18n_help import make_status_tag
 from ui.palette_extension import generate_palette_html, generate_lut_color_grid_html
@@ -222,6 +229,65 @@ def extract_color_palette(preview_cache: dict) -> List[dict]:
     return palette
 
 
+def extract_quantized_pair_palette(preview_cache: dict) -> List[dict]:
+    if preview_cache is None:
+        return []
+
+    quantized_image = preview_cache.get("quantized_image")
+    matched_rgb = preview_cache.get("matched_rgb")
+    mask_solid = preview_cache.get("mask_solid")
+    if quantized_image is None or matched_rgb is None or mask_solid is None:
+        return []
+
+    quant_solid = quantized_image[mask_solid]
+    matched_solid = matched_rgb[mask_solid]
+    if len(quant_solid) == 0:
+        return []
+
+    total = len(quant_solid)
+    q_codes = (
+        quant_solid[:, 0].astype(np.int32) * 65536
+        + quant_solid[:, 1].astype(np.int32) * 256
+        + quant_solid[:, 2].astype(np.int32)
+    )
+    unique_q, q_counts = np.unique(q_codes, return_counts=True)
+
+    pairs = []
+    for q_code, count in zip(unique_q, q_counts):
+        q_mask = q_codes == q_code
+        q_pixels = quant_solid[q_mask]
+        m_pixels = matched_solid[q_mask]
+        if len(q_pixels) == 0 or len(m_pixels) == 0:
+            continue
+
+        q_r, q_g, q_b = [int(v) for v in q_pixels[0]]
+        m_codes = (
+            m_pixels[:, 0].astype(np.int32) * 65536
+            + m_pixels[:, 1].astype(np.int32) * 256
+            + m_pixels[:, 2].astype(np.int32)
+        )
+        m_unique, m_counts = np.unique(m_codes, return_counts=True)
+        matched_code = int(m_unique[np.argmax(m_counts)])
+        m_r = (matched_code >> 16) & 255
+        m_g = (matched_code >> 8) & 255
+        m_b = matched_code & 255
+
+        quant_hex = f"#{q_r:02x}{q_g:02x}{q_b:02x}"
+        matched_hex = f"#{m_r:02x}{m_g:02x}{m_b:02x}"
+        pairs.append(
+            {
+                "quant_hex": quant_hex,
+                "matched_hex": matched_hex,
+                "count": int(count),
+                "percentage": round(float(count) / float(total) * 100.0, 2),
+                "token": make_group_selection_token(quant_hex, matched_hex),
+            }
+        )
+
+    pairs.sort(key=lambda x: x["count"], reverse=True)
+    return pairs
+
+
 def generate_preview_cached(
     image_path,
     request: ConversionRequest,
@@ -287,6 +353,7 @@ def generate_preview_cached(
         )
 
     matched_rgb = result["matched_rgb"]
+    quantized_image = result.get("quantized_image", matched_rgb)
     material_matrix = result["material_matrix"]
     mask_solid = result["mask_solid"]
     target_w, target_h = result["dimensions"]
@@ -301,6 +368,7 @@ def generate_preview_cached(
         "mask_solid": mask_solid,
         "material_matrix": material_matrix,
         "matched_rgb": matched_rgb,
+        "quantized_image": quantized_image,
         "preview_rgba": preview_rgba.copy(),
         "color_conf": color_conf,
         "quantize_colors": quantize_colors,
@@ -309,6 +377,8 @@ def generate_preview_cached(
     # Extract color palette from cache
     color_palette = extract_color_palette(cache)
     cache["color_palette"] = color_palette
+    cache["quantized_pair_palette"] = extract_quantized_pair_palette(cache)
+    cache["original_quantized_pair_palette"] = cache["quantized_pair_palette"]
     cache["original_color_palette"] = color_palette
 
     display = render_preview(preview_rgba, None, 0, 0, 0, 0, False, color_conf)
@@ -563,20 +633,17 @@ def update_preview_with_replacements(
     if cache is None:
         return None, None, ""
 
-    from core.color_replacement import ColorReplacementManager
-
-    # Get original matched_rgb (use stored original if available)
     original_rgb = cache.get("original_matched_rgb", cache["matched_rgb"])
+    original_quantized = cache.get(
+        "original_quantized_image", cache.get("quantized_image")
+    )
     mask_solid = cache["mask_solid"]
     color_conf = cache["color_conf"]
     target_h, target_w = original_rgb.shape[:2]
 
-    # Apply color replacements if any
-    if color_replacements:
-        manager = ColorReplacementManager.from_dict(color_replacements)
-        matched_rgb = manager.apply_to_image(original_rgb)
-    else:
-        matched_rgb = original_rgb.copy()
+    matched_rgb = apply_replacements_with_selection(
+        original_rgb, original_quantized, mask_solid, color_replacements
+    )
 
     # Build new preview RGBA
     preview_rgba = np.zeros((target_h, target_w, 4), dtype=np.uint8)
@@ -591,10 +658,23 @@ def update_preview_with_replacements(
     # Store original if not already stored
     if "original_matched_rgb" not in updated_cache:
         updated_cache["original_matched_rgb"] = original_rgb
+    if (
+        "original_quantized_image" not in updated_cache
+        and original_quantized is not None
+    ):
+        updated_cache["original_quantized_image"] = original_quantized
 
     # Re-extract palette with new colors
     color_palette = extract_color_palette(updated_cache)
     updated_cache["color_palette"] = color_palette
+    if "original_quantized_pair_palette" in updated_cache:
+        updated_cache["quantized_pair_palette"] = updated_cache[
+            "original_quantized_pair_palette"
+        ]
+    else:
+        updated_cache["quantized_pair_palette"] = extract_quantized_pair_palette(
+            updated_cache
+        )
     if "original_color_palette" not in updated_cache:
         original_cache = {"matched_rgb": original_rgb, "mask_solid": mask_solid}
         updated_cache["original_color_palette"] = extract_color_palette(original_cache)
@@ -613,9 +693,12 @@ def update_preview_with_replacements(
 
     # Generate palette HTML for display
     palette_html = generate_palette_html(
-        color_palette,
+        updated_cache.get("quantized_pair_palette", color_palette),
         color_replacements,
-        original_palette=updated_cache.get("original_color_palette", color_palette),
+        original_palette=updated_cache.get(
+            "quantized_pair_palette",
+            updated_cache.get("original_color_palette", color_palette),
+        ),
         lang=lang,
     )
 
@@ -674,22 +757,9 @@ def generate_highlight_preview(
         )
         return display, make_status_tag("conv_preview_restored")
 
-    # Parse highlight color
-    highlight_hex = highlight_color.strip().lower()
-    if not highlight_hex.startswith("#"):
-        highlight_hex = "#" + highlight_hex
-
-    # Convert hex to RGB
-    try:
-        r = int(highlight_hex[1:3], 16)
-        g = int(highlight_hex[3:5], 16)
-        b = int(highlight_hex[5:7], 16)
-        highlight_rgb = np.array([r, g, b], dtype=np.uint8)
-    except (ValueError, IndexError):
-        return None, make_status_tag("conv_err_invalid_color", color=highlight_color)
-
     # Get data from cache
     matched_rgb = cache.get("matched_rgb")
+    quantized_image = cache.get("quantized_image")
     mask_solid = cache.get("mask_solid")
     color_conf = cache.get("color_conf")
 
@@ -698,16 +768,35 @@ def generate_highlight_preview(
 
     target_h, target_w = matched_rgb.shape[:2]
 
-    # Create highlight mask - pixels matching the highlight color
-    color_match = np.all(matched_rgb == highlight_rgb, axis=2)
-    highlight_mask = color_match & mask_solid
+    token_data = parse_selection_token(highlight_color.strip())
+    if token_data is not None and quantized_image is not None:
+        highlight_mask = build_selection_mask(
+            quantized_image, mask_solid, highlight_color.strip()
+        )
+        display_color = str(token_data.get("m", token_data.get("q", "")))
+    else:
+        highlight_hex = highlight_color.strip().lower()
+        if not highlight_hex.startswith("#"):
+            highlight_hex = "#" + highlight_hex
+        try:
+            r = int(highlight_hex[1:3], 16)
+            g = int(highlight_hex[3:5], 16)
+            b = int(highlight_hex[5:7], 16)
+            highlight_rgb = np.array([r, g, b], dtype=np.uint8)
+        except (ValueError, IndexError):
+            return None, make_status_tag(
+                "conv_err_invalid_color", color=highlight_color
+            )
+        color_match = np.all(matched_rgb == highlight_rgb, axis=2)
+        highlight_mask = color_match & mask_solid
+        display_color = highlight_hex
 
     # Count highlighted pixels
     highlight_count = np.sum(highlight_mask)
     total_solid = np.sum(mask_solid)
 
     if highlight_count == 0:
-        return None, make_status_tag("conv_color_not_found", color=highlight_hex)
+        return None, make_status_tag("conv_color_not_found", color=display_color)
 
     highlight_percentage = round(highlight_count / total_solid * 100, 2)
 
@@ -765,7 +854,7 @@ def generate_highlight_preview(
         display,
         make_status_tag(
             "conv_highlight_result",
-            color=highlight_hex,
+            color=display_color,
             percent=highlight_percentage,
             pixels=f"{highlight_count:,}",
         ),
@@ -876,8 +965,9 @@ def on_preview_click_select_color(cache, evt: gr.SelectData):
     orig_y = int(orig_y_f)
 
     matched_rgb = cache.get("matched_rgb")
+    quantized_image = cache.get("quantized_image")
     mask_solid = cache.get("mask_solid")
-    if matched_rgb is None or mask_solid is None:
+    if matched_rgb is None or quantized_image is None or mask_solid is None:
         return (
             None,
             make_status_tag("palette_not_selected"),
@@ -905,15 +995,18 @@ def on_preview_click_select_color(cache, evt: gr.SelectData):
             make_status_tag("conv_click_background"),
         )
 
-    # 2. 获取像素颜色
-    rgb = matched_rgb[orig_y, orig_x]
-    hex_color = f"#{rgb[0]:02x}{rgb[1]:02x}{rgb[2]:02x}"
+    matched_pixel = matched_rgb[orig_y, orig_x]
+    quant_pixel = quantized_image[orig_y, orig_x]
+    matched_hex = f"#{int(matched_pixel[0]):02x}{int(matched_pixel[1]):02x}{int(matched_pixel[2]):02x}"
+    quant_hex = (
+        f"#{int(quant_pixel[0]):02x}{int(quant_pixel[1]):02x}{int(quant_pixel[2]):02x}"
+    )
+    selection_token = make_region_selection_token(
+        quant_hex, matched_hex, orig_x, orig_y
+    )
 
-    print(f"[CLICK] Coords: ({orig_x}, {orig_y}), Color: {hex_color}")
-
-    # 3. 立即生成高亮预览（强制关闭挂孔显示）
     display_img, status_msg = generate_highlight_preview(
-        cache, highlight_color=hex_color, add_loop=False
+        cache, highlight_color=selection_token, add_loop=False
     )
 
     # 返回:
@@ -924,14 +1017,14 @@ def on_preview_click_select_color(cache, evt: gr.SelectData):
     if display_img is None:
         return (
             gr.update(),
-            make_status_tag("conv_selected_color_at_click", color=hex_color),
-            hex_color,
+            make_status_tag("conv_selected_color_at_click", color=matched_hex),
+            selection_token,
             status_msg,
         )
     return (
         display_img,
-        make_status_tag("conv_selected_color_at_click", color=hex_color),
-        hex_color,
+        make_status_tag("conv_selected_color_at_click", color=matched_hex),
+        selection_token,
         status_msg,
     )
 

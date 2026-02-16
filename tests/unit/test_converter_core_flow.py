@@ -124,6 +124,7 @@ def test_preview_click_select_color_uses_scaled_coords_correctly(
         "target_w": target_w,
         "target_h": target_h,
         "matched_rgb": matched_rgb,
+        "quantized_image": matched_rgb.copy(),
         "mask_solid": mask_solid,
     }
 
@@ -142,4 +143,6 @@ def test_preview_click_select_color_uses_scaled_coords_correctly(
     )
 
     _img, _display_text, hex_val, _msg = on_preview_click_select_color(cache, evt)
-    assert hex_val == "#12ab34"
+    assert isinstance(hex_val, str)
+    assert "region|" in hex_val
+    assert "|m=#12ab34|" in hex_val

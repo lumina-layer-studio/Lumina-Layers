@@ -10,6 +10,7 @@ Click handlers are defined globally in crop_extension.py to survive Gradio re-re
 from typing import List
 
 from core.i18n import I18n
+from core.color_replacement import parse_selection_token
 
 
 def generate_palette_html(
@@ -39,7 +40,24 @@ def generate_palette_html(
     replacements = replacements or {}
     original_palette = original_palette or palette
 
-    count_text = I18n.get("palette_count", lang).format(count=len(original_palette))
+    normalized_original = []
+    for entry in original_palette:
+        quant_hex = entry.get("quant_hex", entry.get("hex"))
+        matched_hex = entry.get("matched_hex", quant_hex)
+        token = entry.get("token", quant_hex)
+        normalized_original.append(
+            {
+                "quant_hex": quant_hex,
+                "matched_hex": matched_hex,
+                "token": token,
+                "percentage": entry.get("percentage", 0),
+                "count": entry.get("count", 0),
+            }
+        )
+
+    original_by_token = {item["token"]: item for item in normalized_original}
+
+    count_text = I18n.get("palette_count", lang).format(count=len(normalized_original))
     hint_text = I18n.get("palette_hint", lang)
     applied_title = I18n.get("palette_applied_section", lang)
     original_title = I18n.get("palette_original_section", lang)
@@ -57,14 +75,23 @@ def generate_palette_html(
 
     if applied_items:
         html_parts.append('<div style="display:flex; flex-direction:column; gap:8px;">')
-        for original_hex, replacement_hex in applied_items:
+        for source_key, replacement_hex in applied_items:
+            token_data = parse_selection_token(str(source_key))
+            original_hex = str(source_key)
+            quant_hex = original_hex
+            if token_data is not None:
+                quant_hex = str(token_data.get("q", ""))
+                original_hex = str(token_data.get("m", quant_hex))
+            if source_key in original_by_token:
+                quant_hex = original_by_token[source_key]["quant_hex"]
+                original_hex = original_by_token[source_key]["matched_hex"]
             html_parts.append(f'''
             <div style="display:grid; grid-template-columns:auto 16px auto 1fr auto; align-items:center; gap:6px; border:1px solid #eee; border-radius:8px; padding:6px; background:#fff;">
-                <div class="palette-swatch" data-color="{original_hex}" title="{original_hex}" style="width:28px; height:28px; border:1px solid #ccc; border-radius:6px; background:{original_hex}; cursor:pointer;"></div>
+                <div class="palette-swatch" data-color="{source_key}" title="{quant_hex}" style="width:28px; height:28px; border:1px solid #ccc; border-radius:6px; background:{quant_hex}; cursor:pointer;"></div>
                 <div style="font-size:12px; color:#888; text-align:center;">→</div>
                 <div title="{replacement_hex}" style="width:28px; height:28px; border:1px solid #4CAF50; border-radius:6px; background:{replacement_hex};"></div>
-                <div style="font-size:10px; color:#666; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">{original_hex} → {replacement_hex}</div>
-                <button class="palette-remove-replacement-btn" data-original-color="{original_hex}" style="font-size:10px; border:1px solid #ddd; border-radius:6px; background:#fff; color:#555; padding:4px 6px; cursor:pointer;">{remove_one_text}</button>
+                <div style="font-size:10px; color:#666; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">{quant_hex} → {original_hex} → {replacement_hex}</div>
+                <button class="palette-remove-replacement-btn" data-original-color="{source_key}" style="font-size:10px; border:1px solid #ddd; border-radius:6px; background:#fff; color:#555; padding:4px 6px; cursor:pointer;">{remove_one_text}</button>
             </div>
             ''')
     else:
@@ -86,24 +113,26 @@ def generate_palette_html(
         '<div style="display:flex; flex-wrap:wrap; gap:8px; max-height:360px; overflow-y:auto;">'
     )
 
-    for entry in original_palette:
-        hex_color = entry["hex"]
+    for entry in normalized_original:
+        quant_hex = entry["quant_hex"]
+        matched_hex = entry["matched_hex"]
+        token = entry["token"]
         percentage = entry["percentage"]
-        replacement_hex = replacements.get(hex_color)
+        replacement_hex = replacements.get(token)
         border_style = "2px solid #ff6b6b" if replacement_hex else "1px solid #ccc"
-        is_selected = selected_color and hex_color.lower() == selected_color.lower()
+        is_selected = selected_color and token.lower() == str(selected_color).lower()
         outline_style = (
             "outline: 3px solid #2196F3; outline-offset: 2px;" if is_selected else ""
         )
         tooltip = I18n.get("palette_tooltip", lang).format(
-            hex=hex_color, pct=percentage
+            hex=f"{quant_hex} → {matched_hex}", pct=percentage
         )
         html_parts.append(f'''
         <div class="palette-swatch-container" style="display:flex; flex-direction:column; align-items:center; gap:4px;">
-            <div class="palette-swatch" style="width:44px; height:44px; background:{hex_color}; border:{border_style}; border-radius:8px; cursor:pointer; transition: all 0.2s ease; {outline_style}" data-color="{hex_color}" title="{tooltip}"></div>
+            <div class="palette-swatch" style="width:44px; height:44px; background:{quant_hex}; border:{border_style}; border-radius:8px; cursor:pointer; transition: all 0.2s ease; {outline_style}" data-color="{token}" title="{tooltip}"></div>
             <div style="text-align:center; font-size:9px; color:#333;">
                 <div style="font-weight:bold;">{percentage}%</div>
-                <div style="font-size:8px; color:#666;">{hex_color}</div>
+                <div style="font-size:8px; color:#666;">{quant_hex} → {matched_hex}</div>
             </div>
         </div>
         ''')

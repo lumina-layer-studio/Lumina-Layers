@@ -5,8 +5,138 @@ Manages color replacement mappings for preview and final model generation.
 Supports CRUD operations on color mappings and batch application to images.
 """
 
-from typing import Dict, Tuple, Optional, List
+from typing import Dict, Tuple, Optional, Any
 import numpy as np
+import cv2
+
+
+def _parse_rgb_hex(hex_str: str) -> Tuple[int, int, int]:
+    s = hex_str.strip().lower()
+    if not s.startswith("#"):
+        s = "#" + s
+    if len(s) != 7:
+        raise ValueError(f"Invalid hex color: {hex_str}")
+    return (int(s[1:3], 16), int(s[3:5], 16), int(s[5:7], 16))
+
+
+def make_group_selection_token(quant_hex: str, matched_hex: str) -> str:
+    return f"group|q={quant_hex.lower()}|m={matched_hex.lower()}"
+
+
+def make_region_selection_token(
+    quant_hex: str, matched_hex: str, seed_x: int, seed_y: int
+) -> str:
+    return f"region|q={quant_hex.lower()}|m={matched_hex.lower()}|x={int(seed_x)}|y={int(seed_y)}"
+
+
+def parse_selection_token(token: str) -> Optional[Dict[str, Any]]:
+    s = str(token).strip()
+    if not s:
+        return None
+    if not s.startswith(("group|", "region|")):
+        return None
+
+    parts = s.split("|")
+    mode = parts[0]
+    parsed: Dict[str, Any] = {"mode": mode}
+    for part in parts[1:]:
+        if "=" not in part:
+            continue
+        k, v = part.split("=", 1)
+        parsed[k] = v
+
+    if "q" not in parsed:
+        return None
+
+    try:
+        parsed["q_rgb"] = _parse_rgb_hex(str(parsed["q"]))
+    except Exception:
+        return None
+
+    if "m" in parsed:
+        try:
+            parsed["m_rgb"] = _parse_rgb_hex(str(parsed["m"]))
+        except Exception:
+            parsed["m_rgb"] = None
+
+    if mode == "region":
+        try:
+            parsed["x"] = int(str(parsed.get("x", -1)))
+            parsed["y"] = int(str(parsed.get("y", -1)))
+        except Exception:
+            return None
+    return parsed
+
+
+def build_selection_mask(
+    quantized_image: np.ndarray,
+    mask_solid: np.ndarray,
+    selection_token: str,
+) -> np.ndarray:
+    parsed = parse_selection_token(selection_token)
+    if parsed is None:
+        return np.zeros(mask_solid.shape, dtype=bool)
+
+    q_rgb = np.array(parsed["q_rgb"], dtype=np.uint8)
+    color_mask = np.all(quantized_image == q_rgb, axis=2) & mask_solid
+
+    if parsed["mode"] == "group":
+        return color_mask
+
+    x = int(parsed.get("x", -1))
+    y = int(parsed.get("y", -1))
+    h, w = mask_solid.shape[:2]
+    if not (0 <= x < w and 0 <= y < h):
+        return np.zeros(mask_solid.shape, dtype=bool)
+    if not color_mask[y, x]:
+        return np.zeros(mask_solid.shape, dtype=bool)
+
+    cc_result = cv2.connectedComponents(color_mask.astype(np.uint8), connectivity=4)
+    labels_count = int(cc_result[0])
+    labels = cc_result[1]
+    if labels_count <= 1:
+        return color_mask
+    label = labels[y, x]
+    if label == 0:
+        return np.zeros(mask_solid.shape, dtype=bool)
+    return labels == label
+
+
+def apply_replacements_with_selection(
+    base_matched_rgb: np.ndarray,
+    quantized_image: Optional[np.ndarray],
+    mask_solid: np.ndarray,
+    replacements: Optional[Dict[str, object]],
+) -> np.ndarray:
+    if not replacements:
+        return base_matched_rgb.copy()
+
+    result = base_matched_rgb.copy()
+    for source, target in replacements.items():
+        if target is None or str(target).strip() == "":
+            continue
+        try:
+            target_rgb = np.array(_parse_rgb_hex(str(target)), dtype=np.uint8)
+        except Exception:
+            continue
+
+        parsed = parse_selection_token(str(source))
+        if parsed is not None and quantized_image is not None:
+            selection_mask = build_selection_mask(
+                quantized_image, mask_solid, str(source)
+            )
+            if np.any(selection_mask):
+                result[selection_mask] = target_rgb
+            continue
+
+        try:
+            source_rgb = np.array(_parse_rgb_hex(str(source)), dtype=np.uint8)
+        except Exception:
+            continue
+        global_mask = np.all(base_matched_rgb == source_rgb, axis=2) & mask_solid
+        if np.any(global_mask):
+            result[global_mask] = target_rgb
+    return result
 
 
 class ColorReplacementManager:
@@ -144,9 +274,14 @@ class ColorReplacementManager:
         """
         manager = cls()
         for orig_hex, repl_hex in data.items():
-            original = cls._hex_to_color(orig_hex)
-            replacement = cls._hex_to_color(repl_hex)
-            manager.add_replacement(original, replacement)
+            if parse_selection_token(str(orig_hex)) is not None:
+                continue
+            try:
+                original = cls._hex_to_color(orig_hex)
+                replacement = cls._hex_to_color(repl_hex)
+                manager.add_replacement(original, replacement)
+            except Exception:
+                continue
         return manager
 
     @staticmethod

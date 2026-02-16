@@ -192,6 +192,7 @@ class LuminaImageProcessor:
         # ========== Build Result ==========
         result = {
             "matched_rgb": matched_rgb,
+            "quantized_image": bg_reference,
             "material_matrix": material_matrix,
             "mask_solid": mask_solid,
             "dimensions": (target_w, target_h),

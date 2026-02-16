@@ -15,6 +15,7 @@ from core.converter import (
     ConversionRequest,
     convert_image_to_3d,
 )
+from core.color_replacement import parse_selection_token
 from ui.converter_ui import (
     generate_preview_cached,
     render_preview,
@@ -1253,6 +1254,12 @@ def create_converter_tab_content(lang: str, lang_state=None) -> dict:
     # [新增] 处理 LUT 色块点击事件 (JS -> Hidden Textbox -> Python)
     def on_original_color_click(hex_color, lang_val):
         selected_color, _ = on_color_swatch_click(hex_color, lang=lang_val)
+        if not selected_color:
+            return selected_color, selected_color
+        token_data = parse_selection_token(str(selected_color))
+        if token_data is not None:
+            display_hex = str(token_data.get("m") or token_data.get("q") or "")
+            return selected_color, display_hex
         return selected_color, selected_color
 
     conv_color_trigger_btn.click(
@@ -1416,6 +1423,10 @@ def create_converter_tab_content(lang: str, lang_state=None) -> dict:
             loop_angle,
             lang_state_val,
         )
+        display_color = selected_color
+        token_data = parse_selection_token(str(selected_color))
+        if token_data is not None:
+            display_color = str(token_data.get("m") or token_data.get("q") or "")
         return (
             _preview_update(display),
             updated_cache,
@@ -1423,7 +1434,7 @@ def create_converter_tab_content(lang: str, lang_state=None) -> dict:
             new_map,
             new_history,
             selected_color,
-            selected_color,
+            display_color,
             "",
             status,
         )
@@ -1582,7 +1593,10 @@ def create_converter_tab_content(lang: str, lang_state=None) -> dict:
         resolved_msg = resolve_i18n_text(msg, lang_val)
         if hex_val is None:
             return _preview_update(img), gr.update(), gr.update(), resolved_msg
-        # conv_selected_display is a ColorPicker, so it must receive hex color value.
+        token_data = parse_selection_token(str(hex_val))
+        if token_data is not None:
+            display_hex = str(token_data.get("m") or token_data.get("q") or "")
+            return _preview_update(img), display_hex, hex_val, resolved_msg
         return _preview_update(img), hex_val, hex_val, resolved_msg
 
     conv_preview.select(

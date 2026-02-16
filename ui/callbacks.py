@@ -9,6 +9,7 @@ import gradio as gr
 
 from config import ColorMode, ColorSystem, LUT_FILE_PATH
 from core.i18n import I18n
+from core.color_replacement import parse_selection_token
 from utils.i18n_help import resolve_i18n_text
 from core.extractor import generate_simulated_reference
 from utils import LUTManager
@@ -232,8 +233,13 @@ def on_apply_color_replacement(
         lang=lang,
     )
 
+    display_src = selected_color
+    token_data = parse_selection_token(str(selected_color))
+    if token_data is not None:
+        display_src = str(token_data.get("m") or token_data.get("q") or selected_color)
+
     status_msg = I18n.get("palette_replaced", lang).format(
-        src=selected_color, dst=replacement_color
+        src=display_src, dst=replacement_color
     )
     return display, updated_cache, palette_html, new_map, new_history, status_msg
 
@@ -322,10 +328,10 @@ def on_preview_generated_update_palette(cache, lang: str = "zh"):
 
     palette = cache.get("color_palette", [])
     palette_html = generate_palette_html(
-        palette,
+        cache.get("quantized_pair_palette", palette),
         {},
         "",
-        original_palette=cache.get("original_color_palette", palette),
+        original_palette=cache.get("quantized_pair_palette", palette),
         lang=lang,
     )
 
@@ -354,6 +360,13 @@ def on_color_swatch_click(selected_hex, lang: str = "zh"):
 
     # Clean up the hex value
     hex_color = selected_hex.strip()
+
+    token_data = parse_selection_token(hex_color)
+    if token_data is not None:
+        display_hex = str(token_data.get("m") or token_data.get("q"))
+        return hex_color, I18n.get("palette_selected_format", lang).format(
+            hex=display_hex
+        )
 
     return hex_color, I18n.get("palette_selected_format", lang).format(hex=hex_color)
 
@@ -423,6 +436,13 @@ def on_remove_single_color_replacement(
         lang=lang,
     )
 
+    removed_data = parse_selection_token(str(original_color))
+    removed_src = (
+        str(removed_data.get("m") or removed_data.get("q") or original_color)
+        if removed_data is not None
+        else original_color
+    )
+
     return (
         display,
         updated_cache,
@@ -431,7 +451,7 @@ def on_remove_single_color_replacement(
         new_history,
         original_color,
         I18n.get("palette_removed_one", lang).format(
-            src=original_color, dst=removed_target
+            src=removed_src, dst=removed_target
         ),
     )
 

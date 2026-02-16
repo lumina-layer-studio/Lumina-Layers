@@ -337,6 +337,7 @@ def _run_raster_flow(
         )
 
     matched_rgb = result["matched_rgb"]
+    quantized_image = result.get("quantized_image", matched_rgb)
     material_matrix = result["material_matrix"]
     mask_solid = result["mask_solid"]
     target_w, target_h = result["dimensions"]
@@ -346,11 +347,12 @@ def _run_raster_flow(
 
     # Apply color replacements if provided
     if color_replacements:
-        from core.color_replacement import ColorReplacementManager
+        from core.color_replacement import apply_replacements_with_selection
 
-        manager = ColorReplacementManager.from_dict(color_replacements)
-        matched_rgb = manager.apply_to_image(matched_rgb)
-        print(f"[CONVERTER] Applied {len(manager)} color replacements")
+        matched_rgb = apply_replacements_with_selection(
+            matched_rgb, quantized_image, mask_solid, color_replacements
+        )
+        print(f"[CONVERTER] Applied {len(color_replacements)} color replacements")
 
     print(
         f"[CONVERTER] Image processed: {target_w}×{target_h}px, scale={pixel_scale}mm/px"

@@ -39,4 +39,5 @@ def test_generate_palette_html_splits_applied_and_original_sections():
     assert "#121212" in html
     assert "#eeeeee" in html
     assert "palette-applied-item" in html
+    assert "palette-original-item" in html
     assert "palette-remove-replacement-btn" not in html

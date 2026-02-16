@@ -236,6 +236,16 @@ console.log('Crop modal JS loaded, openCropModal:', typeof window.openCropModal)
             }
         });
 
+        document.querySelectorAll('.palette-original-item').forEach(function(el) {
+            el.style.border = '1px solid #eee';
+            el.style.boxShadow = 'none';
+            var itemToken = (el.getAttribute('data-color') || '').toLowerCase();
+            if (itemToken && selected && itemToken === selected) {
+                el.style.border = '2px solid #2196F3';
+                el.style.boxShadow = '0 0 0 1px rgba(33,150,243,0.2)';
+            }
+        });
+
         document.querySelectorAll('.palette-swatch').forEach(function(el) {
             var swatchToken = (el.getAttribute('data-color') || '').toLowerCase();
             if (swatchToken && selected && swatchToken === selected) {
@@ -281,6 +291,16 @@ console.log('Crop modal JS loaded, openCropModal:', typeof window.openCropModal)
 
         applyPaletteSelection(hexColor);
     }
+
+    function handleOriginalItemClick(e) {
+        var item = e.target.closest('.palette-original-item');
+        if (!item) return;
+
+        var hexColor = item.getAttribute('data-color');
+        if (!hexColor) return;
+
+        applyPaletteSelection(hexColor);
+    }
     
     // Handle LUT color swatch click
     function handleLutSwatchClick(e) {
@@ -313,6 +333,11 @@ console.log('Crop modal JS loaded, openCropModal:', typeof window.openCropModal)
     document.addEventListener('click', function(e) {
         if (e.target.closest('.palette-applied-item')) {
             handleAppliedItemClick(e);
+            return;
+        }
+
+        if (e.target.closest('.palette-original-item')) {
+            handleOriginalItemClick(e);
             return;
         }
 

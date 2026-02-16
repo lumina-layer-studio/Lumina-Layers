@@ -139,8 +139,16 @@ def generate_palette_html(
     html_parts.append(
         f'<div style="font-size:12px; font-weight:600; color:#444; margin-bottom:8px;">{original_title}</div>'
     )
+    html_parts.append(f"""
+    <div style="display:grid; grid-template-columns:1fr 16px 1fr auto; gap:6px; padding:0 8px; margin-bottom:2px;">
+        <div style="font-size:10px; color:#666; text-align:center;">{quant_label}</div>
+        <div></div>
+        <div style="font-size:10px; color:#666; text-align:center;">{original_label}</div>
+        <div style="font-size:10px; color:#666; text-align:right;">%</div>
+    </div>
+    """)
     html_parts.append(
-        '<div style="display:flex; flex-wrap:wrap; gap:8px; max-height:360px; overflow-y:auto;">'
+        '<div style="display:flex; flex-direction:column; gap:8px; max-height:360px; overflow-y:auto;">'
     )
 
     for entry in normalized_original:
@@ -149,20 +157,28 @@ def generate_palette_html(
         token = entry["token"]
         percentage = entry["percentage"]
         replacement_hex = replacements.get(token)
-        border_style = "2px solid #ff6b6b" if replacement_hex else "1px solid #ccc"
-        is_selected = selected_color and token.lower() == str(selected_color).lower()
-        outline_style = (
-            "outline: 3px solid #2196F3; outline-offset: 2px;" if is_selected else ""
+        quant_border_style = (
+            "2px solid #ff6b6b" if replacement_hex else "1px solid #ccc"
         )
+        is_selected = selected_color and token.lower() == str(selected_color).lower()
+        row_border = "2px solid #2196F3" if is_selected else "1px solid #eee"
+        row_shadow = "box-shadow:0 0 0 1px rgba(33,150,243,0.2);" if is_selected else ""
         tooltip = I18n.get("palette_tooltip", lang).format(
             hex=f"{quant_hex} → {matched_hex}", pct=percentage
         )
         html_parts.append(f'''
-        <div class="palette-swatch-container" style="display:flex; flex-direction:column; align-items:center; gap:4px;">
-            <div class="palette-swatch" style="width:44px; height:44px; background:{quant_hex}; border:{border_style}; border-radius:8px; cursor:pointer; transition: all 0.2s ease; {outline_style}" data-color="{token}" title="{tooltip}"></div>
-            <div style="text-align:center; font-size:9px; color:#333;">
-                <div style="font-weight:bold;">{percentage}%</div>
-                <div style="font-size:8px; color:#666;">{quant_hex} → {matched_hex}</div>
+        <div class="palette-original-item" data-color="{token}" title="{tooltip}" style="display:grid; grid-template-columns:1fr 16px 1fr auto; align-items:start; gap:6px; border:{row_border}; border-radius:8px; padding:8px; background:#fff; cursor:pointer; {row_shadow}">
+            <div style="display:flex; flex-direction:column; align-items:center; gap:4px;">
+                <div class="palette-original-color-block" style="width:28px; height:28px; background:{quant_hex}; border:{quant_border_style}; border-radius:6px;"></div>
+                <div style="font-size:9px; color:#666; word-break:break-all; text-align:center;">{quant_hex}</div>
+            </div>
+            <div style="font-size:12px; color:#888; text-align:center; padding-top:8px;">→</div>
+            <div style="display:flex; flex-direction:column; align-items:center; gap:4px;">
+                <div class="palette-original-color-block" style="width:28px; height:28px; background:{matched_hex}; border:1px solid #999; border-radius:6px;"></div>
+                <div style="font-size:9px; color:#666; word-break:break-all; text-align:center;">{matched_hex}</div>
+            </div>
+            <div style="font-size:10px; color:#444; text-align:right; padding-top:8px; font-weight:600;">
+                {percentage}%
             </div>
         </div>
         ''')

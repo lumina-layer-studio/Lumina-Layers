@@ -218,6 +218,49 @@ console.log('Crop modal JS loaded, openCropModal:', typeof window.openCropModal)
         return false;
     }
 
+    function updatePaletteSelectionVisual(token) {
+        var selected = (token || '').toLowerCase();
+
+        document.querySelectorAll('.palette-swatch').forEach(function(el) {
+            el.style.outline = 'none';
+            el.style.outlineOffset = '0px';
+        });
+
+        document.querySelectorAll('.palette-applied-item').forEach(function(el) {
+            el.style.border = '1px solid #eee';
+            el.style.boxShadow = 'none';
+            var itemToken = (el.getAttribute('data-color') || '').toLowerCase();
+            if (itemToken && selected && itemToken === selected) {
+                el.style.border = '2px solid #2196F3';
+                el.style.boxShadow = '0 0 0 1px rgba(33,150,243,0.2)';
+            }
+        });
+
+        document.querySelectorAll('.palette-swatch').forEach(function(el) {
+            var swatchToken = (el.getAttribute('data-color') || '').toLowerCase();
+            if (swatchToken && selected && swatchToken === selected) {
+                el.style.outline = '3px solid #2196F3';
+                el.style.outlineOffset = '2px';
+            }
+        });
+    }
+
+    function applyPaletteSelection(hexColor) {
+        if (!hexColor) return;
+
+        console.log('[Palette] Color clicked:', hexColor);
+
+        updateGradioTextbox('conv-color-selected-hidden', hexColor);
+        updateGradioTextbox('conv-highlight-color-hidden', hexColor);
+
+        updatePaletteSelectionVisual(hexColor);
+
+        setTimeout(function() {
+            window.clickGradioButton('conv-color-trigger-btn');
+            window.clickGradioButton('conv-highlight-trigger-btn');
+        }, 50);
+    }
+
     // Handle palette swatch click
     function handlePaletteSwatchClick(e) {
         var swatch = e.target.closest('.palette-swatch');
@@ -225,26 +268,18 @@ console.log('Crop modal JS loaded, openCropModal:', typeof window.openCropModal)
         
         var hexColor = swatch.getAttribute('data-color');
         if (!hexColor) return;
-        
-        console.log('[Palette] Color clicked:', hexColor);
-        
-        // Update hidden textboxes
-        updateGradioTextbox('conv-color-selected-hidden', hexColor);
-        updateGradioTextbox('conv-highlight-color-hidden', hexColor);
-        
-        // Update visual selection
-        document.querySelectorAll('.palette-swatch').forEach(function(el) {
-            el.style.outline = 'none';
-            el.style.outlineOffset = '0px';
-        });
-        swatch.style.outline = '3px solid #2196F3';
-        swatch.style.outlineOffset = '2px';
-        
-        // Click hidden buttons to trigger Gradio callbacks
-        setTimeout(function() {
-            window.clickGradioButton('conv-color-trigger-btn');
-            window.clickGradioButton('conv-highlight-trigger-btn');
-        }, 50);
+
+        applyPaletteSelection(hexColor);
+    }
+
+    function handleAppliedItemClick(e) {
+        var item = e.target.closest('.palette-applied-item');
+        if (!item) return;
+
+        var hexColor = item.getAttribute('data-color');
+        if (!hexColor) return;
+
+        applyPaletteSelection(hexColor);
     }
     
     // Handle LUT color swatch click
@@ -276,6 +311,11 @@ console.log('Crop modal JS loaded, openCropModal:', typeof window.openCropModal)
     
     // Use event delegation on document body - this survives Gradio re-renders
     document.addEventListener('click', function(e) {
+        if (e.target.closest('.palette-applied-item')) {
+            handleAppliedItemClick(e);
+            return;
+        }
+
         // Check for palette swatch
         if (e.target.closest('.palette-swatch')) {
             handlePaletteSwatchClick(e);

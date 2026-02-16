@@ -79,6 +79,15 @@ def generate_palette_html(
 
     if applied_items:
         html_parts.append('<div style="display:flex; flex-direction:column; gap:8px;">')
+        html_parts.append(f"""
+        <div style="display:grid; grid-template-columns:1fr 16px 1fr 16px 1fr; gap:6px; padding:0 8px; margin-bottom:2px;">
+            <div style="font-size:10px; color:#666; text-align:center;">{quant_label}</div>
+            <div></div>
+            <div style="font-size:10px; color:#666; text-align:center;">{original_label}</div>
+            <div></div>
+            <div style="font-size:10px; color:#666; text-align:center;">{replaced_label}</div>
+        </div>
+        """)
         for source_key, replacement_hex in applied_items:
             token_data = parse_selection_token(str(source_key))
             original_hex = str(source_key)
@@ -89,23 +98,28 @@ def generate_palette_html(
             if source_key in original_by_token:
                 quant_hex = original_by_token[source_key]["quant_hex"]
                 original_hex = original_by_token[source_key]["matched_hex"]
+            row_selected = (
+                selected_color
+                and str(source_key).lower() == str(selected_color).lower()
+            )
+            row_border = "2px solid #2196F3" if row_selected else "1px solid #eee"
+            row_shadow = (
+                "box-shadow:0 0 0 1px rgba(33,150,243,0.2);" if row_selected else ""
+            )
             html_parts.append(f'''
-            <div style="display:grid; grid-template-columns:1fr 16px 1fr 16px 1fr; align-items:start; gap:6px; border:1px solid #eee; border-radius:8px; padding:8px; background:#fff;">
+            <div class="palette-applied-item" data-color="{source_key}" style="display:grid; grid-template-columns:1fr 16px 1fr 16px 1fr; align-items:start; gap:6px; border:{row_border}; border-radius:8px; padding:8px; background:#fff; cursor:pointer; {row_shadow}">
                 <div style="display:flex; flex-direction:column; align-items:center; gap:4px;">
-                    <div style="font-size:10px; color:#666;">{quant_label}</div>
-                    <div class="palette-swatch" data-color="{source_key}" title="{quant_hex}" style="width:28px; height:28px; border:1px solid #ccc; border-radius:6px; background:{quant_hex}; cursor:pointer;"></div>
+                    <div class="palette-applied-color-block" title="{quant_hex}" style="width:28px; height:28px; border:1px solid #ccc; border-radius:6px; background:{quant_hex};"></div>
                     <div style="font-size:9px; color:#666; word-break:break-all; text-align:center;">{quant_hex}</div>
                 </div>
                 <div style="font-size:12px; color:#888; text-align:center; padding-top:22px;">→</div>
                 <div style="display:flex; flex-direction:column; align-items:center; gap:4px;">
-                    <div style="font-size:10px; color:#666;">{original_label}</div>
-                    <div class="palette-swatch" data-color="{source_key}" title="{original_hex}" style="width:28px; height:28px; border:1px solid #999; border-radius:6px; background:{original_hex}; cursor:pointer;"></div>
+                    <div class="palette-applied-color-block" title="{original_hex}" style="width:28px; height:28px; border:1px solid #999; border-radius:6px; background:{original_hex};"></div>
                     <div style="font-size:9px; color:#666; word-break:break-all; text-align:center;">{original_hex}</div>
                 </div>
                 <div style="font-size:12px; color:#888; text-align:center; padding-top:22px;">→</div>
                 <div style="display:flex; flex-direction:column; align-items:center; gap:4px;">
-                    <div style="font-size:10px; color:#666;">{replaced_label}</div>
-                    <div class="palette-swatch" data-color="{source_key}" title="{replacement_hex}" style="width:28px; height:28px; border:1px solid #4CAF50; border-radius:6px; background:{replacement_hex}; cursor:pointer;"></div>
+                    <div class="palette-applied-color-block" title="{replacement_hex}" style="width:28px; height:28px; border:1px solid #4CAF50; border-radius:6px; background:{replacement_hex};"></div>
                     <div style="font-size:9px; color:#666; word-break:break-all; text-align:center;">{replacement_hex}</div>
                 </div>
             </div>

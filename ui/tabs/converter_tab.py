@@ -720,22 +720,6 @@ def create_converter_tab_content(lang: str, lang_state=None) -> dict:
                             elem_classes=["hidden-textbox-trigger"],
                             visible=True,
                         )
-                        conv_remove_replacement_hidden = gr.Textbox(
-                            value="",
-                            visible=True,
-                            interactive=True,
-                            elem_id="conv-remove-replacement-hidden",
-                            elem_classes=["hidden-textbox-trigger"],
-                            label="",
-                            show_label=False,
-                            container=False,
-                        )
-                        conv_remove_replacement_trigger_btn = gr.Button(
-                            "trigger_remove_replacement",
-                            elem_id="conv-remove-replacement-trigger-btn",
-                            elem_classes=["hidden-textbox-trigger"],
-                            visible=True,
-                        )
 
                         # --- 新 UI 布局 ---
                         with gr.Row():
@@ -791,6 +775,9 @@ def create_converter_tab_content(lang: str, lang_state=None) -> dict:
                             conv_undo_replacement = gr.Button(
                                 I18n.get("conv_palette_undo_btn", lang)
                             )
+                            conv_undo_selected_replacement = gr.Button(
+                                I18n.get("conv_palette_undo_selected_btn", lang)
+                            )
                             conv_clear_replacements = gr.Button(
                                 I18n.get("conv_palette_clear_btn", lang)
                             )
@@ -799,6 +786,9 @@ def create_converter_tab_content(lang: str, lang_state=None) -> dict:
                             )
                             components["btn_conv_palette_undo_btn"] = (
                                 conv_undo_replacement
+                            )
+                            components["btn_conv_palette_undo_selected_btn"] = (
+                                conv_undo_selected_replacement
                             )
                             components["btn_conv_palette_clear_btn"] = (
                                 conv_clear_replacements
@@ -1439,11 +1429,11 @@ def create_converter_tab_content(lang: str, lang_state=None) -> dict:
             status,
         )
 
-    conv_remove_replacement_trigger_btn.click(
+    conv_undo_selected_replacement.click(
         on_remove_single_replacement_with_fit,
         inputs=[
             conv_preview_cache,
-            conv_remove_replacement_hidden,
+            conv_selected_color,
             conv_replacement_map,
             conv_replacement_history,
             conv_loop_pos,

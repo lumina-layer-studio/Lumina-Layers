@@ -40,7 +40,7 @@ def test_process_batch_generation_returns_friendly_error_when_modeling_mode_miss
 @pytest.mark.unit
 def test_preview_click_sync_ui_uses_hex_for_colorpicker_binding():
     source = inspect.getsource(converter_tab.create_converter_tab_content)
-    assert "return _preview_update(img), hex_val, hex_val, resolved_msg" in source
+    assert "return _preview_update(img), display_hex, hex_val, resolved_msg" in source
 
 
 @pytest.mark.unit
@@ -56,5 +56,6 @@ def test_palette_has_color_select_and_single_remove_bindings():
     source = inspect.getsource(converter_tab.create_converter_tab_content)
     assert "conv_color_trigger_btn.click(" in source
     assert "on_original_color_click" in source
-    assert "conv_remove_replacement_trigger_btn.click(" in source
+    assert 'I18n.get("conv_palette_undo_selected_btn", lang)' in source
+    assert "conv_undo_selected_replacement.click(" in source
     assert "on_remove_single_replacement_with_fit" in source

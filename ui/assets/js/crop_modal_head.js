@@ -218,23 +218,6 @@ console.log('Crop modal JS loaded, openCropModal:', typeof window.openCropModal)
         return false;
     }
 
-    function handleRemoveReplacementClick(e) {
-        var btn = e.target.closest('.palette-remove-replacement-btn');
-        if (!btn) return;
-
-        e.preventDefault();
-        e.stopPropagation();
-
-        var originalColor = btn.getAttribute('data-original-color');
-        if (!originalColor) return;
-
-        updateGradioTextbox('conv-remove-replacement-hidden', originalColor);
-
-        setTimeout(function() {
-            window.clickGradioButton('conv-remove-replacement-trigger-btn');
-        }, 50);
-    }
-    
     // Handle palette swatch click
     function handlePaletteSwatchClick(e) {
         var swatch = e.target.closest('.palette-swatch');
@@ -293,11 +276,6 @@ console.log('Crop modal JS loaded, openCropModal:', typeof window.openCropModal)
     
     // Use event delegation on document body - this survives Gradio re-renders
     document.addEventListener('click', function(e) {
-        if (e.target.closest('.palette-remove-replacement-btn')) {
-            handleRemoveReplacementClick(e);
-            return;
-        }
-
         // Check for palette swatch
         if (e.target.closest('.palette-swatch')) {
             handlePaletteSwatchClick(e);

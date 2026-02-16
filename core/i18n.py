@@ -190,6 +190,10 @@ class I18n:
             "en": "◻️ Clear Selection",
         },
         "conv_palette_undo_btn": {"zh": "↩️ 撤销", "en": "↩️ Undo"},
+        "conv_palette_undo_selected_btn": {
+            "zh": "↩️ 撤销选中",
+            "en": "↩️ Undo Selected",
+        },
         "conv_palette_clear_btn": {"zh": "🗑️ 清除所有", "en": "🗑️ Clear"},
         "lut_grid_invalid": {
             "zh": "⚠️ 请先选择一个有效的 LUT 文件",
@@ -547,6 +551,13 @@ class I18n:
             "zh": "暂无已生效替换",
             "en": "No applied replacements",
         },
+        "palette_applied_legend": {
+            "zh": "说明：量化=用于分区选择的量化色；原始=量化后配准到LUT的原色；替换=最终替换目标色。",
+            "en": "Legend: Quantized = quantized region color; Original = LUT-matched source color; Replaced = final target color.",
+        },
+        "palette_quant_label": {"zh": "量化", "en": "Quantized"},
+        "palette_original_label": {"zh": "原始", "en": "Original"},
+        "palette_replacement_label": {"zh": "替换", "en": "Replaced"},
         "palette_remove_one": {"zh": "撤销此项", "en": "Undo This"},
         "palette_click_to_select": {
             "zh": "点击调色板选择颜色",

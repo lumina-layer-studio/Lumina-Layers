@@ -347,10 +347,22 @@ def _run_raster_flow(
 
     # Apply color replacements if provided
     if color_replacements:
-        from core.color_replacement import apply_replacements_with_selection
+        from core.color_replacement import (
+            apply_replacements_with_selection,
+            apply_replacements_to_material_matrix,
+        )
 
         matched_rgb = apply_replacements_with_selection(
             matched_rgb, quantized_image, mask_solid, color_replacements
+        )
+        material_matrix = apply_replacements_to_material_matrix(
+            material_matrix,
+            result["matched_rgb"],
+            quantized_image,
+            mask_solid,
+            color_replacements,
+            processor.lut_manager.lut_rgb,
+            processor.lut_manager.ref_stacks,
         )
         print(f"[CONVERTER] Applied {len(color_replacements)} color replacements")
 

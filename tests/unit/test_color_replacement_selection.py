@@ -2,6 +2,7 @@ import numpy as np
 import pytest
 
 from core.color_replacement import (
+    apply_replacements_to_material_matrix,
     apply_replacements_with_selection,
     build_selection_mask,
     make_group_selection_token,
@@ -62,3 +63,39 @@ def test_apply_replacements_with_selection_supports_group_and_region():
 
     assert np.all(out[0, 0] == np.array([153, 153, 153], dtype=np.uint8))
     assert np.all(out[0, 2] == np.array([119, 119, 119], dtype=np.uint8))
+
+
+@pytest.mark.unit
+def test_apply_replacements_to_material_matrix_updates_selected_region_stack():
+    quantized = np.array(
+        [
+            [[10, 10, 10], [20, 20, 20]],
+            [[10, 10, 10], [20, 20, 20]],
+        ],
+        dtype=np.uint8,
+    )
+    matched = np.array(
+        [
+            [[30, 30, 30], [40, 40, 40]],
+            [[30, 30, 30], [40, 40, 40]],
+        ],
+        dtype=np.uint8,
+    )
+    base_matrix = np.zeros((2, 2, 5), dtype=np.int32)
+    mask_solid = np.ones((2, 2), dtype=bool)
+    lut_rgb = np.array([[30, 30, 30], [200, 200, 200]], dtype=np.uint8)
+    ref_stacks = np.array([[0, 0, 0, 0, 0], [1, 1, 1, 1, 1]], dtype=np.int32)
+
+    token = make_region_selection_token("#0a0a0a", "#1e1e1e", 0, 0)
+    out = apply_replacements_to_material_matrix(
+        base_matrix,
+        matched,
+        quantized,
+        mask_solid,
+        {token: "#c8c8c8"},
+        lut_rgb,
+        ref_stacks,
+    )
+
+    assert np.all(out[0, 0] == np.array([1, 1, 1, 1, 1], dtype=np.int32))
+    assert np.all(out[0, 1] == np.array([0, 0, 0, 0, 0], dtype=np.int32))

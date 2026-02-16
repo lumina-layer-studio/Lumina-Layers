@@ -12,6 +12,13 @@ import cv2
 
 def _parse_rgb_hex(hex_str: str) -> Tuple[int, int, int]:
     s = hex_str.strip().lower()
+    if s.startswith("rgb"):
+        import re
+
+        m = re.search(r"rgba?\s*\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)", s)
+        if m:
+            return (int(m.group(1)), int(m.group(2)), int(m.group(3)))
+        raise ValueError(f"Invalid rgb format: {hex_str}")
     if not s.startswith("#"):
         s = "#" + s
     if len(s) != 7:
@@ -106,7 +113,7 @@ def apply_replacements_with_selection(
     base_matched_rgb: np.ndarray,
     quantized_image: Optional[np.ndarray],
     mask_solid: np.ndarray,
-    replacements: Optional[Dict[str, object]],
+    replacements: Optional[dict],
 ) -> np.ndarray:
     if not replacements:
         return base_matched_rgb.copy()
@@ -136,6 +143,55 @@ def apply_replacements_with_selection(
         global_mask = np.all(base_matched_rgb == source_rgb, axis=2) & mask_solid
         if np.any(global_mask):
             result[global_mask] = target_rgb
+    return result
+
+
+def apply_replacements_to_material_matrix(
+    base_material_matrix: np.ndarray,
+    base_matched_rgb: np.ndarray,
+    quantized_image: Optional[np.ndarray],
+    mask_solid: np.ndarray,
+    replacements: Optional[dict],
+    lut_rgb: np.ndarray,
+    ref_stacks: np.ndarray,
+) -> np.ndarray:
+    if not replacements:
+        return base_material_matrix.copy()
+
+    result = base_material_matrix.copy()
+    lut_rgb_i32 = lut_rgb.astype(np.int32)
+
+    for source, target in replacements.items():
+        if target is None or str(target).strip() == "":
+            continue
+        try:
+            target_tuple = _parse_rgb_hex(str(target))
+        except Exception:
+            continue
+
+        parsed = parse_selection_token(str(source))
+        if parsed is not None and quantized_image is not None:
+            selection_mask = build_selection_mask(
+                quantized_image, mask_solid, str(source)
+            )
+        else:
+            try:
+                source_tuple = _parse_rgb_hex(str(source))
+            except Exception:
+                continue
+            source_rgb = np.array(source_tuple, dtype=np.uint8)
+            selection_mask = np.all(base_matched_rgb == source_rgb, axis=2) & mask_solid
+
+        if not np.any(selection_mask):
+            continue
+
+        target_rgb_i32 = np.array(target_tuple, dtype=np.int32)
+        diff = lut_rgb_i32 - target_rgb_i32
+        dist2 = np.sum(diff * diff, axis=1)
+        lut_idx = int(np.argmin(dist2))
+        target_stack = ref_stacks[lut_idx]
+        result[selection_mask] = target_stack
+
     return result
 
 

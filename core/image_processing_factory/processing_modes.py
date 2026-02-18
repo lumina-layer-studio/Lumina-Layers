@@ -40,6 +40,45 @@ class ProcessingModeStrategy(ABC):
         """
         pass
 
+    @abstractmethod
+    def process(
+        self,
+        rgb_arr: np.ndarray,
+        target_h: int,
+        target_w: int,
+        lut_rgb: np.ndarray,
+        ref_stacks: np.ndarray,
+        kdtree: KDTree,
+        quantize_colors: int,
+        blur_kernel: int,
+        smooth_sigma: float,
+        match_strategy: MatchStrategy = MatchStrategy.RGB_EUCLIDEAN,
+    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, Dict[str, Any]]:
+        pass
+
+    @abstractmethod
+    def get_mode_name(self) -> str:
+        pass
+
+
+class HighFidelityStrategy(ProcessingModeStrategy):
+    """
+    Strategy for high-fidelity mode.
+
+    Features:
+    - High resolution (10 px/mm)
+    - Edge-preserving bilateral filtering
+    - Optional median denoising
+    - K-Means color quantization
+    - Smart color mapping with lookup table optimization
+    """
+
+    def get_resolution(self, target_width_mm: float) -> Tuple[int, int, float]:
+        """Calculate resolution for high-fidelity mode (10 px/mm)."""
+        target_w = int(target_width_mm * 10)
+        pixel_to_mm_scale = 0.1
+        return target_w, 0, pixel_to_mm_scale
+
     def process(
         self,
         rgb_arr: np.ndarray,
@@ -248,28 +287,6 @@ class ProcessingModeStrategy(ABC):
         }
 
         return matched_rgb, material_matrix, quantized_image, debug_data
-
-    def get_mode_name(self) -> str:
-        return "High-Fidelity"
-
-
-class HighFidelityStrategy(ProcessingModeStrategy):
-    """
-    Strategy for high-fidelity mode.
-
-    Features:
-    - High resolution (10 px/mm)
-    - Edge-preserving bilateral filtering
-    - Optional median denoising
-    - K-Means color quantization
-    - Smart color mapping with lookup table optimization
-    """
-
-    def get_resolution(self, target_width_mm: float) -> Tuple[int, int, float]:
-        """Calculate resolution for high-fidelity mode (10 px/mm)."""
-        target_w = int(target_width_mm * 10)
-        pixel_to_mm_scale = 0.1
-        return target_w, 0, pixel_to_mm_scale
 
     def get_mode_name(self) -> str:
         return "High-Fidelity"

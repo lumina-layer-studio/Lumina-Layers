@@ -6,20 +6,13 @@ This module provides image cropping capabilities without modifying the core layo
 It uses a decorator pattern to wrap the original create_app function.
 """
 
-from pathlib import Path
 from core.i18n import I18n
+from ui.assets import load_template_text
 
 
-_TEMPLATE_ROOT = Path(__file__).resolve().parent / "template"
-
-
-def _load_template_text(filename: str) -> str:
-    return (_TEMPLATE_ROOT / filename).read_text(encoding="utf-8")
-
-
-CROP_MODAL_HTML_TEMPLATE = _load_template_text("crop_modal.html")
-CROP_MODAL_CSS_TEMPLATE = _load_template_text("crop_modal.css")
-CROP_MODAL_HEAD_HTML = _load_template_text("crop_modal_head.html")
+CROP_MODAL_HTML_TEMPLATE = load_template_text("crop_modal.html")
+CROP_MODAL_CSS_TEMPLATE = load_template_text("crop_modal.css")
+CROP_MODAL_HEAD_HTML = load_template_text("crop_modal_head.html")
 
 
 def get_crop_modal_html(lang: str) -> dict[str, str]:

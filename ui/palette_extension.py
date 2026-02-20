@@ -8,31 +8,24 @@ Click handlers are defined globally in crop_extension.py to survive Gradio re-re
 """
 
 from typing import Any, Optional
-from pathlib import Path
 
 import cv2
 import numpy as np
 
 from core.i18n import I18n
 from core.color_replacement import parse_selection_token
+from ui.assets import load_template_text
 
 
 RECOMMENDED_REPLACEMENT_COUNT = 20
 
-_TEMPLATE_ROOT = Path(__file__).resolve().parent / "template"
+PALETTE_HTML_TEMPLATE = load_template_text("palette_panel.html")
+PALETTE_CSS_TEMPLATE = load_template_text("palette_panel.css")
+PALETTE_JS_ON_LOAD = load_template_text("palette_panel.js")
 
-
-def _load_template_text(filename: str) -> str:
-    return (_TEMPLATE_ROOT / filename).read_text(encoding="utf-8")
-
-
-PALETTE_HTML_TEMPLATE = _load_template_text("palette_panel.html")
-PALETTE_CSS_TEMPLATE = _load_template_text("palette_panel.css")
-PALETTE_JS_ON_LOAD = _load_template_text("palette_panel.js")
-
-LUT_GRID_HTML_TEMPLATE = _load_template_text("lut_grid_panel.html")
-LUT_GRID_CSS_TEMPLATE = _load_template_text("lut_grid_panel.css")
-LUT_GRID_JS_ON_LOAD = _load_template_text("lut_grid_panel.js")
+LUT_GRID_HTML_TEMPLATE = load_template_text("lut_grid_panel.html")
+LUT_GRID_CSS_TEMPLATE = load_template_text("lut_grid_panel.css")
+LUT_GRID_JS_ON_LOAD = load_template_text("lut_grid_panel.js")
 
 
 def _hex_to_rgb_array(hex_color: str) -> Optional[np.ndarray]:

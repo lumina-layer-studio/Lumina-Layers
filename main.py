@@ -83,7 +83,7 @@ if __name__ == "__main__":
         # Import crop extension for head HTML injection
         from ui.crop_extension import get_crop_head_html
 
-        gr.set_static_paths(paths=[Path(_PROJECT_ROOT) / "ui" / "libs"])
+        gr.set_static_paths(paths=[Path(_PROJECT_ROOT) / "ui" / "static"])
 
         app.launch(
             inbrowser=False,

@@ -1,0 +1,171 @@
+.palette-empty {
+  color: #888;
+}
+
+.palette-count {
+  color: #666;
+  margin: 4px 8px;
+}
+
+.palette-hint {
+  color: #888;
+  margin: 2px 8px;
+  font-size: 11px;
+}
+
+.palette-grid-container {
+  display: grid;
+  grid-template-columns: minmax(260px, 1fr) minmax(260px, 1fr);
+  gap: 12px;
+  align-items: start;
+}
+
+.palette-section {
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  padding: 8px;
+}
+
+.palette-section-applied {
+  background: #fafafa;
+}
+
+.palette-section-original {
+  background: #fff;
+}
+
+.palette-section-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: #444;
+  margin-bottom: 8px;
+}
+
+.palette-section-legend {
+  font-size: 11px;
+  color: #666;
+  margin-bottom: 8px;
+  line-height: 1.4;
+}
+
+.palette-row-header {
+  display: grid;
+  gap: 6px;
+  padding: 0 8px;
+  margin-bottom: 2px;
+}
+
+.palette-row-header-applied {
+  grid-template-columns: 1fr 16px 1fr 16px 1fr;
+}
+
+.palette-row-header-original {
+  grid-template-columns: 1fr 16px 1fr auto;
+}
+
+.palette-row-header > div {
+  font-size: 10px;
+  color: #666;
+  text-align: center;
+}
+
+.palette-row-header-original > div:last-child {
+  text-align: right;
+}
+
+.palette-applied-list,
+.palette-original-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.palette-original-list {
+  max-height: 360px;
+  overflow-y: auto;
+}
+
+.palette-none-applied {
+  font-size: 12px;
+  color: #888;
+  margin: 0;
+}
+
+.palette-applied-item,
+.palette-original-item {
+  align-items: start;
+  gap: 6px;
+  border: 1px solid #eee;
+  border-radius: 8px;
+  padding: 8px;
+  background: #fff;
+  cursor: pointer;
+}
+
+.palette-applied-item {
+  display: grid;
+  grid-template-columns: 1fr 16px 1fr 16px 1fr;
+}
+
+.palette-original-item {
+  display: grid;
+  grid-template-columns: 1fr 16px 1fr auto;
+}
+
+.palette-row-selected {
+  border: 2px solid #2196f3;
+  box-shadow: 0 0 0 1px rgba(33, 150, 243, 0.2);
+}
+
+.palette-color-col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.palette-applied-color-block,
+.palette-original-color-block {
+  width: 28px;
+  height: 28px;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+}
+
+.palette-original-block {
+  border-color: #999;
+}
+
+.palette-replaced-block {
+  border-color: #4caf50;
+}
+
+.palette-quant-replaced {
+  border: 2px solid #ff6b6b;
+}
+
+.palette-color-label {
+  font-size: 9px;
+  color: #666;
+  word-break: break-all;
+  text-align: center;
+}
+
+.palette-arrow {
+  font-size: 12px;
+  color: #888;
+  text-align: center;
+  padding-top: 22px;
+}
+
+.palette-arrow-mid {
+  padding-top: 8px;
+}
+
+.palette-percentage {
+  font-size: 10px;
+  color: #444;
+  text-align: right;
+  padding-top: 8px;
+  font-weight: 600;
+}

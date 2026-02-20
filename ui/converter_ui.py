@@ -5,7 +5,7 @@ UI-facing helpers moved from core/converter.py.
 """
 
 import os
-from typing import List, Optional
+from typing import Any, List, Optional
 
 import gradio as gr
 import numpy as np
@@ -29,7 +29,10 @@ from core.color_replacement import (
 )
 from core.image_processing import LuminaImageProcessor
 from utils.i18n_help import make_status_tag
-from ui.palette_extension import generate_palette_html, generate_lut_color_grid_html
+from ui.palette_extension import (
+    generate_palette_html,
+    generate_lut_color_grid_html,
+)
 
 # Keep in sync with ui/tabs/converter_tab.py::_scale_preview_image defaults.
 PREVIEW_UI_MAX_W = 900
@@ -147,7 +150,7 @@ def generate_lut_color_dropdown_html(
     used_colors: Optional[set[str]] = None,
     reference_color: Optional[str] = None,
     lang: str = "zh",
-) -> str:
+) -> dict[str, Any]:
     """
     Generate HTML for displaying LUT available colors as a clickable visual grid.
 
@@ -164,7 +167,7 @@ def generate_lut_color_dropdown_html(
         used_colors: Set of hex colors currently used in the image (for grouping)
 
     Returns:
-        HTML string showing available colors as a clickable grid
+        Template value payload for gr.HTML rendering
     """
     colors = extract_lut_available_colors(lut_path)
     # Delegate HTML generation to palette_extension (non-invasive)

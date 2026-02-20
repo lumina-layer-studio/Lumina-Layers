@@ -321,7 +321,7 @@ def on_preview_generated_update_palette(cache, lang: str = "zh"):
     if cache is None:
         placeholder = I18n.get("conv_palette_replacements_placeholder", lang)
         return (
-            f"<p style='color:#888;'>{placeholder}</p>",
+            {"empty": True, "empty_text": placeholder},
             None,  # selected_color state
         )
 

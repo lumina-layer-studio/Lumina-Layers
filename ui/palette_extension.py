@@ -8,6 +8,7 @@ Click handlers are defined globally in crop_extension.py to survive Gradio re-re
 """
 
 from typing import Any, Optional
+from pathlib import Path
 
 import cv2
 import numpy as np
@@ -17,6 +18,21 @@ from core.color_replacement import parse_selection_token
 
 
 RECOMMENDED_REPLACEMENT_COUNT = 20
+
+_TEMPLATE_ROOT = Path(__file__).resolve().parent / "template"
+
+
+def _load_template_text(filename: str) -> str:
+    return (_TEMPLATE_ROOT / filename).read_text(encoding="utf-8")
+
+
+PALETTE_HTML_TEMPLATE = _load_template_text("palette_panel.html")
+PALETTE_CSS_TEMPLATE = _load_template_text("palette_panel.css")
+PALETTE_JS_ON_LOAD = _load_template_text("palette_panel.js")
+
+LUT_GRID_HTML_TEMPLATE = _load_template_text("lut_grid_panel.html")
+LUT_GRID_CSS_TEMPLATE = _load_template_text("lut_grid_panel.css")
+LUT_GRID_JS_ON_LOAD = _load_template_text("lut_grid_panel.js")
 
 
 def _hex_to_rgb_array(hex_color: str) -> Optional[np.ndarray]:
@@ -96,23 +112,12 @@ def generate_palette_html(
     selected_color: Optional[str] = None,
     original_palette: Optional[list[dict[str, Any]]] = None,
     lang: str = "zh",
-) -> str:
-    """
-    Generate HTML display for color palette with clickable swatches.
-    Text and percentage are displayed BELOW the color swatches.
-    Clicking a color will highlight that color's regions in the preview.
-    Uses event delegation for click handling.
-
-    Args:
-        palette: List of palette entries from extract_color_palette
-        replacements: Optional dict of current color replacements
-        selected_color: Currently selected color hex (for highlighting)
-
-    Returns:
-        HTML string for displaying the palette with click-to-select functionality
-    """
+) -> dict[str, Any]:
     if not palette:
-        return f"<p style='color:#888;'>{I18n.get('palette_empty', lang)}</p>"
+        return {
+            "empty": True,
+            "empty_text": I18n.get("palette_empty", lang),
+        }
 
     replacements = replacements or {}
     original_palette = original_palette or palette
@@ -145,123 +150,70 @@ def generate_palette_html(
     replaced_label = I18n.get("palette_replacement_label", lang)
     applied_items = list(replacements.items())
 
-    html_parts = [
-        f'<p style="color:#666; margin:4px 8px;">{count_text}</p>',
-        f'<p style="color:#888; margin:2px 8px; font-size:11px;">💡 {hint_text}</p>',
-        '<div id="palette-grid-container" style="display:grid; grid-template-columns:minmax(260px, 1fr) minmax(260px, 1fr); gap:12px; align-items:start;">',
-        '<div style="border:1px solid #ddd; border-radius:8px; padding:8px; background:#fafafa;">',
-        f'<div style="font-size:12px; font-weight:600; color:#444; margin-bottom:8px;">{applied_title} ({len(applied_items)})</div>',
-        f'<div style="font-size:11px; color:#666; margin-bottom:8px; line-height:1.4;">{applied_legend}</div>',
-    ]
-
-    if applied_items:
-        html_parts.append('<div style="display:flex; flex-direction:column; gap:8px;">')
-        html_parts.append(f"""
-        <div style="display:grid; grid-template-columns:1fr 16px 1fr 16px 1fr; gap:6px; padding:0 8px; margin-bottom:2px;">
-            <div style="font-size:10px; color:#666; text-align:center;">{quant_label}</div>
-            <div></div>
-            <div style="font-size:10px; color:#666; text-align:center;">{original_label}</div>
-            <div></div>
-            <div style="font-size:10px; color:#666; text-align:center;">{replaced_label}</div>
-        </div>
-        """)
-        for source_key, replacement_hex in applied_items:
-            token_data = parse_selection_token(str(source_key))
-            original_hex = str(source_key)
-            quant_hex = original_hex
-            if token_data is not None:
-                quant_hex = str(token_data.get("q", ""))
-                original_hex = str(token_data.get("m", quant_hex))
-            if source_key in original_by_token:
-                quant_hex = original_by_token[source_key]["quant_hex"]
-                original_hex = original_by_token[source_key]["matched_hex"]
-            row_selected = (
-                selected_color
-                and str(source_key).lower() == str(selected_color).lower()
-            )
-            row_border = "2px solid #2196F3" if row_selected else "1px solid #eee"
-            row_shadow = (
-                "box-shadow:0 0 0 1px rgba(33,150,243,0.2);" if row_selected else ""
-            )
-            html_parts.append(f'''
-            <div class="palette-applied-item" data-color="{source_key}" style="display:grid; grid-template-columns:1fr 16px 1fr 16px 1fr; align-items:start; gap:6px; border:{row_border}; border-radius:8px; padding:8px; background:#fff; cursor:pointer; {row_shadow}">
-                <div style="display:flex; flex-direction:column; align-items:center; gap:4px;">
-                    <div class="palette-applied-color-block" title="{quant_hex}" style="width:28px; height:28px; border:1px solid #ccc; border-radius:6px; background:{quant_hex};"></div>
-                    <div style="font-size:9px; color:#666; word-break:break-all; text-align:center;">{quant_hex}</div>
-                </div>
-                <div style="font-size:12px; color:#888; text-align:center; padding-top:22px;">→</div>
-                <div style="display:flex; flex-direction:column; align-items:center; gap:4px;">
-                    <div class="palette-applied-color-block" title="{original_hex}" style="width:28px; height:28px; border:1px solid #999; border-radius:6px; background:{original_hex};"></div>
-                    <div style="font-size:9px; color:#666; word-break:break-all; text-align:center;">{original_hex}</div>
-                </div>
-                <div style="font-size:12px; color:#888; text-align:center; padding-top:22px;">→</div>
-                <div style="display:flex; flex-direction:column; align-items:center; gap:4px;">
-                    <div class="palette-applied-color-block" title="{replacement_hex}" style="width:28px; height:28px; border:1px solid #4CAF50; border-radius:6px; background:{replacement_hex};"></div>
-                    <div style="font-size:9px; color:#666; word-break:break-all; text-align:center;">{replacement_hex}</div>
-                </div>
-            </div>
-            ''')
-    else:
-        html_parts.append(
-            f'<p style="font-size:12px; color:#888; margin:0;">{none_applied_text}</p>'
+    applied_view: list[dict[str, Any]] = []
+    for source_key, replacement_hex in applied_items:
+        token_data = parse_selection_token(str(source_key))
+        original_hex = str(source_key)
+        quant_hex = original_hex
+        if token_data is not None:
+            quant_hex = str(token_data.get("q", ""))
+            original_hex = str(token_data.get("m", quant_hex))
+        if source_key in original_by_token:
+            quant_hex = original_by_token[source_key]["quant_hex"]
+            original_hex = original_by_token[source_key]["matched_hex"]
+        row_selected = (
+            selected_color and str(source_key).lower() == str(selected_color).lower()
+        )
+        applied_view.append(
+            {
+                "source_key": str(source_key),
+                "quant_hex": str(quant_hex),
+                "original_hex": str(original_hex),
+                "replacement_hex": str(replacement_hex),
+                "row_class": "palette-row-selected" if row_selected else "",
+            }
         )
 
-    if applied_items:
-        html_parts.append("</div>")
-
-    html_parts.append("</div>")
-    html_parts.append(
-        '<div style="border:1px solid #ddd; border-radius:8px; padding:8px; background:#fff;">'
-    )
-    html_parts.append(
-        f'<div style="font-size:12px; font-weight:600; color:#444; margin-bottom:8px;">{original_title}</div>'
-    )
-    html_parts.append(f"""
-    <div style="display:grid; grid-template-columns:1fr 16px 1fr auto; gap:6px; padding:0 8px; margin-bottom:2px;">
-        <div style="font-size:10px; color:#666; text-align:center;">{quant_label}</div>
-        <div></div>
-        <div style="font-size:10px; color:#666; text-align:center;">{original_label}</div>
-        <div style="font-size:10px; color:#666; text-align:right;">%</div>
-    </div>
-    """)
-    html_parts.append(
-        '<div style="display:flex; flex-direction:column; gap:8px; max-height:360px; overflow-y:auto;">'
-    )
-
+    original_view: list[dict[str, Any]] = []
     for entry in normalized_original:
-        quant_hex = entry["quant_hex"]
-        matched_hex = entry["matched_hex"]
-        token = entry["token"]
+        quant_hex = str(entry["quant_hex"])
+        matched_hex = str(entry["matched_hex"])
+        token = str(entry["token"])
         percentage = entry["percentage"]
         replacement_hex = replacements.get(token)
-        quant_border_style = (
-            "2px solid #ff6b6b" if replacement_hex else "1px solid #ccc"
-        )
         is_selected = selected_color and token.lower() == str(selected_color).lower()
-        row_border = "2px solid #2196F3" if is_selected else "1px solid #eee"
-        row_shadow = "box-shadow:0 0 0 1px rgba(33,150,243,0.2);" if is_selected else ""
         tooltip = I18n.get("palette_tooltip", lang).format(
             hex=f"{quant_hex} → {matched_hex}", pct=percentage
         )
-        html_parts.append(f'''
-        <div class="palette-original-item" data-color="{token}" title="{tooltip}" style="display:grid; grid-template-columns:1fr 16px 1fr auto; align-items:start; gap:6px; border:{row_border}; border-radius:8px; padding:8px; background:#fff; cursor:pointer; {row_shadow}">
-            <div style="display:flex; flex-direction:column; align-items:center; gap:4px;">
-                <div class="palette-original-color-block" style="width:28px; height:28px; background:{quant_hex}; border:{quant_border_style}; border-radius:6px;"></div>
-                <div style="font-size:9px; color:#666; word-break:break-all; text-align:center;">{quant_hex}</div>
-            </div>
-            <div style="font-size:12px; color:#888; text-align:center; padding-top:8px;">→</div>
-            <div style="display:flex; flex-direction:column; align-items:center; gap:4px;">
-                <div class="palette-original-color-block" style="width:28px; height:28px; background:{matched_hex}; border:1px solid #999; border-radius:6px;"></div>
-                <div style="font-size:9px; color:#666; word-break:break-all; text-align:center;">{matched_hex}</div>
-            </div>
-            <div style="font-size:10px; color:#444; text-align:right; padding-top:8px; font-weight:600;">
-                {percentage}%
-            </div>
-        </div>
-        ''')
+        original_view.append(
+            {
+                "token": token,
+                "quant_hex": quant_hex,
+                "matched_hex": matched_hex,
+                "tooltip": tooltip,
+                "percentage_text": f"{percentage}%",
+                "quant_block_class": "palette-quant-replaced"
+                if replacement_hex
+                else "",
+                "row_class": "palette-row-selected" if is_selected else "",
+            }
+        )
 
-    html_parts.append("</div></div></div>")
-    return "".join(html_parts)
+    return {
+        "empty": False,
+        "count_text": count_text,
+        "hint_text": hint_text,
+        "applied_title": applied_title,
+        "applied_count": len(applied_view),
+        "applied_legend": applied_legend,
+        "none_applied_text": none_applied_text,
+        "quant_label": quant_label,
+        "original_label": original_label,
+        "replaced_label": replaced_label,
+        "original_title": original_title,
+        "applied_items": applied_view,
+        "original_items": original_view,
+    }
 
 
 def generate_lut_color_grid_html(
@@ -270,23 +222,12 @@ def generate_lut_color_grid_html(
     used_colors: Optional[set[str]] = None,
     reference_color: Optional[str] = None,
     lang: str = "zh",
-) -> str:
-    """
-    Generate HTML for displaying LUT available colors as a clickable visual grid.
-    Text is displayed BELOW the color swatches.
-    Includes a search box to filter colors by hex code.
-    Uses event delegation for click handling.
-
-    Args:
-        colors: List of color dicts with 'color' (R,G,B) and 'hex' keys
-        selected_color: Currently selected replacement color hex
-        used_colors: Set of hex colors currently used in the image (for grouping)
-
-    Returns:
-        HTML string showing available colors as a clickable grid with search
-    """
+) -> dict[str, Any]:
     if not colors:
-        return f"<p style='color:#888;'>{I18n.get('lut_grid_load_hint', lang)}</p>"
+        return {
+            "empty": True,
+            "load_hint": I18n.get("lut_grid_load_hint", lang),
+        }
 
     used_colors = used_colors or set()
     used_colors_lower = {c.lower() for c in used_colors}
@@ -302,97 +243,65 @@ def generate_lut_color_grid_html(
         else:
             not_used.append(entry)
 
-    # Note: Click handlers are now global in crop_extension.py
-    # Only keep the search filter function which uses oninput attribute
-
     count_text = I18n.get("lut_grid_count", lang).format(count=len(colors))
     search_placeholder = I18n.get("lut_grid_search_placeholder", lang)
     search_clear = I18n.get("lut_grid_search_clear", lang)
-    html_parts = [
-        f'<p style="color:#666; font-size:12px; margin-bottom:8px;">{count_text}: <span id="lut-color-visible-count">{len(colors)}</span></p>',
-        # Search box with inline filter function
-        f'''
-        <div style="margin-bottom:12px; display:flex; align-items:center; gap:8px;">
-            <span style="font-size:12px; color:#666;">🔍</span>
-            <input type="text" id="lut-color-search" placeholder="{search_placeholder}" 
-                   style="flex:1; padding:8px 12px; border:1px solid #ddd; border-radius:6px; font-size:12px; outline:none; transition: border-color 0.2s;"
-                   oninput="window.filterLutColors && window.filterLutColors(this.value)"
-                   onfocus="this.style.borderColor='#2196F3'"
-                   onblur="this.style.borderColor='#ddd'" />
-            <button onclick="document.getElementById('lut-color-search').value=''; window.filterLutColors && window.filterLutColors('');" 
-                    style="padding:6px 12px; border:1px solid #ddd; border-radius:6px; background:#f5f5f5; cursor:pointer; font-size:11px; transition: background 0.2s;"
-                    onmouseover="this.style.background='#e0e0e0'"
-                    onmouseout="this.style.background='#f5f5f5'">{search_clear}</button>
-        </div>
-        ''',
-        '<div id="lut-color-grid-container" style="max-height:400px; overflow-y:auto; padding:4px;">',
-    ]
 
-    def render_color_grid(color_list, section_title=None, section_color="#666"):
-        """Helper to render a section of colors with text BELOW swatches. No onclick - uses event delegation."""
-        parts = []
-        if section_title:
-            parts.append(
-                f'<p style="color:{section_color}; font-size:11px; margin:8px 0 4px 0; font-weight:bold;">{section_title}</p>'
-            )
-        parts.append(
-            '<div style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:12px;">'
-        )
-
+    def to_swatch_items(color_list: list[dict[str, Any]]) -> list[dict[str, str]]:
+        items: list[dict[str, str]] = []
         for entry in color_list:
-            hex_color = entry["hex"]
-
-            # Check if selected
+            hex_color = str(entry["hex"])
             is_selected = selected_color and hex_color.lower() == selected_color.lower()
-            outline_style = (
-                "outline: 3px solid #2196F3; outline-offset: 2px;"
-                if is_selected
-                else ""
+            items.append(
+                {
+                    "hex": hex_color,
+                    "tooltip": I18n.get("lut_grid_tooltip", lang).format(hex=hex_color),
+                    "selected_class": "lut-color-swatch-selected"
+                    if is_selected
+                    else "",
+                }
             )
-
-            # Container with text BELOW swatch - no onclick, handled by event delegation
-            tooltip = I18n.get("lut_grid_tooltip", lang).format(hex=hex_color)
-            parts.append(f'''
-            <div class="lut-color-swatch-container" style="display:flex; flex-direction:column; align-items:center; gap:4px;">
-                <div class="lut-color-swatch" style="width:50px; height:50px; background:{hex_color}; border:1px solid #ccc; border-radius:8px; cursor:pointer; transition: all 0.2s ease; {outline_style}" data-color="{hex_color}" title="{tooltip}"></div>
-                <div style="text-align:center; font-size:9px; color:#666;">{hex_color}</div>
-            </div>
-            ''')
-
-        parts.append("</div>")
-        return parts
+        return items
 
     recommended_colors = _get_recommended_colors(
         colors,
         reference_color=reference_color,
         limit=RECOMMENDED_REPLACEMENT_COUNT,
     )
+    recommended_section: Optional[dict[str, Any]] = None
     if recommended_colors:
-        section_title = I18n.get("lut_grid_recommended", lang).format(
-            count=len(recommended_colors)
-        )
-        section_hint = I18n.get("lut_grid_recommended_hint", lang)
-        html_parts.append(
-            f'<p style="color:#0D6EFD; font-size:11px; margin:8px 0 4px 0; font-weight:bold;">{section_title}</p>'
-        )
-        html_parts.append(
-            f'<p style="color:#5b6b7a; font-size:10px; margin:0 0 6px 0;">{section_hint}</p>'
-        )
-        html_parts.extend(render_color_grid(recommended_colors))
+        recommended_section = {
+            "title": I18n.get("lut_grid_recommended", lang).format(
+                count=len(recommended_colors)
+            ),
+            "hint": I18n.get("lut_grid_recommended_hint", lang),
+            "items": to_swatch_items(recommended_colors),
+        }
 
-    # Render used colors section (if any)
+    used_section: Optional[dict[str, Any]] = None
     if used_in_image:
-        section_title = I18n.get("lut_grid_used", lang).format(count=len(used_in_image))
-        html_parts.extend(render_color_grid(used_in_image, section_title, "#4CAF50"))
+        used_section = {
+            "title": I18n.get("lut_grid_used", lang).format(count=len(used_in_image)),
+            "items": to_swatch_items(used_in_image),
+        }
 
-    # Render unused colors section
+    other_section: Optional[dict[str, Any]] = None
     if not_used:
-        section_title = None
+        title = ""
         if used_in_image:
-            section_title = I18n.get("lut_grid_other", lang).format(count=len(not_used))
-        html_parts.extend(render_color_grid(not_used, section_title, "#888"))
+            title = I18n.get("lut_grid_other", lang).format(count=len(not_used))
+        other_section = {
+            "title": title,
+            "items": to_swatch_items(not_used),
+        }
 
-    html_parts.append("</div>")
-    # Note: JavaScript handlers are now global in crop_extension.py
-
-    return "".join(html_parts)
+    return {
+        "empty": False,
+        "count_text": count_text,
+        "visible_count": len(colors),
+        "search_placeholder": search_placeholder,
+        "search_clear": search_clear,
+        "recommended_section": recommended_section,
+        "used_section": used_section,
+        "other_section": other_section,
+    }

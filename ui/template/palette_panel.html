@@ -1,0 +1,69 @@
+{{#if value.empty}}
+<p class="palette-empty">{{value.empty_text}}</p>
+{{else}}
+<p class="palette-count">{{value.count_text}}</p>
+<p class="palette-hint">💡 {{value.hint_text}}</p>
+<div id="palette-grid-container" class="palette-grid-container">
+  <div class="palette-section palette-section-applied">
+    <div class="palette-section-title">{{value.applied_title}} ({{value.applied_count}})</div>
+    <div class="palette-section-legend">{{value.applied_legend}}</div>
+    {{#if value.applied_items}}
+    <div class="palette-row-header palette-row-header-applied">
+      <div>{{value.quant_label}}</div>
+      <div></div>
+      <div>{{value.original_label}}</div>
+      <div></div>
+      <div>{{value.replaced_label}}</div>
+    </div>
+    <div class="palette-applied-list">
+      {{#each value.applied_items}}
+      <div class="palette-applied-item {{row_class}}" data-color="{{source_key}}">
+        <div class="palette-color-col">
+          <div class="palette-applied-color-block" title="{{quant_hex}}" style="background:{{quant_hex}};"></div>
+          <div class="palette-color-label">{{quant_hex}}</div>
+        </div>
+        <div class="palette-arrow">→</div>
+        <div class="palette-color-col">
+          <div class="palette-applied-color-block palette-original-block" title="{{original_hex}}" style="background:{{original_hex}};"></div>
+          <div class="palette-color-label">{{original_hex}}</div>
+        </div>
+        <div class="palette-arrow">→</div>
+        <div class="palette-color-col">
+          <div class="palette-applied-color-block palette-replaced-block" title="{{replacement_hex}}" style="background:{{replacement_hex}};"></div>
+          <div class="palette-color-label">{{replacement_hex}}</div>
+        </div>
+      </div>
+      {{/each}}
+    </div>
+    {{else}}
+    <p class="palette-none-applied">{{value.none_applied_text}}</p>
+    {{/if}}
+  </div>
+
+  <div class="palette-section palette-section-original">
+    <div class="palette-section-title">{{value.original_title}}</div>
+    <div class="palette-row-header palette-row-header-original">
+      <div>{{value.quant_label}}</div>
+      <div></div>
+      <div>{{value.original_label}}</div>
+      <div>%</div>
+    </div>
+    <div class="palette-original-list">
+      {{#each value.original_items}}
+      <div class="palette-original-item {{row_class}}" data-color="{{token}}" title="{{tooltip}}">
+        <div class="palette-color-col">
+          <div class="palette-original-color-block {{quant_block_class}}" style="background:{{quant_hex}};"></div>
+          <div class="palette-color-label">{{quant_hex}}</div>
+        </div>
+        <div class="palette-arrow palette-arrow-mid">→</div>
+        <div class="palette-color-col">
+          <div class="palette-original-color-block palette-original-block" style="background:{{matched_hex}};"></div>
+          <div class="palette-color-label">{{matched_hex}}</div>
+        </div>
+        <div class="palette-percentage">{{percentage_text}}</div>
+      </div>
+      {{/each}}
+    </div>
+  </div>
+</div>
+{{/if}}

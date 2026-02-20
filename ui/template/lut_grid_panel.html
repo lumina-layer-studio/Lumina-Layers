@@ -1,0 +1,52 @@
+{{#if value.empty}}
+<p class="lut-grid-empty">{{value.load_hint}}</p>
+{{else}}
+<p class="lut-grid-count">{{value.count_text}}: <span id="lut-color-visible-count">{{value.visible_count}}</span></p>
+
+<div class="lut-grid-search-bar">
+  <span class="lut-grid-search-icon">🔍</span>
+  <input type="text" id="lut-color-search" placeholder="{{value.search_placeholder}}" class="lut-grid-search-input" />
+  <button id="lut-color-search-clear" class="lut-grid-search-clear">{{value.search_clear}}</button>
+</div>
+
+<div id="lut-color-grid-container" class="lut-grid-container">
+  {{#if value.recommended_section}}
+  <p class="lut-section-title lut-section-title-recommended">{{value.recommended_section.title}}</p>
+  <p class="lut-section-hint">{{value.recommended_section.hint}}</p>
+  <div class="lut-section-grid">
+    {{#each value.recommended_section.items}}
+    <div class="lut-color-swatch-container">
+      <div class="lut-color-swatch {{selected_class}}" style="background:{{hex}};" data-color="{{hex}}" title="{{tooltip}}"></div>
+      <div class="lut-color-label">{{hex}}</div>
+    </div>
+    {{/each}}
+  </div>
+  {{/if}}
+
+  {{#if value.used_section}}
+  <p class="lut-section-title lut-section-title-used">{{value.used_section.title}}</p>
+  <div class="lut-section-grid">
+    {{#each value.used_section.items}}
+    <div class="lut-color-swatch-container">
+      <div class="lut-color-swatch {{selected_class}}" style="background:{{hex}};" data-color="{{hex}}" title="{{tooltip}}"></div>
+      <div class="lut-color-label">{{hex}}</div>
+    </div>
+    {{/each}}
+  </div>
+  {{/if}}
+
+  {{#if value.other_section}}
+  {{#if value.other_section.title}}
+  <p class="lut-section-title lut-section-title-other">{{value.other_section.title}}</p>
+  {{/if}}
+  <div class="lut-section-grid">
+    {{#each value.other_section.items}}
+    <div class="lut-color-swatch-container">
+      <div class="lut-color-swatch {{selected_class}}" style="background:{{hex}};" data-color="{{hex}}" title="{{tooltip}}"></div>
+      <div class="lut-color-label">{{hex}}</div>
+    </div>
+    {{/each}}
+  </div>
+  {{/if}}
+</div>
+{{/if}}

@@ -9,7 +9,7 @@ from ui.palette_extension import (
 
 @pytest.mark.unit
 def test_generate_palette_html_splits_applied_and_original_sections():
-    html = generate_palette_html(
+    payload = generate_palette_html(
         palette=[
             {"hex": "#111111", "percentage": 60.0, "token": "#111111"},
             {"hex": "#222222", "percentage": 40.0, "token": "#222222"},
@@ -33,18 +33,18 @@ def test_generate_palette_html_splits_applied_and_original_sections():
         lang="zh",
     )
 
-    assert "已生效的替换" in html
-    assert "原始颜色" in html
-    assert "说明：量化" in html
-    assert "量化" in html
-    assert "原始" in html
-    assert "替换" in html
-    assert "#111111" in html
-    assert "#121212" in html
-    assert "#eeeeee" in html
-    assert "palette-applied-item" in html
-    assert "palette-original-item" in html
-    assert "palette-remove-replacement-btn" not in html
+    assert payload["empty"] is False
+    assert payload["applied_title"] == "已生效的替换"
+    assert payload["original_title"] == "原始颜色"
+    assert payload["applied_legend"].startswith("说明")
+    assert payload["quant_label"] == "量化"
+    assert payload["original_label"] == "原始"
+    assert payload["replaced_label"] == "替换"
+    assert payload["applied_items"][0]["quant_hex"] == "#111111"
+    assert payload["applied_items"][0]["original_hex"] == "#121212"
+    assert payload["applied_items"][0]["replacement_hex"] == "#eeeeee"
+    assert payload["original_items"][1]["token"] == "#222222"
+    assert payload["original_items"][1]["row_class"] == "palette-row-selected"
 
 
 @pytest.mark.unit
@@ -53,7 +53,7 @@ def test_generate_lut_color_grid_html_includes_recommended_section_and_limit():
     for i in range(RECOMMENDED_REPLACEMENT_COUNT + 5):
         colors.append({"hex": f"#{i:02x}{i:02x}{i:02x}", "color": (i, i, i)})
 
-    html = generate_lut_color_grid_html(
+    payload = generate_lut_color_grid_html(
         colors=colors,
         selected_color="#ffffff",
         used_colors={"#000000"},
@@ -61,9 +61,10 @@ def test_generate_lut_color_grid_html_includes_recommended_section_and_limit():
         lang="zh",
     )
 
-    assert "推荐相近颜色" in html
-    assert "RGB/HSV/Lab" in html
-    assert html.count('class="lut-color-swatch"') >= RECOMMENDED_REPLACEMENT_COUNT
+    assert payload["empty"] is False
+    assert payload["recommended_section"]["title"].startswith("推荐相近颜色")
+    assert "RGB/HSV/Lab" in payload["recommended_section"]["hint"]
+    assert len(payload["recommended_section"]["items"]) <= RECOMMENDED_REPLACEMENT_COUNT
 
 
 @pytest.mark.unit
@@ -74,7 +75,7 @@ def test_generate_lut_color_grid_html_recommended_is_independent_of_selected_col
         {"hex": "#f0f0f0", "color": (240, 240, 240)},
     ]
 
-    html = generate_lut_color_grid_html(
+    payload = generate_lut_color_grid_html(
         colors=colors,
         selected_color="#f0f0f0",
         used_colors=set(),
@@ -82,5 +83,6 @@ def test_generate_lut_color_grid_html_recommended_is_independent_of_selected_col
         lang="zh",
     )
 
-    assert "推荐相近颜色" in html
-    assert "#121212" in html
+    assert payload["recommended_section"] is not None
+    recommended_hex = {item["hex"] for item in payload["recommended_section"]["items"]}
+    assert "#121212" in recommended_hex

@@ -17,6 +17,14 @@ from core.converter import (
     convert_image_to_3d,
 )
 from core.color_replacement import parse_selection_token
+from ui.palette_extension import (
+    PALETTE_HTML_TEMPLATE,
+    PALETTE_CSS_TEMPLATE,
+    PALETTE_JS_ON_LOAD,
+    LUT_GRID_HTML_TEMPLATE,
+    LUT_GRID_CSS_TEMPLATE,
+    LUT_GRID_JS_ON_LOAD,
+)
 from ui.converter_ui import (
     generate_preview_cached,
     update_preview_with_loop,
@@ -744,7 +752,12 @@ def create_converter_tab_content(lang: str, lang_state=None) -> dict:
 
                                 # LUT 网格 HTML
                                 conv_lut_grid_view = gr.HTML(
-                                    value=f"<div style='color:#888; padding:10px;'>{I18n.get('conv_palette_lut_loading', lang)}</div>",
+                                    value=generate_lut_color_dropdown_html(
+                                        None, lang=lang
+                                    ),
+                                    html_template=LUT_GRID_HTML_TEMPLATE,
+                                    css_template=LUT_GRID_CSS_TEMPLATE,
+                                    js_on_load=LUT_GRID_JS_ON_LOAD,
                                     label="",
                                     show_label=False,
                                 )
@@ -792,7 +805,15 @@ def create_converter_tab_content(lang: str, lang_state=None) -> dict:
                             I18n.get("conv_palette_replacements_label", lang)
                         )
                         conv_palette_html = gr.HTML(
-                            value=f"<p style='color:#888;'>{I18n.get('conv_palette_replacements_placeholder', lang)}</p>",
+                            value={
+                                "empty": True,
+                                "empty_text": I18n.get(
+                                    "conv_palette_replacements_placeholder", lang
+                                ),
+                            },
+                            html_template=PALETTE_HTML_TEMPLATE,
+                            css_template=PALETTE_CSS_TEMPLATE,
+                            js_on_load=PALETTE_JS_ON_LOAD,
                             label="",
                             show_label=False,
                         )
@@ -1028,11 +1049,9 @@ def create_converter_tab_content(lang: str, lang_state=None) -> dict:
         cache: dict[str, Any] | None,
         selected_color: str | None,
         lang_val: str,
-    ) -> str:
+    ) -> dict[str, Any]:
         if not lut_path:
-            return (
-                f"<p style='color:#888;'>{I18n.get('lut_select_first', lang_val)}</p>"
-            )
+            return {"empty": True, "load_hint": I18n.get("lut_select_first", lang_val)}
         used_colors = set()
         if cache and "color_palette" in cache:
             for entry in cache["color_palette"]:

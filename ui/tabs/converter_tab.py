@@ -23,6 +23,7 @@ from ui.converter_ui import (
     on_remove_loop,
     on_preview_click_select_color,
     generate_lut_grid_html,
+    generate_lut_color_dropdown_html,
     detect_lut_color_mode,
     detect_image_type,
 )
@@ -1242,20 +1243,44 @@ def create_converter_tab_content(lang: str, lang_state=None) -> dict:
     )
 
     # [新增] 处理 LUT 色块点击事件 (JS -> Hidden Textbox -> Python)
-    def on_original_color_click(hex_color, lang_val):
+    def on_original_color_click(hex_color, lut_path, cache, lang_val):
         selected_color, _ = on_color_swatch_click(hex_color, lang=lang_val)
+        used_colors = set()
+        if cache and "color_palette" in cache:
+            for entry in cache["color_palette"]:
+                used_colors.add(entry["hex"])
+
+        lut_grid_html = generate_lut_color_dropdown_html(
+            lut_path,
+            used_colors=used_colors,
+        )
         if not selected_color:
-            return selected_color, selected_color
+            return selected_color, selected_color, lut_grid_html
         token_data = parse_selection_token(str(selected_color))
         if token_data is not None:
             display_hex = str(token_data.get("m") or token_data.get("q") or "")
-            return selected_color, display_hex
-        return selected_color, selected_color
+            lut_grid_html = generate_lut_color_dropdown_html(
+                lut_path,
+                used_colors=used_colors,
+                reference_color=display_hex,
+            )
+            return selected_color, display_hex, lut_grid_html
+        lut_grid_html = generate_lut_color_dropdown_html(
+            lut_path,
+            used_colors=used_colors,
+            reference_color=selected_color,
+        )
+        return selected_color, selected_color, lut_grid_html
 
     conv_color_trigger_btn.click(
         fn=on_original_color_click,
-        inputs=[conv_color_selected_hidden, lang_state],
-        outputs=[conv_selected_color, conv_selected_display],
+        inputs=[
+            conv_color_selected_hidden,
+            conv_lut_path,
+            conv_preview_cache,
+            lang_state,
+        ],
+        outputs=[conv_selected_color, conv_selected_display, conv_lut_grid_view],
     )
 
     def on_lut_color_click(hex_color):

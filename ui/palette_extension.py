@@ -7,17 +7,94 @@ Text and percentage are displayed BELOW the color swatches for better readabilit
 Click handlers are defined globally in crop_extension.py to survive Gradio re-renders.
 """
 
-from typing import List
+from typing import Any, Optional
+
+import cv2
+import numpy as np
 
 from core.i18n import I18n
 from core.color_replacement import parse_selection_token
 
 
+RECOMMENDED_REPLACEMENT_COUNT = 20
+
+
+def _hex_to_rgb_array(hex_color: str) -> Optional[np.ndarray]:
+    value = str(hex_color).strip()
+    if len(value) != 7 or not value.startswith("#"):
+        return None
+    try:
+        return np.array(
+            [
+                int(value[1:3], 16),
+                int(value[3:5], 16),
+                int(value[5:7], 16),
+            ],
+            dtype=np.float32,
+        )
+    except ValueError:
+        return None
+
+
+def _get_recommended_colors(
+    colors: list[dict[str, Any]],
+    reference_color: Optional[str],
+    limit: int,
+) -> list[dict[str, Any]]:
+    """Rank LUT colors by a combined color-similarity score."""
+    ref_rgb = _hex_to_rgb_array(reference_color or "")
+    if ref_rgb is None or limit <= 0:
+        return []
+
+    candidates = []
+    for entry in colors:
+        hex_color = str(entry.get("hex", ""))
+        rgb = _hex_to_rgb_array(hex_color)
+        if rgb is None:
+            continue
+        if hex_color.lower() == str(reference_color).lower():
+            continue
+        candidates.append((entry, rgb))
+
+    if not candidates:
+        return []
+
+    ref_rgb_u8 = ref_rgb.astype(np.uint8).reshape(1, 1, 3)
+    ref_hsv = cv2.cvtColor(ref_rgb_u8, cv2.COLOR_RGB2HSV).astype(np.float32)[0, 0]
+    ref_lab = cv2.cvtColor(ref_rgb_u8, cv2.COLOR_RGB2LAB).astype(np.float32)[0, 0]
+
+    scored = []
+    for entry, cand_rgb in candidates:
+        cand_rgb_u8 = cand_rgb.astype(np.uint8).reshape(1, 1, 3)
+        cand_hsv = cv2.cvtColor(cand_rgb_u8, cv2.COLOR_RGB2HSV).astype(np.float32)[0, 0]
+        cand_lab = cv2.cvtColor(cand_rgb_u8, cv2.COLOR_RGB2LAB).astype(np.float32)[0, 0]
+
+        rgb_l2 = float(np.linalg.norm(cand_rgb - ref_rgb) / np.sqrt(3 * 255 * 255))
+        rgb_l1 = float(np.sum(np.abs(cand_rgb - ref_rgb)) / (3 * 255))
+        hue_delta = abs(float(cand_hsv[0] - ref_hsv[0]))
+        hue_dist = min(hue_delta, 180 - hue_delta) / 90.0
+        sat_dist = abs(float(cand_hsv[1] - ref_hsv[1])) / 255.0
+        val_dist = abs(float(cand_hsv[2] - ref_hsv[2])) / 255.0
+        hsv_dist = (hue_dist + sat_dist + val_dist) / 3.0
+        lab_l2 = float(
+            np.linalg.norm(cand_lab - ref_lab)
+            / np.sqrt(100 * 100 + 255 * 255 + 255 * 255)
+        )
+
+        composite_score = (
+            0.35 * lab_l2 + 0.30 * rgb_l2 + 0.20 * hsv_dist + 0.15 * rgb_l1
+        )
+        scored.append((composite_score, entry))
+
+    scored.sort(key=lambda item: item[0])
+    return [entry for _, entry in scored[:limit]]
+
+
 def generate_palette_html(
-    palette: List[dict],
-    replacements: dict = None,
-    selected_color: str = None,
-    original_palette: List[dict] = None,
+    palette: list[dict[str, Any]],
+    replacements: Optional[dict[str, str]] = None,
+    selected_color: Optional[str] = None,
+    original_palette: Optional[list[dict[str, Any]]] = None,
     lang: str = "zh",
 ) -> str:
     """
@@ -188,9 +265,10 @@ def generate_palette_html(
 
 
 def generate_lut_color_grid_html(
-    colors: List[dict],
-    selected_color: str = None,
-    used_colors: set = None,
+    colors: list[dict[str, Any]],
+    selected_color: Optional[str] = None,
+    used_colors: Optional[set[str]] = None,
+    reference_color: Optional[str] = None,
     lang: str = "zh",
 ) -> str:
     """
@@ -283,6 +361,24 @@ def generate_lut_color_grid_html(
 
         parts.append("</div>")
         return parts
+
+    recommended_colors = _get_recommended_colors(
+        colors,
+        reference_color=reference_color,
+        limit=RECOMMENDED_REPLACEMENT_COUNT,
+    )
+    if recommended_colors:
+        section_title = I18n.get("lut_grid_recommended", lang).format(
+            count=len(recommended_colors)
+        )
+        section_hint = I18n.get("lut_grid_recommended_hint", lang)
+        html_parts.append(
+            f'<p style="color:#0D6EFD; font-size:11px; margin:8px 0 4px 0; font-weight:bold;">{section_title}</p>'
+        )
+        html_parts.append(
+            f'<p style="color:#5b6b7a; font-size:10px; margin:0 0 6px 0;">{section_hint}</p>'
+        )
+        html_parts.extend(render_color_grid(recommended_colors))
 
     # Render used colors section (if any)
     if used_in_image:

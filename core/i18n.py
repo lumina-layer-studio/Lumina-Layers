@@ -628,6 +628,14 @@ class I18n:
             "zh": "其他可用颜色 ({count})",
             "en": "Other colors ({count})",
         },
+        "lut_grid_recommended": {
+            "zh": "推荐相近颜色 ({count})",
+            "en": "Recommended similar colors ({count})",
+        },
+        "lut_grid_recommended_hint": {
+            "zh": "基于综合相近度（RGB/HSV/Lab）自动推荐，不受匹配策略选择影响",
+            "en": "Auto-ranked by combined similarity (RGB/HSV/Lab), independent of match strategy",
+        },
         "lut_grid_tooltip": {"zh": "点击选择: {hex}", "en": "Click to select: {hex}"},
         # ==================== LUT Manager ====================
         "lut_err_no_file": {"zh": "❌ 未选择文件", "en": "❌ No file selected"},

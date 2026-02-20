@@ -144,7 +144,8 @@ def get_lut_color_choices(lut_path: str) -> List[tuple]:
 def generate_lut_color_dropdown_html(
     lut_path: str,
     selected_color: Optional[str] = None,
-    used_colors: Optional[set] = None,
+    used_colors: Optional[set[str]] = None,
+    reference_color: Optional[str] = None,
 ) -> str:
     """
     Generate HTML for displaying LUT available colors as a clickable visual grid.
@@ -170,6 +171,7 @@ def generate_lut_color_dropdown_html(
         colors,
         selected_color or "",
         used_colors or set(),
+        reference_color=reference_color,
     )
 
 
@@ -1035,44 +1037,7 @@ def generate_lut_grid_html(lut_path, lang: str = "zh"):
     """
 
     colors = extract_lut_available_colors(lut_path)
-
-    if not colors:
-        return f"<div style='color:orange'>LUT 文件无效或为空</div>"
-
-    count = len(colors)
-
-    html = f"""
-    <div class="lut-grid-container">
-        <div style="margin-bottom: 8px; font-size: 12px; color: #666;">
-            可用颜色: {count} 种
-        </div>
-        <div style="
-            display: flex;
-            flex-wrap: wrap;
-            gap: 4px;
-            max-height: 300px;
-            overflow-y: auto;
-            padding: 5px;
-            border: 1px solid #eee;
-            border-radius: 8px;
-            background: #f9f9f9;">
-    """
-
-    for entry in colors:
-        hex_val = entry["hex"]
-        r, g, b = entry["color"]
-        rgb_val = f"R:{r} G:{g} B:{b}"
-
-        html += f"""
-        <div class="lut-swatch lut-color-swatch"
-             data-color="{hex_val}"
-             style="background-color: {hex_val}; width:24px; height:24px; cursor:pointer; border:1px solid #ddd; border-radius:3px;"
-             title="{hex_val} ({rgb_val})">
-        </div>
-        """
-
-    html += "</div></div>"
-    return html
+    return generate_lut_color_grid_html(colors, lang=lang)
 
 
 def detect_lut_color_mode(lut_path):

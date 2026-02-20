@@ -1,6 +1,10 @@
 import pytest
 
-from ui.palette_extension import generate_palette_html
+from ui.palette_extension import (
+    RECOMMENDED_REPLACEMENT_COUNT,
+    generate_lut_color_grid_html,
+    generate_palette_html,
+)
 
 
 @pytest.mark.unit
@@ -41,3 +45,42 @@ def test_generate_palette_html_splits_applied_and_original_sections():
     assert "palette-applied-item" in html
     assert "palette-original-item" in html
     assert "palette-remove-replacement-btn" not in html
+
+
+@pytest.mark.unit
+def test_generate_lut_color_grid_html_includes_recommended_section_and_limit():
+    colors: list[dict[str, object]] = []
+    for i in range(RECOMMENDED_REPLACEMENT_COUNT + 5):
+        colors.append({"hex": f"#{i:02x}{i:02x}{i:02x}", "color": (i, i, i)})
+
+    html = generate_lut_color_grid_html(
+        colors=colors,
+        selected_color="#ffffff",
+        used_colors={"#000000"},
+        reference_color="#101010",
+        lang="zh",
+    )
+
+    assert "推荐相近颜色" in html
+    assert "RGB/HSV/Lab" in html
+    assert html.count('class="lut-color-swatch"') >= RECOMMENDED_REPLACEMENT_COUNT
+
+
+@pytest.mark.unit
+def test_generate_lut_color_grid_html_recommended_is_independent_of_selected_color():
+    colors = [
+        {"hex": "#101010", "color": (16, 16, 16)},
+        {"hex": "#121212", "color": (18, 18, 18)},
+        {"hex": "#f0f0f0", "color": (240, 240, 240)},
+    ]
+
+    html = generate_lut_color_grid_html(
+        colors=colors,
+        selected_color="#f0f0f0",
+        used_colors=set(),
+        reference_color="#101010",
+        lang="zh",
+    )
+
+    assert "推荐相近颜色" in html
+    assert "#121212" in html

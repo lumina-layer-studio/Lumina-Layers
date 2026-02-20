@@ -125,7 +125,7 @@ class ImagePreprocessor:
         Returns:
             Path to PNG file
             
-        Raises:
+        raises:
             ValueError: If conversion fails
         """
         if not image_path or not os.path.exists(image_path):
@@ -145,7 +145,14 @@ class ImagePreprocessor:
                 
                 # Generate output path if not provided
                 if output_path is None:
-                    fd, output_path = tempfile.mkstemp(suffix='.png')
+                    # Truncate long filenames to avoid path issues
+                    base_name = os.path.basename(image_path)
+                    name_without_ext = os.path.splitext(base_name)[0]
+                    # Limit filename to 50 characters
+                    if len(name_without_ext) > 50:
+                        name_without_ext = name_without_ext[:50]
+                    
+                    fd, output_path = tempfile.mkstemp(suffix=f'_{name_without_ext}.png')
                     os.close(fd)
                 
                 # Save as PNG
@@ -206,7 +213,14 @@ class ImagePreprocessor:
                 
                 # Generate output path if not provided
                 if output_path is None:
-                    fd, output_path = tempfile.mkstemp(suffix='.png')
+                    # Truncate long filenames to avoid path issues
+                    base_name = os.path.basename(image_path)
+                    name_without_ext = os.path.splitext(base_name)[0]
+                    # Limit filename to 50 characters
+                    if len(name_without_ext) > 50:
+                        name_without_ext = name_without_ext[:50]
+                    
+                    fd, output_path = tempfile.mkstemp(suffix=f'_cropped_{name_without_ext}.png')
                     os.close(fd)
                 
                 # Save as PNG

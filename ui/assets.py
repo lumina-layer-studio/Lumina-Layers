@@ -21,11 +21,6 @@ def _as_script_tag(js_code: str) -> str:
     return f"<script>\n{js_code}\n</script>"
 
 
-CUSTOM_CSS = load_asset_text("css", "custom.css")
-HEADER_CSS = load_asset_text("css", "header.css")
-LUT_GRID_CSS = load_asset_text("css", "lut_grid.css")
-PREVIEW_ZOOM_CSS = load_asset_text("css", "preview_zoom.css")
-
 LUT_GRID_JS = _as_script_tag(load_asset_text("js", "lut_grid.js"))
 PREVIEW_ZOOM_JS = _as_script_tag(load_asset_text("js", "preview_zoom.js"))
 

@@ -36,7 +36,6 @@ import socket
 import gradio as gr  # type:ignore
 from gradio.themes import Soft
 from ui.layout_new import create_app
-from ui.assets import CUSTOM_CSS, HEADER_CSS, LUT_GRID_CSS
 
 HAS_DISPLAY = os.environ.get("DISPLAY") or os.name == "nt"
 LuminaTray = None
@@ -92,7 +91,10 @@ if __name__ == "__main__":
             show_error=True,
             prevent_thread_lock=True,
             favicon_path="icon.ico" if os.path.exists("icon.ico") else None,
-            css=CUSTOM_CSS + HEADER_CSS + LUT_GRID_CSS,
+            css_paths=[
+                str(Path(_PROJECT_ROOT) / "ui" / "static" / "css" / "app_layout.css"),
+                str(Path(_PROJECT_ROOT)/ "ui"/ "static"/ "css"/ "lut_interaction.css"),
+            ],
             theme=Soft(),
             head=get_crop_head_html(),
         )

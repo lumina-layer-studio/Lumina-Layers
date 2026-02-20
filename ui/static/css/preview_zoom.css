@@ -1,11 +1,13 @@
 #conv-preview {
     overflow: auto !important;
 }
+
 #conv-preview .image-container,
 #conv-preview .wrap,
 #conv-preview .container {
     overflow: auto !important;
 }
+
 #conv-preview canvas,
 #conv-preview img {
     display: block !important;

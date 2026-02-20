@@ -7,6 +7,7 @@
     border: 1px solid rgba(0,0,0,0.1);
     transition: transform 0.1s, border-color 0.1s;
 }
+
 .lut-swatch:hover,
 .lut-color-swatch:hover {
     transform: scale(1.2);

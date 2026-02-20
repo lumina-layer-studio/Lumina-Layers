@@ -146,6 +146,7 @@ def generate_lut_color_dropdown_html(
     selected_color: Optional[str] = None,
     used_colors: Optional[set[str]] = None,
     reference_color: Optional[str] = None,
+    lang: str = "zh",
 ) -> str:
     """
     Generate HTML for displaying LUT available colors as a clickable visual grid.
@@ -172,6 +173,7 @@ def generate_lut_color_dropdown_html(
         selected_color or "",
         used_colors or set(),
         reference_color=reference_color,
+        lang=lang,
     )
 
 
@@ -1029,15 +1031,6 @@ def on_preview_click_select_color(cache, evt: gr.SelectData):
         selection_token,
         status_msg,
     )
-
-
-def generate_lut_grid_html(lut_path, lang: str = "zh"):
-    """
-    生成 LUT 可用颜色的 HTML 网格
-    """
-
-    colors = extract_lut_available_colors(lut_path)
-    return generate_lut_color_grid_html(colors, lang=lang)
 
 
 def detect_lut_color_mode(lut_path):

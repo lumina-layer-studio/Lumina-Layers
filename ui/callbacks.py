@@ -474,65 +474,6 @@ def on_color_dropdown_select(selected_value):
     )
 
 
-def on_lut_change_update_colors(lut_path, cache=None, lang: str = "zh"):
-    """
-    Update available replacement colors when LUT selection changes.
-
-    This callback extracts all available colors from the selected LUT
-    and updates the LUT color grid HTML display, grouping by used/unused.
-
-    Args:
-        lut_path: Path to the selected LUT file
-        cache: Optional preview cache containing color_palette
-
-    Returns:
-        str: HTML preview of LUT colors
-    """
-    from ui.converter_ui import generate_lut_color_dropdown_html
-
-    if not lut_path:
-        return f"<p style='color:#888;'>{I18n.get('lut_select_first', lang)}</p>"
-
-    # Extract used colors from cache if available
-    used_colors = set()
-    if cache and "color_palette" in cache:
-        for entry in cache["color_palette"]:
-            used_colors.add(entry["hex"])
-
-    html_preview = generate_lut_color_dropdown_html(lut_path, used_colors=used_colors)
-
-    return html_preview
-
-
-def on_preview_update_lut_colors(cache, lut_path, lang: str = "zh"):
-    """
-    Update LUT color display after preview is generated.
-
-    Groups colors into "used in image" and "other available" sections.
-
-    Args:
-        cache: Preview cache containing color_palette
-        lut_path: Path to the selected LUT file
-
-    Returns:
-        str: HTML preview of LUT colors with grouping
-    """
-    from ui.converter_ui import generate_lut_color_dropdown_html
-
-    if not lut_path:
-        return f"<p style='color:#888;'>{I18n.get('lut_select_first', lang)}</p>"
-
-    # Extract used colors from cache
-    used_colors = set()
-    if cache and "color_palette" in cache:
-        for entry in cache["color_palette"]:
-            used_colors.add(entry["hex"])
-
-    html_preview = generate_lut_color_dropdown_html(lut_path, used_colors=used_colors)
-
-    return html_preview
-
-
 def on_lut_color_swatch_click(selected_hex):
     """
     Handle LUT color selection from clicking color swatch.

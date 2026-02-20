@@ -12,7 +12,7 @@ from core.calibration import (
     generate_8color_batch_zip,
 )
 from core.i18n import I18n
-from ui.converter_ui import generate_lut_grid_html
+from ui.converter_ui import generate_lut_color_dropdown_html
 from utils import Stats
 from .callbacks import (
     on_lut_select,
@@ -211,7 +211,9 @@ def create_app():
                 components["md_conv_lut_status"],
             ],
         ).then(
-            fn=generate_lut_grid_html,
+            fn=lambda lut_path, lang: generate_lut_color_dropdown_html(
+                lut_path, lang=lang
+            ),
             inputs=[components["state_conv_lut_path"], lang_state],
             outputs=[components["conv_lut_grid_view"]],
         )

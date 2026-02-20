@@ -22,7 +22,6 @@ from ui.converter_ui import (
     update_preview_with_loop,
     on_remove_loop,
     on_preview_click_select_color,
-    generate_lut_grid_html,
     generate_lut_color_dropdown_html,
     detect_lut_color_mode,
     detect_image_type,
@@ -1031,6 +1030,28 @@ def create_converter_tab_content(lang: str, lang_state=None) -> dict:
     ).then(fn=None, inputs=None, outputs=None, js=SHOW_COLOR_TOAST_JS)
     # ========== END Image Crop Extension Events ==========
 
+    def render_lut_grid_by_context(lut_path, cache, selected_color, lang_val):
+        if not lut_path:
+            return (
+                f"<p style='color:#888;'>{I18n.get('lut_select_first', lang_val)}</p>"
+            )
+        used_colors = set()
+        if cache and "color_palette" in cache:
+            for entry in cache["color_palette"]:
+                used_colors.add(entry["hex"])
+        reference_hex = None
+        token_data = parse_selection_token(str(selected_color or ""))
+        if token_data is not None:
+            reference_hex = str(token_data.get("m") or token_data.get("q") or "")
+        elif selected_color:
+            reference_hex = str(selected_color)
+        return generate_lut_color_dropdown_html(
+            lut_path,
+            used_colors=used_colors,
+            reference_color=reference_hex,
+            lang=lang_val,
+        )
+
     components["dropdown_conv_lut_dropdown"].change(
         on_lut_select,
         inputs=[components["dropdown_conv_lut_dropdown"], lang_state],
@@ -1040,8 +1061,8 @@ def create_converter_tab_content(lang: str, lang_state=None) -> dict:
         inputs=[components["dropdown_conv_lut_dropdown"]],
         outputs=None,
     ).then(
-        fn=generate_lut_grid_html,
-        inputs=[conv_lut_path, lang_state],
+        fn=render_lut_grid_by_context,
+        inputs=[conv_lut_path, conv_preview_cache, conv_selected_color, lang_state],
         outputs=[conv_lut_grid_view],
     ).then(
         # 自动检测并切换颜色模式
@@ -1245,31 +1266,15 @@ def create_converter_tab_content(lang: str, lang_state=None) -> dict:
     # [新增] 处理 LUT 色块点击事件 (JS -> Hidden Textbox -> Python)
     def on_original_color_click(hex_color, lut_path, cache, lang_val):
         selected_color, _ = on_color_swatch_click(hex_color, lang=lang_val)
-        used_colors = set()
-        if cache and "color_palette" in cache:
-            for entry in cache["color_palette"]:
-                used_colors.add(entry["hex"])
-
-        lut_grid_html = generate_lut_color_dropdown_html(
-            lut_path,
-            used_colors=used_colors,
+        lut_grid_html = render_lut_grid_by_context(
+            lut_path, cache, selected_color, lang_val
         )
         if not selected_color:
             return selected_color, selected_color, lut_grid_html
         token_data = parse_selection_token(str(selected_color))
         if token_data is not None:
             display_hex = str(token_data.get("m") or token_data.get("q") or "")
-            lut_grid_html = generate_lut_color_dropdown_html(
-                lut_path,
-                used_colors=used_colors,
-                reference_color=display_hex,
-            )
             return selected_color, display_hex, lut_grid_html
-        lut_grid_html = generate_lut_color_dropdown_html(
-            lut_path,
-            used_colors=used_colors,
-            reference_color=selected_color,
-        )
         return selected_color, selected_color, lut_grid_html
 
     conv_color_trigger_btn.click(
@@ -1603,24 +1608,38 @@ def create_converter_tab_content(lang: str, lang_state=None) -> dict:
     )
 
     # [修改] 预览图点击事件同步到 UI
-    def on_preview_click_sync_ui(cache, lang_val, evt: gr.SelectData):
+    def on_preview_click_sync_ui(cache, lut_path, lang_val, evt: gr.SelectData):
         img, display_text, hex_val, msg = on_preview_click_select_color(cache, evt)
         resolved_msg = resolve_i18n_text(msg, lang_val)
         if hex_val is None:
-            return _preview_update(img), gr.update(), gr.update(), resolved_msg
+            return (
+                _preview_update(img),
+                gr.update(),
+                gr.update(),
+                gr.update(),
+                resolved_msg,
+            )
+        lut_grid_html = render_lut_grid_by_context(lut_path, cache, hex_val, lang_val)
         token_data = parse_selection_token(str(hex_val))
         if token_data is not None:
             display_hex = str(token_data.get("m") or token_data.get("q") or "")
-            return _preview_update(img), display_hex, hex_val, resolved_msg
-        return _preview_update(img), hex_val, hex_val, resolved_msg
+            return (
+                _preview_update(img),
+                display_hex,
+                hex_val,
+                lut_grid_html,
+                resolved_msg,
+            )
+        return _preview_update(img), hex_val, hex_val, lut_grid_html, resolved_msg
 
     conv_preview.select(
         fn=on_preview_click_sync_ui,
-        inputs=[conv_preview_cache, lang_state],
+        inputs=[conv_preview_cache, conv_lut_path, lang_state],
         outputs=[
             conv_preview,
             conv_selected_display,
             conv_selected_color,
+            conv_lut_grid_view,
             components["textbox_conv_status"],
         ],
     )

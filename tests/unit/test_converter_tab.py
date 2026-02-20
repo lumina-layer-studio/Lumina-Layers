@@ -42,10 +42,10 @@ def test_preview_click_sync_ui_uses_hex_for_colorpicker_binding():
     source = inspect.getsource(converter_tab.create_converter_tab_content)
     assert "def on_preview_click_sync_ui(" in source
     assert "lut_grid_html = render_lut_grid_by_context" in source
-    assert (
-        "return _preview_update(img), hex_val, hex_val, lut_grid_html, resolved_msg"
-        in source
-    )
+    assert "selected_detail = format_selected_color_detail" in source
+    assert "return (" in source
+    assert "hex_val," in source
+    assert "selected_detail," in source
 
 
 @pytest.mark.unit
@@ -62,6 +62,7 @@ def test_palette_has_color_select_and_single_remove_bindings():
     assert "conv_color_trigger_btn.click(" in source
     assert "on_original_color_click" in source
     assert "render_lut_grid_by_context" in source
+    assert "format_selected_color_detail" in source
     assert "conv_lut_grid_view" in source
     assert 'I18n.get("conv_palette_undo_selected_btn", lang)' in source
     assert "conv_undo_selected_replacement.click(" in source

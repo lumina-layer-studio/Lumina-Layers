@@ -726,13 +726,8 @@ def create_converter_tab_content(lang: str, lang_state=None) -> dict:
                                 components["md_conv_palette_step1"] = gr.Markdown(
                                     I18n.get("conv_palette_step1", lang)
                                 )
-                                conv_selected_display = gr.ColorPicker(
-                                    label=I18n.get("conv_palette_selected_label", lang),
-                                    value="#000000",
-                                    interactive=False,
-                                )
-                                components["color_conv_palette_selected_label"] = (
-                                    conv_selected_display
+                                conv_selected_detail = gr.HTML(
+                                    f"<div style='font-size:12px; color:#888; margin-top:4px;'>{I18n.get('palette_not_selected', lang)}</div>"
                                 )
                                 conv_clear_selected = gr.Button(
                                     I18n.get("conv_palette_unselect_btn", lang)
@@ -1055,6 +1050,39 @@ def create_converter_tab_content(lang: str, lang_state=None) -> dict:
             lang=lang_val,
         )
 
+    def format_selected_color_detail(selected_color: str | None, lang_val: str) -> str:
+        def _swatch(hex_color: str) -> str:
+            return (
+                "<span style='display:inline-block; width:24px; height:24px; border:1px solid #999;"
+                f" border-radius:4px; background:{hex_color}; vertical-align:middle; margin-right:8px;'></span>"
+            )
+
+        token_data = parse_selection_token(str(selected_color or ""))
+        if token_data is None:
+            if not selected_color:
+                return f"<div style='font-size:12px; color:#888; margin-top:4px;'>{I18n.get('palette_not_selected', lang_val)}</div>"
+            original_label = I18n.get("palette_original_label", lang_val)
+            return (
+                "<div style='display:flex; align-items:center; gap:10px; margin-top:4px; font-size:12px; color:#444;'>"
+                f"<span style='min-width:46px; color:#666;'>{original_label}</span>"
+                f"<span>{_swatch(str(selected_color))}<code>{selected_color}</code></span>"
+                "</div>"
+            )
+
+        quant_hex = str(token_data.get("q") or "")
+        matched_hex = str(token_data.get("m") or quant_hex)
+        quant_label = I18n.get("palette_quant_label", lang_val)
+        original_label = I18n.get("palette_original_label", lang_val)
+        return (
+            "<div style='display:flex; align-items:center; gap:10px; margin-top:4px; font-size:12px; color:#444;'>"
+            f"<span style='min-width:46px; color:#666;'>{quant_label}</span>"
+            f"<span>{_swatch(quant_hex)}<code>{quant_hex}</code></span>"
+            "<span style='color:#999;'>→</span>"
+            f"<span style='min-width:46px; color:#666;'>{original_label}</span>"
+            f"<span>{_swatch(matched_hex)}<code>{matched_hex}</code></span>"
+            "</div>"
+        )
+
     components["dropdown_conv_lut_dropdown"].change(
         on_lut_select,
         inputs=[components["dropdown_conv_lut_dropdown"], lang_state],
@@ -1277,13 +1305,10 @@ def create_converter_tab_content(lang: str, lang_state=None) -> dict:
         lut_grid_html = render_lut_grid_by_context(
             lut_path, cache, selected_color, lang_val
         )
+        selected_detail = format_selected_color_detail(selected_color, lang_val)
         if not selected_color:
-            return selected_color, selected_color, lut_grid_html
-        token_data = parse_selection_token(str(selected_color))
-        if token_data is not None:
-            display_hex = str(token_data.get("m") or token_data.get("q") or "")
-            return selected_color, display_hex, lut_grid_html
-        return selected_color, selected_color, lut_grid_html
+            return selected_color, selected_detail, lut_grid_html
+        return selected_color, selected_detail, lut_grid_html
 
     conv_color_trigger_btn.click(
         fn=on_original_color_click,
@@ -1293,7 +1318,11 @@ def create_converter_tab_content(lang: str, lang_state=None) -> dict:
             conv_preview_cache,
             lang_state,
         ],
-        outputs=[conv_selected_color, conv_selected_display, conv_lut_grid_view],
+        outputs=[
+            conv_selected_color,
+            conv_selected_detail,
+            conv_lut_grid_view,
+        ],
     )
 
     def on_lut_color_click(hex_color):
@@ -1381,9 +1410,10 @@ def create_converter_tab_content(lang: str, lang_state=None) -> dict:
         loop_angle,
         lang_state_val,
     ):
-        selected_display, selected_state, status = on_clear_selected_original_color(
+        _selected_display, selected_state, status = on_clear_selected_original_color(
             lang_state_val
         )
+        selected_detail = format_selected_color_detail(selected_state, lang_state_val)
         display, _ = on_highlight_color_change(
             "",
             cache,
@@ -1394,7 +1424,13 @@ def create_converter_tab_content(lang: str, lang_state=None) -> dict:
             loop_hole,
             loop_angle,
         )
-        return _preview_update(display), selected_display, selected_state, "", status
+        return (
+            _preview_update(display),
+            selected_state,
+            selected_detail,
+            "",
+            status,
+        )
 
     conv_clear_selected.click(
         on_clear_selected_and_highlight_with_fit,
@@ -1410,8 +1446,8 @@ def create_converter_tab_content(lang: str, lang_state=None) -> dict:
         ],
         outputs=[
             conv_preview,
-            conv_selected_display,
             conv_selected_color,
+            conv_selected_detail,
             conv_highlight_color_hidden,
             components["textbox_conv_status"],
         ],
@@ -1451,10 +1487,7 @@ def create_converter_tab_content(lang: str, lang_state=None) -> dict:
             loop_angle,
             lang_state_val,
         )
-        display_color = selected_color
-        token_data = parse_selection_token(str(selected_color))
-        if token_data is not None:
-            display_color = str(token_data.get("m") or token_data.get("q") or "")
+        selected_detail = format_selected_color_detail(selected_color, lang_state_val)
         return (
             _preview_update(display),
             updated_cache,
@@ -1462,7 +1495,7 @@ def create_converter_tab_content(lang: str, lang_state=None) -> dict:
             new_map,
             new_history,
             selected_color,
-            display_color,
+            selected_detail,
             "",
             status,
         )
@@ -1489,7 +1522,7 @@ def create_converter_tab_content(lang: str, lang_state=None) -> dict:
             conv_replacement_map,
             conv_replacement_history,
             conv_selected_color,
-            conv_selected_display,
+            conv_selected_detail,
             conv_highlight_color_hidden,
             components["textbox_conv_status"],
         ],
@@ -1633,25 +1666,22 @@ def create_converter_tab_content(lang: str, lang_state=None) -> dict:
                 resolved_msg,
             )
         lut_grid_html = render_lut_grid_by_context(lut_path, cache, hex_val, lang_val)
-        token_data = parse_selection_token(str(hex_val))
-        if token_data is not None:
-            display_hex = str(token_data.get("m") or token_data.get("q") or "")
-            return (
-                _preview_update(img),
-                display_hex,
-                hex_val,
-                lut_grid_html,
-                resolved_msg,
-            )
-        return _preview_update(img), hex_val, hex_val, lut_grid_html, resolved_msg
+        selected_detail = format_selected_color_detail(str(hex_val), lang_val)
+        return (
+            _preview_update(img),
+            hex_val,
+            selected_detail,
+            lut_grid_html,
+            resolved_msg,
+        )
 
     conv_preview.select(
         fn=on_preview_click_sync_ui,
         inputs=[conv_preview_cache, conv_lut_path, lang_state],
         outputs=[
             conv_preview,
-            conv_selected_display,
             conv_selected_color,
+            conv_selected_detail,
             conv_lut_grid_view,
             components["textbox_conv_status"],
         ],

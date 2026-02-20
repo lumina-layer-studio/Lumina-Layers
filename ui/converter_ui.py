@@ -68,7 +68,7 @@ def _preview_click_to_original_coords(
     return orig_x, orig_y
 
 
-def extract_lut_available_colors(lut_path: str) -> List[dict]:
+def extract_lut_available_colors(lut_path: Optional[str]) -> List[dict]:
     """
     Extract all available colors from a LUT file.
 
@@ -142,7 +142,7 @@ def get_lut_color_choices(lut_path: str) -> List[tuple]:
 
 
 def generate_lut_color_dropdown_html(
-    lut_path: str,
+    lut_path: Optional[str],
     selected_color: Optional[str] = None,
     used_colors: Optional[set[str]] = None,
     reference_color: Optional[str] = None,
@@ -446,7 +446,7 @@ def render_preview(
     label_color = (80, 80, 100, 255)
     try:
         font = ImageFont.load_default()
-    except:
+    except Exception:
         font = None
 
     for i, x in enumerate(range(margin, canvas_w, main_step)):
@@ -1060,33 +1060,33 @@ def detect_lut_color_mode(lut_path):
 
         # 8色模式：2738色 (8^5 = 32768)，但实际智能选择2738)
         if total_colors >= 2600 and total_colors <= 2800:
-            print(f"[AUTO_DETECT] Detected 8-Color mode (2738 colors)")
+            print("[AUTO_DETECT] Detected 8-Color mode (2738 colors)")
             return ColorMode.EIGHT_COLOR_MAX.value
 
         # BW 模式：32色 (2^5 = 32)
         elif total_colors >= 30 and total_colors <= 36:
-            print(f"[AUTO_DETECT] Detected BW mode (32 colors)")
+            print("[AUTO_DETECT] Detected BW mode (32 colors)")
             return ColorMode.BW.value
 
         # 6色模式：1296色 (6^5 = 7776)，但实际选择1296)
         elif total_colors >= 1200 and total_colors <= 1400:
-            print(f"[AUTO_DETECT] Detected 6-Color mode (1296 colors)")
+            print("[AUTO_DETECT] Detected 6-Color mode (1296 colors)")
             return ColorMode.SIX_COLOR.value
 
         # 4色模式：1024色 (4^5 = 1024)
         elif total_colors >= 900 and total_colors <= 1100:
-            print(f"[AUTO_DETECT] Detected 4-Color mode (1024 colors)")
+            print("[AUTO_DETECT] Detected 4-Color mode (1024 colors)")
             # 尝试从文件名推断CMYW或RYBW
             filename = os.path.basename(lut_path)
             name_lower = filename.lower()
             if "cmyw" in name_lower:
-                print(f"[AUTO_DETECT] Filename suggests CMYW mode")
+                print("[AUTO_DETECT] Filename suggests CMYW mode")
                 return ColorMode.CMYW.value
             if "rybw" in name_lower:
-                print(f"[AUTO_DETECT] Filename suggests RYBW mode")
+                print("[AUTO_DETECT] Filename suggests RYBW mode")
                 return ColorMode.RYBW.value
             # 无法推断时返回None，保持当前选择
-            print(f"[AUTO_DETECT] Cannot infer 4-Color subtype from filename")
+            print("[AUTO_DETECT] Cannot infer 4-Color subtype from filename")
             return None
 
         else:
@@ -1116,7 +1116,7 @@ def detect_image_type(image_path):
         ext = os.path.splitext(image_path)[1].lower()
 
         if ext == ".svg":
-            print(f"[AUTO_DETECT] SVG file detected, recommending SVG Mode")
+            print("[AUTO_DETECT] SVG file detected, recommending SVG Mode")
             return "📐 SVG Mode"
         else:
             print(f"[AUTO_DETECT] Raster image detected ({ext}), keeping current mode")

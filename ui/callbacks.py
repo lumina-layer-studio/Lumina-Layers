@@ -11,7 +11,6 @@ from config import ColorMode, ColorSystem, LUT_FILE_PATH
 from core.i18n import I18n
 from core.color_replacement import parse_selection_token
 from utils.i18n_help import resolve_i18n_text
-from core.extractor import generate_simulated_reference
 from utils import LUTManager
 
 
@@ -180,7 +179,7 @@ def on_apply_color_replacement(
         tuple: (preview_image, updated_cache, palette_html, updated_replacement_map,
                 updated_history, status)
     """
-    from ui.converter_ui import update_preview_with_replacements, generate_palette_html
+    from ui.converter_ui import update_preview_with_replacements
 
     if cache is None:
         return (
@@ -274,7 +273,7 @@ def on_clear_color_replacements(
         tuple: (preview_image, updated_cache, palette_html, empty_replacement_map,
                 updated_history, status)
     """
-    from ui.converter_ui import update_preview_with_replacements, generate_palette_html
+    from ui.converter_ui import update_preview_with_replacements
 
     if cache is None:
         return None, None, "", {}, [], I18n.get("palette_need_preview", lang)
@@ -637,7 +636,7 @@ def on_undo_color_replacement(
         tuple: (preview_image, updated_cache, palette_html, updated_replacement_map,
                 updated_history, status)
     """
-    from ui.converter_ui import update_preview_with_replacements, generate_palette_html
+    from ui.converter_ui import update_preview_with_replacements
 
     if cache is None:
         return (

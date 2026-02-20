@@ -6,18 +6,12 @@ UI layout definition - Refactored version with language switching support
 import gradio as gr
 
 from config import ColorMode, ModelingMode, StructureMode, MatchStrategy
-from core.calibration import (
-    generate_calibration_board,
-    generate_smart_board,
-    generate_8color_batch_zip,
-)
 from core.i18n import I18n
 from ui.converter_ui import generate_lut_color_dropdown_html
 from utils import Stats
 from .callbacks import (
     on_lut_select,
 )
-from .tabs import calibration_tab as _calibration_tab
 from .tabs import converter_tab as _converter_tab
 from .tabs import (
     create_converter_tab_content,
@@ -89,7 +83,7 @@ def create_app():
         stats_html = gr.HTML(value=_get_stats_html("zh", stats), elem_id="stats-bar")
 
         tab_components = {}
-        with gr.Tabs() as tabs:
+        with gr.Tabs():
             components = {}
 
             # ============================================================================

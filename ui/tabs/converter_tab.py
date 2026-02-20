@@ -5,6 +5,7 @@ Converter tab UI and event handlers
 
 import json
 import time
+from typing import Any
 
 import gradio as gr
 from PIL import Image as PILImage
@@ -18,7 +19,6 @@ from core.converter import (
 from core.color_replacement import parse_selection_token
 from ui.converter_ui import (
     generate_preview_cached,
-    render_preview,
     update_preview_with_loop,
     on_remove_loop,
     on_preview_click_select_color,
@@ -433,8 +433,6 @@ def create_converter_tab_content(lang: str, lang_state=None) -> dict:
             preprocess_processed_path = gr.State(None)
 
             # Crop data states (used by JavaScript via hidden inputs)
-            crop_data_state = gr.State({"x": 0, "y": 0, "w": 100, "h": 100})
-
             # Hidden textbox for JavaScript to pass crop data to Python (use CSS to hide)
             crop_data_json = gr.Textbox(
                 value='{"x":0,"y":0,"w":100,"h":100,"autoColor":true}',
@@ -1030,7 +1028,12 @@ def create_converter_tab_content(lang: str, lang_state=None) -> dict:
     ).then(fn=None, inputs=None, outputs=None, js=SHOW_COLOR_TOAST_JS)
     # ========== END Image Crop Extension Events ==========
 
-    def render_lut_grid_by_context(lut_path, cache, selected_color, lang_val):
+    def render_lut_grid_by_context(
+        lut_path: str | None,
+        cache: dict[str, Any] | None,
+        selected_color: str | None,
+        lang_val: str,
+    ) -> str:
         if not lut_path:
             return (
                 f"<p style='color:#888;'>{I18n.get('lut_select_first', lang_val)}</p>"
@@ -1264,7 +1267,12 @@ def create_converter_tab_content(lang: str, lang_state=None) -> dict:
     )
 
     # [新增] 处理 LUT 色块点击事件 (JS -> Hidden Textbox -> Python)
-    def on_original_color_click(hex_color, lut_path, cache, lang_val):
+    def on_original_color_click(
+        hex_color: str | None,
+        lut_path: str | None,
+        cache: dict[str, Any] | None,
+        lang_val: str,
+    ):
         selected_color, _ = on_color_swatch_click(hex_color, lang=lang_val)
         lut_grid_html = render_lut_grid_by_context(
             lut_path, cache, selected_color, lang_val
@@ -1608,7 +1616,12 @@ def create_converter_tab_content(lang: str, lang_state=None) -> dict:
     )
 
     # [修改] 预览图点击事件同步到 UI
-    def on_preview_click_sync_ui(cache, lut_path, lang_val, evt: gr.SelectData):
+    def on_preview_click_sync_ui(
+        cache: dict[str, Any] | None,
+        lut_path: str | None,
+        lang_val: str,
+        evt: gr.SelectData,
+    ):
         img, display_text, hex_val, msg = on_preview_click_select_color(cache, evt)
         resolved_msg = resolve_i18n_text(msg, lang_val)
         if hex_val is None:

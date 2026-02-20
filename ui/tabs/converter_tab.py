@@ -25,6 +25,11 @@ from ui.palette_extension import (
     LUT_GRID_CSS_TEMPLATE,
     LUT_GRID_JS_ON_LOAD,
 )
+from ui.crop_extension import (
+    CROP_MODAL_HTML_TEMPLATE,
+    CROP_MODAL_CSS_TEMPLATE,
+    get_crop_modal_html,
+)
 from ui.converter_ui import (
     generate_preview_cached,
     update_preview_with_loop,
@@ -377,7 +382,7 @@ def process_batch_generation(
     )
 
 
-def create_converter_tab_content(lang: str, lang_state=None) -> dict:
+def create_converter_tab_content(lang: str, lang_state=None) -> dict[str, Any]:
     """Build converter tab UI and events. Returns component dict for i18n.
 
     Args:
@@ -462,10 +467,11 @@ def create_converter_tab_content(lang: str, lang_state=None) -> dict:
             )
 
             # Cropper.js Modal HTML (JS is loaded via head parameter in main.py)
-            from ui.crop_extension import get_crop_modal_html
-
             cropper_modal_html = gr.HTML(
-                get_crop_modal_html(lang), elem_classes=["crop-modal-container"]
+                value=get_crop_modal_html(lang),
+                html_template=CROP_MODAL_HTML_TEMPLATE,
+                css_template=CROP_MODAL_CSS_TEMPLATE,
+                elem_classes=["crop-modal-container"],
             )
             components["html_crop_modal"] = cropper_modal_html
 

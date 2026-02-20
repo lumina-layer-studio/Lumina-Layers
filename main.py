@@ -11,6 +11,7 @@ Main Entry Point
 """
 
 import os
+from pathlib import Path
 
 # Colormath compatibility with numpy 1.20+ (run before other imports).
 import numpy as np
@@ -79,8 +80,10 @@ if __name__ == "__main__":
     app = create_app()
 
     try:
-        # Import crop extension for head JS injection
-        from ui.crop_extension import get_crop_head_js
+        # Import crop extension for head HTML injection
+        from ui.crop_extension import get_crop_head_html
+
+        gr.set_static_paths(paths=[Path(_PROJECT_ROOT) / "ui" / "libs"])
 
         app.launch(
             inbrowser=False,
@@ -91,7 +94,7 @@ if __name__ == "__main__":
             favicon_path="icon.ico" if os.path.exists("icon.ico") else None,
             css=CUSTOM_CSS + HEADER_CSS + LUT_GRID_CSS,
             theme=Soft(),
-            head=get_crop_head_js(),
+            head=get_crop_head_html(),
         )
     except Exception as e:
         raise

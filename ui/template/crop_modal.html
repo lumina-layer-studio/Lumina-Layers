@@ -1,0 +1,37 @@
+<div id="crop-modal-overlay">
+  <div id="crop-modal">
+    <div class="crop-modal-header">
+      <h3>{{value.title}}</h3>
+      <button class="crop-modal-close" onclick="window.closeCropModal()">&times;</button>
+    </div>
+    <div class="crop-image-container">
+      <img id="crop-image" src="" alt="{{value.crop_preview_alt}}">
+    </div>
+    <div class="crop-info-bar">
+      <span id="crop-original-size" data-prefix="{{value.original_size}}">{{value.original_size}}: -- × -- px</span>
+      <span id="crop-selection-size" data-prefix="{{value.selection_size}}">{{value.selection_size}}: -- × -- px</span>
+    </div>
+    <div class="crop-inputs">
+      <div class="crop-input-group">
+        <label>{{value.label_x}}</label>
+        <input type="number" id="crop-x" value="0" min="0" oninput="window.updateCropperFromInputs()">
+      </div>
+      <div class="crop-input-group">
+        <label>{{value.label_y}}</label>
+        <input type="number" id="crop-y" value="0" min="0" oninput="window.updateCropperFromInputs()">
+      </div>
+      <div class="crop-input-group">
+        <label>{{value.label_w}}</label>
+        <input type="number" id="crop-width" value="100" min="1" oninput="window.updateCropperFromInputs()">
+      </div>
+      <div class="crop-input-group">
+        <label>{{value.label_h}}</label>
+        <input type="number" id="crop-height" value="100" min="1" oninput="window.updateCropperFromInputs()">
+      </div>
+    </div>
+    <div class="crop-modal-buttons">
+      <button class="crop-btn crop-btn-secondary" onclick="window.useOriginalImage()">{{value.btn_use_original}}</button>
+      <button class="crop-btn crop-btn-primary" onclick="window.confirmCrop()">{{value.btn_confirm}}</button>
+    </div>
+  </div>
+</div>

@@ -261,7 +261,8 @@ def convert_image_to_3d(image_path, lut_path, target_width_mm, spacer_thick,
                          modeling_mode=ModelingMode.VECTOR, quantize_colors=32,
                          blur_kernel=0, smooth_sigma=10,
                          color_replacements=None, backing_color_id=0, separate_backing=False,
-                         enable_relief=False, color_height_map=None):
+                         enable_relief=False, color_height_map=None,
+                         enable_cleanup=True):
     """
     Main conversion function: Convert image to 3D model.
     
@@ -490,6 +491,7 @@ def convert_image_to_3d(image_path, lut_path, target_width_mm, spacer_thick,
     # Step 1: Image Processing
     try:
         processor = LuminaImageProcessor(actual_lut_path, color_mode)
+        processor.enable_cleanup = enable_cleanup
         result = processor.process_image(
             image_path=image_path,
             target_width_mm=target_width_mm,
@@ -1347,7 +1349,8 @@ def generate_preview_cached(image_path, lut_path, target_width_mm,
                             auto_bg, bg_tol, color_mode,
                             modeling_mode: ModelingMode = ModelingMode.HIGH_FIDELITY,
                             quantize_colors: int = 64,
-                            backing_color_id: int = 0):
+                            backing_color_id: int = 0,
+                            enable_cleanup: bool = True):
     """
     Generate preview and cache data
     For 2D preview interface
@@ -1392,6 +1395,7 @@ def generate_preview_cached(image_path, lut_path, target_width_mm,
     
     try:
         processor = LuminaImageProcessor(actual_lut_path, color_mode)
+        processor.enable_cleanup = enable_cleanup
         result = processor.process_image(
             image_path=image_path,
             target_width_mm=target_width_mm,
@@ -1620,7 +1624,8 @@ def generate_final_model(image_path, lut_path, target_width_mm, spacer_thick,
                         add_loop, loop_width, loop_length, loop_hole, loop_pos,
                         modeling_mode=ModelingMode.VECTOR, quantize_colors=64,
                         color_replacements=None, backing_color_name="White",
-                        separate_backing=False, enable_relief=False, color_height_map=None):
+                        separate_backing=False, enable_relief=False, color_height_map=None,
+                        enable_cleanup=True):
     """
     Wrapper function for generating final model.
     
@@ -1666,7 +1671,8 @@ def generate_final_model(image_path, lut_path, target_width_mm, spacer_thick,
         backing_color_id=backing_color_id,
         separate_backing=separate_backing,
         enable_relief=enable_relief,
-        color_height_map=color_height_map
+        color_height_map=color_height_map,
+        enable_cleanup=enable_cleanup
     )
 
 

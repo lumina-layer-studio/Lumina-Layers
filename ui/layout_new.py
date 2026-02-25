@@ -668,6 +668,7 @@ def process_batch_generation(batch_files, is_batch, single_image, lut_path, targ
                              add_loop, loop_width, loop_length, loop_hole, loop_pos,
                              modeling_mode, quantize_colors, color_replacements=None,
                              separate_backing=False, enable_relief=False, color_height_map=None,
+                             enable_cleanup=True,
                              progress=gr.Progress()):
     """Dispatch to single-image or batch generation; batch writes a ZIP of 3MFs.
 
@@ -694,7 +695,7 @@ def process_batch_generation(batch_files, is_batch, single_image, lut_path, targ
     args = (lut_path, target_width_mm, spacer_thick, structure_mode, auto_bg, bg_tol,
             color_mode, add_loop, loop_width, loop_length, loop_hole, loop_pos,
             modeling_mode, quantize_colors, color_replacements, backing_color_name,
-            separate_backing, enable_relief, color_height_map)
+            separate_backing, enable_relief, color_height_map, enable_cleanup)
 
     if not is_batch:
         out_path, glb_path, preview_img, status = generate_final_model(single_image, *args)
@@ -1636,6 +1637,11 @@ def create_converter_tab_content(lang: str, lang_state=None) -> dict:
                         label=I18n.get('conv_tolerance', lang),
                         info=I18n.get('conv_tolerance_info', lang)
                     )
+                components['checkbox_conv_cleanup'] = gr.Checkbox(
+                    label="孤立像素清理 | Isolated Pixel Cleanup",
+                    value=True,
+                    info="清理 LUT 匹配后的孤立像素，提升打印成功率"
+                )
             gr.Markdown("---")
             with gr.Row(elem_classes=["action-buttons"]):
                 components['btn_conv_preview_btn'] = gr.Button(
@@ -2094,13 +2100,27 @@ def create_converter_tab_content(lang: str, lang_state=None) -> dict:
     )
     def generate_preview_cached_with_fit(image_path, lut_path, target_width_mm,
                                          auto_bg, bg_tol, color_mode,
-                                         modeling_mode, quantize_colors):
+                                         modeling_mode, quantize_colors, enable_cleanup):
         display, cache, status = generate_preview_cached(
             image_path, lut_path, target_width_mm,
             auto_bg, bg_tol, color_mode,
-            modeling_mode, quantize_colors
+            modeling_mode, quantize_colors,
+            enable_cleanup=enable_cleanup
         )
         return _preview_update(display), cache, status
+
+    # 像素模式下禁用孤立像素清理 Checkbox
+    def on_modeling_mode_change_cleanup(mode):
+        if mode == ModelingMode.PIXEL:
+            return gr.update(interactive=False, value=False, info="像素模式下不支持孤立像素清理 | Not available in Pixel Art mode")
+        else:
+            return gr.update(interactive=True, info="清理 LUT 匹配后的孤立像素，提升打印成功率")
+
+    components['radio_conv_modeling_mode'].change(
+        on_modeling_mode_change_cleanup,
+        inputs=[components['radio_conv_modeling_mode']],
+        outputs=[components['checkbox_conv_cleanup']]
+    )
 
     preview_event = components['btn_conv_preview_btn'].click(
             generate_preview_cached_with_fit,
@@ -2112,7 +2132,8 @@ def create_converter_tab_content(lang: str, lang_state=None) -> dict:
                 components['slider_conv_tolerance'],
                 components['radio_conv_color_mode'],
                 components['radio_conv_modeling_mode'],
-                components['slider_conv_quantize_colors']
+                components['slider_conv_quantize_colors'],
+                components['checkbox_conv_cleanup']
             ],
             outputs=[conv_preview, conv_preview_cache, components['textbox_conv_status']]
     ).then(
@@ -2438,7 +2459,8 @@ def create_converter_tab_content(lang: str, lang_state=None) -> dict:
                 conv_replacement_map,
                 components['checkbox_conv_separate_backing'],
                 components['checkbox_conv_relief_mode'],
-                conv_color_height_map
+                conv_color_height_map,
+                components['checkbox_conv_cleanup']
             ],
             outputs=[
                 components['file_conv_download_file'],

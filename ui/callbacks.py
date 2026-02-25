@@ -90,6 +90,9 @@ def get_next_hint(mode, pts_count):
 def on_extractor_upload(i, mode):
     """Handle image upload"""
     hint = get_first_hint(mode)
+    print(f"[K/S DEBUG] on_extractor_upload: type={type(i).__name__}, {'shape='+str(i.shape)+' dtype='+str(i.dtype) if hasattr(i, 'shape') else 'value='+str(i)[:80]}")
+    if hasattr(i, 'shape') and len(i.shape) == 3:
+        print(f"[K/S DEBUG] upload pixel[0,0]: {i[0,0]}")
     # Return: state_img, original_img, pts, curr_coord, hint
     return i, i, [], None, hint
 
@@ -122,6 +125,12 @@ def on_extractor_click(img, original_img, pts, mode, evt: gr.SelectData):
     """
     from core.extractor import draw_corner_points
     
+    # Debug: log input types and shapes
+    print(f"[K/S DEBUG] on_extractor_click called")
+    print(f"[K/S DEBUG] img type={type(img).__name__}, {'shape='+str(img.shape)+' dtype='+str(img.dtype) if hasattr(img, 'shape') else 'value='+str(img)[:80]}")
+    print(f"[K/S DEBUG] original_img type={type(original_img).__name__}, {'shape='+str(original_img.shape)+' dtype='+str(original_img.dtype) if hasattr(original_img, 'shape') else 'value='+str(original_img)[:80]}")
+    print(f"[K/S DEBUG] mode={mode}, pts count={len(pts)}")
+    
     # K/S mode needs 8 points, standard modes need 4
     max_points = 8 if mode == "K/S Parameter" else 4
     
@@ -129,6 +138,7 @@ def on_extractor_click(img, original_img, pts, mode, evt: gr.SelectData):
         return img, original_img, img, pts, get_next_hint(mode, len(pts))
     
     n = pts + [[evt.index[0], evt.index[1]]]
+    print(f"[K/S DEBUG] New point: [{evt.index[0]}, {evt.index[1]}], total points: {len(n)}")
     
     # For K/S mode, handle two-step process
     if mode == "K/S Parameter":
@@ -144,49 +154,60 @@ def on_extractor_click(img, original_img, pts, mode, evt: gr.SelectData):
                     import numpy as np
                     from core.ks_engine.calibration_ks import apply_perspective_transform, auto_white_balance_by_paper
                     
-                    # Read original image
-                    img_raw = cv2.imread(original_img) if isinstance(original_img, str) else original_img
+                    # Gradio Image (type="numpy") provides RGB, OpenCV needs BGR
+                    if isinstance(original_img, str):
+                        img_raw = cv2.imread(original_img)
+                        print(f"[K/S DEBUG] Loaded original from path: {original_img}")
+                    else:
+                        img_raw = cv2.cvtColor(original_img, cv2.COLOR_RGB2BGR)
+                        print(f"[K/S DEBUG] Converted original RGB->BGR, shape={img_raw.shape}")
+                    
+                    print(f"[K/S DEBUG] img_raw pixel[0,0] BGR: {img_raw[0,0]}")
                     
                     # Apply perspective transform to A4
                     a4_pts = np.float32(n)
+                    print(f"[K/S DEBUG] A4 corners: {a4_pts.tolist()}")
                     img_a4 = apply_perspective_transform(img_raw, a4_pts, 1414, 1000)
+                    print(f"[K/S DEBUG] img_a4 shape={img_a4.shape}, pixel[0,0] BGR: {img_a4[0,0]}")
                     
-                    # Apply white balance (using our gentle version)
-                    # This matches ChromaStack's workflow but with safer algorithm
+                    # Apply white balance
                     img_calibrated = auto_white_balance_by_paper(img_a4, enable_wb=True)
+                    print(f"[K/S DEBUG] img_calibrated shape={img_calibrated.shape}, pixel[0,0] BGR: {img_calibrated[0,0]}")
                     
-                    # Save corrected A4 image for chip selection
-                    import tempfile
+                    # Save corrected A4 image for chip selection (BGR format for file)
                     import os
                     temp_dir = "output/ks_engine/debug"
                     os.makedirs(temp_dir, exist_ok=True)
                     a4_corrected_path = os.path.join(temp_dir, "a4_corrected_for_selection.jpg")
                     cv2.imwrite(a4_corrected_path, img_calibrated)
                     
-                    print(f"[K/S] A4 corrected image saved with gentle white balance applied")
-                    print(f"[K/S] Original image preserved: {original_img}")
+                    # Convert BGR -> RGB for Gradio display
+                    img_calibrated_rgb = cv2.cvtColor(img_calibrated, cv2.COLOR_BGR2RGB)
                     
-                    # IMPORTANT: Update state_img to corrected, but keep original_img unchanged
-                    return a4_corrected_path, original_img, a4_corrected_path, n, hint
+                    print(f"[K/S DEBUG] A4 corrected saved to: {a4_corrected_path}")
+                    print(f"[K/S DEBUG] Returning RGB numpy array for state_img and work_img")
+                    print(f"[K/S DEBUG] img_calibrated_rgb pixel[0,0] RGB: {img_calibrated_rgb[0,0]}")
+                    
+                    # Return RGB numpy array for Gradio, keep original_img unchanged
+                    return img_calibrated_rgb, original_img, img_calibrated_rgb, n, hint
                 except Exception as e:
                     print(f"Error generating A4 corrected image: {e}")
                     import traceback
                     traceback.print_exc()
             
             # Return: state unchanged, original unchanged, work with markers
+            print(f"[K/S DEBUG] Returning vis type={type(vis).__name__}")
             return img, original_img, vis, n, hint
         else:
             # Step 2: Selecting chip corners on corrected A4 image
-            # Note: img is now the corrected A4 image
-            vis = draw_ks_corner_points(img, n[4:], mode='chip')  # Only draw chip points
+            print(f"[K/S DEBUG] Step 2: chip selection, img type={type(img).__name__}")
+            vis = draw_ks_corner_points(img, n[4:], mode='chip')
             hint = get_next_hint(mode, len(n))
-            # Return: state unchanged, original unchanged, work with markers
             return img, original_img, vis, n, hint
     else:
         # Standard modes
         vis = draw_corner_points(img, n, mode)
         hint = get_next_hint(mode, len(n))
-        # Return: state unchanged, original unchanged, work with markers
         return img, original_img, vis, n, hint
 
 
@@ -201,19 +222,28 @@ def draw_ks_corner_points(img_path, pts, mode='a4'):
     import cv2
     import numpy as np
     
-    img = cv2.imread(img_path) if isinstance(img_path, str) else img_path.copy()
+    print(f"[K/S DEBUG] draw_ks_corner_points: input type={type(img_path).__name__}, mode={mode}")
+    if isinstance(img_path, str):
+        img = cv2.imread(img_path)
+        if img is not None:
+            img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)  # Convert to RGB for Gradio
+    else:
+        img = img_path.copy()  # Already RGB from Gradio
     if img is None:
+        print(f"[K/S DEBUG] draw_ks_corner_points: img is None!")
         return img_path
     
+    print(f"[K/S DEBUG] draw_ks_corner_points: img shape={img.shape}, dtype={img.dtype}, pixel[0,0]={img[0,0]}")
+    
     if mode == 'a4':
-        # Drawing A4 points (green, large markers)
+        # Drawing A4 points (green, large markers) - RGB colors for Gradio
         color = (0, 255, 0)
         marker_size = 30
         circle_size = 15
         font_scale = 1.2
     else:  # mode == 'chip'
-        # Drawing chip points (red, smaller markers)
-        color = (0, 0, 255)
+        # Drawing chip points (red, smaller markers) - RGB colors for Gradio
+        color = (255, 0, 0)
         marker_size = 20
         circle_size = 10
         font_scale = 0.8

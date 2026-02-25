@@ -2731,13 +2731,8 @@ def create_extractor_tab_content(lang: str) -> dict:
             import os
             import sys
             
-            # Add ChromaStack path to sys.path
-            chromastack_path = os.path.join(os.getcwd(), "ChromaStack-main", "ChromaStack-main", "filament_cali")
-            if chromastack_path not in sys.path:
-                sys.path.insert(0, chromastack_path)
-            
-            # Import ChromaStack functions
-            from KS_calibration import (
+            # Import from local ks_engine module (uses gentle white balance)
+            from core.ks_engine.calibration_ks import (
                 apply_perspective_transform,
                 auto_white_balance_by_paper,
                 km_reflectance,
@@ -2752,10 +2747,11 @@ def create_extractor_tab_content(lang: str) -> dict:
             BACKING_REFLECTANCE_BLACK = 0.00
             
             # Read original image
+            # Gradio Image (type="numpy") provides RGB, OpenCV needs BGR
             if isinstance(original_img, str):
                 raw_img = cv2.imread(original_img)
             else:
-                raw_img = original_img
+                raw_img = cv2.cvtColor(original_img, cv2.COLOR_RGB2BGR)
             
             print(f"[K/S] Using ChromaStack's original algorithm")
             print(f"[K/S] A4 corners: {a4_corners}")
@@ -2765,11 +2761,32 @@ def create_extractor_tab_content(lang: str) -> dict:
             pts_a4 = np.float32(a4_corners)
             img_a4 = apply_perspective_transform(raw_img, pts_a4, A4_WIDTH, A4_HEIGHT)
             
-            # Apply white balance if enabled (using ChromaStack's function)
+            # K/S calibration requires STRONG white balance:
+            # A4 paper edges must be normalized to ~240 (white), not just color-balanced.
+            # Without this, all reflectance values are too low and K gets overestimated.
+            h_a4, w_a4 = img_a4.shape[:2]
+            margin_h = int(h_a4 * 0.1)
+            margin_w = int(w_a4 * 0.1)
+            wb_mask = np.zeros((h_a4, w_a4), dtype=np.uint8)
+            cv2.rectangle(wb_mask, (0, 0), (w_a4, margin_h), 255, -1)
+            cv2.rectangle(wb_mask, (0, h_a4 - margin_h), (w_a4, h_a4), 255, -1)
+            cv2.rectangle(wb_mask, (0, 0), (margin_w, h_a4), 255, -1)
+            cv2.rectangle(wb_mask, (w_a4 - margin_w, 0), (w_a4, h_a4), 255, -1)
+            mean_bg = cv2.mean(img_a4, mask=wb_mask)[:3]  # BGR
+            
+            # Target: normalize paper white to 240
+            target_white = 240.0
+            wb_gains = target_white / (np.array(mean_bg) + 1e-5)
+            wb_gains = np.clip(wb_gains, 0.5, 3.0)
+            
             if enable_white_balance:
-                img_calibrated = auto_white_balance_by_paper(img_a4)
+                img_calibrated = np.clip(cv2.multiply(img_a4.astype(float), wb_gains), 0, 255).astype(np.uint8)
+                print(f"[K/S WB] Paper BGR: {np.array(mean_bg).astype(int)}, Target: {target_white}, Gains: {wb_gains.round(3)}")
             else:
                 img_calibrated = img_a4
+                print(f"[K/S WB] Disabled. Paper BGR: {np.array(mean_bg).astype(int)}")
+            
+            print(f"[K/S DEBUG] img_calibrated pixel[0,0] BGR: {img_calibrated[0,0]}")
             
             # Step 2: Chip extraction (using ChromaStack's function)
             # IMPORTANT: chip_corners are relative to img_calibrated, not raw_img
@@ -2785,6 +2802,10 @@ def create_extractor_tab_content(lang: str) -> dict:
             data = []
             debug_view = img_chip.copy()
             
+            print(f"[K/S DEBUG] img_chip shape: {img_chip.shape}, dtype: {img_chip.dtype}")
+            print(f"[K/S DEBUG] img_chip pixel[0,0] (BGR): {img_chip[0,0]}")
+            print(f"[K/S DEBUG] Sampling grid: {rows} rows x {cols} cols, dy={dy}, dx={dx}")
+            
             for r in range(rows):
                 x_left = int(0.5 * dx)
                 x_right = int(1.5 * dx)
@@ -2793,15 +2814,21 @@ def create_extractor_tab_content(lang: str) -> dict:
                 patch_size = 20
                 
                 roi_0 = img_chip[y_center-patch_size:y_center+patch_size, x_left-patch_size:x_left+patch_size]
-                rgb_0 = np.mean(roi_0, axis=(0,1))[::-1]
+                bgr_0_mean = np.mean(roi_0, axis=(0,1))
+                rgb_0 = bgr_0_mean[::-1]  # BGR -> RGB
                 
                 roi_w = img_chip[y_center-patch_size:y_center+patch_size, x_right-patch_size:x_right+patch_size]
-                rgb_w = np.mean(roi_w, axis=(0,1))[::-1]
+                bgr_w_mean = np.mean(roi_w, axis=(0,1))
+                rgb_w = bgr_w_mean[::-1]  # BGR -> RGB
                 
                 R0_linear = (rgb_0 / 255.0) ** 2.2
                 Rw_linear = (rgb_w / 255.0) ** 2.2
                 
                 layer_idx = rows - r
+                
+                print(f"[K/S DEBUG] Layer {layer_idx}: "
+                      f"BlackBase BGR={bgr_0_mean.astype(int)} RGB={rgb_0.astype(int)} -> linear={R0_linear.round(4)}, "
+                      f"WhiteBase BGR={bgr_w_mean.astype(int)} RGB={rgb_w.astype(int)} -> linear={Rw_linear.round(4)}")
                 
                 data.append({
                     'Layer_Index': layer_idx,
@@ -2834,9 +2861,12 @@ def create_extractor_tab_content(lang: str) -> dict:
                 R0_meas = df[f'R0_{ch}'].values
                 Rw_meas = df[f'Rw_{ch}'].values
                 
+                print(f"[K/S DEBUG] Channel {ch.upper()}: R0_meas={R0_meas.round(4)}, Rw_meas={Rw_meas.round(4)}")
+                
                 (best_K, best_S), error = fit_km_parameters(thicknesses, R0_meas, Rw_meas)
                 results[ch] = {'K': best_K, 'S': best_S}
                 
+                print(f"[K/S DEBUG] Channel {ch.upper()}: K={best_K:.4f}, S={best_S:.4f}, error={error:.6f}")
                 status_lines.append(f"🎨 {ch.upper()} 通道: K={best_K:.4f}, S={best_S:.4f} (误差: {error:.5f})")
                 
                 ax = axes[i]
@@ -2893,19 +2923,57 @@ def create_extractor_tab_content(lang: str) -> dict:
             
             status_message = "\n".join(status_lines)
             
-            # Create detection image
+            # Create detection image (original photo with A4 corners marked)
             detection_img = raw_img.copy()
             cv2.polylines(detection_img, [pts_a4.astype(int)], True, (0, 255, 0), 3)
             detection_path = "output/ks_engine/debug/detection_result.jpg"
             cv2.imwrite(detection_path, detection_img)
             
-            return plot_path, detection_path, ks_params, status_message
+            # Calculate display color from K/S parameters
+            # Use ChromaStack's multi-layer composition on BLACK backing
+            # This matches the physical reality: stack N layers of filament on black base
+            try:
+                K_rgb = np.array(ks_params['K'])
+                S_rgb = np.array(ks_params['S'])
+                
+                # Compute single-layer optical properties (R_layer, T_layer)
+                S_safe = np.maximum(S_rgb, 1e-6)
+                K_safe = np.maximum(K_rgb, 1e-9)
+                a = 1 + (K_safe / S_safe)
+                b = np.sqrt(a**2 - 1)
+                bSh = b * S_safe * layer_height
+                sinh_bSh = np.sinh(bSh)
+                cosh_bSh = np.cosh(bSh)
+                R_layer = sinh_bSh / (a * sinh_bSh + b * cosh_bSh)
+                T_layer = b / (a * sinh_bSh + b * cosh_bSh)
+                
+                # Multi-layer composition on black backing (same as ChromaStack cali_verify)
+                current_R = np.array([0.0, 0.0, 0.0])  # black base
+                total_layers = int(num_steps)  # stack same number of layers as step card max
+                for _ in range(total_layers):
+                    denom = np.maximum(1.0 - R_layer * current_R, 1e-6)
+                    current_R = R_layer + (T_layer**2 * current_R) / denom
+                
+                current_R = np.clip(current_R, 0, 1)
+                
+                # Linear reflectance -> sRGB gamma (simple 1/2.2, same as ChromaStack)
+                srgb = current_R ** (1.0 / 2.2)
+                r8 = int(np.clip(srgb[0] * 255, 0, 255))
+                g8 = int(np.clip(srgb[1] * 255, 0, 255))
+                b8 = int(np.clip(srgb[2] * 255, 0, 255))
+                display_color = f"#{r8:02x}{g8:02x}{b8:02x}"
+                print(f"[K/S] Display Color: {display_color} (R_layer={R_layer}, T_layer={T_layer}, final_R={current_R}, {total_layers} layers on black)")
+            except Exception as e:
+                print(f"[K/S] Display Color calculation error: {e}")
+                display_color = "#888888"
+            
+            return plot_path, detection_path, ks_params, status_message, display_color
             
         except Exception as e:
             import traceback
             error_msg = f"❌ K/S 参数提取失败: {str(e)}\n\n"
             error_msg += traceback.format_exc()
-            return None, None, {}, error_msg
+            return None, None, {}, error_msg, "#888888"
     
     # K/S save to database
     def save_ks_to_db_wrapper(name, color, ks_params):
@@ -2994,18 +3062,18 @@ def create_extractor_tab_content(lang: str) -> dict:
         """Unified extraction handler that routes based on mode"""
         if color_mode == "K/S Parameter":
             # K/S extraction
-            fitting, detection, ks_params, status = run_ks_extraction_wrapper(
+            fitting, detection, ks_params, status, display_color = run_ks_extraction_wrapper(
                 img, pts, layer_height, num_steps, enable_white_balance
             )
-            # Return tuple: (warp_view, lut_view, download_file, status, fitting_plot, detection_img, ks_json)
-            return None, None, None, status, fitting, detection, ks_params
+            # Return tuple: (warp_view, lut_view, download_file, status, fitting_plot, detection_img, ks_json, display_color)
+            return None, None, None, status, fitting, detection, ks_params, display_color
         else:
             # Standard LUT extraction
             warp, lut, download, status = run_extraction_wrapper(
                 img, pts, offset_x, offset_y, zoom, distortion, wb, vignette, color_mode, page
             )
-            # Return tuple with None for K/S outputs
-            return warp, lut, download, status, None, None, {}
+            # Return tuple with None for K/S outputs, gr.update() to keep color unchanged
+            return warp, lut, download, status, None, None, {}, gr.update()
     
     ext_event = components['btn_ext_extract_btn'].click(
         fn=unified_extract_handler,
@@ -3017,7 +3085,8 @@ def create_extractor_tab_content(lang: str) -> dict:
         outputs=extract_outputs + [
             components['img_ks_fitting_plot'],
             components['img_ks_detection'],
-            components['json_ks_results']
+            components['json_ks_results'],
+            components['colorpicker_ks_filament_color']
         ]
     )
     components['ext_event'] = ext_event

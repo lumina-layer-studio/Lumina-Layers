@@ -181,7 +181,7 @@ def generate_step_card(
     status_lines.append("   - 01_Base_Black → 黑色耗材")
     status_lines.append("   - 02_Base_White → 白色耗材")
     status_lines.append("   - 03_Target_Color → 要测试的耗材 (如 Cyan)")
-    status_lines.append("4. 打印后放在 A4 白纸上拍照，用于下一步 K/S 计算")
+    status_lines.append("4. 打印后放在 A4纸/校色背景板上拍照（推荐背景板，MakerWorld 搜索 2192593），用于下一步 K/S 计算")
     
     status_message = "\n".join(status_lines)
     

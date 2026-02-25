@@ -54,7 +54,7 @@ def on_lut_upload_save(uploaded_file):
 def get_first_hint(mode):
     """Get first corner point hint based on mode"""
     if mode == "K/S Parameter":
-        return "#### 👉 步骤 1/2: 点击 A4 纸 **左上角 / Top-Left**"
+        return "#### 👉 步骤 1/2: 点击 A4纸/背景板 **左上角 / Top-Left**"
     
     conf = ColorSystem.get(mode)
     label_zh = conf['corner_labels'][0]
@@ -68,9 +68,9 @@ def get_next_hint(mode, pts_count):
         # K/S mode needs 8 points total (4 for A4, 4 for chip)
         if pts_count < 4:
             labels = ["左上角 / Top-Left", "右上角 / Top-Right", "右下角 / Bottom-Right", "左下角 / Bottom-Left"]
-            return f"#### 👉 步骤 1/2 (A4 纸): 点击 **{labels[pts_count]}**"
+            return f"#### 👉 步骤 1/2 (A4纸/背景板): 点击 **{labels[pts_count]}**"
         elif pts_count == 4:
-            return "#### ✅ A4 纸完成！图像已自动校正\n#### 👉 步骤 2/2: 在校正后的图像上点击阶梯卡 **左上角 / Top-Left**\n⚠️ 确保上方是厚端(5层)，下方是薄端(1层)"
+            return "#### ✅ A4纸/背景板定位完成！图像已自动校正\n#### 👉 步骤 2/2: 在校正后的图像上点击阶梯卡 **左上角 / Top-Left**\n⚠️ 确保上方是厚端(5层)，下方是薄端(1层)"
         elif pts_count < 8:
             labels = ["左上角 / Top-Left", "右上角 / Top-Right", "右下角 / Bottom-Right", "左下角 / Bottom-Left"]
             chip_idx = pts_count - 4

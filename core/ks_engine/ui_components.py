@@ -23,7 +23,7 @@ def get_a4_hint(pts_count):
     """Get A4 corner point hint"""
     labels = ["左上角 / Top-Left", "右上角 / Top-Right", "右下角 / Bottom-Right", "左下角 / Bottom-Left"]
     if pts_count >= 4:
-        return "#### ✅ A4 纸角点选择完成！请在下方选择阶梯卡角点"
+        return "#### ✅ A4纸/背景板角点选择完成！请在下方选择阶梯卡角点"
     return f"#### 👉 点击 Click: **{labels[pts_count]}**"
 
 
@@ -103,6 +103,8 @@ def create_ks_calibration_tab() -> Dict:
         3. 下载 3 个 STL 文件（黑底、白底、测试色）
         4. 在切片软件中合并为单一对象
         5. 打印并拍照用于下一步校准
+        
+        💡 **推荐：** 搭配校色背景板使用效果更佳，MakerWorld 搜索 **2192593** 即可下载打印。
         """
     )
     
@@ -189,6 +191,8 @@ def create_ks_calculator_tab() -> Dict:
         ### K/S 参数测算器
         
         通过拍照分析打印好的阶梯卡，自动计算耗材的 K/S 参数。
+        
+        💡 **推荐：** 将阶梯卡放在校色背景板上拍照，校色更准确。MakerWorld 搜索 **2192593** 即可下载打印。
         """
     )
     
@@ -197,7 +201,7 @@ def create_ks_calculator_tab() -> Dict:
     components['chip_coords_state'] = gr.State([])
     
     # Step 1: Select A4 corners
-    gr.Markdown("### 📄 Step 1: Select A4 Paper Corners | 步骤 1: 选择 A4 纸角点")
+    gr.Markdown("### 📄 Step 1: Select Board Corners | 步骤 1: 选择 <span title='推荐使用白色校色背景板（MakerWorld 搜索 2192593），比 A4 纸更白更均匀，校色更准确' style='border-bottom:1px dashed #888;cursor:help;'>A4纸/校色背景板</span> 角点")
     
     with gr.Row():
         components['a4_hint'] = gr.Markdown(
@@ -214,13 +218,13 @@ def create_ks_calculator_tab() -> Dict:
         
         with gr.Column():
             components['a4_coords_display'] = gr.JSON(
-                label="A4 Corners | A4 角点坐标",
+                label="Board Corners | 背景板角点坐标",
                 value=[]
             )
             
             with gr.Row():
                 components['clear_a4_btn'] = gr.Button(
-                    "🔄 Clear A4 | 清除 A4 角点",
+                    "🔄 Clear | 清除角点",
                     variant="secondary",
                     size="sm"
                 )
@@ -239,7 +243,7 @@ def create_ks_calculator_tab() -> Dict:
     
     with gr.Row():
         components['chip_hint'] = gr.Markdown(
-            "#### 请先完成 A4 纸角点选择"
+            "#### 请先完成 A4纸/背景板角点选择"
         )
     
     with gr.Row():
@@ -613,7 +617,7 @@ def on_a4_click(img, pts, evt: gr.SelectData):
     import numpy as np
     
     if len(pts) >= 4:
-        return img, pts, get_a4_hint(4), pts, None, "请先完成 A4 纸角点选择"
+        return img, pts, get_a4_hint(4), pts, None, "A4纸/背景板角点已选完"
     
     new_pts = pts + [[evt.index[0], evt.index[1]]]
     vis = draw_ks_corner_points(img, new_pts, 'a4')
@@ -621,7 +625,7 @@ def on_a4_click(img, pts, evt: gr.SelectData):
     
     # 如果选够4个点，生成校正后的图像
     chip_image = None
-    chip_hint = "请先完成 A4 纸角点选择"
+    chip_hint = "请先完成 A4纸/背景板角点选择"
     
     if len(new_pts) == 4:
         try:
@@ -646,7 +650,7 @@ def on_a4_click(img, pts, evt: gr.SelectData):
 def on_a4_clear(img):
     """Clear A4 corner points"""
     hint = get_a4_hint(0)
-    return img, [], hint, [], None, [], "请先完成 A4 纸角点选择", []
+    return img, [], hint, [], None, [], "请先完成 A4纸/背景板角点选择", []
 
 
 def on_chip_click(img, pts, evt: gr.SelectData):
@@ -667,7 +671,7 @@ def on_chip_clear(img, a4_pts):
     import numpy as np
     
     if not img or len(a4_pts) != 4:
-        return None, [], "请先完成 A4 纸角点选择", []
+        return None, [], "请先完成 A4纸/背景板角点选择", []
     
     try:
         from core.ks_engine.calibration_ks import apply_perspective_transform, auto_white_balance_by_paper
@@ -685,7 +689,7 @@ def on_chip_clear(img, a4_pts):
         return chip_preview_path, [], hint, []
     except Exception as e:
         print(f"Error resetting chip: {e}")
-        return None, [], "请先完成 A4 纸角点选择", []
+        return None, [], "请先完成 A4纸/背景板角点选择", []
 
 
 def generate_step_card_handler(
@@ -753,7 +757,7 @@ def calculate_ks_handler(
             return None, None, {}, "❌ 请先上传校准照片"
         
         if not a4_coords or len(a4_coords) != 4:
-            return None, None, {}, "❌ 请先选择 A4 纸的四个角点"
+            return None, None, {}, "❌ 请先选择 A4纸/背景板的四个角点"
         
         if not chip_coords or len(chip_coords) != 4:
             return None, None, {}, "❌ 请先选择阶梯卡的四个角点"

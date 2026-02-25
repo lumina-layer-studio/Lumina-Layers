@@ -2526,7 +2526,7 @@ def create_extractor_tab_content(lang: str) -> dict:
                     """
                     **📋 操作步骤：**
                     1. 上传打印好的阶梯卡照片
-                    2. 点击 4 个角点选择 A4 纸边界（绿色）
+                    2. 点击 4 个角点选择 <span title="推荐使用白色校色背景板（MakerWorld 搜索 2192593）。背景板比 A4 纸更白更均匀，校色更准确。" style="border-bottom:1px dashed #888;cursor:help;">A4纸/校色背景板</span> 边界（绿色）
                     3. 点击 4 个角点选择阶梯卡边界（红色）
                     4. 调整层高和阶梯数
                     5. ⚠️ 如果检测结果颜色失真，关闭白平衡
@@ -2714,7 +2714,7 @@ def create_extractor_tab_content(lang: str) -> dict:
             return None, None, {}, "❌ 请先上传照片"
         
         if not pts or len(pts) < 8:
-            return None, None, {}, "❌ 请先选择 A4 纸和阶梯卡的角点（共需要 8 个点）"
+            return None, None, {}, "❌ 请先选择 A4纸/校色背景板 和阶梯卡的角点（共需要 8 个点）"
         
         # Split points: first 4 for A4, last 4 for chip
         a4_corners = pts[:4]

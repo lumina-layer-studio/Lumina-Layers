@@ -186,6 +186,48 @@ PREVIEW_SCALE = 2
 PREVIEW_MARGIN = 30
 
 
+class BedManager:
+    """Print bed size manager for preview rendering.
+    
+    Provides standard bed sizes and dynamic canvas scaling
+    so that models on a 400mm bed are visually comparable to
+    those on a 180mm bed.
+    """
+
+    # (label, width_mm, height_mm)
+    BEDS = [
+        ("180×180 mm", 180, 180),
+        ("220×220 mm", 220, 220),
+        ("256×256 mm", 256, 256),
+        ("300×300 mm", 300, 300),
+        ("400×400 mm", 400, 400),
+    ]
+
+    DEFAULT_BED = "256×256 mm"
+
+    # Target canvas pixels (long edge) – keeps UI responsive
+    _TARGET_CANVAS_PX = 1200
+
+    @classmethod
+    def get_choices(cls):
+        """Return list of (label, label) tuples for Gradio Radio/Dropdown."""
+        return [(b[0], b[0]) for b in cls.BEDS]
+
+    @classmethod
+    def get_bed_size(cls, label: str):
+        """Return (width_mm, height_mm) for a given label."""
+        for name, w, h in cls.BEDS:
+            if name == label:
+                return (w, h)
+        return (256, 256)  # fallback
+
+    @classmethod
+    def compute_scale(cls, bed_w_mm, bed_h_mm):
+        """Pixels-per-mm so the bed fits in _TARGET_CANVAS_PX."""
+        long_edge = max(bed_w_mm, bed_h_mm)
+        return cls._TARGET_CANVAS_PX / long_edge
+
+
 # ========== Vector Engine Configuration ==========
 
 class VectorConfig:

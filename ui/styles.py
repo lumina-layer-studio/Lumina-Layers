@@ -4,10 +4,13 @@ UI style definitions
 """
 
 CUSTOM_CSS = """
-/* Global Theme */
+/* Global Theme - Full Width */
 .gradio-container {
-    max-width: 1400px !important;
-    margin: auto;
+    max-width: 100% !important;
+    width: 100% !important;
+    padding-left: 24px !important;
+    padding-right: 24px !important;
+    margin: 0 !important;
 }
 
 /* Header Styling */
@@ -32,18 +35,23 @@ CUSTOM_CSS = """
 }
 
 /* Stats Bar */
-.stats-bar {
-    background: linear-gradient(90deg, #1a1a2e 0%, #16213e 100%);
-    padding: 12px 20px;
+.stats-bar, .stats-bar-inline {
+    background: rgba(0,0,0,0.15);
+    padding: 8px 16px;
     border-radius: 10px;
-    color: #a0a0ff;
+    color: rgba(255,255,255,0.85);
     font-family: 'Courier New', monospace;
     text-align: center;
-    margin-bottom: 15px;
+    font-size: 13px;
 }
 
+.stats-bar-inline {
+    margin: 0 !important;
+}
+
+.stats-bar-inline strong,
 .stats-bar strong {
-    color: #a0a0ff;
+    color: rgba(255,255,255,0.95);
 }
 
 /* Tab Styling */
@@ -323,5 +331,236 @@ div#confirm-crop-hidden-btn {
     overflow: hidden !important;
     opacity: 0 !important;
     visibility: hidden !important;
+}
+
+/* Fullscreen 3D Preview */
+#conv-3d-fullscreen-container {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background: #1a1a2e;
+    z-index: 10000;
+    padding: 0;
+    box-sizing: border-box;
+    overflow: hidden;
+}
+
+#conv-3d-fullscreen-container .model3D {
+    border-radius: 0 !important;
+    border: none !important;
+}
+
+#conv-3d-fullscreen {
+    min-height: 100vh !important;
+    height: 100vh !important;
+    border-radius: 0;
+    border: none;
+}
+
+#conv-3d-fullscreen label {
+    display: none !important;
+}
+
+/* Floating 2D Thumbnail in fullscreen 3D mode - bottom right corner */
+#conv-2d-thumbnail-container {
+    position: fixed !important;
+    bottom: 20px !important;
+    right: 20px !important;
+    width: 260px !important;
+    max-width: 260px !important;
+    z-index: 10001 !important;
+    background: rgba(30, 30, 46, 0.95) !important;
+    border-radius: 12px !important;
+    border: 2px solid rgba(102, 126, 234, 0.5) !important;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4) !important;
+    padding: 8px !important;
+    overflow: visible !important;
+}
+
+#conv-2d-thumbnail-container label {
+    display: none !important;
+}
+
+#conv-2d-thumbnail-container .image-container {
+    border-radius: 8px !important;
+    overflow: hidden !important;
+}
+
+#conv-2d-back-btn {
+    position: absolute !important;
+    top: 8px !important;
+    left: 8px !important;
+    z-index: 10 !important;
+    width: 32px !important;
+    height: 32px !important;
+    min-width: 32px !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    font-size: 18px !important;
+    line-height: 32px !important;
+    text-align: center !important;
+    border-radius: 8px !important;
+    background: rgba(60, 60, 80, 0.7) !important;
+    color: rgba(255,255,255,0.85) !important;
+    border: none !important;
+    backdrop-filter: blur(4px) !important;
+    cursor: pointer !important;
+}
+
+#conv-2d-back-btn:hover {
+    background: rgba(80, 80, 110, 0.9) !important;
+    color: white !important;
+}
+
+/* Floating 3D Thumbnail - bottom right corner */
+#conv-3d-thumbnail-container {
+    position: fixed !important;
+    bottom: 20px !important;
+    right: 20px !important;
+    width: 280px !important;
+    max-width: 280px !important;
+    z-index: 999 !important;
+    background: #1e1e2e !important;
+    border-radius: 12px !important;
+    border: 2px solid rgba(102, 126, 234, 0.5) !important;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4) !important;
+    padding: 8px !important;
+    overflow: visible !important;
+}
+
+#conv-3d-thumbnail-container .model3D {
+    border-radius: 8px !important;
+    overflow: hidden !important;
+}
+
+#conv-3d-thumbnail-container label {
+    display: none !important;
+}
+
+#conv-3d-fullscreen-btn {
+    position: absolute !important;
+    top: 8px !important;
+    left: 8px !important;
+    z-index: 10 !important;
+    width: 32px !important;
+    height: 32px !important;
+    min-width: 32px !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    font-size: 18px !important;
+    line-height: 32px !important;
+    text-align: center !important;
+    border-radius: 8px !important;
+    background: rgba(60, 60, 80, 0.7) !important;
+    color: rgba(255,255,255,0.85) !important;
+    border: none !important;
+    backdrop-filter: blur(4px) !important;
+    cursor: pointer !important;
+}
+
+#conv-3d-fullscreen-btn:hover {
+    background: rgba(80, 80, 110, 0.9) !important;
+    color: white !important;
+}
+
+/* Hide Gradio Model3D toolbar (reset/close buttons) and upload prompt in thumbnail */
+#conv-3d-thumbnail-container .model3D .controls,
+#conv-3d-thumbnail-container .model3D .toolbar,
+#conv-3d-thumbnail-container .model3D > div > div:last-child:not(canvas),
+#conv-3d-thumbnail-container .model3D button,
+#conv-3d-thumbnail-container .model3D .icon-buttons,
+#conv-3d-thumbnail-container .model3D .canvas-control,
+#conv-3d-thumbnail-container .upload-text,
+#conv-3d-thumbnail-container .model3D .upload-container {
+    display: none !important;
+}
+
+/* Split button container — no gap, unified look */
+#conv-slicer-split-btn {
+    gap: 0 !important;
+    padding: 0 !important;
+    align-items: stretch !important;
+}
+
+/* Slicer open button - base styles (left part) */
+#conv-open-slicer-btn {
+    border: none !important;
+    color: white !important;
+    font-size: 1.05em !important;
+    font-weight: 600 !important;
+    padding: 10px 20px !important;
+    border-radius: 10px 0 0 10px !important;
+    transition: all 0.2s ease !important;
+}
+
+/* Arrow button - base styles (right part) */
+#conv-slicer-arrow-btn {
+    border: none !important;
+    border-left: 1px solid rgba(255,255,255,0.25) !important;
+    color: white !important;
+    font-size: 1.05em !important;
+    padding: 10px 0 !important;
+    border-radius: 0 10px 10px 0 !important;
+    transition: all 0.2s ease !important;
+    min-width: 42px !important;
+    max-width: 42px !important;
+}
+
+/* Bambu Studio - green */
+#conv-open-slicer-btn.slicer-bambu,
+#conv-slicer-arrow-btn.slicer-bambu {
+    background: linear-gradient(135deg, #00ae42 0%, #00c853 100%) !important;
+    box-shadow: 0 4px 12px rgba(0, 174, 66, 0.35) !important;
+}
+#conv-open-slicer-btn.slicer-bambu:hover,
+#conv-slicer-arrow-btn.slicer-bambu:hover {
+    background: linear-gradient(135deg, #009e3a 0%, #00b848 100%) !important;
+    box-shadow: 0 6px 16px rgba(0, 174, 66, 0.45) !important;
+}
+
+/* OrcaSlicer - gray */
+#conv-open-slicer-btn.slicer-orca,
+#conv-slicer-arrow-btn.slicer-orca {
+    background: linear-gradient(135deg, #4a4a4a 0%, #636363 100%) !important;
+    box-shadow: 0 4px 12px rgba(74, 74, 74, 0.35) !important;
+}
+#conv-open-slicer-btn.slicer-orca:hover,
+#conv-slicer-arrow-btn.slicer-orca:hover {
+    background: linear-gradient(135deg, #3a3a3a 0%, #555555 100%) !important;
+    box-shadow: 0 6px 16px rgba(74, 74, 74, 0.45) !important;
+}
+
+/* ElegooSlicer - blue */
+#conv-open-slicer-btn.slicer-elegoo,
+#conv-slicer-arrow-btn.slicer-elegoo {
+    background: linear-gradient(135deg, #1565c0 0%, #1e88e5 100%) !important;
+    box-shadow: 0 4px 12px rgba(21, 101, 192, 0.35) !important;
+}
+#conv-open-slicer-btn.slicer-elegoo:hover,
+#conv-slicer-arrow-btn.slicer-elegoo:hover {
+    background: linear-gradient(135deg, #0d47a1 0%, #1976d2 100%) !important;
+    box-shadow: 0 6px 16px rgba(21, 101, 192, 0.45) !important;
+}
+
+/* Download / default - purple (matches app theme) */
+#conv-open-slicer-btn.slicer-download,
+#conv-slicer-arrow-btn.slicer-download {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
+    box-shadow: 0 4px 12px rgba(102, 126, 234, 0.35) !important;
+}
+#conv-open-slicer-btn.slicer-download:hover,
+#conv-slicer-arrow-btn.slicer-download:hover {
+    background: linear-gradient(135deg, #5a6fd6 0%, #6a4196 100%) !important;
+    box-shadow: 0 6px 16px rgba(102, 126, 234, 0.45) !important;
+}
+
+/* Slicer dropdown compact */
+#conv-slicer-dropdown {
+    max-width: 100% !important;
+}
+#conv-slicer-dropdown .wrap {
+    min-height: unset !important;
 }
 """

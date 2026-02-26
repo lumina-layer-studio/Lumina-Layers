@@ -92,7 +92,7 @@ class Stats:
             with open(Stats._file, 'r') as f:
                 lines = f.readlines()
                 return {l.split(':')[0]: int(l.split(':')[1]) for l in lines if ':' in l}
-        except:
+        except Exception:
             return {"calibrations": 0, "extractions": 0, "conversions": 0}
 
     @staticmethod
@@ -101,5 +101,5 @@ class Stats:
             with open(Stats._file, 'w') as f:
                 for k, v in data.items():
                     f.write(f"{k}:{v}\n")
-        except:
+        except Exception:
             pass

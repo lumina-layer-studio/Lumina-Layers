@@ -42,6 +42,7 @@ class LuminaImageProcessor:
         self.lut_rgb = None
         self.ref_stacks = None
         self.kdtree = None
+        self.enable_cleanup = True  # 默认开启孤立像素清理
         
         self._load_lut(lut_path)
     
@@ -413,6 +414,16 @@ class LuminaImageProcessor:
                 rgb_arr, target_h, target_w
             )
         
+        # >>> 孤立像素清理（可选后处理）<<<
+        if modeling_mode == ModelingMode.HIGH_FIDELITY and self.enable_cleanup:
+            try:
+                from core.isolated_pixel_cleanup import cleanup_isolated_pixels
+                matched_rgb, material_matrix = cleanup_isolated_pixels(
+                    material_matrix, matched_rgb, self.lut_rgb, self.ref_stacks
+                )
+            except ImportError:
+                print("[IMAGE_PROCESSOR] ⚠️ isolated_pixel_cleanup module not found, skipping")
+        
         # Background removal - combine alpha transparency with optional auto-bg
         mask_transparent = mask_transparent_initial.copy()
         if auto_bg:
@@ -654,3 +665,49 @@ class LuminaImageProcessor:
         print(f"[IMAGE_PROCESSOR] Direct matching complete!")
         
         return matched_rgb, material_matrix, rgb_arr
+
+    def _extract_wireframe_mask(self, rgb_arr, target_w, pixel_scale, wire_width_mm=0.6):
+        """
+        Extract cloisonné wireframe mask using edge detection + dilation.
+
+        The mask marks pixels that should become raised "gold wire" in the
+        final 3D model.  The dilation kernel is sized so that the wire is
+        physically printable (≥ nozzle width).
+
+        Args:
+            rgb_arr:        (H, W, 3) uint8 – colour-matched or quantised image.
+            target_w:       int – image width in pixels (used only for logging).
+            pixel_scale:    float – mm per pixel.
+            wire_width_mm:  float – desired physical wire width in mm (default 0.6).
+
+        Returns:
+            mask_wireframe: (H, W) bool ndarray – True where wire should be.
+        """
+        import time
+        t0 = time.time()
+
+        # 1. Greyscale + light blur to suppress quantisation noise
+        gray = cv2.cvtColor(rgb_arr.astype(np.uint8), cv2.COLOR_RGB2GRAY)
+        gray = cv2.GaussianBlur(gray, (3, 3), 0)
+
+        # 2. Adaptive Canny thresholds (Otsu-based)
+        otsu_thresh, _ = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+        low = max(10, int(otsu_thresh * 0.4))
+        high = max(30, int(otsu_thresh * 0.8))
+        edges = cv2.Canny(gray, low, high)
+
+        # 3. Dilate to physical wire width
+        wire_px = max(1, int(round(wire_width_mm / pixel_scale)))
+        if wire_px % 2 == 0:
+            wire_px += 1  # kernel must be odd
+        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (wire_px, wire_px))
+        dilated = cv2.dilate(edges, kernel, iterations=1)
+
+        mask_wireframe = dilated > 0
+
+        dt = time.time() - t0
+        print(f"[CLOISONNE] Wireframe extracted: Canny({low},{high}), "
+              f"dilate {wire_px}px ({wire_width_mm}mm), "
+              f"{np.sum(mask_wireframe)} wire pixels, {dt:.2f}s")
+
+        return mask_wireframe

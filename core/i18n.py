@@ -18,8 +18,8 @@ class I18n:
             'en': '✨ Lumina Studio'
         },
         'app_subtitle': {
-            'zh': '多材料3D打印色彩系统 | v1.5.7',
-            'en': 'Multi-Material 3D Print Color System | v1.5.7'
+            'zh': '多材料3D打印色彩系统 | v1.6.0',
+            'en': 'Multi-Material 3D Print Color System | v1.6.0'
         },
         'lang_btn_zh': {
             'zh': '🌐 中文',
@@ -339,6 +339,58 @@ class I18n:
         'conv_loop_info': {
             'zh': '挂孔位置',
             'en': 'Loop Position'
+        },
+        'conv_outline_section': {
+            'zh': '##### 外轮廓设置',
+            'en': '##### Outline Settings'
+        },
+        'conv_outline_enable': {
+            'zh': '启用外轮廓',
+            'en': 'Enable Outline'
+        },
+        'conv_outline_width': {
+            'zh': '轮廓宽度(mm)',
+            'en': 'Outline Width(mm)'
+        },
+        'conv_cloisonne_section': {
+            'zh': '##### 掐丝珐琅特效',
+            'en': '##### Cloisonné Effect'
+        },
+        'conv_cloisonne_enable': {
+            'zh': '启用掐丝珐琅',
+            'en': 'Enable Cloisonné'
+        },
+        'conv_cloisonne_wire_width': {
+            'zh': '丝线宽度(mm)',
+            'en': 'Wire Width(mm)'
+        },
+        'conv_cloisonne_wire_height': {
+            'zh': '丝线高度(mm)',
+            'en': 'Wire Height(mm)'
+        },
+        'conv_cloisonne_wire_color': {
+            'zh': '丝线颜色槽位',
+            'en': 'Wire Color Slot'
+        },
+        'conv_free_color_btn': {
+            'zh': '🎯 标记为自由色',
+            'en': '🎯 Mark as Free Color'
+        },
+        'conv_free_color_clear_btn': {
+            'zh': '清除自由色',
+            'en': 'Clear Free Colors'
+        },
+        'conv_coating_section': {
+            'zh': '##### 透明镀层',
+            'en': '##### Transparent Coating'
+        },
+        'conv_coating_enable': {
+            'zh': '启用透明镀层',
+            'en': 'Enable Coating'
+        },
+        'conv_coating_height': {
+            'zh': '镀层厚度(mm)',
+            'en': 'Coating Height(mm)'
         },
         'conv_status': {
             'zh': '状态',
@@ -676,7 +728,7 @@ class I18n:
         
         # ==================== About Page Content ====================
         'about_content': {
-            'zh': """## 🌟 Lumina Studio v1.5.7
+            'zh': """## 🌟 Lumina Studio v1.6.0
 
 **多材料3D打印色彩系统**
 
@@ -710,7 +762,19 @@ class I18n:
 
 ---
 
-### 📝 v1.5.7 更新日志
+### 📝 v1.6.0 更新日志
+
+#### 🧹 孤立像素清理
+- 新增孤立像素清理功能（高保真模式自动启用）
+- 智能检测并合并孤立色块，提升打印质量
+
+#### 🔧 代码质量改进
+- 替换所有裸异常捕获为 `except Exception`
+- 新增 Aliz PLA & PETG 4/6/8色 npy 预设
+
+---
+
+### 📝 v1.5.8 更新日志
 
 #### 🧹 代码清理
 - 移除融合LUT功能（简化用户体验）
@@ -827,10 +891,10 @@ class I18n:
 
 <div style="text-align:center; color:#888; margin-top:20px;">
     Made with ❤️ by [MIN]<br>
-    v1.5.7 | 2025
+    v1.6.0 | 2025
 </div>
 """,
-            'en': """## 🌟 Lumina Studio v1.5.7
+            'en': """## 🌟 Lumina Studio v1.6.0
 
 **Multi-Material 3D Print Color System**
 
@@ -864,7 +928,19 @@ Accurate color reproduction for FDM printing
 
 ---
 
-### 📝 v1.5.7 Changelog
+### 📝 v1.6.0 Changelog
+
+#### 🧹 Isolated Pixel Cleanup
+- Added isolated pixel cleanup feature (auto-enabled in High-Fidelity mode)
+- Smart detection and merging of isolated color blocks for better print quality
+
+#### 🔧 Code Quality Improvements
+- Replaced all bare except clauses with `except Exception`
+- Added Aliz PLA & PETG 4/6/8 color npy presets
+
+---
+
+### 📝 v1.5.8 Changelog
 
 #### 🧹 Code Cleanup
 - Removed merged LUT feature (simplified UX)
@@ -981,7 +1057,7 @@ Special thanks to:
 
 <div style="text-align:center; color:#888; margin-top:20px;">
     Made with ❤️ by [MIN]<br>
-    v1.5.7 | 2025
+    v1.6.0 | 2025
 </div>
 """
         },

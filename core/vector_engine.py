@@ -453,7 +453,7 @@ class VectorProcessor:
             if isinstance(element, Shape) and not isinstance(element, Path):
                 try:
                     element = Path(element)
-                except:
+                except Exception:
                     continue
             
             try:

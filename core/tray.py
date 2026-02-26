@@ -1,6 +1,6 @@
 """
 ╔═══════════════════════════════════════════════════════════════════════════════╗
-║                          LUMINA STUDIO v1.5.7                                 ║
+║                          LUMINA STUDIO v1.6.0                                 ║
 ║                    Multi-Material 3D Print Color System                       ║
 ╠═══════════════════════════════════════════════════════════════════════════════╣
 ║  Author: [MIN]                                                                ║
@@ -32,7 +32,7 @@ class LuminaTray:
             if lang:
                 return lang.split('_')[0].lower()
             return 'en'
-        except:
+        except Exception:
             return 'en'
         
     def _get_text(self, key):
@@ -123,7 +123,7 @@ class LuminaTray:
         self.icon = pystray.Icon(
             "LuminaStudio",
             image,
-            "Lumina Studio v1.5.7",
+            "Lumina Studio v1.6.0",
             menu
         )
 

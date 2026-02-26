@@ -22,8 +22,9 @@ def get_crop_modal_html(lang: str) -> str:
     label_h = I18n.get('crop_height', lang)
     btn_use_original = I18n.get('crop_use_original', lang)
     btn_confirm = I18n.get('crop_confirm', lang)
+    lbl_ratio = '比例预设 | Ratio' if lang == 'zh' else 'Aspect Ratio'
+    lbl_free = '自由' if lang == 'zh' else 'Free'
 
-    # Cropper.js Modal HTML with embedded scripts (for Gradio 4.20.0 compatibility)
     template = """
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.7.1/jquery.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.1/cropper.min.js"></script>
@@ -38,6 +39,11 @@ def get_crop_modal_html(lang: str) -> str:
 .crop-image-container {{ max-width: 800px; max-height: 500px; margin: 0 auto; }}
 .crop-image-container img {{ max-width: 100%; display: block; }}
 .crop-info-bar {{ display: flex; justify-content: space-between; align-items: center; margin: 15px 0; padding: 10px; background: var(--background-fill-secondary, #f5f5f5); border-radius: 6px; font-size: 14px; color: var(--body-text-color, #333); }}
+.crop-ratio-bar {{ display: flex; align-items: center; gap: 8px; margin: 10px 0; flex-wrap: wrap; }}
+.crop-ratio-bar span.crop-ratio-label {{ font-size: 13px; color: var(--body-text-color-subdued, #666); margin-right: 4px; }}
+.crop-ratio-btn {{ padding: 5px 12px !important; border: 1px solid var(--border-color-primary, #ddd) !important; border-radius: 6px !important; background: var(--background-fill-secondary, #f0f0f0) !important; color: var(--body-text-color, #333) !important; cursor: pointer !important; font-size: 12px !important; transition: all 0.15s !important; }}
+.crop-ratio-btn:hover {{ background: var(--background-fill-tertiary, #e0e0e0) !important; }}
+.crop-ratio-btn.active {{ background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important; color: white !important; border-color: transparent !important; }}
 .crop-inputs {{ display: flex; gap: 15px; margin: 15px 0; flex-wrap: wrap; }}
 .crop-input-group {{ display: flex; flex-direction: column; gap: 5px; }}
 .crop-input-group label {{ font-size: 12px; color: var(--body-text-color-subdued, #666); }}
@@ -59,6 +65,16 @@ def get_crop_modal_html(lang: str) -> str:
         <div class="crop-info-bar">
             <span id="crop-original-size" data-prefix="{original_size}">{original_size}: -- × -- px</span>
             <span id="crop-selection-size" data-prefix="{selection_size}">{selection_size}: -- × -- px</span>
+        </div>
+        <div class="crop-ratio-bar">
+            <span class="crop-ratio-label">{lbl_ratio}:</span>
+            <button class="crop-ratio-btn active" onclick="window.setCropRatio(NaN, this)">{lbl_free}</button>
+            <button class="crop-ratio-btn" onclick="window.setCropRatio(1/1, this)">1:1</button>
+            <button class="crop-ratio-btn" onclick="window.setCropRatio(4/3, this)">4:3</button>
+            <button class="crop-ratio-btn" onclick="window.setCropRatio(3/2, this)">3:2</button>
+            <button class="crop-ratio-btn" onclick="window.setCropRatio(16/9, this)">16:9</button>
+            <button class="crop-ratio-btn" onclick="window.setCropRatio(9/16, this)">9:16</button>
+            <button class="crop-ratio-btn" onclick="window.setCropRatio(3/4, this)">3:4</button>
         </div>
         <div class="crop-inputs">
             <div class="crop-input-group"><label>{label_x}</label><input type="number" id="crop-x" value="0" min="0" oninput="window.updateCropperFromInputs()"></div>
@@ -124,6 +140,11 @@ window.openCropModal = function(imageSrc, width, height) {{
     console.log('openCropModal called:', imageSrc ? imageSrc.substring(0, 50) + '...' : 'null', width, height);
     window.originalImageData = {{ src: imageSrc, width: width, height: height }};
     
+    // Reset ratio buttons
+    document.querySelectorAll('.crop-ratio-btn').forEach(function(b) {{ b.classList.remove('active'); }});
+    var freeBtn = document.querySelector('.crop-ratio-btn');
+    if (freeBtn) freeBtn.classList.add('active');
+    
     var origSizeEl = document.getElementById('crop-original-size');
     if (origSizeEl) {{
         var prefix = origSizeEl.dataset.prefix || 'Size';
@@ -161,6 +182,13 @@ window.openCropModal = function(imageSrc, width, height) {{
     }};
 }};
 
+window.setCropRatio = function(ratio, btn) {{
+    if (!window.cropper) return;
+    document.querySelectorAll('.crop-ratio-btn').forEach(function(b) {{ b.classList.remove('active'); }});
+    if (btn) btn.classList.add('active');
+    window.cropper.setAspectRatio(ratio);
+}};
+
 window.closeCropModal = function() {{
     var overlay = document.getElementById('crop-modal-overlay');
     if (overlay) overlay.style.display = 'none';
@@ -179,7 +207,9 @@ window.updateCropperFromInputs = function() {{
 
 window.useOriginalImage = function() {{
     if (!window.originalImageData) return;
-    window.updateCropDataJson(0, 0, window.originalImageData.width, window.originalImageData.height);
+    var w = window.originalImageData.width;
+    var h = window.originalImageData.height;
+    window.updateCropDataJson(0, 0, w, h);
     window.closeCropModal();
     setTimeout(function() {{ window.clickGradioButton('use-original-hidden-btn'); }}, 100);
 }};
@@ -206,6 +236,8 @@ console.log('Crop modal JS loaded, openCropModal:', typeof window.openCropModal)
         label_h=label_h,
         btn_use_original=btn_use_original,
         btn_confirm=btn_confirm,
+        lbl_ratio=lbl_ratio,
+        lbl_free=lbl_free,
     )
 
 # JavaScript for Cropper.js (to be injected via head parameter)
@@ -305,6 +337,11 @@ window.openCropModal = function(imageSrc, width, height) {
     console.log('openCropModal called:', imageSrc ? imageSrc.substring(0, 50) + '...' : 'null', width, height);
     window.originalImageData = { src: imageSrc, width: width, height: height };
     
+    // Reset ratio buttons
+    document.querySelectorAll('.crop-ratio-btn').forEach(function(b) { b.classList.remove('active'); });
+    var freeBtn = document.querySelector('.crop-ratio-btn');
+    if (freeBtn) freeBtn.classList.add('active');
+    
     var origSizeEl = document.getElementById('crop-original-size');
     if (origSizeEl) {
         var prefix = origSizeEl.dataset.prefix || 'Size';
@@ -340,6 +377,13 @@ window.openCropModal = function(imageSrc, width, height) {
             }
         });
     };
+};
+
+window.setCropRatio = function(ratio, btn) {
+    if (!window.cropper) return;
+    document.querySelectorAll('.crop-ratio-btn').forEach(function(b) { b.classList.remove('active'); });
+    if (btn) btn.classList.add('active');
+    window.cropper.setAspectRatio(ratio);
 };
 
 window.closeCropModal = function() {

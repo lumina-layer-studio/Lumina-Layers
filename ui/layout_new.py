@@ -16,7 +16,7 @@ import numpy as np
 from PIL import Image as PILImage
 
 from core.i18n import I18n
-from config import ColorSystem, ModelingMode
+from config import ColorSystem, ModelingMode, BedManager
 from utils import Stats, LUTManager
 from core.calibration import generate_calibration_board, generate_smart_board, generate_8color_batch_zip
 from core.extractor import (
@@ -28,14 +28,18 @@ from core.extractor import (
 )
 from core.converter import (
     generate_preview_cached,
+    generate_realtime_glb,
+    generate_empty_bed_glb,
     render_preview,
     update_preview_with_loop,
     on_remove_loop,
     generate_final_model,
     on_preview_click_select_color,
     generate_lut_grid_html,
+    generate_lut_card_grid_html,
     detect_lut_color_mode,
-    detect_image_type
+    detect_image_type,
+    generate_auto_height_map
 )
 from .styles import CUSTOM_CSS
 from .callbacks import (
@@ -171,6 +175,238 @@ def save_last_lut_setting(lut_name):
         print(f"Failed to save settings: {e}")
 
 
+def _load_user_settings():
+    """Load all user settings from the settings file."""
+    if os.path.exists(CONFIG_FILE):
+        try:
+            with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except Exception:
+            pass
+    return {}
+
+
+def _save_user_setting(key, value):
+    """Save a single key-value pair to the user settings file."""
+    data = _load_user_settings()
+    data[key] = value
+    try:
+        with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        print(f"Failed to save setting {key}: {e}")
+
+
+def save_color_mode(color_mode):
+    """Persist the selected color mode."""
+    _save_user_setting("last_color_mode", color_mode)
+
+
+def save_modeling_mode(modeling_mode):
+    """Persist the selected modeling mode."""
+    val = modeling_mode.value if hasattr(modeling_mode, 'value') else str(modeling_mode)
+    _save_user_setting("last_modeling_mode", val)
+
+
+# ---------- Slicer Integration ----------
+
+import subprocess
+import platform
+import winreg
+
+# Known slicer identifiers for registry matching
+_SLICER_KEYWORDS = {
+    "bambu_studio":  {"match": ["bambu studio"], "name": "Bambu Studio"},
+    "orca_slicer":   {"match": ["orcaslicer"],   "name": "OrcaSlicer"},
+    "elegoo_slicer": {"match": ["elegooslicer", "elegoo slicer", "elegoo satellit"], "name": "ElegooSlicer"},
+    "prusa_slicer":  {"match": ["prusaslicer"],  "name": "PrusaSlicer"},
+    "cura":          {"match": ["ultimaker cura", "ultimaker-cura"], "name": "Ultimaker Cura"},
+}
+
+
+def _scan_registry_for_slicers():
+    """Scan Windows registry Uninstall keys to find slicer executables.
+    
+    Returns dict: {slicer_id: {"name": display_name, "exe": exe_path}}
+    """
+    found = {}
+    reg_paths = [
+        (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall"),
+        (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall"),
+        (winreg.HKEY_CURRENT_USER,  r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall"),
+    ]
+    
+    for hive, base_path in reg_paths:
+        try:
+            key = winreg.OpenKey(hive, base_path)
+        except OSError:
+            continue
+        
+        i = 0
+        while True:
+            try:
+                subkey_name = winreg.EnumKey(key, i)
+                i += 1
+            except OSError:
+                break
+            
+            try:
+                subkey = winreg.OpenKey(key, subkey_name)
+                try:
+                    display_name = winreg.QueryValueEx(subkey, "DisplayName")[0]
+                except OSError:
+                    subkey.Close()
+                    continue
+                
+                # Try DisplayIcon first (most reliable for exe path)
+                exe_path = None
+                try:
+                    icon = winreg.QueryValueEx(subkey, "DisplayIcon")[0]
+                    # DisplayIcon can be "path.exe" or "path.exe,0"
+                    # Also handle doubled paths like "F:\...\F:\...\exe"
+                    icon = icon.split(",")[0].strip().strip('"')
+                    # Handle doubled path: if path appears twice, take the second half
+                    parts = icon.split("\\")
+                    for idx in range(1, len(parts)):
+                        candidate = "\\".join(parts[idx:])
+                        if os.path.isfile(candidate):
+                            exe_path = candidate
+                            break
+                    if not exe_path and os.path.isfile(icon):
+                        exe_path = icon
+                except OSError:
+                    pass
+                
+                # Fallback: try InstallLocation
+                if not exe_path:
+                    try:
+                        install_loc = winreg.QueryValueEx(subkey, "InstallLocation")[0]
+                        if install_loc and os.path.isdir(install_loc):
+                            for f in os.listdir(install_loc):
+                                if f.lower().endswith(".exe") and "unins" not in f.lower():
+                                    candidate = os.path.join(install_loc, f)
+                                    if os.path.isfile(candidate):
+                                        exe_path = candidate
+                                        break
+                    except OSError:
+                        pass
+                
+                subkey.Close()
+                
+                if not exe_path or not exe_path.lower().endswith(".exe"):
+                    continue
+                
+                # Match against known slicers
+                dn_lower = display_name.lower()
+                for sid, info in _SLICER_KEYWORDS.items():
+                    if sid in found:
+                        continue
+                    for kw in info["match"]:
+                        if kw in dn_lower:
+                            # Skip CUDA-related entries that match "cura"
+                            if sid == "cura" and ("cuda" in dn_lower or "nvidia" in dn_lower):
+                                break
+                            found[sid] = {"name": display_name.strip(), "exe": exe_path}
+                            break
+            except OSError:
+                pass
+        
+        key.Close()
+    
+    return found
+
+
+def detect_installed_slicers():
+    """Detect installed slicers via registry + user saved paths.
+    
+    Returns list of (id, name, exe_path).
+    """
+    found = []
+    
+    # 1. Registry scan
+    reg_slicers = _scan_registry_for_slicers()
+    for sid, info in reg_slicers.items():
+        found.append((sid, info["name"], info["exe"]))
+        print(f"[SLICER] Registry: {info['name']} → {info['exe']}")
+    
+    # 2. User-saved custom paths
+    prefs = _load_user_settings()
+    custom_slicers = prefs.get("custom_slicers", {})
+    for sid, exe in custom_slicers.items():
+        if os.path.isfile(exe) and sid not in [s[0] for s in found]:
+            name = _SLICER_KEYWORDS.get(sid, {}).get("name", sid)
+            found.append((sid, name, exe))
+            print(f"[SLICER] Custom: {name} → {exe}")
+    
+    if not found:
+        print("[SLICER] No slicers detected")
+    return found
+
+
+def open_in_slicer(file_path, slicer_id):
+    """Open a 3MF file in the specified slicer."""
+    if not file_path:
+        return "❌ 没有可打开的文件 / No file to open"
+    
+    actual_path = file_path
+    if hasattr(file_path, 'name'):
+        actual_path = file_path.name
+    
+    if not os.path.isfile(actual_path):
+        return f"❌ 文件不存在: {actual_path}"
+    
+    # Find exe from detected slicers
+    for sid, name, exe in _INSTALLED_SLICERS:
+        if sid == slicer_id:
+            try:
+                subprocess.Popen([exe, actual_path])
+                return f"✅ 已在 {name} 中打开"
+            except Exception as e:
+                return f"❌ 启动 {name} 失败: {e}"
+    
+    return f"❌ 未找到切片软件: {slicer_id}"
+
+
+# Detect slicers at startup
+_INSTALLED_SLICERS = detect_installed_slicers()
+
+
+def _get_slicer_choices(lang="zh"):
+    """Build dropdown choices: installed slicers + download option."""
+    choices = []
+    for sid, name, exe in _INSTALLED_SLICERS:
+        label_zh = f"在 {name} 中打开"
+        label_en = f"Open in {name}"
+        choices.append((label_zh if lang == "zh" else label_en, sid))
+    
+    dl_label = "📥 下载 3MF" if lang == "zh" else "📥 Download 3MF"
+    choices.append((dl_label, "download"))
+    return choices
+
+
+def _get_default_slicer():
+    """Get the saved or first available slicer id."""
+    prefs = _load_user_settings()
+    saved = prefs.get("last_slicer", None)
+    installed_ids = [s[0] for s in _INSTALLED_SLICERS]
+    if saved and saved in installed_ids:
+        return saved
+    if installed_ids:
+        return installed_ids[0]
+    return "download"
+
+
+def _slicer_css_class(slicer_id):
+    """Map slicer_id to CSS class for button color."""
+    if "bambu" in slicer_id:
+        return "slicer-bambu"
+    if "orca" in slicer_id:
+        return "slicer-orca"
+    if "elegoo" in slicer_id:
+        return "slicer-elegoo"
+    return "slicer-download"
+
+
 # ---------- Header and layout CSS ----------
 HEADER_CSS = """
 /* Full-width container */
@@ -237,10 +473,7 @@ HEADER_CSS = """
 
 /* Left sidebar */
 .left-sidebar {
-    background-color: var(--background-fill-secondary, #f9fafb);
-    padding: 15px;
-    border-radius: 8px;
-    border: 1px solid var(--border-color-primary, #e5e7eb);
+    padding: 10px 15px 10px 0;
     height: 100%;
 }
 
@@ -256,7 +489,7 @@ HEADER_CSS = """
 
 /* Workspace area */
 .workspace-area {
-    padding: 0 10px;
+    padding: 0 !important;
 }
 
 /* Action buttons */
@@ -335,6 +568,41 @@ HEADER_CSS = """
 .vertical-radio label.selected span {
     color: #1f2937 !important;
 }
+
+/* Bed size dropdown overlay on preview */
+#conv-bed-size-overlay {
+    display: flex !important;
+    justify-content: flex-end !important;
+    align-items: center !important;
+    margin-bottom: -8px !important;
+    padding: 0 4px !important;
+    z-index: 10 !important;
+    position: relative !important;
+    gap: 0 !important;
+}
+#conv-bed-size-overlay > .column:first-child {
+    display: none !important;
+}
+#conv-bed-size-dropdown {
+    max-width: 160px !important;
+    min-width: 130px !important;
+}
+#conv-bed-size-dropdown input {
+    font-size: 12px !important;
+    padding: 4px 8px !important;
+    height: 28px !important;
+    border-radius: 6px !important;
+    background: var(--background-fill-secondary, rgba(240,240,245,0.9)) !important;
+    border: 1px solid var(--border-color-primary, #ddd) !important;
+    cursor: pointer !important;
+}
+#conv-bed-size-dropdown .wrap {
+    min-height: unset !important;
+    padding: 0 !important;
+}
+#conv-bed-size-dropdown ul {
+    font-size: 12px !important;
+}
 """
 
 # [新增/修改] LUT 色块网格样式
@@ -360,18 +628,8 @@ LUT_GRID_CSS = """
 # Preview zoom/scroll styles
 PREVIEW_ZOOM_CSS = """
 #conv-preview {
-    overflow: auto !important;
-}
-#conv-preview .image-container,
-#conv-preview .wrap,
-#conv-preview .container {
-    overflow: auto !important;
-}
-#conv-preview canvas,
-#conv-preview img {
-    display: block !important;
-    max-width: none !important;
-    height: auto !important;
+    overflow: hidden !important;
+    position: relative !important;
 }
 """
 
@@ -393,132 +651,100 @@ function selectLutColor(hexColor) {
 </script>
 """
 
-# Preview zoom JS (wheel to zoom, double-click to fit)
+# Preview zoom JS (wheel to zoom, drag to pan, double-click to reset)
 PREVIEW_ZOOM_JS = """
 <script>
 (function() {
-    function getRootFromEvent(event) {
-        const target = event && event.target;
-        if (!target || !target.closest) return null;
-        return target.closest("#conv-preview");
+    var _z = 1, _px = 0, _py = 0, _drag = false, _sx = 0, _sy = 0;
+
+    function root() { return document.querySelector('#conv-preview'); }
+    function img(r) { return r ? (r.querySelector('img') || r.querySelector('canvas')) : null; }
+
+    function apply(el) {
+        if (!el) return;
+        el.style.transformOrigin = '0 0';
+        el.style.transform = 'translate(' + _px + 'px,' + _py + 'px) scale(' + _z + ')';
+        el.style.cursor = _z > 1.01 ? (_drag ? 'grabbing' : 'grab') : 'default';
     }
 
-    function getRoot() {
-        return document.getElementById("conv-preview");
+    function reset() {
+        _z = 1; _px = 0; _py = 0;
+        var el = img(root());
+        if (el) { el.style.transform = ''; el.style.cursor = ''; }
     }
 
-    function getViewport(root) {
-        return root.querySelector(".image-container") || root;
-    }
+    function bind() {
+        var r = root();
+        if (!r || r.dataset.zb) return false;
+        r.dataset.zb = '1';
 
-    function getMedia(root) {
-        return root.querySelector("canvas, img");
-    }
+        r.addEventListener('wheel', function(e) {
+            var el = img(r);
+            if (!el) return;
+            e.preventDefault();
+            e.stopPropagation();
 
-    function ensureBase(media) {
-        const baseW = media.naturalWidth || media.width;
-        const baseH = media.naturalHeight || media.height;
-        if (!baseW || !baseH) return false;
-        const sizeKey = `${baseW}x${baseH}`;
-        if (media.dataset.baseSize !== sizeKey) {
-            media.dataset.baseSize = sizeKey;
-            media.dataset.baseW = baseW;
-            media.dataset.baseH = baseH;
-        }
+            var rect = r.getBoundingClientRect();
+            var mx = e.clientX - rect.left;
+            var my = e.clientY - rect.top;
+
+            var oz = _z;
+            var f = e.deltaY < 0 ? 1.15 : 1/1.15;
+            _z = Math.max(0.5, Math.min(10, _z * f));
+
+            _px = mx - (_z / oz) * (mx - _px);
+            _py = my - (_z / oz) * (my - _py);
+            apply(el);
+        }, { passive: false });
+
+        r.addEventListener('mousedown', function(e) {
+            if (_z <= 1.01 || e.button !== 0) return;
+            _drag = true;
+            _sx = e.clientX - _px;
+            _sy = e.clientY - _py;
+            var el = img(r);
+            if (el) el.style.cursor = 'grabbing';
+            e.preventDefault();
+        });
+
+        window.addEventListener('mousemove', function(e) {
+            if (!_drag) return;
+            _px = e.clientX - _sx;
+            _py = e.clientY - _sy;
+            apply(img(r));
+        });
+
+        window.addEventListener('mouseup', function() {
+            if (!_drag) return;
+            _drag = false;
+            var el = img(r);
+            if (el) el.style.cursor = _z > 1.01 ? 'grab' : 'default';
+        });
+
+        r.addEventListener('dblclick', function(e) {
+            e.preventDefault();
+            reset();
+        });
+
+        // Reset zoom when image src changes
+        new MutationObserver(function() { reset(); }).observe(r, {
+            childList: true, subtree: true, attributes: true, attributeFilter: ['src']
+        });
+
         return true;
     }
 
-    function setZoom(media, zoom) {
-        const bw = parseFloat(media.dataset.baseW || media.width);
-        const bh = parseFloat(media.dataset.baseH || media.height);
-        const z = Math.max(0.2, Math.min(4, zoom));
-        media.style.width = `${bw * z}px`;
-        media.style.height = `${bh * z}px`;
-        media.dataset.zoom = z.toFixed(3);
+    function init() {
+        if (bind()) return;
+        new MutationObserver(function(m, o) {
+            if (bind()) o.disconnect();
+        }).observe(document.body, { childList: true, subtree: true });
     }
 
-    function fitToView(root, media) {
-        const viewport = getViewport(root);
-        const bw = parseFloat(media.dataset.baseW || media.width);
-        const bh = parseFloat(media.dataset.baseH || media.height);
-        const vw = viewport.clientWidth || root.clientWidth;
-        const vh = viewport.clientHeight || root.clientHeight;
-        if (!vw || !vh) {
-            setZoom(media, 1);
-            return;
-        }
-        const fitZoom = Math.min(vw / bw, vh / bh, 1);
-        setZoom(media, fitZoom);
-    }
-
-    function handleWheel(e) {
-        const root = getRootFromEvent(e);
-        if (!root) return;
-        const media = getMedia(root);
-        if (!media) return;
-        if (!ensureBase(media)) return;
-        e.preventDefault();
-        const current = parseFloat(media.dataset.zoom || "1");
-        const delta = e.deltaY < 0 ? 0.1 : -0.1;
-        setZoom(media, current + delta);
-    }
-
-    function handleDoubleClick(e) {
-        const root = getRootFromEvent(e);
-        if (!root) return;
-        const media = getMedia(root);
-        if (!media) return;
-        if (!ensureBase(media)) return;
-        e.preventDefault();
-        fitToView(root, media);
-    }
-
-    function bindGlobalHandlers() {
-        if (document.body && !document.body.dataset.previewZoomBound) {
-            document.body.dataset.previewZoomBound = "1";
-            document.addEventListener("wheel", handleWheel, { passive: false });
-            document.addEventListener("dblclick", handleDoubleClick);
-        }
-    }
-
-    function observeRoot() {
-        const root = getRoot();
-        if (!root) return false;
-        if (root.dataset.zoomObserver) return true;
-        root.dataset.zoomObserver = "1";
-        const observer = new MutationObserver(() => {
-            const media = getMedia(root);
-            if (!media) return;
-            if (!ensureBase(media)) return;
-            const sizeKey = media.dataset.baseSize || "";
-            const currentZoom = parseFloat(media.dataset.zoom || "0");
-            if (currentZoom === 0 || media.dataset.lastFitSize !== sizeKey) {
-                media.dataset.lastFitSize = sizeKey;
-                setTimeout(() => fitToView(root, media), 0);
-            }
-        });
-        observer.observe(root, { childList: true, subtree: true });
-        return true;
-    }
-
-    function waitForRoot() {
-        if (observeRoot()) return;
-        const bodyObserver = new MutationObserver(() => {
-            if (observeRoot()) {
-                bodyObserver.disconnect();
-            }
-        });
-        bodyObserver.observe(document.body, { childList: true, subtree: true });
-    }
-
-    if (document.readyState === "loading") {
-        document.addEventListener("DOMContentLoaded", () => {
-            bindGlobalHandlers();
-            waitForRoot();
-        });
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', function() { setTimeout(init, 1500); });
     } else {
-        bindGlobalHandlers();
-        waitForRoot();
+        setTimeout(init, 1500);
     }
 })();
 </script>
@@ -627,7 +853,7 @@ def init_dims(img):
     return default_w, default_h
 
 
-def _scale_preview_image(img, max_w: int = 900, max_h: int = 560):
+def _scale_preview_image(img, max_w: int = 1200, max_h: int = 750):
     """Scale preview image to fit within a fixed box without changing container size."""
     if img is None:
         return None
@@ -649,7 +875,7 @@ def _scale_preview_image(img, max_w: int = 900, max_h: int = 560):
         new_w = max(1, int(w * scale))
         new_h = max(1, int(h * scale))
         pil = PILImage.fromarray(arr)
-        pil = pil.resize((new_w, new_h), PILImage.Resampling.NEAREST)
+        pil = pil.resize((new_w, new_h), PILImage.Resampling.LANCZOS)
         return np.array(pil)
     except Exception:
         return img
@@ -666,11 +892,20 @@ def process_batch_generation(batch_files, is_batch, single_image, lut_path, targ
                              spacer_thick, structure_mode, auto_bg, bg_tol, color_mode,
                              add_loop, loop_width, loop_length, loop_hole, loop_pos,
                              modeling_mode, quantize_colors, color_replacements=None,
-                             separate_backing=False, progress=gr.Progress()):
+                             separate_backing=False, enable_relief=False, color_height_map=None,
+                             enable_cleanup=True,
+                             enable_outline=False, outline_width=2.0,
+                             enable_cloisonne=False, wire_width_mm=0.4,
+                             wire_height_mm=0.4,
+                             free_color_set=None,
+                             enable_coating=False, coating_height_mm=0.08,
+                             progress=gr.Progress()):
     """Dispatch to single-image or batch generation; batch writes a ZIP of 3MFs.
 
     Args:
         separate_backing: Boolean flag to separate backing as individual object (default: False)
+        enable_relief: Boolean flag to enable 2.5D relief mode (default: False)
+        color_height_map: Dict mapping hex colors to heights in mm (default: None)
 
     Returns:
         tuple: (file_or_zip_path, model3d_value, preview_image, status_text).
@@ -682,10 +917,19 @@ def process_batch_generation(batch_files, is_batch, single_image, lut_path, targ
         modeling_mode = ModelingMode(modeling_mode)
     # Use default white color for backing (fixed, not user-selectable)
     backing_color_name = "White"
+    
+    # Prepare relief mode parameters
+    if color_height_map is None:
+        color_height_map = {}
+    
     args = (lut_path, target_width_mm, spacer_thick, structure_mode, auto_bg, bg_tol,
             color_mode, add_loop, loop_width, loop_length, loop_hole, loop_pos,
             modeling_mode, quantize_colors, color_replacements, backing_color_name,
-            separate_backing)
+            separate_backing, enable_relief, color_height_map, enable_cleanup,
+            enable_outline, outline_width,
+            enable_cloisonne, wire_width_mm, wire_height_mm,
+            free_color_set,
+            enable_coating, coating_height_mm)
 
     if not is_batch:
         out_path, glb_path, preview_img, status = generate_final_model(single_image, *args)
@@ -736,6 +980,13 @@ def process_batch_generation(batch_files, is_batch, single_image, lut_path, targ
 # ========== Advanced Tab Callbacks ==========
 
 
+def _update_lut_grid(lut_path, lang, palette_mode="swatch"):
+    """Wrapper that picks swatch or card grid based on palette_mode setting."""
+    if palette_mode == "card":
+        return generate_lut_card_grid_html(lut_path, lang)
+    return generate_lut_grid_html(lut_path, lang)
+
+
 def create_app():
     """Build the Gradio app (tabs, i18n, events) and return the Blocks instance."""
     with gr.Blocks(title="Lumina Studio") as app:
@@ -746,12 +997,18 @@ def create_app():
         lang_state = gr.State(value="zh")
         theme_state = gr.State(value=False)  # False=light, True=dark
 
-        # Header
+        # Header + Stats merged into one row
         with gr.Row(elem_classes=["header-row"], equal_height=True):
-            with gr.Column(scale=10):
+            with gr.Column(scale=6):
                 app_title_html = gr.HTML(
                     value=f"<h1>✨ Lumina Studio</h1><p>{I18n.get('app_subtitle', 'zh')}</p>",
                     elem_id="app-header"
+                )
+            with gr.Column(scale=4):
+                stats = Stats.get_all()
+                stats_html = gr.HTML(
+                    value=_get_stats_html("zh", stats),
+                    elem_classes=["stats-bar-inline"]
                 )
             with gr.Column(scale=1, min_width=140, elem_classes=["header-controls"]):
                 lang_btn = gr.Button(
@@ -890,6 +1147,13 @@ window.confirmCrop = function() {
     setTimeout(function() { window.clickGradioButton('confirm-crop-hidden-btn'); }, 100);
 };
 
+window.setCropRatio = function(ratio, btn) {
+    if (!window.cropper) return;
+    document.querySelectorAll('.crop-ratio-btn').forEach(function(b) { b.classList.remove('active'); });
+    if (btn) btn.classList.add('active');
+    window.cropper.setAspectRatio(ratio);
+};
+
 console.log('[CROP] Global scripts loaded, openCropModal:', typeof window.openCropModal);
 </textarea>
 </div>
@@ -914,19 +1178,13 @@ console.log('[CROP] Global scripts loaded, openCropModal:', typeof window.openCr
 " style="display:none;">
 """)
         
-        stats = Stats.get_all()
-        stats_html = gr.HTML(
-            value=_get_stats_html("zh", stats),
-            elem_classes=["stats-bar"]
-        )
-        
         tab_components = {}
         with gr.Tabs() as tabs:
             components = {}
 
             # Converter tab
             with gr.TabItem(label=I18n.get('tab_converter', "zh"), id=0) as tab_conv:
-                conv_components = create_converter_tab_content("zh", lang_state)
+                conv_components = create_converter_tab_content("zh", lang_state, theme_state)
                 components.update(conv_components)
             tab_components['tab_converter'] = tab_conv
             
@@ -995,11 +1253,57 @@ console.log('[CROP] Global scripts loaded, openCropModal:', typeof window.openCr
             outputs=output_list
         )
 
+        def _on_theme_toggle(current_is_dark, current_lang, cache):
+            """Toggle theme state and re-render preview with new bed colors."""
+            new_is_dark = not current_is_dark
+            label = I18n.get('theme_toggle_day', current_lang) if new_is_dark else I18n.get('theme_toggle_night', current_lang)
+
+            # Re-render 2D preview with new theme
+            new_preview = gr.update()
+            if cache is not None:
+                cache['is_dark'] = new_is_dark
+                preview_rgba = cache.get('preview_rgba')
+                if preview_rgba is not None:
+                    color_conf = cache.get('color_conf')
+                    display = render_preview(
+                        preview_rgba, None, 0, 0, 0, 0, False, color_conf,
+                        bed_label=cache.get('bed_label'),
+                        target_width_mm=cache.get('target_width_mm'),
+                        is_dark=new_is_dark
+                    )
+                    new_preview = _preview_update(display)
+
+            # Re-render 3D preview with new bed theme
+            new_glb = gr.update()
+            if cache is not None:
+                glb_path = generate_realtime_glb(cache)
+                if glb_path:
+                    new_glb = glb_path
+
+            return new_is_dark, gr.update(value=label), new_preview, new_glb
+
         theme_btn.click(
             fn=None,
             inputs=None,
             outputs=None,
-            js="() => { const url = new URL(window.location.href); const current = url.searchParams.get('__theme'); const next = current === 'dark' ? 'light' : 'dark'; url.searchParams.set('__theme', next); url.searchParams.delete('view'); window.location.href = url.toString(); return []; }"
+            js="""() => {
+                const body = document.querySelector('body');
+                const isDark = body.classList.contains('dark');
+                if (isDark) {
+                    body.classList.remove('dark');
+                } else {
+                    body.classList.add('dark');
+                }
+                // Update URL param without reload
+                const url = new URL(window.location.href);
+                url.searchParams.set('__theme', isDark ? 'light' : 'dark');
+                window.history.replaceState({}, '', url.toString());
+                return [];
+            }"""
+        ).then(
+            fn=_on_theme_toggle,
+            inputs=[theme_state, lang_state, components['_conv_preview_cache']],
+            outputs=[theme_state, theme_btn, components['_conv_preview'], components['_conv_3d_preview']]
         )
 
         def init_theme(current_lang, request: gr.Request = None):
@@ -1025,8 +1329,8 @@ console.log('[CROP] Global scripts loaded, openCropModal:', typeof window.openCr
             inputs=[components['dropdown_conv_lut_dropdown']],
             outputs=[components['state_conv_lut_path'], components['md_conv_lut_status']]
         ).then(
-            fn=generate_lut_grid_html,
-            inputs=[components['state_conv_lut_path'], lang_state],
+            fn=_update_lut_grid,
+            inputs=[components['state_conv_lut_path'], lang_state, components['state_conv_palette_mode']],
             outputs=[components['conv_lut_grid_view']]
         )
 
@@ -1091,6 +1395,20 @@ console.log('[CROP] Global scripts loaded, openCropModal:', typeof window.openCr
                 fn=update_stats_bar,
                 inputs=[lang_state],
                 outputs=[stats_html]
+            )
+
+        # Palette mode switch (Advanced tab)
+        if 'radio_palette_mode' in components:
+            def on_palette_mode_change(mode, lut_path, lang):
+                _save_user_setting("palette_mode", mode)
+                return mode, _update_lut_grid(lut_path, lang, mode)
+
+            components['radio_palette_mode'].change(
+                fn=on_palette_mode_change,
+                inputs=[components['radio_palette_mode'],
+                        components['state_conv_lut_path'], lang_state],
+                outputs=[components['state_conv_palette_mode'],
+                         components['conv_lut_grid_view']]
             )
 
     return app
@@ -1377,11 +1695,13 @@ def get_extractor_reference_image(mode_str):
 
 # ---------- Tab builders ----------
 
-def create_converter_tab_content(lang: str, lang_state=None) -> dict:
+def create_converter_tab_content(lang: str, lang_state=None, theme_state=None) -> dict:
     """Build converter tab UI and events. Returns component dict for i18n.
 
     Args:
         lang: Initial language code ('zh' or 'en').
+        lang_state: Gradio State for language.
+        theme_state: Gradio State for theme (False=light, True=dark).
 
     Returns:
         dict: Mapping from component key to Gradio component (and state refs).
@@ -1399,6 +1719,15 @@ def create_converter_tab_content(lang: str, lang_state=None) -> dict:
             saved_lut = load_last_lut_setting()
             current_choices = LUTManager.get_lut_choices()
             default_lut_value = saved_lut if saved_lut in current_choices else None
+
+            # Load saved preferences
+            _user_prefs = _load_user_settings()
+            saved_color_mode = _user_prefs.get("last_color_mode", "4-Color")
+            saved_modeling_mode_str = _user_prefs.get("last_modeling_mode", ModelingMode.HIGH_FIDELITY.value)
+            try:
+                saved_modeling_mode = ModelingMode(saved_modeling_mode_str)
+            except (ValueError, KeyError):
+                saved_modeling_mode = ModelingMode.HIGH_FIDELITY
 
             with gr.Row():
                 components['dropdown_conv_lut_dropdown'] = gr.Dropdown(
@@ -1424,6 +1753,8 @@ def create_converter_tab_content(lang: str, lang_state=None) -> dict:
                 elem_classes=["lut-status"]
             )
             conv_lut_path = gr.State(None)
+            conv_palette_mode = gr.State(value=_load_user_settings().get("palette_mode", "swatch"))
+            components['state_conv_palette_mode'] = conv_palette_mode
 
             with gr.Row():
                 components['checkbox_conv_batch_mode'] = gr.Checkbox(
@@ -1501,12 +1832,63 @@ def create_converter_tab_content(lang: str, lang_state=None) -> dict:
                     label=I18n.get('conv_thickness', lang)
                 )
             
-            # Separate backing checkbox
-            components['checkbox_conv_separate_backing'] = gr.Checkbox(
-                label="底板单独一个对象 | Separate Backing as Individual Object",
+            
+            # Bed size selector removed from sidebar — now overlaid on preview
+            
+            # ========== 2.5D Relief Mode Controls ==========
+            components['checkbox_conv_relief_mode'] = gr.Checkbox(
+                label="开启 2.5D 浮雕模式 | Enable Relief Mode",
                 value=False,
-                info="勾选后，底板将作为独立对象导出到3MF文件"
+                info="为不同颜色设置独立的Z轴高度，保留顶部5层光学叠色（强制单面，观赏面朝上）"
             )
+            
+            # Relief height slider (only visible when relief mode is enabled and a color is selected)
+            components['slider_conv_relief_height'] = gr.Slider(
+                minimum=1.0,
+                maximum=20.0,
+                value=1.2,
+                step=0.1,
+                label="当前选中颜色的独立高度 | Selected Color Z-Height (mm)",
+                visible=False,
+                info="调整当前选中颜色的总高度（包含光学层）"
+            )
+            
+            # Auto Height Generator (only visible when relief mode is enabled)
+            with gr.Accordion(label="⚡ 自动高度生成器 | Auto Height Generator", open=False, visible=False) as conv_auto_height_accordion:
+                gr.Markdown("根据颜色明度自动生成归一化高度映射 | Automatically generate normalized heights based on color luminance")
+                
+                components['radio_conv_auto_height_mode'] = gr.Radio(
+                    choices=[
+                        ("深色凸起 | Darker Higher", "深色凸起"),
+                        ("浅色凸起 | Lighter Higher", "浅色凸起")
+                    ],
+                    value="深色凸起",
+                    label="排列规则 | Sorting Rule",
+                    info="选择哪种颜色应该更高"
+                )
+                
+                components['slider_conv_auto_height_max'] = gr.Slider(
+                    minimum=2.0,
+                    maximum=15.0,
+                    value=5.0,
+                    step=0.1,
+                    label="最大浮雕高度 | Max Relief Height (mm)",
+                    info="所有颜色的最大高度（相对于底板）"
+                )
+                
+                components['btn_conv_auto_height_apply'] = gr.Button(
+                    "✨ 一键生成高度 | Apply Auto Heights",
+                    variant="primary"
+                )
+            
+            components['accordion_conv_auto_height'] = conv_auto_height_accordion
+            
+            # State to store per-color height mapping: {hex_color: height_mm}
+            conv_color_height_map = gr.State({})
+            
+            # State to track currently selected color for height adjustment
+            conv_relief_selected_color = gr.State(None)
+            # ========== END 2.5D Relief Mode Controls ==========
             
             conv_target_height_mm = components['slider_conv_height']
 
@@ -1518,7 +1900,7 @@ def create_converter_tab_content(lang: str, lang_state=None) -> dict:
                         ("6-Color (Smart 1296)", "6-Color (Smart 1296)"),
                         ("8-Color Max", "8-Color Max")
                     ],
-                    value="4-Color",
+                    value=saved_color_mode,
                     label=I18n.get('conv_color_mode', lang)
                 )
                 
@@ -1538,33 +1920,26 @@ def create_converter_tab_content(lang: str, lang_state=None) -> dict:
                         (I18n.get('conv_modeling_mode_pixel', lang), ModelingMode.PIXEL),
                         (I18n.get('conv_modeling_mode_vector', lang), ModelingMode.VECTOR)
                     ],
-                    value=ModelingMode.HIGH_FIDELITY,
+                    value=saved_modeling_mode,
                     label=I18n.get('conv_modeling_mode', lang),
                     info=I18n.get('conv_modeling_mode_info', lang),
                     elem_classes=["vertical-radio"],
                     scale=2
                 )
                 
-                components['checkbox_conv_auto_bg'] = gr.Checkbox(
-                    label=I18n.get('conv_auto_bg', lang),
-                    value=False,  # Changed from True to False - disable auto background removal by default
-                    info=I18n.get('conv_auto_bg_info', lang),
-                    scale=1
-                )
             with gr.Accordion(label=I18n.get('conv_advanced', lang), open=False) as conv_advanced_acc:
                 components['accordion_conv_advanced'] = conv_advanced_acc
                 with gr.Row():
                     components['slider_conv_quantize_colors'] = gr.Slider(
-                        minimum=8, maximum=256, step=8, value=64,
+                        minimum=8, maximum=256, step=8, value=48,
                         label=I18n.get('conv_quantize_colors', lang),
-                        info=I18n.get('conv_quantize_info', lang),
-                        scale=3
+                        info=I18n.get('conv_quantize_info', lang)
                     )
+                with gr.Row():
                     components['btn_conv_auto_color'] = gr.Button(
                         I18n.get('conv_auto_color_btn', lang),
                         variant="secondary",
-                        size="sm",
-                        scale=1
+                        size="sm"
                     )
                 with gr.Row():
                     components['slider_conv_tolerance'] = gr.Slider(
@@ -1572,30 +1947,50 @@ def create_converter_tab_content(lang: str, lang_state=None) -> dict:
                         label=I18n.get('conv_tolerance', lang),
                         info=I18n.get('conv_tolerance_info', lang)
                     )
+                with gr.Row():
+                    components['checkbox_conv_auto_bg'] = gr.Checkbox(
+                        label=I18n.get('conv_auto_bg', lang),
+                        value=False,
+                        info=I18n.get('conv_auto_bg_info', lang)
+                    )
+                with gr.Row():
+                    components['checkbox_conv_cleanup'] = gr.Checkbox(
+                        label="孤立像素清理 | Isolated Pixel Cleanup",
+                        value=True,
+                        info="清理 LUT 匹配后的孤立像素，提升打印成功率"
+                    )
+                with gr.Row():
+                    components['checkbox_conv_separate_backing'] = gr.Checkbox(
+                        label="底板单独一个对象 | Separate Backing",
+                        value=False,
+                        info="勾选后，底板将作为独立对象导出到3MF文件"
+                    )
             gr.Markdown("---")
-            with gr.Row(elem_classes=["action-buttons"]):
-                components['btn_conv_preview_btn'] = gr.Button(
-                    I18n.get('conv_preview_btn', lang),
-                    variant="secondary",
-                    size="lg"
-                )
-                components['btn_conv_generate_btn'] = gr.Button(
-                    I18n.get('conv_generate_btn', lang),
-                    variant="primary",
-                    size="lg"
-                )
             
-        with gr.Column(scale=3, elem_classes=["workspace-area"]):
+        with gr.Column(scale=4, elem_classes=["workspace-area"]):
             with gr.Row():
-                with gr.Column(scale=1):
+                with gr.Column(scale=3):
                     components['md_conv_preview_section'] = gr.Markdown(
                         I18n.get('conv_preview_section', lang)
                     )
 
+                    # Bed size dropdown overlaid on preview top-right
+                    with gr.Row(elem_id="conv-bed-size-overlay"):
+                        components['radio_conv_bed_size'] = gr.Dropdown(
+                            choices=[b[0] for b in BedManager.BEDS],
+                            value=BedManager.DEFAULT_BED,
+                            label=None,
+                            show_label=False,
+                            container=False,
+                            min_width=140,
+                            elem_id="conv-bed-size-dropdown"
+                        )
+
                     conv_preview = gr.Image(
                         label="",
                         type="numpy",
-                        height=600,
+                        value=render_preview(None, None, 0, 0, 0, 0, False, None, is_dark=False),
+                        height=750,
                         interactive=False,
                         show_label=False,
                         elem_id="conv-preview"
@@ -1609,9 +2004,7 @@ def create_converter_tab_content(lang: str, lang_state=None) -> dict:
                         conv_replacement_map = gr.State({})   # 替换映射表
                         conv_replacement_history = gr.State([])
                         conv_replacement_color_state = gr.State(None)  # 最终确定的 LUT 颜色
-
-                        # [关键] 注入 JS 脚本
-                        gr.HTML(LUT_GRID_JS)
+                        conv_free_color_set = gr.State(set())  # 自由色集合
 
                         # 隐藏的交互组件
                         conv_color_selected_hidden = gr.Textbox(
@@ -1709,6 +2102,24 @@ def create_converter_tab_content(lang: str, lang_state=None) -> dict:
                             components['btn_conv_palette_undo_btn'] = conv_undo_replacement
                             components['btn_conv_palette_clear_btn'] = conv_clear_replacements
 
+                        # 自由色功能
+                        with gr.Row():
+                            conv_free_color_btn = gr.Button(
+                                I18n.get('conv_free_color_btn', lang),
+                                variant="secondary", size="sm"
+                            )
+                            conv_free_color_clear_btn = gr.Button(
+                                I18n.get('conv_free_color_clear_btn', lang),
+                                size="sm"
+                            )
+                            components['btn_conv_free_color'] = conv_free_color_btn
+                            components['btn_conv_free_color_clear'] = conv_free_color_clear_btn
+                        conv_free_color_html = gr.HTML(
+                            value="",
+                            show_label=False
+                        )
+                        components['html_conv_free_color_list'] = conv_free_color_html
+
                         # 调色板预览 HTML (保持原有逻辑，用于显示已替换列表)
                         components['md_conv_palette_replacements_label'] = gr.Markdown(
                             I18n.get('conv_palette_replacements_label', lang)
@@ -1759,6 +2170,8 @@ def create_converter_tab_content(lang: str, lang_state=None) -> dict:
                                 interactive=False,
                                 scale=2
                             )
+                    # ========== Outline Settings (moved to right column) ==========
+
                     components['textbox_conv_status'] = gr.Textbox(
                         label=I18n.get('conv_status', lang),
                         lines=3,
@@ -1767,28 +2180,160 @@ def create_converter_tab_content(lang: str, lang_state=None) -> dict:
                         show_label=True
                     )
                 with gr.Column(scale=1):
-                    components['md_conv_3d_preview'] = gr.Markdown(
-                        I18n.get('conv_3d_preview', lang)
+                    # ========== Outline Settings ==========
+                    components['md_conv_outline_section'] = gr.Markdown(
+                        I18n.get('conv_outline_section', lang)
                     )
-                        
-                    conv_3d_preview = gr.Model3D(
-                        label="3D",
-                        clear_color=[0.9, 0.9, 0.9, 1.0],
-                        height=600
+                    with gr.Row():
+                        components['checkbox_conv_outline_enable'] = gr.Checkbox(
+                            label=I18n.get('conv_outline_enable', lang),
+                            value=False
+                        )
+                    components['slider_conv_outline_width'] = gr.Slider(
+                        0.5, 10, 2, step=0.5,
+                        label=I18n.get('conv_outline_width', lang)
                     )
-                        
-                    components['md_conv_download_section'] = gr.Markdown(
-                        I18n.get('conv_download_section', lang)
+                    # ========== END Outline Settings ==========
+
+                    # ========== Cloisonné Settings ==========
+                    components['md_conv_cloisonne_section'] = gr.Markdown(
+                        I18n.get('conv_cloisonne_section', lang)
                     )
-                        
+                    with gr.Row():
+                        components['checkbox_conv_cloisonne_enable'] = gr.Checkbox(
+                            label=I18n.get('conv_cloisonne_enable', lang),
+                            value=False
+                        )
+                    components['slider_conv_wire_width'] = gr.Slider(
+                        0.2, 1.2, 0.4, step=0.1,
+                        label=I18n.get('conv_cloisonne_wire_width', lang)
+                    )
+                    components['slider_conv_wire_height'] = gr.Slider(
+                        0.04, 1.0, 0.4, step=0.04,
+                        label=I18n.get('conv_cloisonne_wire_height', lang)
+                    )
+                    # ========== END Cloisonné Settings ==========
+
+                    # ========== Coating Settings ==========
+                    components['md_conv_coating_section'] = gr.Markdown(
+                        I18n.get('conv_coating_section', lang)
+                    )
+                    with gr.Row():
+                        components['checkbox_conv_coating_enable'] = gr.Checkbox(
+                            label=I18n.get('conv_coating_enable', lang),
+                            value=False
+                        )
+                    components['slider_conv_coating_height'] = gr.Slider(
+                        0.04, 0.12, 0.08, step=0.04,
+                        label=I18n.get('conv_coating_height', lang)
+                    )
+                    # ========== END Coating Settings ==========
+
+                    # Action buttons (preview + generate)
+                    with gr.Row(elem_classes=["action-buttons"]):
+                        components['btn_conv_preview_btn'] = gr.Button(
+                            I18n.get('conv_preview_btn', lang),
+                            variant="secondary",
+                            size="lg"
+                        )
+                        components['btn_conv_generate_btn'] = gr.Button(
+                            I18n.get('conv_generate_btn', lang),
+                            variant="primary",
+                            size="lg"
+                        )
+
+                    # Split button: [Open in Slicer] [▼]
+                    default_slicer = _get_default_slicer()
+                    slicer_choices = _get_slicer_choices(lang)
+                    default_slicer_label = ""
+                    for label, sid in slicer_choices:
+                        if sid == default_slicer:
+                            default_slicer_label = label
+                            break
+
+                    with gr.Row(elem_id="conv-slicer-split-btn"):
+                        components['btn_conv_open_slicer'] = gr.Button(
+                            value=default_slicer_label or "📥 下载 3MF",
+                            variant="secondary",
+                            size="lg",
+                            elem_id="conv-open-slicer-btn",
+                            elem_classes=[_slicer_css_class(default_slicer)],
+                            scale=5
+                        )
+                        components['btn_conv_slicer_arrow'] = gr.Button(
+                            value="▾",
+                            variant="secondary",
+                            size="lg",
+                            elem_id="conv-slicer-arrow-btn",
+                            elem_classes=[_slicer_css_class(default_slicer)],
+                            scale=1,
+                            min_width=40
+                        )
+                    # Hidden dropdown (shown/hidden by arrow button)
+                    components['dropdown_conv_slicer'] = gr.Dropdown(
+                        choices=slicer_choices,
+                        value=default_slicer,
+                        label="",
+                        show_label=False,
+                        elem_id="conv-slicer-dropdown",
+                        visible=False
+                    )
+
+                    # Hidden file component for download fallback
+                    _show_file = (default_slicer == "download")
                     components['file_conv_download_file'] = gr.File(
-                        label=I18n.get('conv_download_file', lang)
+                        label=I18n.get('conv_download_file', lang),
+                        visible=_show_file
                     )
                     components['btn_conv_stop'] = gr.Button(
                         value=I18n.get('conv_stop', lang),
                         variant="stop",
                         size="lg"
                     )
+
+        # ========== Floating 3D Thumbnail (bottom-right corner) ==========
+        with gr.Column(elem_id="conv-3d-thumbnail-container", visible=True) as conv_3d_thumb_col:
+            conv_3d_preview = gr.Model3D(
+                value=generate_empty_bed_glb(),
+                label="3D",
+                clear_color=[0.15, 0.15, 0.18, 1.0],
+                height=180,
+                elem_id="conv-3d-thumbnail"
+            )
+            components['btn_conv_3d_fullscreen'] = gr.Button(
+                "⛶",
+                variant="secondary",
+                size="sm",
+                elem_id="conv-3d-fullscreen-btn"
+            )
+        components['col_conv_3d_thumbnail'] = conv_3d_thumb_col
+
+        # ========== Fullscreen 3D Preview Overlay ==========
+        with gr.Column(visible=False, elem_id="conv-3d-fullscreen-container") as conv_3d_fullscreen_col:
+            conv_3d_fullscreen = gr.Model3D(
+                label="3D Fullscreen",
+                clear_color=[0.12, 0.12, 0.15, 1.0],
+                height=900,
+                elem_id="conv-3d-fullscreen"
+            )
+        components['col_conv_3d_fullscreen'] = conv_3d_fullscreen_col
+
+        # ========== 2D Thumbnail in fullscreen 3D mode (bottom-right) ==========
+        with gr.Column(visible=False, elem_id="conv-2d-thumbnail-container") as conv_2d_thumb_col:
+            conv_2d_thumb_preview = gr.Image(
+                label="2D",
+                type="numpy",
+                interactive=False,
+                height=160,
+                elem_id="conv-2d-thumbnail"
+            )
+            components['btn_conv_2d_back'] = gr.Button(
+                "⛶",
+                variant="secondary",
+                size="sm",
+                elem_id="conv-2d-back-btn"
+            )
+        components['col_conv_2d_thumbnail'] = conv_2d_thumb_col
     
     # Event binding
     def toggle_batch_mode(is_batch):
@@ -1980,8 +2525,8 @@ def create_converter_tab_content(lang: str, lang_state=None) -> dict:
             inputs=[components['dropdown_conv_lut_dropdown']],
             outputs=None
     ).then(
-            fn=generate_lut_grid_html,
-            inputs=[conv_lut_path, lang_state],
+            fn=_update_lut_grid,
+            inputs=[conv_lut_path, lang_state, conv_palette_mode],
             outputs=[conv_lut_grid_view]
     ).then(
             # 自动检测并切换颜色模式
@@ -2030,13 +2575,42 @@ def create_converter_tab_content(lang: str, lang_state=None) -> dict:
     )
     def generate_preview_cached_with_fit(image_path, lut_path, target_width_mm,
                                          auto_bg, bg_tol, color_mode,
-                                         modeling_mode, quantize_colors):
+                                         modeling_mode, quantize_colors, enable_cleanup,
+                                         is_dark_theme=False):
         display, cache, status = generate_preview_cached(
             image_path, lut_path, target_width_mm,
             auto_bg, bg_tol, color_mode,
-            modeling_mode, quantize_colors
+            modeling_mode, quantize_colors,
+            enable_cleanup=enable_cleanup,
+            is_dark=is_dark_theme
         )
-        return _preview_update(display), cache, status
+        # Generate realtime 3D preview GLB
+        glb_path = generate_realtime_glb(cache) if cache is not None else None
+        return _preview_update(display), cache, status, glb_path
+
+    # 像素模式下禁用孤立像素清理 Checkbox
+    def on_modeling_mode_change_cleanup(mode):
+        if mode == ModelingMode.PIXEL:
+            return gr.update(interactive=False, value=False, info="像素模式下不支持孤立像素清理 | Not available in Pixel Art mode")
+        else:
+            return gr.update(interactive=True, info="清理 LUT 匹配后的孤立像素，提升打印成功率")
+
+    components['radio_conv_modeling_mode'].change(
+        on_modeling_mode_change_cleanup,
+        inputs=[components['radio_conv_modeling_mode']],
+        outputs=[components['checkbox_conv_cleanup']]
+    ).then(
+        fn=save_modeling_mode,
+        inputs=[components['radio_conv_modeling_mode']],
+        outputs=None
+    )
+
+    # Save color mode when changed
+    components['radio_conv_color_mode'].change(
+        fn=save_color_mode,
+        inputs=[components['radio_conv_color_mode']],
+        outputs=None
+    )
 
     preview_event = components['btn_conv_preview_btn'].click(
             generate_preview_cached_with_fit,
@@ -2048,9 +2622,11 @@ def create_converter_tab_content(lang: str, lang_state=None) -> dict:
                 components['slider_conv_tolerance'],
                 components['radio_conv_color_mode'],
                 components['radio_conv_modeling_mode'],
-                components['slider_conv_quantize_colors']
+                components['slider_conv_quantize_colors'],
+                components['checkbox_conv_cleanup'],
+                theme_state
             ],
-            outputs=[conv_preview, conv_preview_cache, components['textbox_conv_status']]
+            outputs=[conv_preview, conv_preview_cache, components['textbox_conv_status'], conv_3d_preview]
     ).then(
             on_preview_generated_update_palette,
             inputs=[conv_preview_cache, lang_state],
@@ -2159,12 +2735,65 @@ def create_converter_tab_content(lang: str, lang_state=None) -> dict:
             outputs=[conv_preview, conv_preview_cache, conv_palette_html, conv_replacement_map, conv_replacement_history, components['textbox_conv_status']]
     )
 
+    # ========== Free Color (自由色) Event Handlers ==========
+    def _render_free_color_html(free_set):
+        if not free_set:
+            return ""
+        parts = ["<div style='display:flex; flex-wrap:wrap; gap:6px; padding:4px; align-items:center;'>",
+                 "<span style='font-size:11px; color:#666;'>🎯 自由色:</span>"]
+        for hex_c in sorted(free_set):
+            parts.append(
+                f"<div style='width:24px;height:24px;background:{hex_c};border:2px solid #ff6b6b;"
+                f"border-radius:4px;' title='{hex_c}'></div>"
+            )
+        parts.append("</div>")
+        return "".join(parts)
+
+    def on_mark_free_color(selected_color, free_set):
+        if not selected_color:
+            return free_set, gr.update(), "❌ 请先点击预览图选择一个颜色"
+        new_set = set(free_set) if free_set else set()
+        hex_c = selected_color.lower()
+        if hex_c in new_set:
+            new_set.discard(hex_c)
+            msg = f"↩️ 已取消自由色: {hex_c}"
+        else:
+            new_set.add(hex_c)
+            msg = f"🎯 已标记为自由色: {hex_c} (生成时将作为独立对象)"
+        return new_set, _render_free_color_html(new_set), msg
+
+    def on_clear_free_colors(free_set):
+        return set(), "", "✅ 已清除所有自由色标记"
+
+    conv_free_color_btn.click(
+        on_mark_free_color,
+        inputs=[conv_selected_color, conv_free_color_set],
+        outputs=[conv_free_color_set, conv_free_color_html, components['textbox_conv_status']]
+    )
+    conv_free_color_clear_btn.click(
+        on_clear_free_colors,
+        inputs=[conv_free_color_set],
+        outputs=[conv_free_color_set, conv_free_color_html, components['textbox_conv_status']]
+    )
+    # ========== END Free Color ==========
+
     # [修改] 预览图点击事件同步到 UI
     def on_preview_click_sync_ui(cache, evt: gr.SelectData):
         img, display_text, hex_val, msg = on_preview_click_select_color(cache, evt)
         if hex_val is None:
             return _preview_update(img), gr.update(), gr.update(), msg
         return _preview_update(img), hex_val, hex_val, msg
+
+    # Relief mode: update slider when color is selected
+    def on_color_selected_for_relief(hex_color, enable_relief, height_map, base_thickness):
+        """When user clicks a color in preview, update relief slider"""
+        if not enable_relief or not hex_color:
+            return gr.update(visible=False), hex_color
+        
+        # Get current height for this color (default to base thickness)
+        current_height = height_map.get(hex_color, base_thickness)
+        
+        return gr.update(visible=True, value=current_height), hex_color
 
     conv_preview.select(
             fn=on_preview_click_sync_ui,
@@ -2175,6 +2804,19 @@ def create_converter_tab_content(lang: str, lang_state=None) -> dict:
                 conv_selected_color,
                 components['textbox_conv_status']
             ]
+    ).then(
+        # Also update relief slider when clicking preview image
+        fn=on_color_selected_for_relief,
+        inputs=[
+            conv_selected_color,
+            components['checkbox_conv_relief_mode'],
+            conv_color_height_map,
+            components['slider_conv_thickness']
+        ],
+        outputs=[
+            components['slider_conv_relief_height'],
+            conv_relief_selected_color
+        ]
     )
     def update_preview_with_loop_with_fit(cache, loop_pos, add_loop,
                                           loop_width, loop_length, loop_hole, loop_angle):
@@ -2213,6 +2855,120 @@ def create_converter_tab_content(lang: str, lang_state=None) -> dict:
                 ],
                 outputs=[conv_preview]
             )
+    # ========== Relief Mode Event Handlers ==========
+    def on_relief_mode_toggle(enable_relief, selected_color, height_map, base_thickness):
+        """Toggle relief mode visibility and reset state"""
+        if not enable_relief:
+            # Disable relief mode - hide slider, accordion, and clear state
+            return gr.update(visible=False), gr.update(visible=False), {}, None
+        else:
+            # Enable relief mode - show accordion, show slider if color is selected
+            if selected_color:
+                current_height = height_map.get(selected_color, base_thickness)
+                return gr.update(visible=True, value=current_height), gr.update(visible=True), height_map, selected_color
+            else:
+                return gr.update(visible=False), gr.update(visible=True), height_map, selected_color
+    
+    components['checkbox_conv_relief_mode'].change(
+        on_relief_mode_toggle,
+        inputs=[
+            components['checkbox_conv_relief_mode'],
+            conv_relief_selected_color,
+            conv_color_height_map,
+            components['slider_conv_thickness']
+        ],
+        outputs=[
+            components['slider_conv_relief_height'],
+            components['accordion_conv_auto_height'],
+            conv_color_height_map,
+            conv_relief_selected_color
+        ]
+    )
+    
+    # Hook into existing color selection event (when user clicks palette swatch or uses color trigger button)
+    conv_color_trigger_btn.click(
+        on_color_selected_for_relief,
+        inputs=[
+            conv_color_selected_hidden,
+            components['checkbox_conv_relief_mode'],
+            conv_color_height_map,
+            components['slider_conv_thickness']
+        ],
+        outputs=[
+            components['slider_conv_relief_height'],
+            conv_relief_selected_color
+        ]
+    )
+    
+    def on_relief_height_change(new_height, selected_color, height_map):
+        """Update height map when slider changes"""
+        if selected_color:
+            height_map[selected_color] = new_height
+            print(f"[Relief] Updated {selected_color} -> {new_height}mm")
+        return height_map
+    
+    components['slider_conv_relief_height'].change(
+        on_relief_height_change,
+        inputs=[
+            components['slider_conv_relief_height'],
+            conv_relief_selected_color,
+            conv_color_height_map
+        ],
+        outputs=[conv_color_height_map]
+    )
+    
+    # Auto Height Generator Event Handler
+    def on_auto_height_apply(cache, mode, max_relief_height, base_thickness):
+        """Generate automatic height mapping based on color luminance using normalization"""
+        if cache is None:
+            gr.Warning("⚠️ 请先生成预览图 | Please generate preview first")
+            return {}
+        
+        # Extract unique colors from the preview cache
+        # cache structure: {'preview': img_array, 'matched_rgb': rgb_array, ...}
+        if 'matched_rgb' not in cache:
+            gr.Warning("⚠️ 预览数据不完整 | Preview data incomplete")
+            return {}
+        
+        matched_rgb = cache['matched_rgb']
+        
+        # Extract unique colors (convert to hex)
+        unique_colors = set()
+        h, w = matched_rgb.shape[:2]
+        for y in range(h):
+            for x in range(w):
+                r, g, b = matched_rgb[y, x]
+                # Skip transparent/background pixels (assuming black is background)
+                if r == 0 and g == 0 and b == 0:
+                    continue
+                hex_color = f'#{r:02x}{g:02x}{b:02x}'
+                unique_colors.add(hex_color)
+        
+        if not unique_colors:
+            gr.Warning("⚠️ 未找到有效颜色 | No valid colors found")
+            return {}
+        
+        color_list = list(unique_colors)
+        
+        # Generate height map using the normalized algorithm
+        new_height_map = generate_auto_height_map(color_list, mode, base_thickness, max_relief_height)
+        
+        gr.Info(f"✅ 已根据颜色明度自动生成 {len(new_height_map)} 个颜色的归一化高度！您可以继续点击单个颜色进行微调。")
+        
+        return new_height_map
+    
+    components['btn_conv_auto_height_apply'].click(
+        on_auto_height_apply,
+        inputs=[
+            conv_preview_cache,
+            components['radio_conv_auto_height_mode'],
+            components['slider_conv_auto_height_max'],
+            components['slider_conv_thickness']
+        ],
+        outputs=[conv_color_height_map]
+    )
+    # ========== END Relief Mode Event Handlers ==========
+    
     generate_event = components['btn_conv_generate_btn'].click(
             fn=process_batch_generation,
             inputs=[
@@ -2234,7 +2990,18 @@ def create_converter_tab_content(lang: str, lang_state=None) -> dict:
                 components['radio_conv_modeling_mode'],
                 components['slider_conv_quantize_colors'],
                 conv_replacement_map,
-                components['checkbox_conv_separate_backing']
+                components['checkbox_conv_separate_backing'],
+                components['checkbox_conv_relief_mode'],
+                conv_color_height_map,
+                components['checkbox_conv_cleanup'],
+                components['checkbox_conv_outline_enable'],
+                components['slider_conv_outline_width'],
+                components['checkbox_conv_cloisonne_enable'],
+                components['slider_conv_wire_width'],
+                components['slider_conv_wire_height'],
+                conv_free_color_set,
+                components['checkbox_conv_coating_enable'],
+                components['slider_conv_coating_height']
             ],
             outputs=[
                 components['file_conv_download_file'],
@@ -2251,6 +3018,144 @@ def create_converter_tab_content(lang: str, lang_state=None) -> dict:
         cancels=[generate_event, preview_event]
     )
     components['state_conv_lut_path'] = conv_lut_path
+
+    # ========== Slicer Integration Events ==========
+    conv_slicer_dropdown_vis = gr.State(value=False)
+
+    def on_slicer_dropdown_change(slicer_id):
+        """Update both buttons' label/color and save preference."""
+        _save_user_setting("last_slicer", slicer_id)
+        show_file = (slicer_id == "download")
+        css_cls = _slicer_css_class(slicer_id)
+        for label, sid in _get_slicer_choices(lang):
+            if sid == slicer_id:
+                return (
+                    gr.update(value=label, elem_classes=[css_cls]),
+                    gr.update(elem_classes=[css_cls]),
+                    gr.update(visible=show_file),
+                )
+        return (
+            gr.update(value="📥 下载 3MF", elem_classes=["slicer-download"]),
+            gr.update(elem_classes=["slicer-download"]),
+            gr.update(visible=True),
+        )
+
+    components['dropdown_conv_slicer'].change(
+        fn=on_slicer_dropdown_change,
+        inputs=[components['dropdown_conv_slicer']],
+        outputs=[
+            components['btn_conv_open_slicer'],
+            components['btn_conv_slicer_arrow'],
+            components['file_conv_download_file'],
+        ]
+    )
+
+    # Arrow button toggles dropdown visibility
+    def on_slicer_arrow_click(vis):
+        """Toggle dropdown visibility."""
+        new_vis = not vis
+        return gr.update(visible=new_vis), new_vis
+
+    components['btn_conv_slicer_arrow'].click(
+        fn=on_slicer_arrow_click,
+        inputs=[conv_slicer_dropdown_vis],
+        outputs=[components['dropdown_conv_slicer'], conv_slicer_dropdown_vis]
+    )
+
+    def on_open_slicer_click(file_obj, slicer_id):
+        """Open file in slicer or trigger download."""
+        if slicer_id == "download":
+            # Make file component visible so user can download
+            if file_obj is not None:
+                return gr.update(visible=True), "📥 请点击下方文件下载"
+            return gr.update(), "❌ 没有可下载的文件"
+        
+        # Get actual file path from Gradio File object
+        actual_path = None
+        if file_obj is not None:
+            if hasattr(file_obj, 'name'):
+                actual_path = file_obj.name
+            elif isinstance(file_obj, str):
+                actual_path = file_obj
+        
+        if not actual_path:
+            return gr.update(), "❌ 请先生成模型"
+        
+        status = open_in_slicer(actual_path, slicer_id)
+        return gr.update(), status
+
+    components['btn_conv_open_slicer'].click(
+        fn=on_open_slicer_click,
+        inputs=[components['file_conv_download_file'], components['dropdown_conv_slicer']],
+        outputs=[components['file_conv_download_file'], components['textbox_conv_status']]
+    )
+
+    # ========== Fullscreen 3D Toggle Events ==========
+    components['btn_conv_3d_fullscreen'].click(
+        fn=lambda glb, preview_img: (
+            gr.update(visible=True),   # show fullscreen 3D
+            glb,                        # load GLB into fullscreen
+            gr.update(visible=True),   # show 2D thumbnail
+            preview_img                 # load 2D preview into thumbnail
+        ),
+        inputs=[conv_3d_preview, conv_preview],
+        outputs=[
+            components['col_conv_3d_fullscreen'],
+            conv_3d_fullscreen,
+            components['col_conv_2d_thumbnail'],
+            conv_2d_thumb_preview
+        ]
+    )
+
+    components['btn_conv_2d_back'].click(
+        fn=lambda: (gr.update(visible=False), gr.update(visible=False)),
+        inputs=[],
+        outputs=[components['col_conv_3d_fullscreen'], components['col_conv_2d_thumbnail']]
+    )
+
+    # ========== Bed Size Change → Re-render Preview ==========
+    def on_bed_size_change(cache, bed_label, loop_pos, add_loop,
+                           loop_width, loop_length, loop_hole, loop_angle):
+        if cache is None:
+            return gr.update(), cache
+        preview_rgba = cache.get('preview_rgba')
+        if preview_rgba is None:
+            return gr.update(), cache
+        # Store bed_label in cache so click handler can use it
+        cache['bed_label'] = bed_label
+        color_conf = cache['color_conf']
+        is_dark = cache.get('is_dark', True)
+        display = render_preview(
+            preview_rgba,
+            loop_pos if add_loop else None,
+            loop_width, loop_length, loop_hole, loop_angle,
+            add_loop, color_conf,
+            bed_label=bed_label,
+            target_width_mm=cache.get('target_width_mm'),
+            is_dark=is_dark
+        )
+        return _preview_update(display), cache
+
+    components['radio_conv_bed_size'].change(
+        fn=on_bed_size_change,
+        inputs=[
+            conv_preview_cache,
+            components['radio_conv_bed_size'],
+            conv_loop_pos,
+            components['checkbox_conv_loop_enable'],
+            components['slider_conv_loop_width'],
+            components['slider_conv_loop_length'],
+            components['slider_conv_loop_hole'],
+            components['slider_conv_loop_angle']
+        ],
+        outputs=[conv_preview, conv_preview_cache]
+    )
+
+    # Expose internal state refs for theme toggle in create_app
+    components['_conv_preview'] = conv_preview
+    components['_conv_preview_cache'] = conv_preview_cache
+    components['_conv_3d_preview'] = conv_3d_preview
+
     return components
 
 
@@ -3133,6 +4038,17 @@ def create_advanced_tab_content(lang: str) -> dict:
     
     # Title and description
     components['md_advanced_title'] = gr.Markdown("### 🔬 高级功能 | Advanced Features" if lang == 'zh' else "### 🔬 Advanced Features")
+
+    # Palette display mode
+    palette_label = "调色板样式" if lang == "zh" else "Palette Style"
+    palette_swatch = "色块模式" if lang == "zh" else "Swatch Grid"
+    palette_card = "色卡模式" if lang == "zh" else "Card Layout"
+    saved_mode = _load_user_settings().get("palette_mode", "swatch")
+    components['radio_palette_mode'] = gr.Radio(
+        choices=[(palette_swatch, "swatch"), (palette_card, "card")],
+        value=saved_mode,
+        label=palette_label,
+    )
     
     return components
 

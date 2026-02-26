@@ -18,6 +18,7 @@ from utils import Stats, safe_fix_3mf_names
 from core.image_processing import LuminaImageProcessor
 from core.mesh_generators import get_mesher
 from core.geometry_utils import create_keychain_loop
+from core.heightmap_loader import HeightmapLoader
 
 # Try to import SVG rendering libraries
 try:
@@ -262,6 +263,7 @@ def convert_image_to_3d(image_path, lut_path, target_width_mm, spacer_thick,
                          blur_kernel=0, smooth_sigma=10,
                          color_replacements=None, backing_color_id=0, separate_backing=False,
                          enable_relief=False, color_height_map=None,
+                         heightmap_path=None, heightmap_max_height=None,
                          enable_cleanup=True,
                          enable_outline=False, outline_width=2.0,
                          enable_cloisonne=False, wire_width_mm=0.4,
@@ -583,6 +585,46 @@ def convert_image_to_3d(image_path, lut_path, target_width_mm, spacer_thick,
                 spacer_thick, wire_height_mm, backing_color_id
             )
         # ========== 2.5D Relief Mode Support ==========
+        # 高度图模式优先级：heightmap_path > color_height_map
+        heightmap_height_matrix = None
+        heightmap_stats = None
+        if heightmap_path is not None and enable_relief:
+            print(f"[CONVERTER] 🗺️ Heightmap Relief Mode: 尝试加载高度图...")
+            print(f"[CONVERTER] 高度图路径: {heightmap_path}")
+            try:
+                hm_max = heightmap_max_height if heightmap_max_height is not None else 5.0
+                hm_result = HeightmapLoader.load_and_process(
+                    heightmap_path=heightmap_path,
+                    target_w=target_w,
+                    target_h=target_h,
+                    max_relief_height=hm_max,
+                    base_thickness=spacer_thick
+                )
+                if hm_result['success']:
+                    heightmap_height_matrix = hm_result['height_matrix']
+                    heightmap_stats = hm_result['stats']
+                    for w in hm_result.get('warnings', []):
+                        print(f"[CONVERTER] {w}")
+                    print(f"[CONVERTER] ✅ 高度图加载成功: {heightmap_height_matrix.shape}")
+                else:
+                    print(f"[CONVERTER] ⚠️ 高度图处理失败: {hm_result['error']}，回退到 color_height_map 模式")
+            except Exception as e:
+                print(f"[CONVERTER] ⚠️ 高度图处理异常: {e}，回退到 color_height_map 模式")
+
+        if heightmap_height_matrix is not None:
+            # 高度图模式：使用逐像素高度矩阵
+            print(f"[CONVERTER] 🎨 2.5D Heightmap Relief Mode ENABLED")
+            full_matrix, backing_metadata = _build_relief_voxel_matrix(
+                matched_rgb=matched_rgb,
+                material_matrix=material_matrix,
+                mask_solid=mask_solid,
+                color_height_map=color_height_map,
+                default_height=spacer_thick,
+                structure_mode=structure_mode,
+                backing_color_id=backing_color_id,
+                pixel_scale=pixel_scale,
+                height_matrix=heightmap_height_matrix
+            )
         elif enable_relief and color_height_map:
             print(f"[CONVERTER] 🎨 2.5D Relief Mode ENABLED")
             print(f"[CONVERTER] Color height map: {color_height_map}")
@@ -969,6 +1011,11 @@ def convert_image_to_3d(image_path, lut_path, target_width_mm, spacer_thick,
     mode_name = mode_info['mode'].get_display_name()
     msg = f"✅ Conversion complete ({mode_name})! Resolution: {target_w}×{target_h}px"
     
+    # 高度图统计信息输出
+    if heightmap_stats is not None:
+        msg += (f" | 📊 高度图: {heightmap_stats['min_mm']:.1f}mm ~ "
+                f"{heightmap_stats['max_mm']:.1f}mm (avg {heightmap_stats['avg_mm']:.1f}mm)")
+    
     if loop_added:
         msg += f" | Loop: {slot_names[loop_info['color_id']]}"
     
@@ -1329,7 +1376,8 @@ def generate_auto_height_map(color_list, mode, base_thickness, max_relief_height
 
 
 def _build_relief_voxel_matrix(matched_rgb, material_matrix, mask_solid, color_height_map,
-                               default_height, structure_mode, backing_color_id, pixel_scale):
+                               default_height, structure_mode, backing_color_id, pixel_scale,
+                               height_matrix=None):
     """
     Build 2.5D relief voxel matrix with per-color variable heights.
     
@@ -1366,58 +1414,95 @@ def _build_relief_voxel_matrix(matched_rgb, material_matrix, mask_solid, color_h
     print(f"[RELIEF] Building 2.5D relief voxel matrix...")
     print(f"[RELIEF] Optical layer thickness: {OPTICAL_THICKNESS_MM}mm ({OPTICAL_LAYERS} layers)")
     
-    # Step 1: Create color-to-height mapping for each pixel
-    # Convert matched_rgb to hex colors
-    height_matrix = np.full((target_h, target_w), default_height, dtype=np.float32)
+    # Step 1: 构建逐像素高度矩阵
+    if height_matrix is not None:
+        # 高度图模式：直接使用传入的逐像素高度矩阵
+        print(f"[RELIEF] 🗺️ 使用高度图模式（逐像素高度）")
+        pixel_heights = height_matrix.copy()
+        # 高度钳制：像素高度 < OPTICAL_LAYERS 厚度时钳制为最小值
+        pixel_heights[mask_solid & (pixel_heights < OPTICAL_THICKNESS_MM)] = OPTICAL_THICKNESS_MM
+    else:
+        # 原有 color_height_map 模式：按颜色分配高度
+        pixel_heights = np.full((target_h, target_w), default_height, dtype=np.float32)
+        
+        for y in range(target_h):
+            for x in range(target_w):
+                if not mask_solid[y, x]:
+                    continue
+                
+                r, g, b = matched_rgb[y, x]
+                hex_color = f'#{r:02x}{g:02x}{b:02x}'
+                
+                if hex_color in color_height_map:
+                    pixel_heights[y, x] = color_height_map[hex_color]
     
-    for y in range(target_h):
-        for x in range(target_w):
-            if not mask_solid[y, x]:
-                continue
-            
-            r, g, b = matched_rgb[y, x]
-            hex_color = f'#{r:02x}{g:02x}{b:02x}'
-            
-            if hex_color in color_height_map:
-                height_matrix[y, x] = color_height_map[hex_color]
-    
-    # Step 2: Calculate max height to determine total Z layers
-    max_height_mm = np.max(height_matrix[mask_solid]) if np.any(mask_solid) else default_height
+    # Step 2: 计算最大高度以确定总 Z 层数
+    max_height_mm = np.max(pixel_heights[mask_solid]) if np.any(mask_solid) else default_height
     max_z_layers = max(OPTICAL_LAYERS + 1, int(np.ceil(max_height_mm / PrinterConfig.LAYER_HEIGHT)))
     
     print(f"[RELIEF] Max height: {max_height_mm:.2f}mm ({max_z_layers} layers)")
-    print(f"[RELIEF] Height range: {np.min(height_matrix[mask_solid]):.2f}mm - {max_height_mm:.2f}mm")
+    if np.any(mask_solid):
+        print(f"[RELIEF] Height range: {np.min(pixel_heights[mask_solid]):.2f}mm - {max_height_mm:.2f}mm")
     
-    # Step 3: Initialize voxel matrix
+    # Step 3: 初始化体素矩阵
     full_matrix = np.full((max_z_layers, target_h, target_w), -1, dtype=int)
     
-    # Step 4: Fill voxel matrix pixel by pixel
-    for y in range(target_h):
-        for x in range(target_w):
-            if not mask_solid[y, x]:
-                continue
+    # Step 4: 填充体素矩阵
+    if height_matrix is not None:
+        # 向量化操作：高度图模式使用 NumPy 批量填充，避免逐像素 Python 循环
+        # 计算每个像素的目标层数
+        target_z_layers = np.ceil(pixel_heights / PrinterConfig.LAYER_HEIGHT).astype(int)
+        target_z_layers = np.clip(target_z_layers, OPTICAL_LAYERS, max_z_layers)
+        
+        # 计算光学层起始位置
+        optical_start_z = target_z_layers - OPTICAL_LAYERS
+        
+        # 获取实心像素坐标
+        solid_ys, solid_xs = np.where(mask_solid)
+        
+        # 逐层填充基座层（backing）
+        for z in range(max_z_layers):
+            # 该层需要填充 backing 的像素：z < optical_start_z[y, x] 且为实心
+            backing_mask = mask_solid & (z < optical_start_z)
+            full_matrix[z][backing_mask] = backing_color_id
+        
+        # 填充光学层（向量化逐层）
+        for layer_idx in range(OPTICAL_LAYERS):
+            # 该光学层对应的 z 位置 = optical_start_z + layer_idx
+            z_positions = optical_start_z + layer_idx
             
-            # Get target height for this pixel
-            target_height_mm = height_matrix[y, x]
-            target_z_layers = int(np.ceil(target_height_mm / PrinterConfig.LAYER_HEIGHT))
-            target_z_layers = max(OPTICAL_LAYERS, min(target_z_layers, max_z_layers))
-            
-            # Calculate base and optical layer ranges
-            optical_start_z = target_z_layers - OPTICAL_LAYERS
-            optical_end_z = target_z_layers
-            
-            # Fill base layers (Z=0 to optical_start_z) with backing color
-            for z in range(optical_start_z):
-                full_matrix[z, y, x] = backing_color_id
-            
-            # Fill optical layers (optical_start_z to optical_end_z) with material layers
-            # IMPORTANT: Reverse order - layer 0 should be at the bottom (观赏面朝上)
-            for layer_idx in range(OPTICAL_LAYERS):
-                z = optical_start_z + layer_idx
+            for i in range(len(solid_ys)):
+                y, x = solid_ys[i], solid_xs[i]
+                z = z_positions[y, x]
                 if z < max_z_layers:
-                    # Reverse: layer 0 (bottom) -> z=optical_start_z, layer 4 (top) -> z=optical_end_z-1
+                    # 反转顺序：layer 0 在底部，layer 4 在顶部（观赏面朝上）
                     mat_id = material_matrix[y, x, OPTICAL_LAYERS - 1 - layer_idx]
                     full_matrix[z, y, x] = mat_id
+    else:
+        # 原有逐像素循环模式
+        for y in range(target_h):
+            for x in range(target_w):
+                if not mask_solid[y, x]:
+                    continue
+                
+                # 获取该像素的目标高度
+                target_height_mm = pixel_heights[y, x]
+                target_z_layers_px = int(np.ceil(target_height_mm / PrinterConfig.LAYER_HEIGHT))
+                target_z_layers_px = max(OPTICAL_LAYERS, min(target_z_layers_px, max_z_layers))
+                
+                # 计算基座层和光学层范围
+                optical_start_z_px = target_z_layers_px - OPTICAL_LAYERS
+                
+                # 填充基座层
+                for z in range(optical_start_z_px):
+                    full_matrix[z, y, x] = backing_color_id
+                
+                # 填充光学层（反转顺序）
+                for layer_idx in range(OPTICAL_LAYERS):
+                    z = optical_start_z_px + layer_idx
+                    if z < max_z_layers:
+                        mat_id = material_matrix[y, x, OPTICAL_LAYERS - 1 - layer_idx]
+                        full_matrix[z, y, x] = mat_id
     
     # Step 5: Relief mode is always single-sided (观赏面朝上)
     # Double-sided mode doesn't make sense for relief - the viewing surface is on top
@@ -2308,6 +2393,7 @@ def generate_final_model(image_path, lut_path, target_width_mm, spacer_thick,
                         modeling_mode=ModelingMode.VECTOR, quantize_colors=64,
                         color_replacements=None, backing_color_name="White",
                         separate_backing=False, enable_relief=False, color_height_map=None,
+                        heightmap_path=None, heightmap_max_height=None,
                         enable_cleanup=True,
                         enable_outline=False, outline_width=2.0,
                         enable_cloisonne=False, wire_width_mm=0.4,
@@ -2360,6 +2446,8 @@ def generate_final_model(image_path, lut_path, target_width_mm, spacer_thick,
         separate_backing=separate_backing,
         enable_relief=enable_relief,
         color_height_map=color_height_map,
+        heightmap_path=heightmap_path,
+        heightmap_max_height=heightmap_max_height,
         enable_cleanup=enable_cleanup,
         enable_outline=enable_outline,
         outline_width=outline_width,

@@ -495,6 +495,68 @@ def convert_image_to_3d(image_path, lut_path, target_width_mm, spacer_thick,
     slot_names = color_conf['slots']
     preview_colors = color_conf['preview']
     
+    # 尝试从 _meta.json 读取 K/S LUT 的实际耗材名，覆盖硬编码的 slot_names
+    try:
+        import json as _json
+        base_path, _ext = os.path.splitext(actual_lut_path)
+        meta_path = base_path + "_meta.json"
+        if os.path.exists(meta_path):
+            with open(meta_path, 'r', encoding='utf-8') as _mf:
+                lut_meta = _json.load(_mf)
+            filament_names = lut_meta.get('filament_names')
+            # === DEBUG: _meta.json 加载详情 ===
+            print(f"[DEBUG CONVERTER] meta_path: {meta_path}")
+            print(f"[DEBUG CONVERTER] filament_names from meta: {filament_names} (len={len(filament_names) if filament_names else 0})")
+            print(f"[DEBUG CONVERTER] slot_names from ColorSystem: {slot_names} (len={len(slot_names)})")
+            filament_colors_meta = lut_meta.get('filament_colors')
+            print(f"[DEBUG CONVERTER] filament_colors from meta: {filament_colors_meta} (len={len(filament_colors_meta) if filament_colors_meta else 0})")
+            print(f"[DEBUG CONVERTER] preview_colors from ColorSystem: len={len(preview_colors)}")
+            print(f"[DEBUG CONVERTER] color_mode={color_mode}, num_filaments(meta)={lut_meta.get('num_filaments')}")
+            # === END DEBUG ===
+            if filament_names and len(filament_names) == len(slot_names):
+                print(f"[CONVERTER] Using K/S filament names from metadata: {filament_names}")
+                slot_names = filament_names
+            elif filament_names:
+                print(f"[DEBUG CONVERTER] ⚠️ filament_names 长度不匹配! meta={len(filament_names)} vs slots={len(slot_names)}, 跳过覆盖")
+            # 从 metadata 读取耗材颜色，覆盖硬编码的 preview_colors
+            filament_colors = lut_meta.get('filament_colors')
+            if filament_colors and len(filament_colors) == len(preview_colors):
+                print(f"[CONVERTER] Using K/S filament colors from metadata: {filament_colors}")
+                for idx, hex_color in enumerate(filament_colors):
+                    try:
+                        hex_color = hex_color.lstrip('#')
+                        r, g, b = int(hex_color[0:2], 16), int(hex_color[2:4], 16), int(hex_color[4:6], 16)
+                        preview_colors[idx] = [r, g, b, 255]
+                    except (ValueError, IndexError):
+                        pass  # 保留原始颜色
+            elif filament_colors:
+                print(f"[DEBUG CONVERTER] ⚠️ filament_colors 长度不匹配! meta={len(filament_colors)} vs preview={len(preview_colors)}, 跳过覆盖")
+    except Exception as e:
+        print(f"[CONVERTER] Warning: Failed to read LUT metadata: {e}")
+
+    # K/S LUT 自动检测 backing 颜色：找到最接近白色的耗材
+    # 当用户没有手动指定 backing_color_id（默认=0）且有 _meta.json 时，
+    # 自动选择亮度最高的耗材作为 backing，避免 backing 和颜色层冲突
+    if backing_color_id == 0 and not separate_backing:
+        try:
+            if 'lut_meta' in dir() or 'lut_meta' in locals():
+                fc = lut_meta.get('filament_colors') if lut_meta else None
+                if fc and len(fc) == len(slot_names):
+                    best_idx = 0
+                    best_brightness = -1
+                    for i, hc in enumerate(fc):
+                        hc = hc.lstrip('#')
+                        r, g, b = int(hc[0:2], 16), int(hc[2:4], 16), int(hc[4:6], 16)
+                        brightness = r + g + b
+                        if brightness > best_brightness:
+                            best_brightness = brightness
+                            best_idx = i
+                    if best_idx != 0:
+                        print(f"[CONVERTER] K/S auto-detect: backing changed from mat_id=0 to mat_id={best_idx} ({slot_names[best_idx]}, brightness={best_brightness})")
+                        backing_color_id = best_idx
+        except Exception as e:
+            print(f"[CONVERTER] Warning: Auto-detect backing color failed: {e}")
+
     # Validate backing_color_id (allow -2 as special marker for separation)
     num_materials = len(slot_names)
     if backing_color_id != -2 and (backing_color_id < 0 or backing_color_id >= num_materials):
@@ -885,6 +947,8 @@ def convert_image_to_3d(image_path, lut_path, target_width_mm, spacer_thick,
         return None, None, None, "❌ Mesh generation failed: No valid meshes generated"
     
     try:
+        print(f"[DEBUG 3MF] scene.geometry.keys() 顺序: {list(scene.geometry.keys())}")
+        print(f"[DEBUG 3MF] valid_slot_names 顺序: {valid_slot_names}")
         scene.export(out_path)
         safe_fix_3mf_names(out_path, valid_slot_names)
         print(f"[CONVERTER] 3MF exported: {out_path}")

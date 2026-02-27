@@ -229,6 +229,9 @@ class LuminaImageProcessor:
         # 如果存在，直接使用它（最准确的 stacks 映射）
         base_path, ext = os.path.splitext(lut_path)
         companion_stacks_path = base_path + "_stacks.npy"
+        print(f"[DEBUG] lut_path: {lut_path}")
+        print(f"[DEBUG] companion_stacks_path: {companion_stacks_path}")
+        print(f"[DEBUG] companion exists: {os.path.exists(companion_stacks_path)}")
         
         if os.path.exists(companion_stacks_path):
             print(f"[IMAGE_PROCESSOR] Found companion stacks file: {companion_stacks_path}")
@@ -237,6 +240,23 @@ class LuminaImageProcessor:
                 if len(companion_stacks) == total_colors:
                     self.lut_rgb = measured_colors
                     self.ref_stacks = np.array(companion_stacks)
+                    # === DEBUG: companion stacks 加载详情 ===
+                    print(f"[DEBUG] companion stacks shape: {self.ref_stacks.shape}")
+                    print(f"[DEBUG] companion stacks dtype: {self.ref_stacks.dtype}")
+                    print(f"[DEBUG] LUT RGB shape: {self.lut_rgb.shape}, dtype: {self.lut_rgb.dtype}")
+                    print(f"[DEBUG] 前5个颜色 (RGB): {self.lut_rgb[:5].tolist()}")
+                    print(f"[DEBUG] 前5个stacks: {self.ref_stacks[:5].tolist()}")
+                    print(f"[DEBUG] 最后5个颜色 (RGB): {self.lut_rgb[-5:].tolist()}")
+                    print(f"[DEBUG] 最后5个stacks: {self.ref_stacks[-5:].tolist()}")
+                    # 统计 stacks 中使用的耗材索引范围
+                    unique_indices = np.unique(self.ref_stacks)
+                    print(f"[DEBUG] stacks 中使用的耗材索引: {unique_indices.tolist()} (共{len(unique_indices)}种)")
+                    print(f"[DEBUG] stacks 每层的索引范围: ", end="")
+                    for layer in range(self.ref_stacks.shape[1]):
+                        layer_unique = np.unique(self.ref_stacks[:, layer])
+                        print(f"L{layer}={layer_unique.tolist()} ", end="")
+                    print()
+                    # === END DEBUG ===
                     print(f"✅ LUT loaded: {len(self.lut_rgb)} colors (with companion stacks, {companion_stacks.shape[1]} layers)")
                     # Build KD-Tree
                     self.kdtree = KDTree(self.lut_rgb)
@@ -668,6 +688,20 @@ class LuminaImageProcessor:
         print(f"[IMAGE_PROCESSOR] Matching colors to LUT...")
         _, unique_indices = self.kdtree.query(unique_colors.astype(float))
         print(f"[IMAGE_PROCESSOR] ⏱️ LUT matching: {time.time() - t0:.2f}s")
+        
+        # === DEBUG: 颜色匹配结果 ===
+        print(f"[DEBUG] unique_colors 数量: {len(unique_colors)}")
+        print(f"[DEBUG] LUT 总颜色数: {len(self.lut_rgb)}")
+        print(f"[DEBUG] ref_stacks shape: {self.ref_stacks.shape}")
+        # 显示前10个匹配结果
+        for i in range(min(10, len(unique_colors))):
+            src_rgb = unique_colors[i].tolist()
+            lut_idx = unique_indices[i]
+            matched_rgb_val = self.lut_rgb[lut_idx].tolist()
+            matched_stack = self.ref_stacks[lut_idx].tolist()
+            dist = np.linalg.norm(unique_colors[i].astype(float) - self.lut_rgb[lut_idx].astype(float))
+            print(f"[DEBUG] 匹配 #{i}: 输入RGB={src_rgb} → LUT[{lut_idx}] RGB={matched_rgb_val} stack={matched_stack} 距离={dist:.1f}")
+        # === END DEBUG ===
         
         # 🚀 优化：构建颜色编码查找表
         # 把 RGB 编码成单个整数：R*65536 + G*256 + B

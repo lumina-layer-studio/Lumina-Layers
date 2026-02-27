@@ -155,13 +155,14 @@ class LUTManager:
         return lut_files.get(display_name)
     
     @classmethod
-    def save_uploaded_lut(cls, uploaded_file, stacks_file=None, custom_name=None):
+    def save_uploaded_lut(cls, uploaded_file, stacks_file=None, meta_file=None, custom_name=None):
         """
         Save user-uploaded LUT file to preset folder
         
         Args:
             uploaded_file: Gradio uploaded file object
             stacks_file: Gradio uploaded stacks file object (optional)
+            meta_file: Gradio uploaded meta.json file object (optional)
             custom_name: Custom filename (optional)
         
         Returns:
@@ -169,8 +170,8 @@ class LUTManager:
         """
         if uploaded_file is None:
             if stacks_file is not None:
-                return False, "❌ 请先上传 LUT 文件", cls.get_lut_choices()
-            return False, "❌ No file selected", cls.get_lut_choices()
+                return False, "❌ 请先上传 LUT 文件", cls.get_lut_choices(), None
+            return False, "❌ No file selected", cls.get_lut_choices(), None
         
         try:
             # Ensure preset folder exists
@@ -184,7 +185,7 @@ class LUTManager:
             
             # Validate file extension
             if file_extension != '.npy':
-                return False, f"❌ Invalid file type: {file_extension}. Only .npy is supported.", cls.get_lut_choices()
+                return False, f"❌ Invalid file type: {file_extension}. Only .npy is supported.", cls.get_lut_choices(), None
             
             # Use custom name or original name
             if custom_name and custom_name.strip():
@@ -216,7 +217,7 @@ class LUTManager:
             
             print(f"[LUT_MANAGER] Saved uploaded LUT: {dest_path}")
             
-            message = f"✅ LUT saved: {display_name}\nPlease select from dropdown to use"
+            message = f"✅ LUT saved: {display_name}"
             
             # 保存 stacks 文件（如果提供）
             if stacks_file is not None:
@@ -235,11 +236,23 @@ class LUTManager:
                     print(f"[LUT_MANAGER] Error saving stacks file: {e}")
                     message += f"\n⚠️ Stacks 保存失败：{e}（LUT 已正常保存）"
             
-            return True, message, cls.get_lut_choices()
+            # 保存 meta.json 文件（如果提供）
+            if meta_file is not None:
+                try:
+                    base, _ext = os.path.splitext(dest_path)
+                    meta_dest = base + "_meta.json"
+                    shutil.copy2(meta_file.name, meta_dest)
+                    message += f"\n✅ 耗材元数据已保存"
+                    print(f"[LUT_MANAGER] Saved meta file: {meta_dest}")
+                except Exception as e:
+                    print(f"[LUT_MANAGER] Error saving meta file: {e}")
+                    message += f"\n⚠️ Meta 保存失败：{e}（LUT 已正常保存）"
+            
+            return True, message, cls.get_lut_choices(), display_name
             
         except Exception as e:
             print(f"[LUT_MANAGER] Error saving LUT: {e}")
-            return False, f"❌ Save failed: {e}", cls.get_lut_choices()
+            return False, f"❌ Save failed: {e}", cls.get_lut_choices(), None
     
     @classmethod
     def delete_lut(cls, display_name):
@@ -272,6 +285,16 @@ class LUTManager:
                     print(f"[LUT_MANAGER] Deleted companion stacks: {stacks_path}")
             except Exception as e:
                 print(f"[LUT_MANAGER] Warning: Failed to delete companion stacks: {e}")
+            
+            # 联动删除 companion _meta.json 文件
+            try:
+                base, _ext = os.path.splitext(file_path)
+                meta_path = base + "_meta.json"
+                if os.path.exists(meta_path):
+                    os.remove(meta_path)
+                    print(f"[LUT_MANAGER] Deleted companion metadata: {meta_path}")
+            except Exception as e:
+                print(f"[LUT_MANAGER] Warning: Failed to delete companion metadata: {e}")
             
             print(f"[LUT_MANAGER] Deleted LUT: {file_path}")
             return True, f"✅ Deleted: {display_name}", cls.get_lut_choices()

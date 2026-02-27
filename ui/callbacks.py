@@ -35,22 +35,84 @@ def on_lut_select(display_name):
         return None, f"❌ File not found: {display_name}"
 
 
-def on_lut_upload_save(uploaded_file, uploaded_stacks_file=None):
+def on_lut_upload_save(uploaded_file):
     """
-    Save uploaded LUT file and optional stacks file (auto-save, no custom name needed)
-    
+    Save uploaded LUT file (.npy or .zip bundle) with auto-extraction.
+
+    Supports:
+    - .npy: Single LUT file (legacy behavior)
+    - .zip: Bundle containing .npy + optional _stacks.npy + optional _meta.json
+
     Args:
-        uploaded_file: Gradio 上传的 LUT 文件对象
-        uploaded_stacks_file: Gradio 上传的 stacks 文件对象（可选）
-    
+        uploaded_file: Gradio 上传的文件对象
+
     Returns:
         tuple: (new_dropdown, status_message)
     """
-    success, message, new_choices = LUTManager.save_uploaded_lut(
-        uploaded_file, stacks_file=uploaded_stacks_file, custom_name=None
+    import zipfile as _zipfile
+    import tempfile
+
+    if uploaded_file is None:
+        return gr.Dropdown(choices=LUTManager.get_lut_choices()), "❌ No file selected"
+
+    file_path = uploaded_file.name if hasattr(uploaded_file, 'name') else str(uploaded_file)
+
+    # ZIP 文件：自动解包
+    if file_path.lower().endswith('.zip'):
+        try:
+            with _zipfile.ZipFile(file_path, 'r') as zf:
+                names = zf.namelist()
+                # 找到主 LUT .npy 文件（不含 _stacks）
+                lut_files = [n for n in names if n.endswith('.npy') and '_stacks' not in n]
+                if not lut_files:
+                    return gr.Dropdown(choices=LUTManager.get_lut_choices()), "❌ ZIP 中未找到 .npy LUT 文件"
+
+                lut_name = lut_files[0]
+                base_stem = lut_name.rsplit('.', 1)[0]  # e.g. "AAAAAAAA_KS"
+
+                # 解压到临时目录
+                tmp_dir = tempfile.mkdtemp()
+                zf.extractall(tmp_dir)
+
+                # 构建文件路径
+                import os
+                lut_tmp = os.path.join(tmp_dir, lut_name)
+
+                stacks_name = base_stem + "_stacks.npy"
+                stacks_tmp = os.path.join(tmp_dir, stacks_name) if stacks_name in names else None
+
+                meta_name = base_stem + "_meta.json"
+                meta_tmp = os.path.join(tmp_dir, meta_name) if meta_name in names else None
+
+                # 创建临时文件对象模拟 Gradio 上传
+                class _TmpFile:
+                    def __init__(self, path):
+                        self.name = path
+
+                stacks_file = _TmpFile(stacks_tmp) if stacks_tmp and os.path.exists(stacks_tmp) else None
+                meta_file = _TmpFile(meta_tmp) if meta_tmp and os.path.exists(meta_tmp) else None
+
+                success, message, new_choices, saved_name = LUTManager.save_uploaded_lut(
+                    _TmpFile(lut_tmp), stacks_file=stacks_file, meta_file=meta_file, custom_name=None
+                )
+
+                # 清理临时目录
+                import shutil
+                shutil.rmtree(tmp_dir, ignore_errors=True)
+
+                return gr.Dropdown(choices=new_choices, value=saved_name), message
+
+        except _zipfile.BadZipFile:
+            return gr.Dropdown(choices=LUTManager.get_lut_choices()), "❌ 无效的 ZIP 文件"
+        except Exception as e:
+            return gr.Dropdown(choices=LUTManager.get_lut_choices()), f"❌ ZIP 解包失败: {e}"
+
+    # 普通 .npy 文件：直接保存
+    success, message, new_choices, saved_name = LUTManager.save_uploaded_lut(
+        uploaded_file, custom_name=None
     )
-    
-    return gr.Dropdown(choices=new_choices), message
+    return gr.Dropdown(choices=new_choices, value=saved_name), message
+
 
 
 def on_stacks_only_upload(stacks_file):

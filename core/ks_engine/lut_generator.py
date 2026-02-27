@@ -103,16 +103,29 @@ class KSLutGenerator:
         # reshape 为兼容格式
         lut_grid, stacks = self.reshape_to_grid(lut_colors_srgb, num_filaments)
 
+        # === DEBUG: K/S LUT 生成结果 ===
+        print(f"[DEBUG KS-GEN] num_filaments: {num_filaments}")
+        print(f"[DEBUG KS-GEN] lut_colors_srgb shape: {lut_colors_srgb.shape}, dtype: {lut_colors_srgb.dtype}")
+        print(f"[DEBUG KS-GEN] lut_grid shape: {lut_grid.shape}")
+        print(f"[DEBUG KS-GEN] stacks: {'None' if stacks is None else f'shape={stacks.shape}'}")
+        if stacks is not None:
+            print(f"[DEBUG KS-GEN] 前5个stacks: {stacks[:5].tolist()}")
+            print(f"[DEBUG KS-GEN] 前5个颜色 (sRGB): {lut_colors_srgb[:5].tolist()}")
+        print(f"[DEBUG KS-GEN] 前5个grid颜色: {lut_grid.reshape(-1, 3)[:5].tolist()}")
+        # === END DEBUG ===
+
         if progress_callback:
             progress_callback("完成", 1.0)
 
         filament_names = [f.get('name', f'耗材#{i}') for i, f in enumerate(selected_filaments)]
+        filament_colors = [f.get('color', '#000000') for f in selected_filaments]
 
         metadata = {
             "num_filaments": num_filaments,
             "total_colors": total_colors,
             "shape": lut_grid.shape,
             "filament_names": filament_names,
+            "filament_colors": filament_colors,
             "layer_height": layer_height,
             "total_layers": total_layers,
             "backing_reflectance": backing_reflectance.tolist(),
@@ -171,6 +184,7 @@ class KSLutGenerator:
         lut_grid: np.ndarray,
         file_path: str,
         stacks: np.ndarray = None,
+        metadata: dict = None,
     ) -> Tuple[str, int]:
         """
         保存 LUT 到 .npy 文件
@@ -179,10 +193,13 @@ class KSLutGenerator:
             lut_grid: reshape 后的 LUT 数组
             file_path: 保存路径
             stacks: stacks 索引数组（6色/8色等模式需要）
+            metadata: LUT 元数据（含 filament_names 等，保存为 _meta.json）
 
         Returns:
             (保存的文件路径, 颜色总数)
         """
+        import json
+
         # 确保目标目录存在
         dir_path = os.path.dirname(file_path)
         if dir_path:
@@ -200,5 +217,18 @@ class KSLutGenerator:
             base, ext = os.path.splitext(file_path)
             stacks_path = base + "_stacks.npy"
             np.save(stacks_path, stacks)
+
+        # 保存 metadata 为 _meta.json 伴随文件
+        if metadata is not None:
+            base, ext = os.path.splitext(file_path)
+            meta_path = base + "_meta.json"
+            # 只保存可序列化的字段，排除 stacks（已单独保存）
+            meta_to_save = {k: v for k, v in metadata.items() if k != 'stacks'}
+            try:
+                with open(meta_path, 'w', encoding='utf-8') as f:
+                    json.dump(meta_to_save, f, ensure_ascii=False, indent=2)
+                print(f"[LUT_GENERATOR] Saved metadata: {meta_path}")
+            except Exception as e:
+                print(f"[LUT_GENERATOR] Warning: Failed to save metadata: {e}")
 
         return file_path, total_colors

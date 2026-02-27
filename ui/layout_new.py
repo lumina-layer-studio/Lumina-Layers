@@ -52,7 +52,6 @@ from .callbacks import (
     on_extractor_clear,
     on_lut_select,
     on_lut_upload_save,
-    on_stacks_only_upload,
     on_apply_color_replacement,
     on_clear_color_replacements,
     on_undo_color_replacement,
@@ -1748,16 +1747,7 @@ def create_converter_tab_content(lang: str, lang_state=None, theme_state=None) -
                 conv_lut_upload = gr.File(
                     label="",
                     show_label=False,
-                    file_types=['.npy'],
-                    height=84,
-                    min_width=100,
-                    scale=1,
-                    elem_classes=["tall-upload"]
-                )
-                conv_stacks_upload = gr.File(
-                    label="Stacks",
-                    show_label=True,
-                    file_types=['.npy'],
+                    file_types=['.npy', '.zip'],
                     height=84,
                     min_width=100,
                     scale=1,
@@ -2559,7 +2549,7 @@ def create_converter_tab_content(lang: str, lang_state=None, theme_state=None) -
 
     conv_lut_upload.upload(
             on_lut_upload_save,
-            inputs=[conv_lut_upload, conv_stacks_upload],
+            inputs=[conv_lut_upload],
             outputs=[components['dropdown_conv_lut_dropdown'], components['md_conv_lut_status']]
     ).then(
             fn=lambda: gr.update(),
@@ -2570,12 +2560,13 @@ def create_converter_tab_content(lang: str, lang_state=None, theme_state=None) -
             inputs=[conv_lut_upload, components['radio_conv_color_mode']],
             outputs=[components['radio_conv_color_mode']]
     )
-    
-    conv_stacks_upload.upload(
-            on_stacks_only_upload,
-            inputs=[conv_stacks_upload],
-            outputs=[components['md_conv_lut_status']]
-    )
+
+    # K/S LUT 生成完成后，自动刷新转换 Tab 的 LUT 下拉列表
+    if 'ks_generate_event' in components:
+        components['ks_generate_event'].then(
+            fn=lambda: gr.Dropdown(choices=LUTManager.get_lut_choices()),
+            outputs=[components['dropdown_conv_lut_dropdown']]
+        )
 
     components['image_conv_image_label'].change(
             fn=init_dims,
@@ -4206,12 +4197,12 @@ def _on_generate_lut(file, selected_names, all_names_json, min_k=0.001, backing=
     if file is None and os.path.exists(DEFAULT_FILAMENT_PATH):
         file_path = DEFAULT_FILAMENT_PATH
     elif file is None:
-        return "", "", "❌ 请先选择耗材配置文件", empty_download, empty_download
+        return "", "", "❌ 请先选择耗材配置文件", empty_download
     else:
         file_path = file.name if hasattr(file, 'name') else str(file)
 
     if not selected_names:
-        return "", "", "❌ 请至少选择 2 种耗材", empty_download, empty_download
+        return "", "", "❌ 请至少选择 2 种耗材", empty_download
 
     try:
         filaments = FilamentLoader.load(file_path)
@@ -4229,8 +4220,7 @@ def _on_generate_lut(file, selected_names, all_names_json, min_k=0.001, backing=
             print(f"[KS_LUT] ⚠️ 未匹配的耗材: {unmatched}")
 
         if len(selected_indices) < 2:
-            return "", "", "❌ 请至少选择 2 种耗材", empty_download, empty_download
-
+            return "", "", "❌ 请至少选择 2 种耗材", empty_download
         backing_arr = np.array([float(backing)] * 3)
 
         generator = KSLutGenerator()
@@ -4251,7 +4241,7 @@ def _on_generate_lut(file, selected_names, all_names_json, min_k=0.001, backing=
         save_path = os.path.join(save_dir, filename)
 
         stacks = metadata.get('stacks')
-        saved_path, total_colors = generator.save(lut_grid, save_path, stacks)
+        saved_path, total_colors = generator.save(lut_grid, save_path, stacks, metadata=metadata)
 
         # 生成色板预览
         swatch_html = generate_color_swatch_html(lut_grid, metadata)
@@ -4291,21 +4281,33 @@ def _on_generate_lut(file, selected_names, all_names_json, min_k=0.001, backing=
 
         status = f"✅ LUT 生成成功！共 {total_colors} 种颜色，已保存到 {saved_path}"
 
-        # 下载组件更新
-        lut_download = gr.update(value=saved_path, visible=True)
-        stacks_download = empty_download
-        if stacks is not None:
+        # 打包为 zip 下载
+        zip_download = empty_download
+        try:
             base, ext = os.path.splitext(saved_path)
-            stacks_path = base + "_stacks.npy"
-            if os.path.exists(stacks_path):
-                stacks_download = gr.update(value=stacks_path, visible=True)
+            zip_path = base + ".zip"
+            with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zf:
+                # LUT 主文件
+                zf.write(saved_path, os.path.basename(saved_path))
+                # stacks 文件
+                stacks_path = base + "_stacks.npy"
+                if os.path.exists(stacks_path):
+                    zf.write(stacks_path, os.path.basename(stacks_path))
+                # meta.json 文件
+                meta_path = base + "_meta.json"
+                if os.path.exists(meta_path):
+                    zf.write(meta_path, os.path.basename(meta_path))
+            zip_download = gr.update(value=zip_path, visible=True)
+            print(f"[KS_LUT] Packed zip: {zip_path}")
+        except Exception as ze:
+            print(f"[KS_LUT] Warning: Failed to create zip: {ze}")
 
-        return swatch_html, stats_md, status, lut_download, stacks_download
+        return swatch_html, stats_md, status, zip_download
 
     except Exception as e:
         import traceback
         traceback.print_exc()
-        return "", "", f"❌ 生成失败: {e}\n\n💡 建议: 请检查耗材配置文件格式是否正确", empty_download, empty_download
+        return "", "", f"❌ 生成失败: {e}\n\n💡 建议: 请检查耗材配置文件格式是否正确", empty_download
 
 
 def create_ks_lut_tab_content(lang: str) -> dict:
@@ -4366,14 +4368,9 @@ def create_ks_lut_tab_content(lang: str) -> dict:
             )
             # LUT 统计信息
             components['md_ks_stats'] = gr.Markdown("")
-            # 下载组件 (需求 2)
-            components['file_ks_download_lut'] = gr.File(
-                label="📥 下载 LUT 文件",
-                visible=False,
-                interactive=False,
-            )
-            components['file_ks_download_stacks'] = gr.File(
-                label="📥 下载 Stacks 索引文件",
+            # 下载组件 (需求 2) — 打包为 zip 一键下载
+            components['file_ks_download_zip'] = gr.File(
+                label="📥 下载 LUT 包 (.zip)",
                 visible=False,
                 interactive=False,
             )
@@ -4398,7 +4395,7 @@ def create_ks_lut_tab_content(lang: str) -> dict:
     )
 
     # 生成 LUT 按钮回调
-    components['btn_ks_generate'].click(
+    ks_generate_event = components['btn_ks_generate'].click(
         fn=_on_generate_lut,
         inputs=[
             components['file_ks_filament'],
@@ -4412,10 +4409,10 @@ def create_ks_lut_tab_content(lang: str) -> dict:
             components['html_ks_swatch'],
             components['md_ks_stats'],
             components['md_ks_status'],
-            components['file_ks_download_lut'],
-            components['file_ks_download_stacks'],
+            components['file_ks_download_zip'],
         ],
     )
+    components['ks_generate_event'] = ks_generate_event
 
     return components
 

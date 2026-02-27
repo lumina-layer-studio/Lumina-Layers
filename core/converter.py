@@ -3203,15 +3203,17 @@ def detect_lut_color_mode(lut_path):
         
         print(f"[AUTO_DETECT] LUT shape: {lut_data.shape}, total colors: {total_colors}")
         
-        # 精确匹配 n^5 值
+        # 精确匹配 n^5 值 — 返回值必须匹配 Radio choices
+        # Radio choices: "BW (Black & White)", "4-Color", "6-Color (Smart 1296)", "8-Color Max", "Merged"
         n5_map = {
             32: ("BW (Black & White)", 2),
-            243: ("3-Color (243 colors)", 3),
             1024: ("4-Color", 4),
-            3125: ("5-Color (3125 colors)", 5),
-            7776: ("6-Color (7776 colors)", 6),
-            16807: ("7-Color (16807 colors)", 7),
+            7776: ("6-Color (Smart 1296)", 6),
             32768: ("8-Color Max", 8),
+            # 非标准 n^5 模式归为 Merged
+            243: ("Merged", 3),
+            3125: ("Merged", 5),
+            16807: ("Merged", 7),
         }
         
         if total_colors in n5_map:

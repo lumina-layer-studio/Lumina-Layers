@@ -12,6 +12,60 @@ from typing import List
 from core.i18n import I18n
 
 
+def build_hue_filter_bar_html(lang: str = "zh") -> str:
+    """Build the hue filter button bar HTML (shared by swatch, card, and palette grids)."""
+    hue_labels = [
+        ('all',     I18n.get('lut_grid_hue_all', lang),     '#666'),
+        ('red',     I18n.get('lut_grid_hue_red', lang),     '#e53935'),
+        ('orange',  I18n.get('lut_grid_hue_orange', lang),  '#fb8c00'),
+        ('yellow',  I18n.get('lut_grid_hue_yellow', lang),  '#fdd835'),
+        ('green',   I18n.get('lut_grid_hue_green', lang),   '#43a047'),
+        ('cyan',    I18n.get('lut_grid_hue_cyan', lang),    '#00acc1'),
+        ('blue',    I18n.get('lut_grid_hue_blue', lang),    '#1e88e5'),
+        ('purple',  I18n.get('lut_grid_hue_purple', lang),  '#8e24aa'),
+        ('neutral', I18n.get('lut_grid_hue_neutral', lang), '#9e9e9e'),
+        ('fav',     I18n.get('lut_grid_hue_fav', lang),     '#ffc107'),
+    ]
+    parts = ['<div id="lut-hue-filter-bar" style="display:flex; flex-wrap:wrap; gap:3px; margin-bottom:8px;">']
+    for hue_key, hue_label, hue_color in hue_labels:
+        active_style = "background:#333; color:#fff; border-color:#333;" if hue_key == 'all' else ""
+        if hue_key == 'all':
+            dot = ''
+        elif hue_key == 'neutral':
+            # Neutral dot: box-sizing keeps total size at 6px despite border
+            dot = f'<span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:{hue_color};border:1px solid #666;box-sizing:border-box;margin-right:2px;vertical-align:middle;"></span>'
+        elif hue_key == 'fav':
+            # Star scaled down to match dot size
+            dot = '<span style="font-size:8px;margin-right:1px;vertical-align:middle;">⭐</span>'
+        else:
+            dot = f'<span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:{hue_color};margin-right:2px;vertical-align:middle;"></span>'
+        # Use a unified JS dispatcher that works for both swatch and card modes
+        parts.append(
+            f'<button class="lut-hue-btn" data-hue="{hue_key}" '
+            f'onclick="window.lutHueDispatch && window.lutHueDispatch(\'{hue_key}\', this)" '
+            f'style="padding:2px 8px; border:1px solid #ccc; border-radius:10px; background:#f5f5f5; '
+            f'cursor:pointer; font-size:10px; height:22px; line-height:16px; {active_style}">{dot}{hue_label}</button>'
+        )
+    parts.append('</div>')
+    return ''.join(parts)
+
+
+def build_search_bar_html(lang: str = "zh") -> str:
+    """Build the search input bar HTML (shared by swatch and card grids)."""
+    search_placeholder = I18n.get('lut_grid_search_hex_placeholder', lang)
+    search_clear = I18n.get('lut_grid_search_clear', lang)
+    return f'''<div style="margin-bottom:8px; display:flex; align-items:center; gap:8px;">
+        <span style="font-size:12px; color:#666;">🔍</span>
+        <input type="text" id="lut-color-search" placeholder="{search_placeholder}"
+               style="flex:1; padding:6px 10px; border:1px solid #ddd; border-radius:6px; font-size:11px; outline:none;"
+               oninput="window.lutSearchDispatch && window.lutSearchDispatch(this.value)"
+               onfocus="this.style.borderColor='#2196F3'"
+               onblur="this.style.borderColor='#ddd'" />
+        <button onclick="document.getElementById('lut-color-search').value=''; window.lutSearchDispatch && window.lutSearchDispatch('');"
+                style="padding:4px 10px; border:1px solid #ddd; border-radius:6px; background:#f5f5f5; cursor:pointer; font-size:10px;">{search_clear}</button>
+    </div>'''
+
+
 def generate_palette_html(palette: List[dict], replacements: dict = None, selected_color: str = None, lang: str = "zh") -> str:
     """
     Generate HTML display for color palette with clickable swatches.
@@ -89,7 +143,7 @@ def generate_lut_color_grid_html(colors: List[dict], selected_color: str = None,
     """
     Generate HTML for displaying LUT available colors as a clickable visual grid.
     Text is displayed BELOW the color swatches.
-    Includes a search box to filter colors by hex code.
+    Includes hex/RGB search, hue filter buttons, and scroll-to-highlight.
     Uses event delegation for click handling.
     
     Args:
@@ -98,7 +152,7 @@ def generate_lut_color_grid_html(colors: List[dict], selected_color: str = None,
         used_colors: Set of hex colors currently used in the image (for grouping)
     
     Returns:
-        HTML string showing available colors as a clickable grid with search
+        HTML string showing available colors as a clickable grid with search & filters
     """
     if not colors:
         return f"<p style='color:#888;'>{I18n.get('lut_grid_load_hint', lang)}</p>"
@@ -117,34 +171,44 @@ def generate_lut_color_grid_html(colors: List[dict], selected_color: str = None,
         else:
             not_used.append(entry)
     
-    # Note: Click handlers are now global in crop_extension.py
-    # Only keep the search filter function which uses oninput attribute
-    
     count_text = I18n.get('lut_grid_count', lang).format(count=len(colors))
-    search_placeholder = I18n.get('lut_grid_search_placeholder', lang)
-    search_clear = I18n.get('lut_grid_search_clear', lang)
+
     html_parts = [
         f'<p style="color:#666; font-size:12px; margin-bottom:8px;">{count_text}: <span id="lut-color-visible-count">{len(colors)}</span></p>',
-        # Search box with inline filter function
-        f'''
-        <div style="margin-bottom:12px; display:flex; align-items:center; gap:8px;">
-            <span style="font-size:12px; color:#666;">🔍</span>
-            <input type="text" id="lut-color-search" placeholder="{search_placeholder}" 
-                   style="flex:1; padding:8px 12px; border:1px solid #ddd; border-radius:6px; font-size:12px; outline:none; transition: border-color 0.2s;"
-                   oninput="window.filterLutColors && window.filterLutColors(this.value)"
-                   onfocus="this.style.borderColor='#2196F3'"
-                   onblur="this.style.borderColor='#ddd'" />
-            <button onclick="document.getElementById('lut-color-search').value=''; window.filterLutColors && window.filterLutColors('');" 
-                    style="padding:6px 12px; border:1px solid #ddd; border-radius:6px; background:#f5f5f5; cursor:pointer; font-size:11px; transition: background 0.2s;"
-                    onmouseover="this.style.background='#e0e0e0'"
-                    onmouseout="this.style.background='#f5f5f5'">{search_clear}</button>
-        </div>
-        ''',
-        '<div id="lut-color-grid-container" style="max-height:400px; overflow-y:auto; padding:4px;">'
+        build_search_bar_html(lang),
+        build_hue_filter_bar_html(lang),
     ]
+
+    html_parts.append('<div id="lut-color-grid-container" style="max-height:400px; overflow-y:auto; padding:4px;">')
     
+    def _classify_hue(r, g, b):
+        """Classify RGB color into hue category."""
+        import colorsys
+        rf, gf, bf = r / 255.0, g / 255.0, b / 255.0
+        h, s, v = colorsys.rgb_to_hsv(rf, gf, bf)
+        h360 = h * 360
+        # Neutral: low saturation or very dark/light
+        if s < 0.15 or v < 0.10:
+            return 'neutral'
+        # Hue ranges
+        if h360 < 15 or h360 >= 345:
+            return 'red'
+        elif h360 < 40:
+            return 'orange'
+        elif h360 < 70:
+            return 'yellow'
+        elif h360 < 160:
+            return 'green'
+        elif h360 < 195:
+            return 'cyan'
+        elif h360 < 260:
+            return 'blue'
+        elif h360 < 345:
+            return 'purple'
+        return 'neutral'
+
     def render_color_grid(color_list, section_title=None, section_color="#666"):
-        """Helper to render a section of colors with text BELOW swatches. No onclick - uses event delegation."""
+        """Helper to render a section of colors with data-hue attribute."""
         parts = []
         if section_title:
             parts.append(f'<p style="color:{section_color}; font-size:11px; margin:8px 0 4px 0; font-weight:bold;">{section_title}</p>')
@@ -152,15 +216,15 @@ def generate_lut_color_grid_html(colors: List[dict], selected_color: str = None,
         
         for entry in color_list:
             hex_color = entry['hex']
+            r, g, b = entry['color']
+            hue_cat = _classify_hue(r, g, b)
             
-            # Check if selected
             is_selected = selected_color and hex_color.lower() == selected_color.lower()
             outline_style = "outline: 3px solid #2196F3; outline-offset: 2px;" if is_selected else ""
             
-            # Container with text BELOW swatch - no onclick, handled by event delegation
             tooltip = I18n.get('lut_grid_tooltip', lang).format(hex=hex_color)
             parts.append(f'''
-            <div class="lut-color-swatch-container" style="display:flex; flex-direction:column; align-items:center; gap:4px;">
+            <div class="lut-color-swatch-container" data-hue="{hue_cat}" style="display:flex; flex-direction:column; align-items:center; gap:4px;">
                 <div class="lut-color-swatch" style="width:50px; height:50px; background:{hex_color}; border:1px solid #ccc; border-radius:8px; cursor:pointer; transition: all 0.2s ease; {outline_style}" data-color="{hex_color}" title="{tooltip}"></div>
                 <div style="text-align:center; font-size:9px; color:#666;">{hex_color}</div>
             </div>
@@ -172,11 +236,7 @@ def generate_lut_color_grid_html(colors: List[dict], selected_color: str = None,
     # Render used colors section (if any)
     if used_in_image:
         section_title = I18n.get('lut_grid_used', lang).format(count=len(used_in_image))
-        html_parts.extend(render_color_grid(
-            used_in_image,
-            section_title,
-            "#4CAF50"
-        ))
+        html_parts.extend(render_color_grid(used_in_image, section_title, "#4CAF50"))
     
     # Render unused colors section
     if not_used:
@@ -186,6 +246,5 @@ def generate_lut_color_grid_html(colors: List[dict], selected_color: str = None,
         html_parts.extend(render_color_grid(not_used, section_title, "#888"))
     
     html_parts.append('</div>')
-    # Note: JavaScript handlers are now global in crop_extension.py
     
     return ''.join(html_parts)

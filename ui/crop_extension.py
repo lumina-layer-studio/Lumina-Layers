@@ -281,6 +281,18 @@ CROP_MODAL_JS = """
     margin: 0 !important;
     border: none !important;
 }
+
+/* LUT swatch breathing highlight animation */
+@keyframes lutBreathing {
+    0%   { outline: 3px solid rgba(255, 87, 34, 0.9); outline-offset: 2px; }
+    50%  { outline: 6px solid rgba(255, 87, 34, 0.3); outline-offset: 4px; }
+    100% { outline: 3px solid rgba(255, 87, 34, 0.9); outline-offset: 2px; }
+}
+.lut-color-swatch.lut-highlight {
+    animation: lutBreathing 0.7s ease-in-out 3;
+    z-index: 10;
+    position: relative;
+}
 </style>
 <script>
 window.cropper = null;
@@ -425,26 +437,327 @@ console.log('Crop modal JS loaded, openCropModal:', typeof window.openCropModal)
 // ═══════════════════════════════════════════════════════════════
 
 (function() {
-    // LUT color search filter function (called from oninput attribute)
-    window.filterLutColors = function(searchValue) {
-        var query = searchValue.toLowerCase().replace('#', '');
+    // ═══════════════════════════════════════════════════════════════
+    // Unified dispatchers: auto-detect swatch vs card mode
+    // ═══════════════════════════════════════════════════════════════
+    function _isCardMode() {
+        // Card mode uses bare .lut-color-swatch without .lut-color-swatch-container
+        return document.querySelectorAll('.lut-color-swatch-container').length === 0;
+    }
+
+    // Search dispatcher
+    window.lutSearchDispatch = function(val) {
+        if (_isCardMode()) {
+            window.lutCardSearch(val);
+        } else {
+            window.lutSmartSearch(val);
+        }
+    };
+
+    // Hue dispatcher
+    window.lutHueDispatch = function(hueKey, btnEl) {
+        // Update button styles
+        document.querySelectorAll('.lut-hue-btn').forEach(function(b) {
+            b.style.background = '#f5f5f5'; b.style.color = '#333'; b.style.borderColor = '#ccc';
+        });
+        if (btnEl) { btnEl.style.background = '#333'; btnEl.style.color = '#fff'; btnEl.style.borderColor = '#333'; }
+        // Clear search
+        var searchBox = document.getElementById('lut-color-search');
+        if (searchBox) searchBox.value = '';
+
+        if (hueKey === 'fav') {
+            // Show only favorites
+            var favs = window._lutFavorites || {};
+            if (_isCardMode()) {
+                var swatches = document.querySelectorAll('.lut-color-swatch');
+                var cnt = 0;
+                swatches.forEach(function(s) {
+                    if (favs[s.getAttribute('data-color')]) { s.style.opacity = '1'; cnt++; }
+                    else { s.style.opacity = '0.12'; }
+                });
+                var ce = document.getElementById('lut-color-visible-count');
+                if (ce) ce.textContent = cnt;
+            } else {
+                var containers = document.querySelectorAll('.lut-color-swatch-container');
+                var cnt = 0;
+                containers.forEach(function(c) {
+                    var sw = c.querySelector('.lut-color-swatch');
+                    if (sw && favs[sw.getAttribute('data-color')]) { c.style.display = 'flex'; cnt++; }
+                    else { c.style.display = 'none'; }
+                });
+                var ce = document.getElementById('lut-color-visible-count');
+                if (ce) ce.textContent = cnt;
+            }
+            return;
+        }
+
+        if (_isCardMode()) {
+            // Card mode: dim non-matching
+            var swatches = document.querySelectorAll('.lut-color-swatch');
+            var cnt = 0;
+            swatches.forEach(function(s) {
+                if (hueKey === 'all' || s.getAttribute('data-hue') === hueKey) { s.style.opacity = '1'; cnt++; }
+                else { s.style.opacity = '0.12'; }
+            });
+            var ce = document.getElementById('lut-color-visible-count');
+            if (ce) ce.textContent = cnt;
+        } else {
+            // Swatch mode: hide non-matching
+            var containers = document.querySelectorAll('.lut-color-swatch-container');
+            var cnt = 0;
+            containers.forEach(function(c) {
+                var h = c.getAttribute('data-hue');
+                if (hueKey === 'all' || h === hueKey) { c.style.display = 'flex'; cnt++; }
+                else { c.style.display = 'none'; }
+            });
+            var ce = document.getElementById('lut-color-visible-count');
+            if (ce) ce.textContent = cnt;
+        }
+    };
+
+    // Keep backward compat
+    window.lutFilterByHue = window.lutHueDispatch;
+    window.lutCardFilterByHue = window.lutHueDispatch;
+
+    // LUT color smart search (swatch mode): supports hex, partial hex, RGB
+    window.lutSmartSearch = function(searchValue) {
+        var query = searchValue.trim().toLowerCase();
+        var containers = document.querySelectorAll('.lut-color-swatch-container');
+        var visibleCount = 0;
+        var firstMatch = null;
+
+        var rgbMatch = query.match(/^(\d{1,3})\s*[,\s]\s*(\d{1,3})\s*[,\s]\s*(\d{1,3})$/);
+        var rgbHex = null;
+        if (rgbMatch) {
+            var r = Math.min(255, parseInt(rgbMatch[1]));
+            var g = Math.min(255, parseInt(rgbMatch[2]));
+            var b = Math.min(255, parseInt(rgbMatch[3]));
+            rgbHex = ('0'+r.toString(16)).slice(-2) + ('0'+g.toString(16)).slice(-2) + ('0'+b.toString(16)).slice(-2);
+        }
+        var hexQuery = query.replace('#', '');
+
+        containers.forEach(function(container) {
+            var swatch = container.querySelector('.lut-color-swatch');
+            if (!swatch) return;
+            var color = swatch.getAttribute('data-color').toLowerCase().replace('#', '');
+            var match = query === '' || (rgbHex ? color === rgbHex : color.includes(hexQuery));
+            if (match) { container.style.display = 'flex'; visibleCount++; if (!firstMatch) firstMatch = swatch; }
+            else { container.style.display = 'none'; }
+        });
+        var countEl = document.getElementById('lut-color-visible-count');
+        if (countEl) countEl.textContent = visibleCount;
+        if (firstMatch && query !== '') window.lutScrollAndHighlight(firstMatch);
+    };
+
+    // Card mode search: dim non-matching (preserve grid layout)
+    window.lutCardSearch = function(searchValue) {
+        var query = searchValue.trim().toLowerCase().replace('#', '');
+        var swatches = document.querySelectorAll('.lut-color-swatch');
+        var visibleCount = 0;
+        var firstMatch = null;
+
+        var rgbMatch = query.match(/^(\d{1,3})\s*[,\s]\s*(\d{1,3})\s*[,\s]\s*(\d{1,3})$/);
+        var rgbHex = null;
+        if (rgbMatch) {
+            var r = Math.min(255, parseInt(rgbMatch[1]));
+            var g = Math.min(255, parseInt(rgbMatch[2]));
+            var b = Math.min(255, parseInt(rgbMatch[3]));
+            rgbHex = ('0'+r.toString(16)).slice(-2) + ('0'+g.toString(16)).slice(-2) + ('0'+b.toString(16)).slice(-2);
+        }
+
+        swatches.forEach(function(swatch) {
+            var color = swatch.getAttribute('data-color').toLowerCase().replace('#', '');
+            var match = query === '' || (rgbHex ? color === rgbHex : color.includes(query));
+            if (match) { swatch.style.opacity = '1'; visibleCount++; if (!firstMatch && query !== '') firstMatch = swatch; }
+            else { swatch.style.opacity = '0.15'; }
+        });
+        var countEl = document.getElementById('lut-color-visible-count');
+        if (countEl) countEl.textContent = visibleCount;
+        if (firstMatch) window.lutScrollAndHighlight(firstMatch);
+    };
+
+    // Keep backward compat
+    window.filterLutColors = window.lutSmartSearch;
+
+    // Scroll to a swatch and add breathing highlight animation
+    window.lutScrollAndHighlight = function(swatchEl) {
+        if (!swatchEl) return;
+        swatchEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        // Remove previous highlights
+        document.querySelectorAll('.lut-color-swatch.lut-highlight').forEach(function(el) {
+            el.classList.remove('lut-highlight');
+        });
+        swatchEl.classList.add('lut-highlight');
+        // Remove after animation
+        setTimeout(function() { swatchEl.classList.remove('lut-highlight'); }, 2000);
+    };
+
+    // Hue filter: show/hide swatches by data-hue attribute
+    window._lutActiveHue = 'all';
+    window.lutFilterByHue = function(hueKey, btnEl) {
+        window._lutActiveHue = hueKey;
+        // Update button styles
+        document.querySelectorAll('.lut-hue-btn').forEach(function(b) {
+            b.style.background = '#f5f5f5';
+            b.style.color = '#333';
+            b.style.borderColor = '#ccc';
+        });
+        if (btnEl) {
+            btnEl.style.background = '#333';
+            btnEl.style.color = '#fff';
+            btnEl.style.borderColor = '#333';
+        }
+        // Filter containers
         var containers = document.querySelectorAll('.lut-color-swatch-container');
         var visibleCount = 0;
         containers.forEach(function(container) {
-            var swatch = container.querySelector('.lut-color-swatch');
-            if (swatch) {
-                var color = swatch.getAttribute('data-color').toLowerCase().replace('#', '');
-                if (query === '' || color.includes(query)) {
-                    container.style.display = 'flex';
-                    visibleCount++;
-                } else {
-                    container.style.display = 'none';
-                }
+            var containerHue = container.getAttribute('data-hue');
+            if (hueKey === 'all' || containerHue === hueKey) {
+                container.style.display = 'flex';
+                visibleCount++;
+            } else {
+                container.style.display = 'none';
             }
         });
         var countEl = document.getElementById('lut-color-visible-count');
         if (countEl) countEl.textContent = visibleCount;
+        // Clear search box when switching hue
+        var searchBox = document.getElementById('lut-color-search');
+        if (searchBox) searchBox.value = '';
     };
+
+    // Color picker nearest match: called from Gradio backend, scrolls to matched swatch
+    window.lutScrollToColor = function(hexColor) {
+        if (!hexColor) return;
+        var target = hexColor.toLowerCase();
+        var swatches = document.querySelectorAll('.lut-color-swatch');
+        for (var i = 0; i < swatches.length; i++) {
+            if (swatches[i].getAttribute('data-color').toLowerCase() === target) {
+                // Reset hue filter to show all
+                var allBtn = document.querySelector('.lut-hue-btn[data-hue="all"]');
+                if (allBtn) {
+                    if (window.lutFilterByHue) window.lutFilterByHue('all', allBtn);
+                    else if (window.lutCardFilterByHue) window.lutCardFilterByHue('all', allBtn);
+                }
+                // Clear search
+                var searchBox = document.getElementById('lut-color-search');
+                if (searchBox) searchBox.value = '';
+                // Scroll and highlight
+                window.lutScrollAndHighlight(swatches[i]);
+                // Simulate click to select
+                swatches[i].click();
+                return;
+            }
+        }
+    };
+
+    // ═══════════════════════════════════════════════════════════════
+    // Favorites: double-click swatch to toggle, persisted per LUT
+    // ═══════════════════════════════════════════════════════════════
+    window._lutFavorites = {};  // { '#hexcolor': true }
+    window._lutCurrentLutKey = '';
+
+    // Load favorites from localStorage for a given LUT key
+    window.lutLoadFavorites = function(lutKey) {
+        window._lutCurrentLutKey = lutKey || '';
+        try {
+            var stored = localStorage.getItem('lut_favorites_' + lutKey);
+            window._lutFavorites = stored ? JSON.parse(stored) : {};
+        } catch(e) { window._lutFavorites = {}; }
+        window._lutApplyFavStars();
+    };
+
+    // Save favorites to localStorage
+    window._lutSaveFavorites = function() {
+        try {
+            localStorage.setItem('lut_favorites_' + window._lutCurrentLutKey, JSON.stringify(window._lutFavorites));
+        } catch(e) {}
+    };
+
+    // Apply star overlays to all favorited swatches
+    window._lutApplyFavStars = function() {
+        document.querySelectorAll('.lut-color-swatch').forEach(function(s) {
+            var hex = s.getAttribute('data-color');
+            var star = s.querySelector('.lut-fav-star');
+            if (window._lutFavorites[hex]) {
+                if (!star) {
+                    star = document.createElement('span');
+                    star.className = 'lut-fav-star';
+                    star.textContent = '⭐';
+                    star.style.cssText = 'position:absolute;top:-2px;right:-2px;font-size:8px;pointer-events:none;';
+                    s.style.position = 'relative';
+                    s.style.overflow = 'visible';
+                    s.appendChild(star);
+                }
+            } else if (star) {
+                star.remove();
+            }
+        });
+    };
+
+    // Toggle favorite on double-click
+    document.addEventListener('dblclick', function(e) {
+        var swatch = e.target.closest('.lut-color-swatch');
+        if (!swatch) return;
+        var hex = swatch.getAttribute('data-color');
+        if (!hex) return;
+        if (window._lutFavorites[hex]) {
+            delete window._lutFavorites[hex];
+        } else {
+            window._lutFavorites[hex] = true;
+        }
+        window._lutSaveFavorites();
+        window._lutApplyFavStars();
+    }, true);
+
+    // ═══════════════════════════════════════════════════════════════
+    // MutationObserver: auto-load favorites when grid re-renders
+    // ═══════════════════════════════════════════════════════════════
+    (function _initGridObserver() {
+        function _onGridChange() {
+            var container = document.getElementById('lut-color-grid-container');
+            if (!container) return;
+            var lutKey = container.getAttribute('data-lut-key') || '';
+            if (lutKey) {
+                window.lutLoadFavorites(lutKey);
+            } else {
+                window._lutApplyFavStars();
+            }
+        }
+        // Observe the Gradio app root for subtree changes (grid is re-rendered by Gradio)
+        var _gridObsTimer = null;
+        var obs = new MutationObserver(function(mutations) {
+            // Debounce: grid re-render may trigger many mutations
+            if (_gridObsTimer) clearTimeout(_gridObsTimer);
+            _gridObsTimer = setTimeout(function() {
+                // Check if any mutation involves the grid container
+                for (var i = 0; i < mutations.length; i++) {
+                    var m = mutations[i];
+                    if (m.type === 'childList') {
+                        for (var j = 0; j < m.addedNodes.length; j++) {
+                            var node = m.addedNodes[j];
+                            if (node.nodeType === 1 && (node.id === 'lut-color-grid-container' || (node.querySelector && node.querySelector('#lut-color-grid-container')))) {
+                                _onGridChange();
+                                return;
+                            }
+                        }
+                    }
+                }
+            }, 150);
+        });
+        // Start observing once DOM is ready
+        function _startObs() {
+            var root = document.querySelector('.gradio-container') || document.body;
+            obs.observe(root, { childList: true, subtree: true });
+            // Also run once on init in case grid is already rendered
+            setTimeout(_onGridChange, 500);
+        }
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', _startObs);
+        } else {
+            _startObs();
+        }
+    })();
     
     // Helper function to update Gradio textbox
     function updateGradioTextbox(elemId, value) {

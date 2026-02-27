@@ -578,3 +578,219 @@ def merge_8color_data():
         import traceback
         traceback.print_exc()
         return None, f"❌ Merge failed: {e}"
+
+
+# ═══════════════════════════════════════════════════════════════
+# LUT Merge Callbacks
+# ═══════════════════════════════════════════════════════════════
+
+def on_merge_lut_select(display_name, lang="zh"):
+    """
+    When user selects a LUT in the merge tab, detect its color mode.
+
+    Returns:
+        str: Markdown showing detected mode
+    """
+    from core.lut_merger import LUTMerger
+
+    if not display_name:
+        label = I18n.get('merge_mode_label', lang)
+        unknown = I18n.get('merge_mode_unknown', lang)
+        return f"**{label}**: {unknown}"
+
+    lut_path = LUTManager.get_lut_path(display_name)
+    if not lut_path:
+        return f"**{I18n.get('merge_mode_label', lang)}**: ❌ File not found"
+
+    try:
+        mode, count = LUTMerger.detect_color_mode(lut_path)
+        return f"**{I18n.get('merge_mode_label', lang)}**: {mode} ({count} colors)"
+    except Exception as e:
+        return f"**{I18n.get('merge_mode_label', lang)}**: ❌ {e}"
+
+
+def on_merge_primary_select(display_name, lang="zh"):
+    """
+    When user selects the primary LUT, detect its mode and filter secondary choices.
+
+    Primary must be 6-Color or 8-Color.
+    - 8-Color primary → secondary can be BW, 4-Color, 6-Color
+    - 6-Color primary → secondary can be BW, 4-Color
+
+    Returns:
+        tuple: (mode_markdown, updated_secondary_dropdown)
+    """
+    from core.lut_merger import LUTMerger
+
+    if not display_name:
+        return (
+            I18n.get('merge_primary_hint', lang),
+            gr.Dropdown(choices=[], value=[]),
+        )
+
+    lut_path = LUTManager.get_lut_path(display_name)
+    if not lut_path:
+        return (
+            f"**{I18n.get('merge_mode_label', lang)}**: ❌ File not found",
+            gr.Dropdown(choices=[], value=[]),
+        )
+
+    try:
+        mode, count = LUTMerger.detect_color_mode(lut_path)
+    except Exception as e:
+        return (
+            f"**{I18n.get('merge_mode_label', lang)}**: ❌ {e}",
+            gr.Dropdown(choices=[], value=[]),
+        )
+
+    # Primary must be 6-Color or 8-Color
+    if mode not in ("6-Color", "8-Color"):
+        return (
+            I18n.get('merge_primary_not_high', lang),
+            gr.Dropdown(choices=[], value=[]),
+        )
+
+    mode_md = f"**{I18n.get('merge_mode_label', lang)}**: {mode} ({count} colors)"
+
+    # Determine allowed secondary modes
+    # Exclude "Merged" to prevent stale/corrupt merged LUTs from being re-merged
+    if mode == "8-Color":
+        allowed_modes = {"BW", "4-Color", "6-Color"}
+    else:  # 6-Color
+        allowed_modes = {"BW", "4-Color"}
+
+    # Filter LUT choices: exclude the primary itself, only include allowed modes
+    all_choices = LUTManager.get_lut_choices()
+    filtered = []
+    for choice_name in all_choices:
+        if choice_name == display_name:
+            continue
+        path = LUTManager.get_lut_path(choice_name)
+        if not path:
+            continue
+        try:
+            m, _ = LUTMerger.detect_color_mode(path)
+            if m in allowed_modes:
+                filtered.append(choice_name)
+        except Exception:
+            continue
+
+    return (
+        mode_md,
+        gr.Dropdown(choices=filtered, value=[]),
+    )
+
+
+def on_merge_secondary_change(selected_names, lang="zh"):
+    """
+    When user changes secondary LUT selection, show detected modes.
+
+    Args:
+        selected_names: List of selected LUT display names (multi-select)
+
+    Returns:
+        str: Markdown showing detected modes for each selected LUT
+    """
+    from core.lut_merger import LUTMerger
+
+    if not selected_names:
+        return I18n.get('merge_secondary_none', lang)
+
+    lines = [f"**{I18n.get('merge_secondary_modes', lang)}**:"]
+    for name in selected_names:
+        path = LUTManager.get_lut_path(name)
+        if not path:
+            lines.append(f"- {name}: ❌")
+            continue
+        try:
+            mode, count = LUTMerger.detect_color_mode(path)
+            lines.append(f"- {name}: **{mode}** ({count} colors)")
+        except Exception as e:
+            lines.append(f"- {name}: ❌ {e}")
+
+    return "\n".join(lines)
+
+
+def on_merge_execute(primary_name, secondary_names, dedup_threshold, lang="zh"):
+    """
+    Execute LUT merge: primary + multiple secondary LUTs.
+
+    Returns:
+        tuple: (status_markdown, updated_primary_dropdown, updated_secondary_dropdown)
+    """
+    from core.lut_merger import LUTMerger
+    import time
+
+    # Validate primary
+    if not primary_name:
+        return I18n.get('merge_error_no_lut', lang), gr.update(), gr.update()
+
+    # Validate secondary
+    if not secondary_names or len(secondary_names) == 0:
+        return I18n.get('merge_error_no_secondary', lang), gr.update(), gr.update()
+
+    primary_path = LUTManager.get_lut_path(primary_name)
+    if not primary_path:
+        return I18n.get('merge_error_no_lut', lang), gr.update(), gr.update()
+
+    try:
+        # Detect primary mode
+        primary_mode, _ = LUTMerger.detect_color_mode(primary_path)
+
+        # Load primary
+        primary_rgb, primary_stacks = LUTMerger.load_lut_with_stacks(primary_path, primary_mode)
+        entries = [(primary_rgb, primary_stacks, primary_mode)]
+        all_modes = [primary_mode]
+
+        # Load each secondary (skip Merged LUTs to prevent stale data contamination)
+        for sec_name in secondary_names:
+            sec_path = LUTManager.get_lut_path(sec_name)
+            if not sec_path:
+                continue
+            sec_mode, _ = LUTMerger.detect_color_mode(sec_path)
+            if sec_mode == "Merged":
+                print(f"[MERGE] Skipping Merged LUT as secondary: {sec_name}")
+                continue
+            sec_rgb, sec_stacks = LUTMerger.load_lut_with_stacks(sec_path, sec_mode)
+            entries.append((sec_rgb, sec_stacks, sec_mode))
+            all_modes.append(sec_mode)
+
+        if len(entries) < 2:
+            return I18n.get('merge_error_no_lut', lang), gr.update(), gr.update()
+
+        # Validate compatibility
+        valid, err_msg = LUTMerger.validate_compatibility(all_modes)
+        if not valid:
+            return I18n.get('merge_error_incompatible', lang).format(msg=err_msg), gr.update(), gr.update()
+
+        # Merge
+        merged_rgb, merged_stacks, stats = LUTMerger.merge_luts(entries, dedup_threshold=dedup_threshold)
+
+        # Save to Custom folder
+        timestamp = time.strftime("%Y%m%d_%H%M%S")
+        mode_str = "+".join(all_modes)
+        output_name = f"Merged_{mode_str}_{timestamp}.npz"
+        custom_dir = os.path.join(LUTManager.LUT_PRESET_DIR, "Custom")
+        os.makedirs(custom_dir, exist_ok=True)
+        output_path = os.path.join(custom_dir, output_name)
+
+        saved_path = LUTMerger.save_merged_lut(merged_rgb, merged_stacks, output_path)
+
+        # Build success message
+        status = I18n.get('merge_status_success', lang).format(
+            before=stats['total_before'],
+            after=stats['total_after'],
+            exact=stats['exact_dupes'],
+            similar=stats['similar_removed'],
+            path=os.path.basename(saved_path),
+        )
+
+        # Refresh dropdown choices
+        new_choices = LUTManager.get_lut_choices()
+        return status, gr.Dropdown(choices=new_choices), gr.Dropdown(choices=[], value=[])
+
+    except Exception as e:
+        print(f"[MERGE] Error: {e}")
+        import traceback
+        traceback.print_exc()
+        return I18n.get('merge_error_failed', lang).format(msg=str(e)), gr.update(), gr.update()

@@ -19,6 +19,7 @@ from core.image_processing import LuminaImageProcessor
 from core.mesh_generators import get_mesher
 from core.geometry_utils import create_keychain_loop
 from core.heightmap_loader import HeightmapLoader
+from core.naming import generate_model_filename, generate_preview_filename
 
 # Try to import SVG rendering libraries
 try:
@@ -57,10 +58,16 @@ def extract_lut_available_colors(lut_path: str) -> List[dict]:
         return []
     
     try:
-        # Standard .npy format
-        lut_grid = np.load(lut_path)
-        measured_colors = lut_grid.reshape(-1, 3)
-        print(f"[LUT_COLORS] Loading standard LUT (.npy) with {len(measured_colors)} colors")
+        # Handle .npz (merged LUT) format
+        if lut_path.endswith('.npz'):
+            data = np.load(lut_path)
+            measured_colors = data['rgb']
+            print(f"[LUT_COLORS] Loading merged LUT (.npz) with {len(measured_colors)} colors")
+        else:
+            # Standard .npy format
+            lut_grid = np.load(lut_path)
+            measured_colors = lut_grid.reshape(-1, 3)
+            print(f"[LUT_COLORS] Loading standard LUT (.npy) with {len(measured_colors)} colors")
         
         # Get unique colors
         unique_colors = np.unique(measured_colors, axis=0)
@@ -362,7 +369,7 @@ def convert_image_to_3d(image_path, lut_path, target_width_mm, spacer_thick,
             
             # 2. Export 3MF
             base_name = os.path.splitext(os.path.basename(image_path))[0]
-            out_path = os.path.join(OUTPUT_DIR, f"{base_name}_Lumina_Vector.3mf")
+            out_path = os.path.join(OUTPUT_DIR, generate_model_filename(base_name, modeling_mode, color_mode))
             scene.export(out_path)
             
             # [CRITICAL FIX] Disable safe_fix_3mf_names for Vector Mode
@@ -375,7 +382,7 @@ def convert_image_to_3d(image_path, lut_path, target_width_mm, spacer_thick,
             # 4. Generate GLB Preview
             glb_path = None
             try:
-                glb_path = os.path.join(OUTPUT_DIR, f"{base_name}_Preview.glb")
+                glb_path = os.path.join(OUTPUT_DIR, generate_preview_filename(base_name))
                 scene.export(glb_path)
                 print(f"[CONVERTER] ✅ Preview GLB exported: {glb_path}")
             except Exception as e:
@@ -524,8 +531,26 @@ def convert_image_to_3d(image_path, lut_path, target_width_mm, spacer_thick,
     if color_replacements:
         from core.color_replacement import ColorReplacementManager
         manager = ColorReplacementManager.from_dict(color_replacements)
+        old_rgb = matched_rgb.copy()
         matched_rgb = manager.apply_to_image(matched_rgb)
         print(f"[CONVERTER] Applied {len(manager)} color replacements")
+        
+        # Update material_matrix: find the replacement color's LUT entry
+        # and use its stacking layers (ref_stacks) for correct multi-layer output
+        for orig_hex, repl_hex in color_replacements.items():
+            orig_rgb_tuple = ColorReplacementManager._hex_to_color(orig_hex)
+            repl_rgb_tuple = ColorReplacementManager._hex_to_color(repl_hex)
+            # Find pixels that were originally this color
+            orig_mask = np.all(old_rgb == orig_rgb_tuple, axis=-1)
+            if not np.any(orig_mask):
+                continue
+            # Query KDTree to find the closest LUT entry for the replacement color
+            _, lut_idx = processor.kdtree.query([repl_rgb_tuple])
+            lut_idx = lut_idx[0]
+            new_stacks = processor.ref_stacks[lut_idx]  # (COLOR_LAYERS,)
+            material_matrix[orig_mask] = new_stacks
+            lut_color = processor.lut_rgb[lut_idx]
+            print(f"[CONVERTER] material_matrix: {orig_hex} → LUT#{lut_idx} rgb({lut_color[0]},{lut_color[1]},{lut_color[2]}) stacks={new_stacks}")
     
     print(f"[CONVERTER] Image processed: {target_w}×{target_h}px, scale={pixel_scale}mm/px")
     
@@ -870,7 +895,14 @@ def convert_image_to_3d(image_path, lut_path, target_width_mm, spacer_thick,
         try:
             # Outline thickness matches the full model height
             outline_thickness_mm = total_layers * PrinterConfig.LAYER_HEIGHT
-            print(f"[CONVERTER] 🔲 Generating outline: width={outline_width}mm, thickness={outline_thickness_mm}mm (matches model)")
+            # If coating is enabled, extend outline downward to cover coating layers
+            outline_z_offset = 0.0
+            if enable_coating:
+                coating_layers = max(1, int(round(coating_height_mm / PrinterConfig.LAYER_HEIGHT)))
+                coating_mm = coating_layers * PrinterConfig.LAYER_HEIGHT
+                outline_thickness_mm += coating_mm
+                outline_z_offset = -coating_mm
+            print(f"[CONVERTER] 🔲 Generating outline: width={outline_width}mm, thickness={outline_thickness_mm}mm (z_offset={outline_z_offset}mm)")
             
             outline_mesh = _generate_outline_mesh(
                 mask_solid=mask_solid,
@@ -881,6 +913,9 @@ def convert_image_to_3d(image_path, lut_path, target_width_mm, spacer_thick,
             )
             
             if outline_mesh is not None:
+                # Shift outline down if coating is enabled
+                if outline_z_offset != 0.0:
+                    outline_mesh.vertices[:, 2] += outline_z_offset
                 # Outline is always white (material 0) as a standalone object
                 outline_mesh.visual.face_colors = preview_colors[0]
                 outline_name = "Outline"
@@ -911,7 +946,7 @@ def convert_image_to_3d(image_path, lut_path, target_width_mm, spacer_thick,
             scene.geometry[geom_name].apply_transform(mirror_transform)
     
     base_name = os.path.splitext(os.path.basename(image_path))[0]
-    out_path = os.path.join(OUTPUT_DIR, f"{base_name}_Lumina.3mf")
+    out_path = os.path.join(OUTPUT_DIR, generate_model_filename(base_name, modeling_mode, color_mode))
     
     # Check if scene has any geometry before exporting (Requirement 8.1)
     if len(scene.geometry) == 0:
@@ -973,7 +1008,7 @@ def convert_image_to_3d(image_path, lut_path, target_width_mm, spacer_thick,
                 print(f"[CONVERTER] Preview outline failed: {e}")
     
     if preview_mesh:
-        glb_path = os.path.join(OUTPUT_DIR, f"{base_name}_Preview.glb")
+        glb_path = os.path.join(OUTPUT_DIR, generate_preview_filename(base_name))
 
         # Add physical bed platform to 3D preview
         model_w_mm = target_w * pixel_scale
@@ -2942,9 +2977,10 @@ def on_preview_click_select_color(cache, evt: gr.SelectData, bed_label=None):
 
 def generate_lut_grid_html(lut_path, lang: str = "zh"):
     """
-    生成 LUT 可用颜色的 HTML 网格
+    生成 LUT 可用颜色的 HTML 网格 (with hue filter + smart search)
     """
     from core.i18n import I18n
+    import colorsys
     colors = extract_lut_available_colors(lut_path)
 
     if not colors:
@@ -2952,12 +2988,41 @@ def generate_lut_grid_html(lut_path, lang: str = "zh"):
 
     count = len(colors)
 
+    def _classify_hue(r, g, b):
+        rf, gf, bf = r / 255.0, g / 255.0, b / 255.0
+        h, s, v = colorsys.rgb_to_hsv(rf, gf, bf)
+        h360 = h * 360
+        if s < 0.15 or v < 0.10:
+            return 'neutral'
+        if h360 < 15 or h360 >= 345:
+            return 'red'
+        elif h360 < 40:
+            return 'orange'
+        elif h360 < 70:
+            return 'yellow'
+        elif h360 < 160:
+            return 'green'
+        elif h360 < 195:
+            return 'cyan'
+        elif h360 < 260:
+            return 'blue'
+        elif h360 < 345:
+            return 'purple'
+        return 'neutral'
+
+    from ui.palette_extension import build_search_bar_html, build_hue_filter_bar_html
+
+    # Derive LUT key for favorites persistence
+    _lut_key = os.path.splitext(os.path.basename(lut_path))[0] if lut_path else ''
+
     html = f"""
     <div class="lut-grid-container">
         <div style="margin-bottom: 8px; font-size: 12px; color: #666;">
-            可用颜色: {count} 种
+            {I18n.get('lut_grid_count', lang).format(count=count)}: <span id="lut-color-visible-count">{count}</span>
         </div>
-        <div style="
+        {build_search_bar_html(lang)}
+        {build_hue_filter_bar_html(lang)}
+        <div id="lut-color-grid-container" data-lut-key="{_lut_key}" style="
             display: flex;
             flex-wrap: wrap;
             gap: 4px;
@@ -2973,12 +3038,15 @@ def generate_lut_grid_html(lut_path, lang: str = "zh"):
         hex_val = entry['hex']
         r, g, b = entry['color']
         rgb_val = f"R:{r} G:{g} B:{b}"
+        hue_cat = _classify_hue(r, g, b)
 
         html += f"""
+        <div class="lut-color-swatch-container" data-hue="{hue_cat}" style="display:flex;">
         <div class="lut-swatch lut-color-swatch"
              data-color="{hex_val}"
              style="background-color: {hex_val}; width:24px; height:24px; cursor:pointer; border:1px solid #ddd; border-radius:3px;"
              title="{hex_val} ({rgb_val})">
+        </div>
         </div>
         """
 
@@ -2994,6 +3062,9 @@ def generate_lut_card_grid_html(lut_path, lang: str = "zh"):
     matching the physical calibration board layout.  For 8-color LUTs the two
     halves are shown side-by-side horizontally.
 
+    Includes search bar (highlight-in-place, no hiding) and hue filter
+    (dims non-matching swatches instead of hiding to preserve grid layout).
+
     Each swatch is clickable (same data-color / class as the swatch grid) so
     the existing event-delegation click handler picks it up automatically.
     """
@@ -3007,6 +3078,32 @@ def generate_lut_card_grid_html(lut_path, lang: str = "zh"):
         return f"<div style='color:orange'>LUT 加载失败: {e}</div>"
 
     total = len(measured_colors)
+
+    from core.i18n import I18n
+    import colorsys
+
+    def _classify_hue(r, g, b):
+        rf, gf, bf = r / 255.0, g / 255.0, b / 255.0
+        h, s, v = colorsys.rgb_to_hsv(rf, gf, bf)
+        h360 = h * 360
+        if s < 0.15 or v < 0.10:
+            return 'neutral'
+        if h360 < 15 or h360 >= 345:
+            return 'red'
+        elif h360 < 40:
+            return 'orange'
+        elif h360 < 70:
+            return 'yellow'
+        elif h360 < 160:
+            return 'green'
+        elif h360 < 195:
+            return 'cyan'
+        elif h360 < 260:
+            return 'blue'
+        elif h360 < 345:
+            return 'purple'
+        return 'neutral'
+
     import math
     if total == 2738:
         half = total // 2
@@ -3025,10 +3122,22 @@ def generate_lut_card_grid_html(lut_path, lang: str = "zh"):
     cell = 18
     gap = 1
 
+    from ui.palette_extension import build_search_bar_html, build_hue_filter_bar_html
+
     html_parts = [
-        "<div style='display:flex; gap:12px; align-items:flex-start; "
-        "overflow-x:auto; padding:4px;'>"
+        f'<div style="margin-bottom:8px; font-size:12px; color:#666;">{I18n.get("lut_grid_count", lang).format(count=total)}: <span id="lut-color-visible-count">{total}</span></div>',
+        build_search_bar_html(lang),
+        build_hue_filter_bar_html(lang),
     ]
+
+    # Derive LUT key for favorites persistence
+    _lut_key = os.path.splitext(os.path.basename(lut_path))[0] if lut_path else ''
+
+    # Grid
+    html_parts.append(
+        f"<div id='lut-color-grid-container' data-lut-key='{_lut_key}' style='display:flex; gap:12px; align-items:flex-start; "
+        "overflow-x:auto; padding:4px;'>"
+    )
 
     for colors_arr, dim, title in grids:
         html_parts.append(
@@ -3040,8 +3149,9 @@ def generate_lut_card_grid_html(lut_path, lang: str = "zh"):
         for c in colors_arr:
             r, g, b = int(c[0]), int(c[1]), int(c[2])
             hex_val = f"#{r:02x}{g:02x}{b:02x}"
+            hue_cat = _classify_hue(r, g, b)
             html_parts.append(
-                f"<div class='lut-swatch lut-color-swatch' data-color='{hex_val}' "
+                f"<div class='lut-swatch lut-color-swatch' data-color='{hex_val}' data-hue='{hue_cat}' "
                 f"style='width:{cell}px;height:{cell}px;background:{hex_val};"
                 f"cursor:pointer;border-radius:2px;' "
                 f"title='{hex_val} (R:{r} G:{g} B:{b})'></div>"
@@ -3062,12 +3172,17 @@ def detect_lut_color_mode(lut_path):
         lut_path: LUT文件路径
     
     Returns:
-        str: 颜色模式 ("BW (Black & White)", "CMYW (Cyan/Magenta/Yellow)", "RYBW (Red/Yellow/Blue)", "6-Color (Smart 1296)", "8-Color Max")
+        str: 颜色模式 ("BW (Black & White)", "Merged", "6-Color (Smart 1296)", "8-Color Max", etc.)
     """
     if not lut_path or not os.path.exists(lut_path):
         return None
     
     try:
+        # .npz 格式直接识别为合并模式
+        if lut_path.endswith('.npz'):
+            print(f"[AUTO_DETECT] Detected Merged LUT (.npz format)")
+            return "Merged"
+        
         # Standard .npy format
         lut_data = np.load(lut_path)
         
@@ -3105,12 +3220,13 @@ def detect_lut_color_mode(lut_path):
         
         # 4色模式：900-1200色
         elif total_colors >= 900 and total_colors < 1200:
-            print(f"[AUTO_DETECT] Detected 4-Color mode ({total_colors} colors) - keeping current selection")
-            return None  # 不自动切换4色模式，保持用户选择
+            print(f"[AUTO_DETECT] Detected 4-Color mode ({total_colors} colors)")
+            return "4-Color"
         
         else:
-            print(f"[AUTO_DETECT] Unknown LUT format with {total_colors} colors")
-            return None
+            # 非标准尺寸：识别为合并色卡
+            print(f"[AUTO_DETECT] Non-standard LUT size ({total_colors} colors), detected as Merged")
+            return "Merged"
             
     except Exception as e:
         print(f"[AUTO_DETECT] Error detecting LUT mode: {e}")

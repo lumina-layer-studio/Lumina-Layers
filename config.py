@@ -160,6 +160,10 @@ class ColorSystem:
         if "6-Color" in mode:
             return ColorSystem.SIX_COLOR
         
+        # Merged LUT: use 8-Color config (superset of all material IDs 0-7)
+        if mode == "Merged":
+            return ColorSystem.EIGHT_COLOR
+        
         # Legacy support for old mode strings
         if "RYBW" in mode:
             return ColorSystem.RYBW

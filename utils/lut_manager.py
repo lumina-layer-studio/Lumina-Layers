@@ -50,10 +50,11 @@ class LUTManager:
             print(f"[LUT_MANAGER] Warning: LUT preset directory not found: {cls.LUT_PRESET_DIR}")
             return lut_files
         
-        # Recursively search for all .npy files
+        # Recursively search for all .npy and .npz files
         npy_pattern = os.path.join(cls.LUT_PRESET_DIR, "**", "*.npy")
+        npz_pattern = os.path.join(cls.LUT_PRESET_DIR, "**", "*.npz")
         
-        all_files = glob.glob(npy_pattern, recursive=True)
+        all_files = glob.glob(npy_pattern, recursive=True) + glob.glob(npz_pattern, recursive=True)
         
         for file_path in all_files:
             # Generate friendly display name
@@ -64,7 +65,7 @@ class LUTManager:
             if len(parts) > 1:
                 # Has subfolder, format: Brand - Filename
                 brand = parts[0]
-                filename = Path(parts[-1]).stem  # Remove .npy extension
+                filename = Path(parts[-1]).stem  # Remove .npy/.npz extension
                 display_name = f"{brand} - {filename}"
             else:
                 # Root directory file, use filename directly
@@ -130,8 +131,8 @@ class LUTManager:
             file_extension = original_path.suffix  # .npy
             
             # Validate file extension
-            if file_extension != '.npy':
-                return False, f"❌ Invalid file type: {file_extension}. Only .npy is supported.", cls.get_lut_choices()
+            if file_extension not in ('.npy', '.npz'):
+                return False, f"❌ Invalid file type: {file_extension}. Only .npy and .npz are supported.", cls.get_lut_choices()
             
             # Use custom name or original name
             if custom_name and custom_name.strip():

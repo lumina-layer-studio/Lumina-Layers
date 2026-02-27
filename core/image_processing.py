@@ -155,14 +155,28 @@ class LuminaImageProcessor:
     
     def _load_lut(self, lut_path):
         """
-        Load and validate LUT file (Supports 2-Color, 4-Color, 6-Color, and 8-Color).
+        Load and validate LUT file (Supports 2-Color, 4-Color, 6-Color, 8-Color, and Merged).
         
         Automatically detects LUT type based on size:
+        - .npz files: Merged LUT (contains rgb + stacks arrays)
         - 32 colors: 2-Color BW (Black & White)
         - 1024 colors: 4-Color Standard (CMYW/RYBW)
         - 1296 colors: 6-Color Smart 1296
         - 2738 colors: 8-Color Max
+        - Other sizes: Merged LUT (try .npz companion file)
         """
+        # 合并 LUT 支持：.npz 格式直接加载 rgb + stacks
+        if lut_path.endswith('.npz'):
+            try:
+                data = np.load(lut_path)
+                self.lut_rgb = data['rgb']
+                self.ref_stacks = data['stacks']
+                self.kdtree = KDTree(self.lut_rgb)
+                print(f"✅ Merged LUT loaded: {len(self.lut_rgb)} colors (.npz format)")
+                return
+            except Exception as e:
+                raise ValueError(f"❌ Merged LUT file corrupted: {e}")
+
         try:
             lut_grid = np.load(lut_path)
             measured_colors = lut_grid.reshape(-1, 3)
@@ -215,9 +229,10 @@ class LuminaImageProcessor:
             
             smart_stacks = np.load(stacks_path).tolist()
             
-            # Reverse stacking order for Face-Down printing
+            # 约定转换：smart_8color_stacks.npy 存储底到顶约定（stack[0]=背面），
+            # 转换为顶到底约定（stack[0]=观赏面, stack[4]=背面），与 4 色模式统一
             smart_stacks = [tuple(reversed(s)) for s in smart_stacks]
-            print("[IMAGE_PROCESSOR] Stacks reversed for Face-Down printing compatibility.")
+            print("[IMAGE_PROCESSOR] Stacks converted from bottom-to-top to top-to-bottom convention (matching 4-color mode).")
             
             if len(smart_stacks) != total_colors:
                 print(f"⚠️ Warning: Stacks count ({len(smart_stacks)}) != LUT count ({total_colors})")
@@ -237,8 +252,10 @@ class LuminaImageProcessor:
             from core.calibration import get_top_1296_colors
             
             smart_stacks = get_top_1296_colors()
+            # 约定转换：get_top_1296_colors() 返回底到顶约定（stack[0]=背面），
+            # 转换为顶到底约定（stack[0]=观赏面, stack[4]=背面），与 4 色模式统一
             smart_stacks = [tuple(reversed(s)) for s in smart_stacks]
-            print("[IMAGE_PROCESSOR] Stacks reversed for Face-Down printing compatibility.")
+            print("[IMAGE_PROCESSOR] Stacks converted from bottom-to-top to top-to-bottom convention (matching 4-color mode).")
             
             if len(smart_stacks) != total_colors:
                 print(f"⚠️ Warning: Stacks count ({len(smart_stacks)}) != LUT count ({total_colors})")
@@ -251,7 +268,32 @@ class LuminaImageProcessor:
             
             print(f"✅ LUT loaded: {len(self.lut_rgb)} colors (6-Color mode)")
         
-        # Branch 3: 4-Color Standard (1024)
+        # Branch 3: Merged LUT (non-standard size or "Merged" mode)
+        elif self.color_mode == "Merged" or total_colors not in (32, 1024, 1296, 2738):
+            print(f"[IMAGE_PROCESSOR] Detected non-standard LUT size ({total_colors}), trying companion .npz...")
+            
+            # 尝试查找同名 .npz 文件
+            npz_path = lut_path.rsplit('.', 1)[0] + '.npz'
+            if os.path.exists(npz_path):
+                try:
+                    data = np.load(npz_path)
+                    self.lut_rgb = data['rgb']
+                    self.ref_stacks = data['stacks']
+                    self.kdtree = KDTree(self.lut_rgb)
+                    print(f"✅ Merged LUT loaded from companion .npz: {len(self.lut_rgb)} colors")
+                    return
+                except Exception as e:
+                    print(f"⚠️ Failed to load companion .npz: {e}")
+            
+            # 无 .npz 伴随文件，使用 RGB 数据但无堆叠信息
+            # 生成占位堆叠（全0）
+            print(f"⚠️ No companion .npz found, using placeholder stacks")
+            self.lut_rgb = measured_colors
+            self.ref_stacks = np.zeros((total_colors, 5), dtype=np.int32)
+            
+            print(f"✅ LUT loaded: {len(self.lut_rgb)} colors (Merged mode, placeholder stacks)")
+        
+        # Branch 4: 4-Color Standard (1024)
         else:
             print("[IMAGE_PROCESSOR] Detected 4-Color Standard mode")
             

@@ -18,6 +18,7 @@ from colormath.color_conversions import convert_color
 from colormath.color_diff import delta_e_cie2000
 
 from config import PrinterConfig, ColorSystem, SmartConfig, OUTPUT_DIR
+from core.naming import generate_calibration_filename
 from utils import Stats, safe_fix_3mf_names
 
 
@@ -166,8 +167,7 @@ def generate_calibration_board(color_mode: str, block_size_mm: float,
             scene.add_geometry(mesh, node_name=name, geom_name=name)
 
     # Export
-    mode_tag = color_conf['name']
-    output_path = os.path.join(OUTPUT_DIR, f"Lumina_Calibration_{mode_tag}.3mf")
+    output_path = os.path.join(OUTPUT_DIR, generate_calibration_filename(color_mode, "Standard"))
     scene.export(output_path)
 
     safe_fix_3mf_names(output_path, slot_names)
@@ -341,6 +341,10 @@ def generate_smart_board(block_size_mm=5.0, gap_mm=0.8):
     
     print(f"[SMART] Voxel matrix: {total_layers} x {voxel_h} x {voxel_w}")
     
+    # 约定转换：get_top_1296_colors() 返回底到顶约定 (stack[0]=背面, stack[4]=观赏面)
+    # 转换为顶到底约定 (stack[0]=观赏面, stack[4]=背面)，与 4 色模式统一
+    stacks = [tuple(reversed(s)) for s in stacks]
+    
     # Fill 1296 intelligent color blocks (with padding offset)
     for idx, stack in enumerate(stacks):
         # Data area logical coordinates (0..35)
@@ -354,11 +358,11 @@ def generate_smart_board(block_size_mm=5.0, gap_mm=0.8):
         px = col * (pixels_per_block + pixels_gap)
         py = row * (pixels_per_block + pixels_gap)
         
-        # Fill 5 color layers (note Z-axis reversal for Face Down mode)
-        # Z=0 (physical first layer) = viewing surface = stack[4] (top layer in simulation)
-        # Z=4 (physical fifth layer) = internal layer = stack[0] (bottom layer in simulation)
+        # Fill 5 color layers (直接映射，与 4 色模式一致)
+        # Z=0 (physical first layer) = viewing surface = stack[0] (顶到底约定)
+        # Z=4 (physical fifth layer) = internal layer = stack[4] (顶到底约定)
         for z in range(color_layers):
-            mat_id = stack[color_layers - 1 - z]
+            mat_id = stack[z]
             full_matrix[z, py:py+pixels_per_block, px:px+pixels_per_block] = mat_id
     
     # Set corner alignment markers (in outermost ring 0 and 37)
@@ -388,7 +392,7 @@ def generate_smart_board(block_size_mm=5.0, gap_mm=0.8):
             scene.add_geometry(mesh, node_name=name, geom_name=name)
     
     # Export
-    output_path = os.path.join(OUTPUT_DIR, "Lumina_Smart_1296.3mf")
+    output_path = os.path.join(OUTPUT_DIR, generate_calibration_filename("6-Color", "Smart1296"))
     scene.export(output_path)
     
     safe_fix_3mf_names(output_path, slot_names)
@@ -418,8 +422,12 @@ def generate_8color_board(page_index=0):
         all_stacks = np.load(path)
         print(f"[8COLOR] Loaded {len(all_stacks)} stacks from {path}")
         
-        # Debug: Check surface black count
-        surface_black = sum(1 for s in all_stacks if s[4] == 5)
+        # 约定转换：smart_8color_stacks.npy 存储底到顶约定 (stack[0]=背面, stack[4]=观赏面)
+        # 转换为顶到底约定 (stack[0]=观赏面, stack[4]=背面)，与 4 色模式统一
+        all_stacks = np.array([s[::-1] for s in all_stacks])
+        
+        # Debug: Check surface black count (转换后 stack[0] 为观赏面)
+        surface_black = sum(1 for s in all_stacks if s[0] == 5)
         print(f"[8COLOR] Surface black: {surface_black}/{len(all_stacks)} ({surface_black/len(all_stacks)*100:.2f}%)")
     except Exception as e: 
         print(f"[8COLOR] Error loading data: {e}")
@@ -448,12 +456,12 @@ def generate_8color_board(page_index=0):
         
         # Debug first few stacks
         if i < 3:
-            print(f"[8COLOR] Stack {i}: {stack} -> reversed: {stack[::-1]}")
+            print(f"[8COLOR] Stack {i} (顶到底): {stack}")
         
-        # Reverse stack for Face Down
-        # stack[0] = Layer 5 (背面) -> Z=4 (物理第5层)
-        # stack[4] = Layer 1 (正面) -> Z=0 (物理第1层，观赏面)
-        for z, mid in enumerate(stack[::-1]):
+        # 直接写入，与 4 色模式一致（已在加载时完成约定转换）
+        # stack[0] = 观赏面 -> Z=0 (物理第1层，观赏面)
+        # stack[4] = 背面   -> Z=4 (物理第5层)
+        for z, mid in enumerate(stack):
             full_matrix[z, py:py+px_blk, px:px+px_blk] = mid
 
     # 5. Set Corner Markers (Crucial for Page ID)
@@ -481,7 +489,7 @@ def generate_8color_board(page_index=0):
             m.metadata['name'] = conf['slots'][mid]
             scene.add_geometry(m, geom_name=conf['slots'][mid])
             
-    out_name = f"Lumina_8Color_Page{page_index+1}.3mf"
+    out_name = generate_calibration_filename("8-Color", f"Page{page_index+1}")
     out_path = os.path.join(OUTPUT_DIR, out_name)
     scene.export(out_path)
     safe_fix_3mf_names(out_path, conf['slots'])
@@ -516,7 +524,7 @@ def generate_8color_batch_zip():
     
     if not f1 or not f2: return None, None, "❌ Generation failed"
     
-    zip_path = os.path.join(OUTPUT_DIR, "Lumina_8Color_Kit.zip")
+    zip_path = os.path.join(OUTPUT_DIR, generate_calibration_filename("8-Color", "Kit", ".zip"))
     with zipfile.ZipFile(zip_path, 'w') as zf:
         zf.write(f1, os.path.basename(f1))
         zf.write(f2, os.path.basename(f2))
@@ -644,7 +652,7 @@ def generate_bw_calibration_board(block_size_mm=5.0, gap_mm=0.8, backing_color="
             scene.add_geometry(mesh, node_name=name, geom_name=name)
     
     # Export
-    output_path = os.path.join(OUTPUT_DIR, "Lumina_BW_Calibration.3mf")
+    output_path = os.path.join(OUTPUT_DIR, generate_calibration_filename("BW", "Standard"))
     scene.export(output_path)
     
     safe_fix_3mf_names(output_path, slot_names)

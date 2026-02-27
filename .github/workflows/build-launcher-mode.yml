@@ -1,0 +1,140 @@
+name: Build Launcher Mode (Separated Env)
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+  workflow_dispatch: # 支持手动触发
+
+jobs:
+  # Job 1: 构建并打包 Python 3.13 运行环境
+  build-env:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.13
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Prepare Embeddable Python Environment
+        shell: pwsh
+        run: |
+          # 1. 下载 Python 3.13 嵌入式版本 (Windows x64)
+          $pyVersion = "3.13.1"
+          Write-Host "Downloading Python $pyVersion embeddable..."
+          Invoke-WebRequest -Uri "https://www.python.org/ftp/python/$pyVersion/python-$pyVersion-embed-amd64.zip" -OutFile "python-embed.zip"
+          Expand-Archive -Path "python-embed.zip" -DestinationPath "env"
+          
+          # 2. 激活嵌入式环境中的 site-packages
+          # 在 ._pth 文件中取消 import site 的注释，使嵌入式环境能加载第三方库
+          $pthFile = Get-ChildItem "env\*._pth" | Select-Object -First 1
+          (Get-Content $pthFile).Replace("#import site", "import site") | Set-Content $pthFile
+          
+          # 3. 安装 pip 到嵌入式环境
+          Write-Host "Installing pip into embeddable environment..."
+          Invoke-WebRequest -Uri "https://bootstrap.pypa.io/get-pip.py" -OutFile "get-pip.py"
+          ./env/python.exe get-pip.py --no-warn-script-location
+          
+          # 4. 安装业务依赖
+          Write-Host "Installing dependencies from requirements.txt..."
+          ./env/python.exe -m pip install --no-cache-dir -r requirements.txt
+          
+          # 5. 清理不必要的文件以压缩体积
+          Remove-Item -Path "./env/get-pip.py", "./python-embed.zip" -Force
+          Get-ChildItem -Path "env" -Include "*.pyc", "__pycache__" -Recurse | Remove-Item -Force -Recurse
+
+      - name: Upload Env Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: runtime-env
+          path: env/
+          retention-days: 5
+
+  # Job 2: 构建微型启动器 .exe 并包含源码
+  build-launcher:
+    needs: build-env
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.13
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Install PyInstaller
+        run: pip install pyinstaller
+
+      - name: Generate Dynamic Launcher Script
+        shell: pwsh
+        run: |
+          # 动态创建启动器代码 (launcher_stealth.py)
+          # 该脚本负责定位外部环境并启动内置源码
+          $launcherCode = @"
+          import os
+          import sys
+          import subprocess
+
+          def launch():
+              # 获取运行时的根目录（EXE 所在目录）
+              if getattr(sys, 'frozen', False):
+                  exe_dir = os.path.dirname(sys.executable)
+                  # PyInstaller 解压源码的临时目录
+                  src_dir = sys._MEIPASS
+              else:
+                  exe_dir = os.path.dirname(os.path.abspath(__file__))
+                  src_dir = exe_dir
+
+              # 定位外部独立的 python.exe (在同级 env 目录下)
+              python_exe = os.path.join(exe_dir, "env", "python.exe")
+              
+              if not os.path.exists(python_exe):
+                  # 如果没找到环境，弹出系统级错误提示
+                  import ctypes
+                  ctypes.windll.user32.MessageBoxW(0, f"未找到运行环境!
+请确保 'env' 文件夹位于程序同级目录。
+路径: {python_exe}", "环境错误", 0x10)
+                  sys.exit(1)
+
+              # 准备执行环境
+              main_py = os.path.join(src_dir, "main.py")
+              
+              # 设置环境变量，将源码目录添加到搜索路径中
+              env = os.environ.copy()
+              env["PYTHONPATH"] = src_dir + os.pathsep + env.get("PYTHONPATH", "")
+
+              # 使用外部 python.exe 启动业务程序
+              subprocess.run([python_exe, main_py], env=env)
+
+          if __name__ == "__main__":
+              launch()
+          "@
+          $launcherCode | Out-File -FilePath "launcher_stealth.py" -Encoding utf8
+
+      - name: Bundle Source into EXE
+        shell: pwsh
+        run: |
+          # 使用 PyInstaller 将整个仓库源码和启动脚本打包
+          # --add-data ".;." 将当前目录下所有源码塞进 EXE 的 _MEIPASS 目录
+          # --console 确保启动器自身显示命令行窗口
+          # --collect-all 用于确保一些特定的重型库元数据被正确处理（沿用原 build.yml 的配置）
+          pyinstaller --noconfirm --onefile --console `
+            --icon="icon.ico" `
+            --name "LuminaStudio" `
+            --add-data ".;." `
+            --collect-all "gradio" `
+            --collect-all "safehttpx" `
+            --collect-all "groovy" `
+            --collect-all "gradio_client" `
+            --collect-all "uvicorn" `
+            launcher_stealth.py
+
+      - name: Upload App Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: LuminaStudio-Launcher
+          path: dist/LuminaStudio.exe
+          retention-days: 5

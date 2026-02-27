@@ -542,8 +542,9 @@ def convert_image_to_3d(image_path, lut_path, target_width_mm, spacer_thick,
             orig_mask = np.all(old_rgb == orig_rgb_tuple, axis=-1)
             if not np.any(orig_mask):
                 continue
-            # Query KDTree to find the closest LUT entry for the replacement color
-            _, lut_idx = processor.kdtree.query([repl_rgb_tuple])
+            # Query KDTree to find the closest LUT entry for the replacement color (in CIELAB space)
+            repl_lab = processor._rgb_to_lab(np.array([repl_rgb_tuple], dtype=np.uint8))
+            _, lut_idx = processor.kdtree.query(repl_lab)
             lut_idx = lut_idx[0]
             new_stacks = processor.ref_stacks[lut_idx]  # (COLOR_LAYERS,)
             material_matrix[orig_mask] = new_stacks

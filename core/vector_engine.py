@@ -198,9 +198,9 @@ class VectorProcessor:
         
         print(f"[VECTOR] Mapping colors to LUT materials:")
         for color_index, (svg_color, geometry) in enumerate(final_geometries.items()):
-            # Query LUT for this color
-            query = np.array([svg_color], dtype=np.float32)
-            _, index = self.img_processor.kdtree.query(query)
+            # Query LUT for this color (in CIELAB space)
+            query_lab = self.img_processor._rgb_to_lab(np.array([svg_color], dtype=np.uint8))
+            _, index = self.img_processor.kdtree.query(query_lab)
             
             # Get matched LUT color
             matched_rgb = tuple(int(c) for c in self.img_processor.lut_rgb[index[0]])
@@ -215,7 +215,8 @@ class VectorProcessor:
             if replacement_manager is not None:
                 replacement = replacement_manager.get_replacement(matched_rgb)
                 if replacement is not None:
-                    _, rep_index = self.img_processor.kdtree.query(np.array([replacement]))
+                    rep_lab = self.img_processor._rgb_to_lab(np.array([replacement], dtype=np.uint8))
+                    _, rep_index = self.img_processor.kdtree.query(rep_lab)
                     index = rep_index
                     stack = self.img_processor.ref_stacks[index[0]]
                     print(f"    → Replaced with {replacement} → Materials {stack[:5]}")
@@ -550,9 +551,9 @@ class VectorProcessor:
         for item in shape_data:
             r, g, b = item['color']
             
-            # Query KD-Tree for nearest LUT color
-            query = np.array([[r, g, b]])
-            _, index = self.img_processor.kdtree.query(query)
+            # Query KD-Tree for nearest LUT color (in CIELAB space)
+            query_lab = self.img_processor._rgb_to_lab(np.array([[r, g, b]], dtype=np.uint8))
+            _, index = self.img_processor.kdtree.query(query_lab)
 
             # Get matched LUT color (for replacement lookup)
             matched_rgb = tuple(int(c) for c in self.img_processor.lut_rgb[index][0])
@@ -561,7 +562,8 @@ class VectorProcessor:
             if replacement_manager is not None:
                 replacement = replacement_manager.get_replacement(matched_rgb)
                 if replacement is not None:
-                    _, rep_index = self.img_processor.kdtree.query(np.array([replacement]))
+                    rep_lab = self.img_processor._rgb_to_lab(np.array([replacement], dtype=np.uint8))
+                    _, rep_index = self.img_processor.kdtree.query(rep_lab)
                     index = rep_index
 
             # Get 5-layer material stack

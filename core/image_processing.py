@@ -299,8 +299,9 @@ class LuminaImageProcessor:
                     print()
                     # === END DEBUG ===
                     print(f"✅ LUT loaded: {len(self.lut_rgb)} colors (with companion stacks, {companion_stacks.shape[1]} layers)")
-                    # Build KD-Tree
-                    self.kdtree = KDTree(self.lut_rgb)
+                    # Build KD-Tree in CIELAB space
+                    self.lut_lab = self._rgb_to_lab(self.lut_rgb)
+                    self.kdtree = KDTree(self.lut_lab)
                     return
                 else:
                     print(f"⚠️ Stacks count mismatch ({len(companion_stacks)} vs {total_colors}), falling back to auto-detect")

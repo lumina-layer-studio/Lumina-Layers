@@ -30,6 +30,31 @@ class LuminaImageProcessor:
     Handles LUT loading, image processing, and color matching.
     """
     
+    @staticmethod
+    def _rgb_to_lab(rgb_array):
+        """
+        将 RGB 数组转换为 CIELAB 空间（感知均匀色彩空间）。
+        
+        Args:
+            rgb_array: numpy array, shape (N, 3) 或 (H, W, 3), dtype uint8
+        
+        Returns:
+            numpy array, 同 shape, dtype float64, Lab 值
+        """
+        original_shape = rgb_array.shape
+        if rgb_array.ndim == 2:
+            rgb_3d = rgb_array.reshape(1, -1, 3).astype(np.uint8)
+        else:
+            rgb_3d = rgb_array.astype(np.uint8)
+        
+        # OpenCV 使用 BGR 顺序
+        bgr = cv2.cvtColor(rgb_3d, cv2.COLOR_RGB2BGR)
+        lab = cv2.cvtColor(bgr, cv2.COLOR_BGR2Lab).astype(np.float64)
+        
+        if len(original_shape) == 2:
+            return lab.reshape(original_shape)
+        return lab
+
     def __init__(self, lut_path, color_mode):
         """
         Initialize image processor.
@@ -40,6 +65,7 @@ class LuminaImageProcessor:
         """
         self.color_mode = color_mode
         self.lut_rgb = None
+        self.lut_lab = None  # CIELAB 空间的 LUT 颜色（用于 KDTree 匹配）
         self.ref_stacks = None
         self.kdtree = None
         self.enable_cleanup = True  # 默认开启孤立像素清理
@@ -171,8 +197,9 @@ class LuminaImageProcessor:
                 data = np.load(lut_path)
                 self.lut_rgb = data['rgb']
                 self.ref_stacks = data['stacks']
-                self.kdtree = KDTree(self.lut_rgb)
-                print(f"✅ Merged LUT loaded: {len(self.lut_rgb)} colors (.npz format)")
+                self.lut_lab = self._rgb_to_lab(self.lut_rgb)
+                self.kdtree = KDTree(self.lut_lab)
+                print(f"✅ Merged LUT loaded: {len(self.lut_rgb)} colors (.npz format, Lab KDTree)")
                 return
             except Exception as e:
                 raise ValueError(f"❌ Merged LUT file corrupted: {e}")
@@ -372,8 +399,9 @@ class LuminaImageProcessor:
                     data = np.load(npz_path)
                     self.lut_rgb = data['rgb']
                     self.ref_stacks = data['stacks']
-                    self.kdtree = KDTree(self.lut_rgb)
-                    print(f"✅ Merged LUT loaded from companion .npz: {len(self.lut_rgb)} colors")
+                    self.lut_lab = self._rgb_to_lab(self.lut_rgb)
+                    self.kdtree = KDTree(self.lut_lab)
+                    print(f"✅ Merged LUT loaded from companion .npz: {len(self.lut_rgb)} colors (Lab KDTree)")
                     return
                 except Exception as e:
                     print(f"⚠️ Failed to load companion .npz: {e}")
@@ -422,8 +450,9 @@ class LuminaImageProcessor:
             
             print(f"✅ LUT loaded: {len(self.lut_rgb)} colors (filtered {dropped} outliers)")
         
-        # Build KD-Tree
-        self.kdtree = KDTree(self.lut_rgb)
+        # Build KD-Tree in CIELAB space for perceptually accurate color matching
+        self.lut_lab = self._rgb_to_lab(self.lut_rgb)
+        self.kdtree = KDTree(self.lut_lab)
     
     def process_image(self, image_path, target_width_mm, modeling_mode,
                      quantize_colors, auto_bg, bg_tol,
@@ -725,10 +754,11 @@ class LuminaImageProcessor:
         print(f"[IMAGE_PROCESSOR] Found {len(unique_colors)} unique colors")
         print(f"[IMAGE_PROCESSOR] ⏱️ Find unique colors: {time.time() - t0:.2f}s")
         
-        # Match to LUT
+        # Match to LUT (in CIELAB space for perceptual accuracy)
         t0 = time.time()
-        print(f"[IMAGE_PROCESSOR] Matching colors to LUT...")
-        _, unique_indices = self.kdtree.query(unique_colors.astype(float))
+        print(f"[IMAGE_PROCESSOR] Matching colors to LUT (CIELAB space)...")
+        unique_lab = self._rgb_to_lab(unique_colors)
+        _, unique_indices = self.kdtree.query(unique_lab)
         print(f"[IMAGE_PROCESSOR] ⏱️ LUT matching: {time.time() - t0:.2f}s")
         
         # === DEBUG: 颜色匹配结果 ===
@@ -801,10 +831,11 @@ class LuminaImageProcessor:
         Pixel art mode image processing
         Direct pixel-level color matching, no smoothing
         """
-        print(f"[IMAGE_PROCESSOR] Direct pixel-level matching (Pixel Art mode)...")
+        print(f"[IMAGE_PROCESSOR] Direct pixel-level matching (Pixel Art mode, CIELAB space)...")
         
         flat_rgb = rgb_arr.reshape(-1, 3)
-        _, indices = self.kdtree.query(flat_rgb)
+        flat_lab = self._rgb_to_lab(flat_rgb)
+        _, indices = self.kdtree.query(flat_lab)
         
         matched_rgb = self.lut_rgb[indices].reshape(target_h, target_w, 3)
         material_matrix = self.ref_stacks[indices].reshape(

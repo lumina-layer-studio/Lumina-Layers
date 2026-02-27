@@ -690,6 +690,66 @@ class I18n:
             'zh': '点击选择: {hex}',
             'en': 'Click to select: {hex}'
         },
+        'lut_grid_picker_label': {
+            'zh': '🎯 以色找色',
+            'en': '🎯 Find by Color'
+        },
+        'lut_grid_picker_hint': {
+            'zh': '选一个颜色，自动匹配 LUT 中最接近的物理色',
+            'en': 'Pick a color to find the closest match in LUT'
+        },
+        'lut_grid_picker_btn': {
+            'zh': '匹配最近色',
+            'en': 'Find Nearest'
+        },
+        'lut_grid_picker_result': {
+            'zh': '✅ 最接近: {hex} (距离: {dist:.1f})',
+            'en': '✅ Nearest: {hex} (distance: {dist:.1f})'
+        },
+        'lut_grid_hue_all': {
+            'zh': '全部',
+            'en': 'All'
+        },
+        'lut_grid_hue_red': {
+            'zh': '红色系',
+            'en': 'Red'
+        },
+        'lut_grid_hue_orange': {
+            'zh': '橙色系',
+            'en': 'Orange'
+        },
+        'lut_grid_hue_yellow': {
+            'zh': '黄色系',
+            'en': 'Yellow'
+        },
+        'lut_grid_hue_green': {
+            'zh': '绿色系',
+            'en': 'Green'
+        },
+        'lut_grid_hue_cyan': {
+            'zh': '青色系',
+            'en': 'Cyan'
+        },
+        'lut_grid_hue_blue': {
+            'zh': '蓝色系',
+            'en': 'Blue'
+        },
+        'lut_grid_hue_purple': {
+            'zh': '紫色系',
+            'en': 'Purple'
+        },
+        'lut_grid_hue_neutral': {
+            'zh': '中性色',
+            'en': 'Neutral'
+        },
+        'lut_grid_hue_fav': {
+            'zh': '收藏',
+            'en': 'Favorites'
+        },
+        'lut_grid_search_hex_placeholder': {
+            'zh': '输入 Hex 或 RGB 搜索定位 (如 #FF0000 或 255,0,0)',
+            'en': 'Search by Hex or RGB (e.g. #FF0000 or 255,0,0)'
+        },
 
         # ==================== Settings ====================
         'settings_title': {

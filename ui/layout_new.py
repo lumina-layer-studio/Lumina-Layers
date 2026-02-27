@@ -2078,6 +2078,22 @@ def create_converter_tab_content(lang: str, lang_state=None, theme_state=None) -
                                     I18n.get('conv_palette_step2', lang)
                                 )
 
+                                # 以色找色 ColorPicker
+                                with gr.Row():
+                                    conv_color_picker_search = gr.ColorPicker(
+                                        label=I18n.get('lut_grid_picker_label', lang),
+                                        value="#ff0000",
+                                        interactive=True,
+                                        info=I18n.get('lut_grid_picker_hint', lang)
+                                    )
+                                    conv_color_picker_btn = gr.Button(
+                                        I18n.get('lut_grid_picker_btn', lang),
+                                        variant="secondary",
+                                        size="sm"
+                                    )
+                                components['color_conv_picker_search'] = conv_color_picker_search
+                                components['btn_conv_picker_search'] = conv_color_picker_btn
+
                                 # LUT 网格 HTML
                                 conv_lut_grid_view = gr.HTML(
                                     value=f"<div style='color:#888; padding:10px;'>{I18n.get('conv_palette_lut_loading', lang)}</div>",
@@ -2663,6 +2679,53 @@ def create_converter_tab_content(lang: str, lang_state=None, theme_state=None) -
             inputs=[conv_lut_color_selected_hidden],
             outputs=[conv_replacement_color_state, conv_replacement_display]
     )
+
+    # 以色找色: ColorPicker nearest match via KDTree
+    def on_color_picker_find_nearest(picker_hex, lut_path):
+        """Find the nearest LUT color to the picked color using KDTree."""
+        if not picker_hex or not lut_path:
+            return gr.update(), gr.update()
+        try:
+            from core.converter import extract_lut_available_colors
+            from core.image_processing import LuminaImageProcessor
+            import numpy as np
+            from scipy.spatial import KDTree
+
+            colors = extract_lut_available_colors(lut_path)
+            if not colors:
+                return gr.update(), gr.update()
+
+            # Build KDTree from LUT colors
+            rgb_array = np.array([c['color'] for c in colors], dtype=np.float64)
+            tree = KDTree(rgb_array)
+
+            # Parse picker hex
+            h = picker_hex.lstrip('#')
+            r, g, b = int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
+
+            dist, idx = tree.query([[r, g, b]])
+            nearest = colors[idx[0]]
+            nearest_hex = nearest['hex']
+
+            print(f"[COLOR_PICKER] {picker_hex} → nearest LUT: {nearest_hex} (dist={dist[0]:.1f})")
+
+            # Return JS call to scroll to the matched swatch + update replacement display
+            gr.Info(f"✅ 最接近: {nearest_hex} (距离: {dist[0]:.1f})")
+            return nearest_hex, nearest_hex
+        except Exception as e:
+            print(f"[COLOR_PICKER] Error: {e}")
+            return gr.update(), gr.update()
+
+    components['btn_conv_picker_search'].click(
+        fn=on_color_picker_find_nearest,
+        inputs=[components['color_conv_picker_search'], conv_lut_path],
+        outputs=[conv_replacement_color_state, conv_replacement_display]
+    ).then(
+        fn=None,
+        inputs=[conv_replacement_color_state],
+        outputs=[],
+        js="(hex) => { if (hex) { setTimeout(() => window.lutScrollToColor && window.lutScrollToColor(hex), 200); } }"
+    )
     
     # Color replacement: Apply replacement
     def on_apply_color_replacement_with_fit(cache, selected_color, replacement_color,
@@ -2855,20 +2918,28 @@ def create_converter_tab_content(lang: str, lang_state=None, theme_state=None) -
                 ],
                 outputs=[conv_preview]
             )
-    # ========== Relief Mode Event Handlers ==========
+    # ========== Relief / Cloisonné Mutual Exclusion ==========
     def on_relief_mode_toggle(enable_relief, selected_color, height_map, base_thickness):
-        """Toggle relief mode visibility and reset state"""
+        """Toggle relief mode visibility and reset state; auto-disable cloisonné"""
         if not enable_relief:
             # Disable relief mode - hide slider, accordion, and clear state
-            return gr.update(visible=False), gr.update(visible=False), {}, None
+            return gr.update(visible=False), gr.update(visible=False), {}, None, gr.update()
         else:
-            # Enable relief mode - show accordion, show slider if color is selected
+            # Enable relief → disable cloisonné
+            gr.Info("⚠️ 2.5D浮雕模式与掐丝珐琅模式互斥，已自动关闭掐丝珐琅 | Relief and Cloisonné are mutually exclusive, Cloisonné disabled")
             if selected_color:
                 current_height = height_map.get(selected_color, base_thickness)
-                return gr.update(visible=True, value=current_height), gr.update(visible=True), height_map, selected_color
+                return gr.update(visible=True, value=current_height), gr.update(visible=True), height_map, selected_color, gr.update(value=False)
             else:
-                return gr.update(visible=False), gr.update(visible=True), height_map, selected_color
-    
+                return gr.update(visible=False), gr.update(visible=True), height_map, selected_color, gr.update(value=False)
+
+    def on_cloisonne_mode_toggle(enable_cloisonne):
+        """When cloisonné is enabled, auto-disable relief mode"""
+        if enable_cloisonne:
+            gr.Info("⚠️ 掐丝珐琅模式与2.5D浮雕模式互斥，已自动关闭浮雕 | Cloisonné and Relief are mutually exclusive, Relief disabled")
+            return gr.update(value=False), gr.update(visible=False), gr.update(visible=False)
+        return gr.update(), gr.update(), gr.update()
+
     components['checkbox_conv_relief_mode'].change(
         on_relief_mode_toggle,
         inputs=[
@@ -2881,7 +2952,18 @@ def create_converter_tab_content(lang: str, lang_state=None, theme_state=None) -
             components['slider_conv_relief_height'],
             components['accordion_conv_auto_height'],
             conv_color_height_map,
-            conv_relief_selected_color
+            conv_relief_selected_color,
+            components['checkbox_conv_cloisonne_enable']
+        ]
+    )
+
+    components['checkbox_conv_cloisonne_enable'].change(
+        on_cloisonne_mode_toggle,
+        inputs=[components['checkbox_conv_cloisonne_enable']],
+        outputs=[
+            components['checkbox_conv_relief_mode'],
+            components['slider_conv_relief_height'],
+            components['accordion_conv_auto_height']
         ]
     )
     

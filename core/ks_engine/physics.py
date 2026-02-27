@@ -84,7 +84,10 @@ class VirtualPhysics:
         filaments_list: List[Dict],
         layer_height: float = 0.08,
         total_layers: int = 5,
-        backing_reflectance: np.ndarray = np.array([0.94, 0.94, 0.94])
+        backing_reflectance: np.ndarray = np.array([0.94, 0.94, 0.94]),
+        min_K: float = 0.01,
+        adaptive_ks_ratio: float = 0.3,
+        ks_ratio_threshold: float = 0.01,
     ) -> Tuple[np.ndarray, np.ndarray]:
         """
         生成 K-M 理论的 LUT (查找表)
@@ -94,6 +97,11 @@ class VirtualPhysics:
             layer_height: 单层厚度 (mm)
             total_layers: 总层数
             backing_reflectance: 底材反射率 (白色 PLA)
+            min_K: K 值最小下限，防止完全透明层
+            adaptive_ks_ratio: 自适应修正的目标 K/S 比值。当某通道 K/S 低于
+                ks_ratio_threshold 时，将 K 提升到 adaptive_ks_ratio * S。
+                设为 0 禁用自适应修正，仅使用 min_K 全局下限。
+            ks_ratio_threshold: 触发自适应修正的 K/S 比值阈值
         
         Returns:
             (lut_colors_srgb, indices): LUT 颜色数组和索引映射
@@ -105,6 +113,34 @@ class VirtualPhysics:
         Ks = np.array([f['FILAMENT_K'] for f in filaments_list])
         Ss = np.array([f['FILAMENT_S'] for f in filaments_list])
         
+        # 自适应 K 值修正：仅对 K/S 比值异常小的通道提升 K 值
+        # 原理：K/S ≈ 0 意味着该层几乎完全透明，backing 直接穿透导致偏白
+        # 实际打印中即使是"透明"层也有最小吸收，用 adaptive_ks_ratio 模拟
+        # 
+        # 重要：跳过"白色/透明"耗材（所有通道 K 都极小的耗材）
+        # 白色耗材的物理特性就是 K≈0、S 大，不应该被修正
+        if adaptive_ks_ratio > 0 and ks_ratio_threshold > 0:
+            Ss_safe = np.maximum(Ss, 1e-6)
+            ratio = Ks / Ss_safe
+            
+            # 判断每种耗材是否为"白色/透明"：所有通道的 K 值都极小
+            # 白色耗材特征：max(K) < 0.05（所有通道几乎不吸光）
+            is_white_filament = np.max(Ks, axis=1) < 0.05  # (num_filaments,)
+            
+            mask = ratio < ks_ratio_threshold
+            if np.any(mask):
+                Ks = Ks.copy()
+                # 只对非白色耗材应用自适应修正
+                white_mask_2d = is_white_filament[:, np.newaxis].repeat(3, axis=1)
+                apply_mask = mask & ~white_mask_2d
+                Ks[apply_mask] = np.maximum(Ks[apply_mask], adaptive_ks_ratio * Ss_safe[apply_mask])
+                
+                if np.any(is_white_filament & np.any(mask, axis=1)):
+                    print(f"  > 跳过白色/透明耗材的自适应修正（保持原始 K 值）")
+        
+        # 应用 min_K 全局下限（作为兜底保护）
+        Ks = np.maximum(Ks, min_K)
+        
         # 生成所有可能的层叠组合
         indices = np.array(list(itertools.product(range(num_filaments), repeat=total_layers)))
         num_combos = len(indices)
@@ -114,8 +150,8 @@ class VirtualPhysics:
         # 初始化反射率为底材反射率
         current_R = np.tile(backing_reflectance, (num_combos, 1))
         
-        # 逐层计算反射率
-        for layer_idx in range(total_layers):
+        # 逐层计算反射率（从底层到顶层）
+        for layer_idx in range(total_layers - 1, -1, -1):
             filament_ids = indices[:, layer_idx]
             layer_K = Ks[filament_ids]
             layer_S = Ss[filament_ids]

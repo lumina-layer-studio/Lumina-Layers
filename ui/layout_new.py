@@ -52,6 +52,7 @@ from .callbacks import (
     on_extractor_clear,
     on_lut_select,
     on_lut_upload_save,
+    on_stacks_only_upload,
     on_apply_color_replacement,
     on_clear_color_replacements,
     on_undo_color_replacement,
@@ -1198,12 +1199,17 @@ console.log('[CROP] Global scripts loaded, openCropModal:', typeof window.openCr
                 components.update(ext_components)
             tab_components['tab_extractor'] = tab_ext
             
-            with gr.TabItem(label="🔬 高级 | Advanced", id=3) as tab_advanced:
+            with gr.TabItem(label="🧪 K/S LUT 生成器 | K/S LUT Generator", id=3) as tab_ks_lut:
+                ks_lut_components = create_ks_lut_tab_content("zh")
+                components.update(ks_lut_components)
+            tab_components['tab_ks_lut'] = tab_ks_lut
+
+            with gr.TabItem(label="🔬 高级 | Advanced", id=4) as tab_advanced:
                 advanced_components = create_advanced_tab_content("zh")
                 components.update(advanced_components)
             tab_components['tab_advanced'] = tab_advanced
             
-            with gr.TabItem(label=I18n.get('tab_about', "zh"), id=4) as tab_about:
+            with gr.TabItem(label=I18n.get('tab_about', "zh"), id=5) as tab_about:
                 about_components = create_about_tab_content("zh")
                 components.update(about_components)
             tab_components['tab_about'] = tab_about
@@ -1226,6 +1232,7 @@ console.log('[CROP] Global scripts loaded, openCropModal:', typeof window.openCr
             updates.append(gr.update(label=I18n.get('tab_converter', new_lang)))
             updates.append(gr.update(label=I18n.get('tab_calibration', new_lang)))
             updates.append(gr.update(label=I18n.get('tab_extractor', new_lang)))
+            updates.append(gr.update(label="🧪 K/S LUT 生成器 | K/S LUT Generator"))
             updates.append(gr.update(label="🔬 高级 | Advanced" if new_lang == "zh" else "🔬 Advanced"))
             updates.append(gr.update(label=I18n.get('tab_about', new_lang)))
             updates.extend(_get_all_component_updates(new_lang, components))
@@ -1241,6 +1248,7 @@ console.log('[CROP] Global scripts loaded, openCropModal:', typeof window.openCr
             tab_components['tab_converter'],
             tab_components['tab_calibration'],
             tab_components['tab_extractor'],
+            tab_components['tab_ks_lut'],
             tab_components['tab_advanced'],
             tab_components['tab_about'],
         ]
@@ -1746,6 +1754,15 @@ def create_converter_tab_content(lang: str, lang_state=None, theme_state=None) -
                     scale=1,
                     elem_classes=["tall-upload"]
                 )
+                conv_stacks_upload = gr.File(
+                    label="Stacks",
+                    show_label=True,
+                    file_types=['.npy'],
+                    height=84,
+                    min_width=100,
+                    scale=1,
+                    elem_classes=["tall-upload"]
+                )
             
             components['md_conv_lut_status'] = gr.Markdown(
                 value=I18n.get('conv_lut_status_default', lang),
@@ -1895,12 +1912,13 @@ def create_converter_tab_content(lang: str, lang_state=None, theme_state=None) -
             with gr.Row(elem_classes=["compact-row"]):
                 components['radio_conv_color_mode'] = gr.Radio(
                     choices=[
+                        ("自动检测 (Auto)", "Auto"),
                         ("BW (Black & White)", "BW (Black & White)"),
                         ("4-Color (1024 colors)", "4-Color"),
                         ("6-Color (Smart 1296)", "6-Color (Smart 1296)"),
                         ("8-Color Max", "8-Color Max")
                     ],
-                    value=saved_color_mode,
+                    value="Auto" if saved_color_mode not in ["BW (Black & White)", "4-Color", "6-Color (Smart 1296)", "8-Color Max"] else saved_color_mode,
                     label=I18n.get('conv_color_mode', lang)
                 )
                 
@@ -2529,9 +2547,9 @@ def create_converter_tab_content(lang: str, lang_state=None, theme_state=None) -
             inputs=[conv_lut_path, lang_state, conv_palette_mode],
             outputs=[conv_lut_grid_view]
     ).then(
-            # 自动检测并切换颜色模式
-            fn=detect_lut_color_mode,
-            inputs=[conv_lut_path],
+            # 自动检测并切换颜色模式（Auto 模式下不覆盖）
+            fn=lambda lut, mode: detect_lut_color_mode(lut) if mode != "Auto" else gr.update(),
+            inputs=[conv_lut_path, components['radio_conv_color_mode']],
             outputs=[components['radio_conv_color_mode']]
     )
     
@@ -2541,18 +2559,24 @@ def create_converter_tab_content(lang: str, lang_state=None, theme_state=None) -
 
     conv_lut_upload.upload(
             on_lut_upload_save,
-            inputs=[conv_lut_upload],
+            inputs=[conv_lut_upload, conv_stacks_upload],
             outputs=[components['dropdown_conv_lut_dropdown'], components['md_conv_lut_status']]
     ).then(
             fn=lambda: gr.update(),
             outputs=[components['dropdown_conv_lut_dropdown']]
     ).then(
-            # 自动检测并切换颜色模式
-            fn=lambda lut_file: detect_lut_color_mode(lut_file.name if lut_file else None) or gr.update(),
-            inputs=[conv_lut_upload],
+            # 自动检测并切换颜色模式（Auto 模式下不覆盖）
+            fn=lambda lut_file, mode: (detect_lut_color_mode(lut_file.name if lut_file else None) if mode != "Auto" else gr.update()) or gr.update(),
+            inputs=[conv_lut_upload, components['radio_conv_color_mode']],
             outputs=[components['radio_conv_color_mode']]
     )
     
+    conv_stacks_upload.upload(
+            on_stacks_only_upload,
+            inputs=[conv_stacks_upload],
+            outputs=[components['md_conv_lut_status']]
+    )
+
     components['image_conv_image_label'].change(
             fn=init_dims,
             inputs=[components['image_conv_image_label']],
@@ -3636,12 +3660,14 @@ def create_extractor_tab_content(lang: str) -> dict:
             import os
             import sys
             
-            # Import from local ks_engine module (uses gentle white balance)
+            # Import from local ks_engine module (uses unified white balance)
             from core.ks_engine.calibration_ks import (
                 apply_perspective_transform,
                 auto_white_balance_by_paper,
                 km_reflectance,
-                fit_km_parameters
+                fit_km_parameters,
+                srgb_to_linear,
+                linear_to_srgb,
             )
             
             # Constants from ChromaStack
@@ -3666,30 +3692,8 @@ def create_extractor_tab_content(lang: str) -> dict:
             pts_a4 = np.float32(a4_corners)
             img_a4 = apply_perspective_transform(raw_img, pts_a4, A4_WIDTH, A4_HEIGHT)
             
-            # K/S calibration requires STRONG white balance:
-            # A4 paper edges must be normalized to ~240 (white), not just color-balanced.
-            # Without this, all reflectance values are too low and K gets overestimated.
-            h_a4, w_a4 = img_a4.shape[:2]
-            margin_h = int(h_a4 * 0.1)
-            margin_w = int(w_a4 * 0.1)
-            wb_mask = np.zeros((h_a4, w_a4), dtype=np.uint8)
-            cv2.rectangle(wb_mask, (0, 0), (w_a4, margin_h), 255, -1)
-            cv2.rectangle(wb_mask, (0, h_a4 - margin_h), (w_a4, h_a4), 255, -1)
-            cv2.rectangle(wb_mask, (0, 0), (margin_w, h_a4), 255, -1)
-            cv2.rectangle(wb_mask, (w_a4 - margin_w, 0), (w_a4, h_a4), 255, -1)
-            mean_bg = cv2.mean(img_a4, mask=wb_mask)[:3]  # BGR
-            
-            # Target: normalize paper white to 240
-            target_white = 240.0
-            wb_gains = target_white / (np.array(mean_bg) + 1e-5)
-            wb_gains = np.clip(wb_gains, 0.5, 3.0)
-            
-            if enable_white_balance:
-                img_calibrated = np.clip(cv2.multiply(img_a4.astype(float), wb_gains), 0, 255).astype(np.uint8)
-                print(f"[K/S WB] Paper BGR: {np.array(mean_bg).astype(int)}, Target: {target_white}, Gains: {wb_gains.round(3)}")
-            else:
-                img_calibrated = img_a4
-                print(f"[K/S WB] Disabled. Paper BGR: {np.array(mean_bg).astype(int)}")
+            # Step 1.5: White balance (统一使用 calibration_ks 的白平衡)
+            img_calibrated = auto_white_balance_by_paper(img_a4, enable_wb=enable_white_balance)
             
             print(f"[K/S DEBUG] img_calibrated pixel[0,0] BGR: {img_calibrated[0,0]}")
             
@@ -3726,8 +3730,8 @@ def create_extractor_tab_content(lang: str) -> dict:
                 bgr_w_mean = np.mean(roi_w, axis=(0,1))
                 rgb_w = bgr_w_mean[::-1]  # BGR -> RGB
                 
-                R0_linear = (rgb_0 / 255.0) ** 2.2
-                Rw_linear = (rgb_w / 255.0) ** 2.2
+                R0_linear = srgb_to_linear(rgb_0 / 255.0)
+                Rw_linear = srgb_to_linear(rgb_w / 255.0)
                 
                 layer_idx = rows - r
                 
@@ -3768,7 +3772,11 @@ def create_extractor_tab_content(lang: str) -> dict:
                 
                 print(f"[K/S DEBUG] Channel {ch.upper()}: R0_meas={R0_meas.round(4)}, Rw_meas={Rw_meas.round(4)}")
                 
-                (best_K, best_S), error = fit_km_parameters(thicknesses, R0_meas, Rw_meas)
+                (best_K, best_S), error = fit_km_parameters(
+                    thicknesses, R0_meas, Rw_meas,
+                    backing_reflectance_white=BACKING_REFLECTANCE_WHITE,
+                    backing_reflectance_black=BACKING_REFLECTANCE_BLACK
+                )
                 results[ch] = {'K': best_K, 'S': best_S}
                 
                 print(f"[K/S DEBUG] Channel {ch.upper()}: K={best_K:.4f}, S={best_S:.4f}, error={error:.6f}")
@@ -3861,8 +3869,8 @@ def create_extractor_tab_content(lang: str) -> dict:
                 
                 current_R = np.clip(current_R, 0, 1)
                 
-                # Linear reflectance -> sRGB gamma (simple 1/2.2, same as ChromaStack)
-                srgb = current_R ** (1.0 / 2.2)
+                # Linear reflectance -> sRGB (标准分段公式，与 physics.py 一致)
+                srgb = linear_to_srgb(current_R)
                 r8 = int(np.clip(srgb[0] * 255, 0, 255))
                 g8 = int(np.clip(srgb[1] * 255, 0, 255))
                 b8 = int(np.clip(srgb[2] * 255, 0, 255))
@@ -4031,6 +4039,31 @@ def create_extractor_tab_content(lang: str) -> dict:
     return components
 
 
+DEFAULT_FILAMENT_PATH = "my_filament.json"
+
+
+def _try_load_default_filament():
+    """
+    尝试加载默认耗材配置文件 my_filament.json。
+
+    Returns:
+        (choices, status_message, all_names_json)
+        - choices: 耗材复选框选项列表
+        - status_message: 状态提示文本
+        - all_names_json: JSON 序列化的耗材名列表
+    """
+    if not os.path.exists(DEFAULT_FILAMENT_PATH):
+        return [], "", "[]"
+    try:
+        from core.ks_engine.filament_loader import FilamentLoader
+        filaments = FilamentLoader.load(DEFAULT_FILAMENT_PATH)
+        choices = [f"{f['name']} ({f['color']})" for f in filaments]
+        status = f"✅ 已加载默认耗材配置 ({len(filaments)} 种耗材)"
+        all_names_json = json.dumps([f['name'] for f in filaments])
+        return choices, status, all_names_json
+    except Exception as e:
+        return [], f"⚠️ 默认耗材配置文件格式无效: {e}", "[]"
+
 
 def create_advanced_tab_content(lang: str) -> dict:
     """Build Advanced tab content for LUT merging. Returns component dict."""
@@ -4051,6 +4084,342 @@ def create_advanced_tab_content(lang: str) -> dict:
     )
     
     return components
+
+def generate_color_swatch_html(lut_grid, metadata):
+    """生成颜色色板 HTML，服务端用 numpy+PIL 绘制后输出 base64 <img>"""
+    import base64
+    from io import BytesIO
+
+    colors = lut_grid.reshape(-1, 3).astype(np.uint8)
+    total = len(colors)
+    # 自适应色块大小
+    if total <= 1024:
+        cell = 12
+    elif total <= 7776:
+        cell = 6
+    else:
+        cell = 4
+    gap = 1
+    cols = max(1, 800 // (cell + gap))
+    rows = (total + cols - 1) // cols
+    img_w = cols * (cell + gap)
+    img_h = rows * (cell + gap)
+
+    # 用 numpy 批量填充，比逐像素快得多
+    arr = np.full((img_h, img_w, 3), 255, dtype=np.uint8)
+    for i in range(total):
+        col = i % cols
+        row = i // cols
+        x0 = col * (cell + gap)
+        y0 = row * (cell + gap)
+        arr[y0:y0+cell, x0:x0+cell] = colors[i]
+
+    img = PILImage.fromarray(arr)
+    buf = BytesIO()
+    img.save(buf, format='PNG')
+    b64 = base64.b64encode(buf.getvalue()).decode('ascii')
+    html = f'<img src="data:image/png;base64,{b64}" style="image-rendering:pixelated;max-width:100%;" />'
+    html += f'<p style="color:gray;font-size:12px;">共 {total} 种颜色 (色块 {cell}px)</p>'
+    return html
+
+
+def _on_filament_file_change(file):
+    """耗材配置文件选择回调"""
+    from core.ks_engine.filament_loader import FilamentLoader
+    if file is None:
+        return gr.update(choices=[], value=[]), "", "[]"
+    try:
+        filaments = FilamentLoader.load(file.name if hasattr(file, 'name') else str(file))
+        choices = [f"{f['name']} ({f['color']})" for f in filaments]
+        status = f"✅ 加载了 {len(filaments)} 种耗材"
+        return gr.update(choices=choices, value=choices), status, json.dumps([f['name'] for f in filaments])
+    except Exception as e:
+        return gr.update(choices=[], value=[]), f"❌ {e}", "[]"
+
+
+def _on_filament_selection_change(selected_names):
+    """耗材选择变化回调 - 更新预计颜色总数"""
+    from core.ks_engine.lut_generator import KSLutGenerator
+    n = len(selected_names) if selected_names else 0
+    if n == 0:
+        return "请选择耗材"
+    is_valid, total_colors, msg = KSLutGenerator.validate_selection(n)
+    if not is_valid:
+        return f"⚠️ {msg}"
+    return f"📊 预计颜色总数: **{total_colors}** ({n} 种耗材, {n}^5)"
+
+
+def _compute_brightness_stats(lut_grid):
+    """计算 LUT 颜色的亮度分布统计"""
+    colors = lut_grid.reshape(-1, 3).astype(float)
+    brightness = colors.mean(axis=1)
+    return {
+        "mean": float(np.mean(brightness)),
+        "median": float(np.median(brightness)),
+        "pct_above_200": float((brightness > 200).sum() / len(brightness) * 100),
+        "pct_above_180": float((brightness > 180).sum() / len(brightness) * 100),
+        "pct_above_150": float((brightness > 150).sum() / len(brightness) * 100),
+        "pct_below_100": float((brightness < 100).sum() / len(brightness) * 100),
+        "pct_below_50": float((brightness < 50).sum() / len(brightness) * 100),
+    }
+
+
+def _compute_pure_color_preview(filaments, selected_indices, physics, layer_height, backing_arr, min_k, adaptive_ks_ratio=0.3, ks_ratio_threshold=0.01):
+    """计算每种选中耗材的纯色5层 K-M 结果"""
+    results = []
+    for idx in selected_indices:
+        f = filaments[idx]
+        K = np.array(f['FILAMENT_K'], dtype=float)
+        S = np.array(f['FILAMENT_S'], dtype=float)
+        # 自适应修正：仅对 K/S 比值异常小的通道提升
+        if adaptive_ks_ratio > 0 and ks_ratio_threshold > 0:
+            S_safe = np.maximum(S, 1e-6)
+            ratio = K / S_safe
+            mask = ratio < ks_ratio_threshold
+            if np.any(mask):
+                K = K.copy()
+                K[mask] = np.maximum(K[mask], adaptive_ks_ratio * S_safe[mask])
+        K = np.maximum(K, min_k)
+        # 5层同一耗材
+        R = backing_arr.copy()
+        for _ in range(5):
+            R = physics.km_reflectance_vectorized(
+                K.reshape(1, -1), S.reshape(1, -1), layer_height, R.reshape(1, -1)
+            ).flatten()
+        srgb = physics.linear_to_srgb_bytes(R.reshape(1, -1)).flatten()
+        r, g, b = int(srgb[0]), int(srgb[1]), int(srgb[2])
+        results.append({
+            "name": f.get('name', f'耗材#{idx}'),
+            "rgb": (r, g, b),
+            "hex": f"#{r:02x}{g:02x}{b:02x}",
+        })
+    return results
+
+
+def _on_generate_lut(file, selected_names, all_names_json, min_k=0.001, backing=1.0, adaptive_ks_ratio=0.0):
+    """生成 LUT 回调"""
+    from core.ks_engine.filament_loader import FilamentLoader
+    from core.ks_engine.lut_generator import KSLutGenerator
+
+    empty_download = gr.update(visible=False)
+
+    if file is None and os.path.exists(DEFAULT_FILAMENT_PATH):
+        file_path = DEFAULT_FILAMENT_PATH
+    elif file is None:
+        return "", "", "❌ 请先选择耗材配置文件", empty_download, empty_download
+    else:
+        file_path = file.name if hasattr(file, 'name') else str(file)
+
+    if not selected_names:
+        return "", "", "❌ 请至少选择 2 种耗材", empty_download, empty_download
+
+    try:
+        filaments = FilamentLoader.load(file_path)
+
+        # 从 selected_names 反推 selected_indices
+        all_choices = [f"{f['name']} ({f['color']})" for f in filaments]
+        selected_indices = [all_choices.index(name) for name in selected_names if name in all_choices]
+
+        # 调试日志：确认选择匹配
+        print(f"[KS_LUT] selected_names ({len(selected_names)}): {selected_names}")
+        print(f"[KS_LUT] all_choices ({len(all_choices)}): {all_choices}")
+        print(f"[KS_LUT] selected_indices ({len(selected_indices)}): {selected_indices}")
+        if len(selected_indices) != len(selected_names):
+            unmatched = [n for n in selected_names if n not in all_choices]
+            print(f"[KS_LUT] ⚠️ 未匹配的耗材: {unmatched}")
+
+        if len(selected_indices) < 2:
+            return "", "", "❌ 请至少选择 2 种耗材", empty_download, empty_download
+
+        backing_arr = np.array([float(backing)] * 3)
+
+        generator = KSLutGenerator()
+        lut_grid, metadata = generator.generate(
+            filaments, selected_indices,
+            backing_reflectance=backing_arr,
+            min_K=float(min_k),
+            adaptive_ks_ratio=float(adaptive_ks_ratio),
+        )
+
+        # 生成文件名：耗材名首字母缩写
+        selected_filaments = [filaments[i] for i in selected_indices]
+        abbr = "".join([f['name'][0].upper() for f in selected_filaments])
+        filename = f"{abbr}_KS.npy"
+
+        # 保存到 lut-npy预设/KS-Generated/ 目录
+        save_dir = os.path.join(LUTManager.LUT_PRESET_DIR, "KS-Generated")
+        save_path = os.path.join(save_dir, filename)
+
+        stacks = metadata.get('stacks')
+        saved_path, total_colors = generator.save(lut_grid, save_path, stacks)
+
+        # 生成色板预览
+        swatch_html = generate_color_swatch_html(lut_grid, metadata)
+
+        # 亮度分布统计
+        brightness_stats = _compute_brightness_stats(lut_grid)
+
+        # 纯色5层预览
+        pure_preview = _compute_pure_color_preview(
+            filaments, selected_indices, generator.physics,
+            metadata.get('layer_height', 0.08), backing_arr, float(min_k),
+            adaptive_ks_ratio=float(adaptive_ks_ratio),
+        )
+
+        # 生成统计信息
+        filament_names = metadata.get('filament_names', [])
+        stats_md = f"""### 📊 LUT 统计信息
+- **颜色总数**: {metadata['total_colors']}
+- **耗材数量**: {metadata['num_filaments']}
+- **使用耗材**: {', '.join(filament_names)}
+- **层高参数**: {metadata.get('layer_height', 0.08)} mm
+- **总层数**: {metadata.get('total_layers', 5)}
+- **min_K**: {min_k} | **Backing**: {backing} | **自适应 K/S**: {adaptive_ks_ratio}
+- **LUT 形状**: {metadata['shape']}
+- **保存路径**: `{saved_path}`
+
+### 🔆 亮度分布
+- **平均亮度**: {brightness_stats['mean']:.1f} | **中位数**: {brightness_stats['median']:.1f}
+- **>200**: {brightness_stats['pct_above_200']:.1f}% | **>180**: {brightness_stats['pct_above_180']:.1f}% | **>150**: {brightness_stats['pct_above_150']:.1f}%
+- **<100**: {brightness_stats['pct_below_100']:.1f}% | **<50**: {brightness_stats['pct_below_50']:.1f}%
+
+### 🎨 纯色5层预览
+"""
+        for p in pure_preview:
+            r, g, b = p['rgb']
+            stats_md += f'<span style="display:inline-block;width:20px;height:20px;background:{p["hex"]};border:1px solid #ccc;vertical-align:middle;margin-right:4px;"></span> **{p["name"]}**: RGB({r},{g},{b}) {p["hex"]}  \n'
+
+        status = f"✅ LUT 生成成功！共 {total_colors} 种颜色，已保存到 {saved_path}"
+
+        # 下载组件更新
+        lut_download = gr.update(value=saved_path, visible=True)
+        stacks_download = empty_download
+        if stacks is not None:
+            base, ext = os.path.splitext(saved_path)
+            stacks_path = base + "_stacks.npy"
+            if os.path.exists(stacks_path):
+                stacks_download = gr.update(value=stacks_path, visible=True)
+
+        return swatch_html, stats_md, status, lut_download, stacks_download
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return "", "", f"❌ 生成失败: {e}\n\n💡 建议: 请检查耗材配置文件格式是否正确", empty_download, empty_download
+
+
+def create_ks_lut_tab_content(lang: str) -> dict:
+    """Build K/S LUT Generator tab content. Returns component dict."""
+    components = {}
+
+    # 尝试默认加载耗材配置
+    default_choices, default_status, default_all_names = _try_load_default_filament()
+
+    with gr.Row():
+        with gr.Column(scale=4):
+            # 耗材配置文件选择
+            components['file_ks_filament'] = gr.File(
+                label="📂 耗材配置文件 | Filament Config" if lang == "zh" else "📂 Filament Config File",
+                file_types=[".json"],
+                type="filepath",
+            )
+            # 耗材复选框列表
+            components['checkbox_ks_filaments'] = gr.CheckboxGroup(
+                label="🎨 选择耗材 | Select Filaments" if lang == "zh" else "🎨 Select Filaments",
+                choices=default_choices,
+                value=[],
+                interactive=True,
+            )
+            # 预计颜色总数
+            components['md_ks_color_count'] = gr.Markdown("请选择耗材" if default_choices else "请选择耗材配置文件")
+            # 隐藏的 all_names state
+            components['state_ks_all_names'] = gr.State(value=default_all_names)
+
+            # K 值最小下限滑块 (需求 4)
+            components['slider_ks_min_k'] = gr.Slider(
+                minimum=0.001, maximum=1.0, value=0.001, step=0.001,
+                label="K 值最小下限 (min_K)" if lang == "zh" else "Min K Value",
+            )
+            # 底材反射率滑块 (需求 4)
+            components['slider_ks_backing'] = gr.Slider(
+                minimum=0.5, maximum=1.0, value=1.0, step=0.01,
+                label="底材反射率 (Backing)" if lang == "zh" else "Backing Reflectance",
+            )
+            # 自适应 K/S 修正滑块 — 仅对 K/S 比值异常小的通道提升 K 值
+            components['slider_ks_adaptive'] = gr.Slider(
+                minimum=0.0, maximum=1.0, value=0.0, step=0.05,
+                label="自适应 K/S 修正强度 (0=关闭)" if lang == "zh" else "Adaptive K/S Ratio (0=off)",
+            )
+
+            # 生成按钮
+            components['btn_ks_generate'] = gr.Button(
+                "🚀 生成 LUT | Generate LUT" if lang == "zh" else "🚀 Generate LUT",
+                variant="primary",
+            )
+            # 状态/错误信息
+            components['md_ks_status'] = gr.Markdown(default_status)
+
+        with gr.Column(scale=6):
+            # 颜色色板预览
+            components['html_ks_swatch'] = gr.HTML(
+                value="<p style='color:gray;'>生成 LUT 后将在此显示颜色色板预览</p>",
+            )
+            # LUT 统计信息
+            components['md_ks_stats'] = gr.Markdown("")
+            # 下载组件 (需求 2)
+            components['file_ks_download_lut'] = gr.File(
+                label="📥 下载 LUT 文件",
+                visible=False,
+                interactive=False,
+            )
+            components['file_ks_download_stacks'] = gr.File(
+                label="📥 下载 Stacks 索引文件",
+                visible=False,
+                interactive=False,
+            )
+
+    # === 事件绑定 ===
+    # 文件选择回调
+    components['file_ks_filament'].change(
+        fn=_on_filament_file_change,
+        inputs=[components['file_ks_filament']],
+        outputs=[
+            components['checkbox_ks_filaments'],
+            components['md_ks_status'],
+            components['state_ks_all_names'],
+        ],
+    )
+
+    # 耗材选择变化回调
+    components['checkbox_ks_filaments'].change(
+        fn=_on_filament_selection_change,
+        inputs=[components['checkbox_ks_filaments']],
+        outputs=[components['md_ks_color_count']],
+    )
+
+    # 生成 LUT 按钮回调
+    components['btn_ks_generate'].click(
+        fn=_on_generate_lut,
+        inputs=[
+            components['file_ks_filament'],
+            components['checkbox_ks_filaments'],
+            components['state_ks_all_names'],
+            components['slider_ks_min_k'],
+            components['slider_ks_backing'],
+            components['slider_ks_adaptive'],
+        ],
+        outputs=[
+            components['html_ks_swatch'],
+            components['md_ks_stats'],
+            components['md_ks_status'],
+            components['file_ks_download_lut'],
+            components['file_ks_download_stacks'],
+        ],
+    )
+
+    return components
+
+
 
 
 def create_about_tab_content(lang: str) -> dict:

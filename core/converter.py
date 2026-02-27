@@ -484,6 +484,14 @@ def convert_image_to_3d(image_path, lut_path, target_width_mm, spacer_thick,
     # All K-Means, layer slicing, and mesh generation logic is unified.
     
     color_conf = ColorSystem.get(color_mode)
+    
+    # Auto 模式：先检测 LUT 的实际色彩模式
+    if color_mode == "Auto":
+        detected = detect_lut_color_mode(actual_lut_path)
+        if detected:
+            color_mode = detected
+            color_conf = ColorSystem.get(color_mode)
+
     slot_names = color_conf['slots']
     preview_colors = color_conf['preview']
     
@@ -1975,6 +1983,14 @@ def generate_preview_cached(image_path, lut_path, target_width_mm,
     color_conf = ColorSystem.get(color_mode)
     
     try:
+        # Auto 模式：先检测 LUT 的实际色彩模式
+        if color_mode == "Auto":
+            detected = detect_lut_color_mode(actual_lut_path)
+            if detected:
+                color_mode = detected
+                color_conf = ColorSystem.get(color_mode)
+            # 未检测到时保持默认 fallback
+
         processor = LuminaImageProcessor(actual_lut_path, color_mode)
         processor.enable_cleanup = enable_cleanup
         result = processor.process_image(
@@ -2974,7 +2990,7 @@ def detect_lut_color_mode(lut_path):
         lut_path: LUT文件路径
     
     Returns:
-        str: 颜色模式 ("BW (Black & White)", "CMYW (Cyan/Magenta/Yellow)", "RYBW (Red/Yellow/Blue)", "6-Color (Smart 1296)", "8-Color Max")
+        str: 颜色模式字符串，或 None
     """
     if not lut_path or not os.path.exists(lut_path):
         return None
@@ -2983,13 +2999,21 @@ def detect_lut_color_mode(lut_path):
         # Standard .npy format
         lut_data = np.load(lut_path)
         
-        # 确保是2D数组
+        # 确保是2D数组 (N, 3)
         if lut_data.ndim == 1:
-            # 如果是1D数组，假设是 (N*3,) 格式，重塑为 (N, 3)
             if len(lut_data) % 3 == 0:
                 lut_data = lut_data.reshape(-1, 3)
             else:
-                print(f"[AUTO_DETECT] Invalid LUT format: cannot reshape to (N, 3)")
+                print(f"[AUTO_DETECT] Invalid LUT format: size {lut_data.size} cannot reshape to (N, 3)")
+                return None
+        
+        # 处理 3D 数组（可能是 RGBA）
+        if lut_data.ndim == 3:
+            if lut_data.shape[2] == 4:
+                print(f"[AUTO_DETECT] RGBA format detected {lut_data.shape}, using RGB channels")
+                lut_data = lut_data[:, :, :3]
+            elif lut_data.shape[2] != 3:
+                print(f"[AUTO_DETECT] Invalid LUT format: last dim is {lut_data.shape[2]}, expected 3 or 4")
                 return None
         
         # 计算颜色数量
@@ -3000,29 +3024,33 @@ def detect_lut_color_mode(lut_path):
         
         print(f"[AUTO_DETECT] LUT shape: {lut_data.shape}, total colors: {total_colors}")
         
-        # 2色模式：32色 (2^5 = 32)
-        if total_colors >= 30 and total_colors <= 35:
-            print(f"[AUTO_DETECT] Detected 2-Color BW mode (32 colors)")
-            return "BW (Black & White)"
+        # 精确匹配 n^5 值
+        n5_map = {
+            32: ("BW (Black & White)", 2),
+            243: ("3-Color (243 colors)", 3),
+            1024: ("4-Color (1024 colors)", 4),
+            3125: ("5-Color (3125 colors)", 5),
+            7776: ("6-Color (7776 colors)", 6),
+            16807: ("7-Color (16807 colors)", 7),
+            32768: ("8-Color (32768 colors)", 8),
+        }
         
-        # 8色模式：2600-2800色
-        elif total_colors >= 2600 and total_colors <= 2800:
-            print(f"[AUTO_DETECT] Detected 8-Color mode ({total_colors} colors)")
+        if total_colors in n5_map:
+            mode_str, n = n5_map[total_colors]
+            print(f"[AUTO_DETECT] Detected {n}-Color mode ({total_colors} colors)")
+            return mode_str
+        
+        # Smart 模式范围匹配（保留现有逻辑）
+        if total_colors >= 2600 and total_colors <= 2800:
+            print(f"[AUTO_DETECT] Detected 8-Color Max mode ({total_colors} colors)")
             return "8-Color Max"
         
-        # 6色模式：1200-1400色
-        elif total_colors >= 1200 and total_colors < 1400:
-            print(f"[AUTO_DETECT] Detected 6-Color mode ({total_colors} colors)")
+        if total_colors >= 1200 and total_colors < 1400:
+            print(f"[AUTO_DETECT] Detected 6-Color Smart mode ({total_colors} colors)")
             return "6-Color (Smart 1296)"
         
-        # 4色模式：900-1200色
-        elif total_colors >= 900 and total_colors < 1200:
-            print(f"[AUTO_DETECT] Detected 4-Color mode ({total_colors} colors) - keeping current selection")
-            return None  # 不自动切换4色模式，保持用户选择
-        
-        else:
-            print(f"[AUTO_DETECT] Unknown LUT format with {total_colors} colors")
-            return None
+        print(f"[AUTO_DETECT] Unknown LUT format with {total_colors} colors")
+        return None
             
     except Exception as e:
         print(f"[AUTO_DETECT] Error detecting LUT mode: {e}")

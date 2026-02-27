@@ -36,6 +36,52 @@ class LUTManager:
         _BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         LUT_PRESET_DIR = os.path.join(_BASE_DIR, "lut-npy预设")
     
+    @staticmethod
+    def _build_stacks_path(lut_path: str) -> str:
+        """根据 LUT 文件路径构建对应的 stacks 文件路径
+        
+        命名约定: {base}_stacks.npy
+        与 core/image_processing.py 中 _load_lut 的 companion stacks 查找逻辑一致:
+            base_path, ext = os.path.splitext(lut_path)
+            companion_stacks_path = base_path + "_stacks.npy"
+        """
+        base, ext = os.path.splitext(lut_path)
+        return f"{base}_stacks{ext}"
+
+    @classmethod
+    def validate_stacks_file(cls, stacks_path, lut_path=None):
+        """验证 stacks 文件的有效性
+        
+        Args:
+            stacks_path: stacks 文件路径
+            lut_path: 对应的 LUT 文件路径（用于数量匹配检查，可选）
+        
+        Returns:
+            tuple: (is_valid, message)
+        """
+        import numpy as np
+        
+        try:
+            stacks_data = np.load(stacks_path)
+        except Exception as e:
+            return False, f"Stacks 文件格式无效：{e}"
+        
+        # 检查数组维度（至少 1 维）
+        if stacks_data.ndim < 1:
+            return False, "Stacks 文件不是有效的数组"
+        
+        # 如果提供了 lut_path，比较 stacks 行数与 LUT 颜色数是否匹配
+        if lut_path and os.path.exists(lut_path):
+            try:
+                lut_data = np.load(lut_path)
+                lut_colors = lut_data.reshape(-1, 3).shape[0] if lut_data.ndim >= 1 else 0
+                if len(stacks_data) != lut_colors:
+                    return False, f"Stacks 行数 ({len(stacks_data)}) 与 LUT 颜色数 ({lut_colors}) 不匹配"
+            except Exception:
+                pass  # LUT 验证失败不阻止 stacks 保存
+        
+        return True, "验证通过"
+
     @classmethod
     def get_all_lut_files(cls):
         """
@@ -56,6 +102,10 @@ class LUTManager:
         all_files = glob.glob(npy_pattern, recursive=True)
         
         for file_path in all_files:
+            # 过滤 _stacks.npy 文件，不在 LUT 列表中显示
+            if file_path.endswith("_stacks.npy"):
+                continue
+            
             # Generate friendly display name
             rel_path = os.path.relpath(file_path, cls.LUT_PRESET_DIR)
             
@@ -78,7 +128,7 @@ class LUTManager:
         
         print(f"[LUT_MANAGER] Found {len(lut_files)} LUT presets")
         return lut_files
-    
+
     @classmethod
     def get_lut_choices(cls):
         """
@@ -105,18 +155,21 @@ class LUTManager:
         return lut_files.get(display_name)
     
     @classmethod
-    def save_uploaded_lut(cls, uploaded_file, custom_name=None):
+    def save_uploaded_lut(cls, uploaded_file, stacks_file=None, custom_name=None):
         """
         Save user-uploaded LUT file to preset folder
         
         Args:
             uploaded_file: Gradio uploaded file object
+            stacks_file: Gradio uploaded stacks file object (optional)
             custom_name: Custom filename (optional)
         
         Returns:
             tuple: (success_flag, message, new_choice_list)
         """
         if uploaded_file is None:
+            if stacks_file is not None:
+                return False, "❌ 请先上传 LUT 文件", cls.get_lut_choices()
             return False, "❌ No file selected", cls.get_lut_choices()
         
         try:
@@ -163,7 +216,26 @@ class LUTManager:
             
             print(f"[LUT_MANAGER] Saved uploaded LUT: {dest_path}")
             
-            return True, f"✅ LUT saved: {display_name}\nPlease select from dropdown to use", cls.get_lut_choices()
+            message = f"✅ LUT saved: {display_name}\nPlease select from dropdown to use"
+            
+            # 保存 stacks 文件（如果提供）
+            if stacks_file is not None:
+                try:
+                    stacks_dest = cls._build_stacks_path(dest_path)
+                    is_valid, validation_msg = cls.validate_stacks_file(
+                        stacks_file.name, dest_path
+                    )
+                    if is_valid:
+                        shutil.copy2(stacks_file.name, stacks_dest)
+                        message += f"\n✅ Stacks 文件已保存"
+                        print(f"[LUT_MANAGER] Saved stacks file: {stacks_dest}")
+                    else:
+                        message += f"\n⚠️ {validation_msg}（Stacks 文件未保存，不影响 LUT）"
+                except Exception as e:
+                    print(f"[LUT_MANAGER] Error saving stacks file: {e}")
+                    message += f"\n⚠️ Stacks 保存失败：{e}（LUT 已正常保存）"
+            
+            return True, message, cls.get_lut_choices()
             
         except Exception as e:
             print(f"[LUT_MANAGER] Error saving LUT: {e}")
@@ -191,8 +263,19 @@ class LUTManager:
         
         try:
             os.remove(file_path)
+            
+            # 联动删除 companion stacks 文件
+            try:
+                stacks_path = cls._build_stacks_path(file_path)
+                if os.path.exists(stacks_path):
+                    os.remove(stacks_path)
+                    print(f"[LUT_MANAGER] Deleted companion stacks: {stacks_path}")
+            except Exception as e:
+                print(f"[LUT_MANAGER] Warning: Failed to delete companion stacks: {e}")
+            
             print(f"[LUT_MANAGER] Deleted LUT: {file_path}")
             return True, f"✅ Deleted: {display_name}", cls.get_lut_choices()
         except Exception as e:
             print(f"[LUT_MANAGER] Error deleting LUT: {e}")
             return False, f"❌ Delete failed: {e}", cls.get_lut_choices()
+

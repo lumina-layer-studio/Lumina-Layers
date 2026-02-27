@@ -28,6 +28,46 @@ matplotlib.use('Agg')  # 非交互式后端
 import matplotlib.pyplot as plt
 
 
+# ========== 标准 sRGB 转换（与 physics.py 完全一致） ==========
+
+def srgb_to_linear(srgb_normalized: np.ndarray) -> np.ndarray:
+    """
+    标准 sRGB → 线性 RGB（反伽马校正）
+    与 physics.py 的 linear_to_srgb_bytes 互逆
+    
+    Args:
+        srgb_normalized: sRGB 值，范围 [0, 1]
+    
+    Returns:
+        线性 RGB 值，范围 [0, 1]
+    """
+    srgb_normalized = np.clip(srgb_normalized, 0, 1)
+    return np.where(
+        srgb_normalized <= 0.04045,
+        srgb_normalized / 12.92,
+        ((srgb_normalized + 0.055) / 1.055) ** 2.4
+    )
+
+
+def linear_to_srgb(linear: np.ndarray) -> np.ndarray:
+    """
+    线性 RGB → 标准 sRGB
+    与 physics.py 的 linear_to_srgb_bytes 一致（但返回 [0,1] 浮点）
+    
+    Args:
+        linear: 线性 RGB 值，范围 [0, 1]
+    
+    Returns:
+        sRGB 值，范围 [0, 1]
+    """
+    linear = np.clip(linear, 0, 1)
+    return np.where(
+        linear <= 0.0031308,
+        12.92 * linear,
+        1.055 * (linear ** (1.0 / 2.4)) - 0.055
+    )
+
+
 # ========== 图像处理工具 ==========
 
 def apply_perspective_transform(
@@ -53,13 +93,21 @@ def apply_perspective_transform(
     return cv2.warpPerspective(img, M, (dst_w, dst_h))
 
 
-def auto_white_balance_by_paper(img_a4: np.ndarray, enable_wb: bool = True) -> np.ndarray:
+def auto_white_balance_by_paper(
+    img_a4: np.ndarray,
+    enable_wb: bool = True,
+    target_white: float = 240.0
+) -> np.ndarray:
     """
-    基于 A4 纸边缘区域进行白平衡（温和版本）
+    基于 A4 纸边缘区域进行白平衡
+    
+    K/S 提取需要准确的绝对反射率，因此使用强白平衡：
+    将纸张白色区域归一化到 target_white（默认 240）。
     
     Args:
         img_a4: A4 纸校正后的图像
         enable_wb: 是否启用白平衡（默认 True）
+        target_white: 目标白点亮度（默认 240，对应反射率 ~0.94）
     
     Returns:
         白平衡后的图像
@@ -79,23 +127,15 @@ def auto_white_balance_by_paper(img_a4: np.ndarray, enable_wb: bool = True) -> n
     
     mean_bg_bgr = cv2.mean(img_a4, mask=mask)[:3]
     
-    # 🔧 修复：使用灰度世界假设，而不是强制白平衡
-    # 计算灰度平均值
-    gray_avg = np.mean(mean_bg_bgr)
+    # 强白平衡：将纸张白色归一化到 target_white
+    # 这确保了 sRGB 240 ≈ 线性 0.87（接近白纸实际反射率）
+    gains = target_white / (np.array(mean_bg_bgr) + 1e-5)
     
-    # 如果背景已经接近白色（平均值 > 200），则跳过白平衡
-    if gray_avg > 200:
-        print(f"[WB] Background already white (avg={gray_avg:.1f}), skipping white balance")
-        return img_a4
+    # 限制增益范围，避免极端校正
+    gains = np.clip(gains, 0.5, 3.0)
     
-    # 温和的白平衡：只调整到灰度平衡，不强制到 250
-    # 目标：让 R/G/B 比例接近 1:1:1
-    gains = gray_avg / (np.array(mean_bg_bgr) + 1e-5)
-    
-    # 限制增益范围，避免过度校正
-    gains = np.clip(gains, 0.5, 2.0)
-    
-    print(f"[WB] Background BGR: {mean_bg_bgr}, Gains: {gains}")
+    print(f"[WB] Background BGR: {np.array(mean_bg_bgr).astype(int)}, "
+          f"Target: {target_white}, Gains: {gains.round(3)}")
     
     # 应用增益
     result = np.clip(cv2.multiply(img_a4.astype(float), gains), 0, 255).astype(np.uint8)
@@ -147,9 +187,9 @@ def sample_step_card_colors(
         ]
         rgb_w = np.mean(roi_w, axis=(0,1))[::-1]
         
-        # Linear Reflectance (反伽马校正)
-        R0_linear = (rgb_0 / 255.0) ** 2.2
-        Rw_linear = (rgb_w / 255.0) ** 2.2
+        # Linear Reflectance (标准 sRGB 反伽马校正，与 physics.py 一致)
+        R0_linear = srgb_to_linear(rgb_0 / 255.0)
+        Rw_linear = srgb_to_linear(rgb_w / 255.0)
         
         # 层数映射: r=0 (图片最上方) -> 实物第 num_steps 层 (最厚)
         layer_idx = num_steps - r
@@ -218,7 +258,7 @@ def fit_km_parameters(
     backing_reflectance_black: float = 0.00
 ) -> Tuple[Tuple[float, float], float]:
     """
-    针对单个颜色通道拟合 K 和 S
+    针对单个颜色通道拟合 K 和 S（多重启动，避免局部最优）
     
     Args:
         thicknesses: 厚度数组
@@ -230,26 +270,48 @@ def fit_km_parameters(
     Returns:
         ((K, S), error)
     """
-    # 初始猜测 [K, S]
-    x0 = [0.1, 1.0]
+    bounds = [(1e-5, 100), (1e-5, 100)]
     
     def loss_function(params):
         K_val, S_val = params
-        
-        # 预测黑底和白底
         R0_pred = km_reflectance(K_val, S_val, thicknesses, backing_reflectance_black)
         Rw_pred = km_reflectance(K_val, S_val, thicknesses, backing_reflectance_white)
-        
-        # MSE 误差
         error_0 = np.mean((R0_pred - R0_measured) ** 2)
         error_w = np.mean((Rw_pred - Rw_measured) ** 2)
         return error_0 + error_w
     
-    # 约束: K, S 必须 > 0
-    bounds = [(1e-5, 100), (1e-5, 100)]
+    # 多重启动：覆盖不同量级的 K/S 组合
+    # 白色(K小S大)、深色(K大S小)、中间色、高散射、低散射
+    initial_guesses = [
+        [0.1, 1.0],     # 默认
+        [0.001, 5.0],   # 白色/浅色（K极小，S大）
+        [1.0, 3.0],     # 中等吸收
+        [10.0, 2.0],    # 深色（K大）
+        [0.5, 0.5],     # 低散射
+        [30.0, 3.0],    # 极深色
+        [0.01, 10.0],   # 高散射浅色
+    ]
     
-    result = minimize(loss_function, x0, bounds=bounds, method='L-BFGS-B')
-    return result.x, result.fun
+    best_x = None
+    best_error = float('inf')
+    
+    for x0 in initial_guesses:
+        try:
+            result = minimize(loss_function, x0, bounds=bounds, method='L-BFGS-B',
+                            options={'maxiter': 5000, 'ftol': 1e-15})
+            if result.fun < best_error:
+                best_error = result.fun
+                best_x = result.x
+        except Exception:
+            continue
+    
+    if best_x is None:
+        # 兜底：用默认初始值
+        result = minimize(loss_function, [0.1, 1.0], bounds=bounds, method='L-BFGS-B')
+        best_x = result.x
+        best_error = result.fun
+    
+    return best_x, best_error
 
 
 def calculate_and_plot_km(

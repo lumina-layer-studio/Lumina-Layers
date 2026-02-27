@@ -35,16 +35,35 @@ def on_lut_select(display_name):
         return None, f"❌ File not found: {display_name}"
 
 
-def on_lut_upload_save(uploaded_file):
+def on_lut_upload_save(uploaded_file, uploaded_stacks_file=None):
     """
-    Save uploaded LUT file (auto-save, no custom name needed)
+    Save uploaded LUT file and optional stacks file (auto-save, no custom name needed)
+    
+    Args:
+        uploaded_file: Gradio 上传的 LUT 文件对象
+        uploaded_stacks_file: Gradio 上传的 stacks 文件对象（可选）
     
     Returns:
         tuple: (new_dropdown, status_message)
     """
-    success, message, new_choices = LUTManager.save_uploaded_lut(uploaded_file, custom_name=None)
+    success, message, new_choices = LUTManager.save_uploaded_lut(
+        uploaded_file, stacks_file=uploaded_stacks_file, custom_name=None
+    )
     
     return gr.Dropdown(choices=new_choices), message
+
+
+def on_stacks_only_upload(stacks_file):
+    """
+    当用户仅上传 stacks 文件（未上传 LUT）时返回提示信息
+    
+    Args:
+        stacks_file: Gradio 上传的 stacks 文件对象
+    
+    Returns:
+        str: 提示用户先上传 LUT 文件的状态消息
+    """
+    return "⚠️ 请先上传 LUT 文件，再上传 Stacks 文件"
 
 
 # ═══════════════════════════════════════════════════════════════

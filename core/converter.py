@@ -3207,11 +3207,11 @@ def detect_lut_color_mode(lut_path):
         n5_map = {
             32: ("BW (Black & White)", 2),
             243: ("3-Color (243 colors)", 3),
-            1024: ("4-Color (1024 colors)", 4),
+            1024: ("4-Color", 4),
             3125: ("5-Color (3125 colors)", 5),
             7776: ("6-Color (7776 colors)", 6),
             16807: ("7-Color (16807 colors)", 7),
-            32768: ("8-Color (32768 colors)", 8),
+            32768: ("8-Color Max", 8),
         }
         
         if total_colors in n5_map:

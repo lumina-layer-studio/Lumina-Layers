@@ -113,6 +113,19 @@ class VirtualPhysics:
         Ks = np.array([f['FILAMENT_K'] for f in filaments_list])
         Ss = np.array([f['FILAMENT_S'] for f in filaments_list])
         
+        # === DEBUG: 打印每种耗材的 K/S 参数 ===
+        print(f"\n[DEBUG K-M] 耗材 K/S 参数详情:")
+        for i, fil in enumerate(filaments_list):
+            name = fil.get('name', f'耗材#{i}')
+            color = fil.get('color', '#000000')
+            K = Ks[i]
+            S = Ss[i]
+            print(f"  [{i}] {name} ({color})")
+            print(f"      K: [{K[0]:.6f}, {K[1]:.6f}, {K[2]:.6f}]")
+            print(f"      S: [{S[0]:.6f}, {S[1]:.6f}, {S[2]:.6f}]")
+            print(f"      K/S: [{K[0]/max(S[0],1e-6):.6f}, {K[1]/max(S[1],1e-6):.6f}, {K[2]/max(S[2],1e-6):.6f}]")
+        print()
+        
         # 自适应 K 值修正：仅对 K/S 比值异常小的通道提升 K 值
         # 原理：K/S ≈ 0 意味着该层几乎完全透明，backing 直接穿透导致偏白
         # 实际打印中即使是"透明"层也有最小吸收，用 adaptive_ks_ratio 模拟
@@ -139,7 +152,20 @@ class VirtualPhysics:
                     print(f"  > 跳过白色/透明耗材的自适应修正（保持原始 K 值）")
         
         # 应用 min_K 全局下限（作为兜底保护）
-        Ks = np.maximum(Ks, min_K)
+        # 但对白色/透明材料（所有通道 K < 0.05）使用更小的下限
+        is_white_filament = np.max(Ks, axis=1) < 0.05
+        Ks_adjusted = Ks.copy()
+        
+        # 白色材料使用 min_K / 100 作为下限（保持极小的吸收）
+        white_min_K = min_K / 100.0
+        for i in range(len(Ks)):
+            if is_white_filament[i]:
+                Ks_adjusted[i] = np.maximum(Ks[i], white_min_K)
+                print(f"  > 白色材料 {filaments_list[i].get('name', f'#{i}')} 使用特殊 min_K={white_min_K:.6f}")
+            else:
+                Ks_adjusted[i] = np.maximum(Ks[i], min_K)
+        
+        Ks = Ks_adjusted
         
         # 生成所有可能的层叠组合
         indices = np.array(list(itertools.product(range(num_filaments), repeat=total_layers)))
@@ -147,20 +173,72 @@ class VirtualPhysics:
         
         print(f"  > 组合总数: {num_filaments}^{total_layers} = {num_combos}")
         
+        # === DEBUG: 打印特定配方 [2 1 4 5 4] 的 K/S 参数 ===
+        target_recipe = [2, 1, 4, 5, 4]
+        if num_filaments >= 6:  # 确保索引有效
+            target_idx = None
+            for idx, combo in enumerate(indices):
+                if list(combo) == target_recipe:
+                    target_idx = idx
+                    break
+            
+            if target_idx is not None:
+                print(f"\n[DEBUG K-M] 目标配方 {target_recipe} 的 K/S 参数:")
+                for layer_i, mat_id in enumerate(target_recipe):
+                    name = filaments_list[mat_id].get('name', f'耗材#{mat_id}')
+                    K = Ks[mat_id]
+                    S = Ss[mat_id]
+                    print(f"  第 {layer_i+1} 层: {name}")
+                    print(f"    K: [{K[0]:.6f}, {K[1]:.6f}, {K[2]:.6f}]")
+                    print(f"    S: [{S[0]:.6f}, {S[1]:.6f}, {S[2]:.6f}]")
+                print()
+        
         # 初始化反射率为底材反射率
         current_R = np.tile(backing_reflectance, (num_combos, 1))
+        
+        # === DEBUG: 打印目标配方的逐层计算过程 ===
+        if num_filaments >= 6 and 'target_idx' in locals() and target_idx is not None:
+            print(f"\n[DEBUG K-M] 目标配方 {target_recipe} 的逐层计算过程:")
+            print(f"  初始反射率 (backing): [{backing_reflectance[0]:.6f}, {backing_reflectance[1]:.6f}, {backing_reflectance[2]:.6f}]")
         
         # 逐层计算反射率（从底层到顶层）
         for layer_idx in range(total_layers - 1, -1, -1):
             filament_ids = indices[:, layer_idx]
             layer_K = Ks[filament_ids]
             layer_S = Ss[filament_ids]
+            
+            # === DEBUG: 打印目标配方当前层的 K/S 值 ===
+            if num_filaments >= 6 and 'target_idx' in locals() and target_idx is not None:
+                mat_id = filament_ids[target_idx]
+                K_used = layer_K[target_idx]
+                S_used = layer_S[target_idx]
+                R_before = current_R[target_idx]
+                print(f"  第 {total_layers - layer_idx} 层 (索引 {layer_idx}): 材料 #{mat_id} {filaments_list[mat_id].get('name', '')}")
+                print(f"    使用的 K: [{K_used[0]:.6f}, {K_used[1]:.6f}, {K_used[2]:.6f}]")
+                print(f"    使用的 S: [{S_used[0]:.6f}, {S_used[1]:.6f}, {S_used[2]:.6f}]")
+                print(f"    层前反射率: [{R_before[0]:.6f}, {R_before[1]:.6f}, {R_before[2]:.6f}]")
+            
             current_R = self.km_reflectance_vectorized(
                 layer_K, layer_S, layer_height, current_R
             )
+            
+            # === DEBUG: 打印目标配方当前层计算后的反射率 ===
+            if num_filaments >= 6 and 'target_idx' in locals() and target_idx is not None:
+                R_after = current_R[target_idx]
+                print(f"    层后反射率: [{R_after[0]:.6f}, {R_after[1]:.6f}, {R_after[2]:.6f}]")
         
         # 转换为 sRGB
         lut_colors_srgb = self.linear_to_srgb_bytes(current_R)
+        
+        # === DEBUG: 打印目标配方的计算结果 ===
+        if num_filaments >= 6 and target_idx is not None:
+            final_R = current_R[target_idx]
+            final_srgb = lut_colors_srgb[target_idx]
+            print(f"[DEBUG K-M] 目标配方 {target_recipe} 的计算结果:")
+            print(f"  最终反射率 R: [{final_R[0]:.6f}, {final_R[1]:.6f}, {final_R[2]:.6f}]")
+            print(f"  sRGB 颜色: [{final_srgb[0]}, {final_srgb[1]}, {final_srgb[2]}]")
+            print(f"  HEX: #{final_srgb[0]:02x}{final_srgb[1]:02x}{final_srgb[2]:02x}")
+            print()
         
         return lut_colors_srgb, indices
 

@@ -725,7 +725,15 @@ def convert_image_to_3d(image_path, lut_path, target_width_mm, spacer_thick,
     transform[1, 1] = pixel_scale
     transform[2, 2] = PrinterConfig.LAYER_HEIGHT
     
-    print(f"[CONVERTER] Transform: XY={pixel_scale}mm/px, Z={PrinterConfig.LAYER_HEIGHT}mm/layer")
+    print(f"[CONVERTER] ========== MESH GENERATION DEBUG ==========")
+    print(f"[CONVERTER] Image dimensions: {target_w}×{target_h} pixels")
+    print(f"[CONVERTER] Pixel scale: {pixel_scale} mm/px")
+    print(f"[CONVERTER] Expected model size: {target_w * pixel_scale:.2f} × {target_h * pixel_scale:.2f} mm")
+    print(f"[CONVERTER] Transform matrix:")
+    print(f"[CONVERTER]   XY scale: {pixel_scale} mm/px")
+    print(f"[CONVERTER]   Z scale: {PrinterConfig.LAYER_HEIGHT} mm/layer")
+    print(f"[CONVERTER] Full transform:\n{transform}")
+    print(f"[CONVERTER] ===============================================")
     
     mesher = get_mesher(modeling_mode)
     print(f"[CONVERTER] Using mesher: {mesher.__class__.__name__}")
@@ -738,9 +746,22 @@ def convert_image_to_3d(image_path, lut_path, target_width_mm, spacer_thick,
         try:
             mesh = mesher.generate_mesh(full_matrix, mat_id, target_h)
             if mesh:
+                # [DEBUG] Log mesh bounds BEFORE transform
+                bounds_before = mesh.bounds
+                print(f"[DEBUG] Mat {mat_id} ({slot_names[mat_id]}) BEFORE transform:")
+                print(f"[DEBUG]   Bounds: min={bounds_before[0]}, max={bounds_before[1]}")
+                print(f"[DEBUG]   Size: {bounds_before[1] - bounds_before[0]}")
+                
                 # [ROLLBACK] Removed smart simplification as per user request
                 # Warning: Large models may produce huge 3MF files
                 mesh.apply_transform(transform)
+                
+                # [DEBUG] Log mesh bounds AFTER transform
+                bounds_after = mesh.bounds
+                print(f"[DEBUG] Mat {mat_id} ({slot_names[mat_id]}) AFTER transform:")
+                print(f"[DEBUG]   Bounds: min={bounds_after[0]}, max={bounds_after[1]}")
+                print(f"[DEBUG]   Size (mm): {bounds_after[1] - bounds_after[0]}")
+                
                 mesh.visual.face_colors = preview_colors[mat_id]
                 name = slot_names[mat_id]
                 mesh.metadata['name'] = name
@@ -772,7 +793,19 @@ def convert_image_to_3d(image_path, lut_path, target_width_mm, spacer_thick,
                 print(f"[CONVERTER] Warning: Backing mesh is empty, skipping separate backing object")
                 print(f"[CONVERTER] Continuing with other material meshes...")
             else:
+                # [DEBUG] Log backing mesh bounds BEFORE transform
+                bounds_before = backing_mesh.bounds
+                print(f"[DEBUG] Backing mesh BEFORE transform:")
+                print(f"[DEBUG]   Bounds: min={bounds_before[0]}, max={bounds_before[1]}")
+                print(f"[DEBUG]   Size: {bounds_before[1] - bounds_before[0]}")
+                
                 backing_mesh.apply_transform(transform)
+                
+                # [DEBUG] Log backing mesh bounds AFTER transform
+                bounds_after = backing_mesh.bounds
+                print(f"[DEBUG] Backing mesh AFTER transform:")
+                print(f"[DEBUG]   Bounds: min={bounds_after[0]}, max={bounds_after[1]}")
+                print(f"[DEBUG]   Size (mm): {bounds_after[1] - bounds_after[0]}")
                 
                 # Apply white color (material_id=0)
                 backing_color = preview_colors[0]  # Fixed to white
@@ -843,7 +876,20 @@ def convert_image_to_3d(image_path, lut_path, target_width_mm, spacer_thick,
                     fc_matrix = np.where(fc_matrix >= 0, 0, -1)
                     fc_mesh = mesher.generate_mesh(fc_matrix, 0, target_h)
                     if fc_mesh and len(fc_mesh.vertices) > 0:
+                        # [DEBUG] Log free color mesh bounds BEFORE transform
+                        bounds_before = fc_mesh.bounds
+                        print(f"[DEBUG] Free color {hex_c} BEFORE transform:")
+                        print(f"[DEBUG]   Bounds: min={bounds_before[0]}, max={bounds_before[1]}")
+                        print(f"[DEBUG]   Size: {bounds_before[1] - bounds_before[0]}")
+                        
                         fc_mesh.apply_transform(transform)
+                        
+                        # [DEBUG] Log free color mesh bounds AFTER transform
+                        bounds_after = fc_mesh.bounds
+                        print(f"[DEBUG] Free color {hex_c} AFTER transform:")
+                        print(f"[DEBUG]   Bounds: min={bounds_after[0]}, max={bounds_after[1]}")
+                        print(f"[DEBUG]   Size (mm): {bounds_after[1] - bounds_after[0]}")
+                        
                         fc_mesh.visual.face_colors = [r_fc, g_fc, b_fc, 255]
                         fc_name = f"Free_{hex_c[1:]}"
                         fc_mesh.metadata['name'] = fc_name
@@ -963,16 +1009,33 @@ def convert_image_to_3d(image_path, lut_path, target_width_mm, spacer_thick,
     # ========== Step 8: Export 3MF ==========
     # 单面模式需要 X 轴镜像修正，使 3MF 输出与预览/GLB 一致
     is_single_sided = "单面" in structure_mode or "Single" in structure_mode
+    print(f"[DEBUG] structure_mode: {structure_mode}")
+    print(f"[DEBUG] is_single_sided: {is_single_sided}")
+    
     if is_single_sided:
         model_width_mm = target_w * pixel_scale
+        print(f"[DEBUG] Applying mirror transform for single-sided mode")
+        print(f"[DEBUG]   target_w (pixels): {target_w}")
+        print(f"[DEBUG]   pixel_scale: {pixel_scale}")
+        print(f"[DEBUG]   model_width_mm: {model_width_mm}")
+        
         mirror_transform = np.array([
             [-1, 0, 0, model_width_mm],
             [0, 1, 0, 0],
             [0, 0, 1, 0],
             [0, 0, 0, 1]
         ])
+        print(f"[DEBUG] Mirror transform matrix:\n{mirror_transform}")
+        
         for geom_name in list(scene.geometry.keys()):
+            mesh_before = scene.geometry[geom_name]
+            bounds_before = mesh_before.bounds
+            print(f"[DEBUG] {geom_name} BEFORE mirror: bounds={bounds_before}")
+            
             scene.geometry[geom_name].apply_transform(mirror_transform)
+            
+            bounds_after = scene.geometry[geom_name].bounds
+            print(f"[DEBUG] {geom_name} AFTER mirror: bounds={bounds_after}")
     
     base_name = os.path.splitext(os.path.basename(image_path))[0]
     out_path = os.path.join(OUTPUT_DIR, generate_model_filename(base_name, modeling_mode, color_mode))

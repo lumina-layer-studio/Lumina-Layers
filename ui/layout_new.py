@@ -2087,6 +2087,19 @@ def create_converter_tab_content(lang: str, lang_state=None, theme_state=None) -
                         value=False,
                         info="勾选后，底板将作为独立对象导出到3MF文件"
                     )
+            
+            # Crop interface toggle - outside Accordion for immediate DOM availability
+            with gr.Row():
+                # Load saved crop modal preference
+                saved_enable_crop = _load_user_settings().get("enable_crop_modal", True)
+                print(f"[CROP_SETTING] Loading crop modal preference: {saved_enable_crop}")
+                components['checkbox_conv_enable_crop'] = gr.Checkbox(
+                    label="🖼️ 启用裁剪界面 | Enable Crop Interface",
+                    value=saved_enable_crop,
+                    info="上传图片时显示裁剪界面 | Show crop interface when uploading images",
+                    elem_id="conv-enable-crop-checkbox"
+                )
+            
             gr.Markdown("---")
             
         with gr.Column(scale=4, elem_classes=["workspace-area"]):
@@ -2548,6 +2561,21 @@ def create_converter_tab_content(lang: str, lang_state=None, theme_state=None) -
         outputs=[components['image_conv_image_label'], components['file_conv_batch_input']]
     )
 
+    # Save crop modal preference when checkbox changes
+    def on_crop_checkbox_change(enable_crop):
+        print(f"[CROP_SETTING] Saving crop modal preference: {enable_crop}")
+        _save_user_setting("enable_crop_modal", enable_crop)
+        # Verify it was saved
+        saved_value = _load_user_settings().get("enable_crop_modal")
+        print(f"[CROP_SETTING] Verified saved value: {saved_value}")
+        return None
+    
+    components['checkbox_conv_enable_crop'].change(
+        fn=on_crop_checkbox_change,
+        inputs=[components['checkbox_conv_enable_crop']],
+        outputs=None
+    )
+
     # ========== Image Crop Extension Events (Non-invasive) ==========
     from core.image_preprocessor import ImagePreprocessor
     
@@ -2569,10 +2597,79 @@ def create_converter_tab_content(lang: str, lang_state=None, theme_state=None) -
             return (0, 0, None, '<div id="preprocess-dimensions-data" data-width="0" data-height="0" style="display:none;"></div>')
     
     # JavaScript to open crop modal (不传递颜色推荐，弹窗中不显示)
+    # Check if crop modal is enabled before opening
     open_crop_modal_js = """
     () => {
-        console.log('[CROP] Trigger fired, waiting for elements...');
-        setTimeout(() => {
+        console.log('[CROP] Trigger fired, checking if crop modal is enabled...');
+        
+        // Wait for checkbox to be available and check its state
+        function checkCropEnabled() {
+            // Try multiple selectors to find the checkbox
+            let cropCheckbox = document.querySelector('#conv-enable-crop-checkbox input[type="checkbox"]');
+            
+            if (!cropCheckbox) {
+                // Fallback 1: Search by label text (supports both languages)
+                const labels = Array.from(document.querySelectorAll('label'));
+                const cropLabel = labels.find(l => 
+                    l.textContent.includes('启用裁剪界面') || 
+                    l.textContent.includes('Enable Crop Interface') ||
+                    l.textContent.includes('🖼️')
+                );
+                if (cropLabel) {
+                    cropCheckbox = cropLabel.querySelector('input[type="checkbox"]');
+                }
+            }
+            
+            if (!cropCheckbox) {
+                // Fallback 2: Search all checkboxes near "裁剪" text
+                const allCheckboxes = document.querySelectorAll('input[type="checkbox"]');
+                for (let cb of allCheckboxes) {
+                    const parent = cb.closest('.wrap') || cb.closest('label') || cb.parentElement;
+                    if (parent && (parent.textContent.includes('裁剪') || parent.textContent.includes('Crop'))) {
+                        cropCheckbox = cb;
+                        break;
+                    }
+                }
+            }
+            
+            if (!cropCheckbox) {
+                console.warn('[CROP] Checkbox not found yet, will retry...');
+                return null; // Not found yet
+            }
+            
+            const isCropEnabled = cropCheckbox.checked;
+            console.log('[CROP] ✓ Crop checkbox found! Enabled:', isCropEnabled);
+            return isCropEnabled;
+        }
+        
+        // Retry mechanism to wait for checkbox to be available
+        function waitForCheckboxAndDecide(retries = 10, delay = 300) {
+            const enabled = checkCropEnabled();
+            
+            if (enabled === null && retries > 0) {
+                // Checkbox not found yet, retry
+                console.log('[CROP] Retrying checkbox check... (' + retries + ' attempts left)');
+                setTimeout(() => waitForCheckboxAndDecide(retries - 1, delay), delay);
+                return;
+            }
+            
+            if (enabled === false) {
+                console.log('[CROP] ✗ Crop modal disabled by user, skipping...');
+                return;
+            }
+            
+            // Checkbox is enabled or not found after all retries (default to enabled)
+            if (enabled === null) {
+                console.warn('[CROP] ⚠ Checkbox not found after retries, defaulting to enabled');
+            } else {
+                console.log('[CROP] ✓ Crop modal enabled, proceeding...');
+            }
+            
+            // Proceed to open crop modal
+            openCropModalIfReady();
+        }
+        
+        function openCropModalIfReady() {
             console.log('[CROP] Checking for openCropModal function:', typeof window.openCropModal);
             const dimElement = document.querySelector('#preprocess-dimensions-data');
             console.log('[CROP] dimElement found:', !!dimElement);
@@ -2595,7 +2692,10 @@ def create_converter_tab_content(lang: str, lang_state=None, theme_state=None) -
                     }
                 }
             }
-        }, 800);
+        }
+        
+        // Start the check with retry mechanism
+        waitForCheckboxAndDecide();
     }
     """
     
@@ -3459,8 +3559,53 @@ def create_converter_tab_content(lang: str, lang_state=None, theme_state=None) -
     )
     # ========== END Relief Mode Event Handlers ==========
     
+    # Wrapper function to auto-generate preview if needed before generating 3MF
+    def generate_with_auto_preview(batch_files, is_batch, single_image, lut_path, target_width_mm,
+                                   spacer_thick, structure_mode, auto_bg, bg_tol, color_mode,
+                                   add_loop, loop_width, loop_length, loop_hole, loop_pos,
+                                   modeling_mode, quantize_colors, color_replacements,
+                                   separate_backing, enable_relief, color_height_map,
+                                   heightmap_path, heightmap_max_height,
+                                   enable_cleanup, enable_outline, outline_width,
+                                   enable_cloisonne, wire_width_mm, wire_height_mm,
+                                   free_color_set, enable_coating, coating_height_mm,
+                                   preview_cache, theme_is_dark, progress=gr.Progress()):
+        """Generate 3MF with auto-preview if cache is missing."""
+        
+        # Check if preview cache exists
+        if preview_cache is None or not preview_cache:
+            print("[AUTO-PREVIEW] No preview cache found, generating preview first...")
+            progress(0.1, desc="生成预览中... | Generating preview...")
+            
+            # Generate preview first
+            try:
+                preview_img, cache, status, glb = generate_preview_cached_with_fit(
+                    single_image, lut_path, target_width_mm, auto_bg, bg_tol,
+                    color_mode, modeling_mode, quantize_colors, enable_cleanup, theme_is_dark
+                )
+                preview_cache = cache
+                print(f"[AUTO-PREVIEW] Preview generated: {status}")
+            except Exception as e:
+                print(f"[AUTO-PREVIEW] Failed to generate preview: {e}")
+                return None, None, None, f"❌ 预览生成失败: {e}"
+        
+        # Now generate 3MF with the cache
+        progress(0.3, desc="生成3MF模型中... | Generating 3MF model...")
+        return process_batch_generation(
+            batch_files, is_batch, single_image, lut_path, target_width_mm,
+            spacer_thick, structure_mode, auto_bg, bg_tol, color_mode,
+            add_loop, loop_width, loop_length, loop_hole, loop_pos,
+            modeling_mode, quantize_colors, color_replacements,
+            separate_backing, enable_relief, color_height_map,
+            heightmap_path, heightmap_max_height,
+            enable_cleanup, enable_outline, outline_width,
+            enable_cloisonne, wire_width_mm, wire_height_mm,
+            free_color_set, enable_coating, coating_height_mm,
+            progress
+        )
+    
     generate_event = components['btn_conv_generate_btn'].click(
-            fn=process_batch_generation,
+            fn=generate_with_auto_preview,
             inputs=[
                 components['file_conv_batch_input'],
                 components['checkbox_conv_batch_mode'],
@@ -3493,7 +3638,9 @@ def create_converter_tab_content(lang: str, lang_state=None, theme_state=None) -
                 components['slider_conv_wire_height'],
                 conv_free_color_set,
                 components['checkbox_conv_coating_enable'],
-                components['slider_conv_coating_height']
+                components['slider_conv_coating_height'],
+                conv_preview_cache,
+                theme_state
             ],
             outputs=[
                 components['file_conv_download_file'],
@@ -3554,13 +3701,61 @@ def create_converter_tab_content(lang: str, lang_state=None, theme_state=None) -
         outputs=[components['dropdown_conv_slicer'], conv_slicer_dropdown_vis]
     )
 
-    def on_open_slicer_click(file_obj, slicer_id):
-        """Open file in slicer or trigger download."""
+    def on_open_slicer_click(file_obj, slicer_id, batch_files, is_batch, single_image, lut_path, 
+                            target_width_mm, spacer_thick, structure_mode, auto_bg, bg_tol, color_mode,
+                            add_loop, loop_width, loop_length, loop_hole, loop_pos,
+                            modeling_mode, quantize_colors, color_replacements,
+                            separate_backing, enable_relief, color_height_map,
+                            heightmap_path, heightmap_max_height,
+                            enable_cleanup, enable_outline, outline_width,
+                            enable_cloisonne, wire_width_mm, wire_height_mm,
+                            free_color_set, enable_coating, coating_height_mm,
+                            preview_cache, theme_is_dark):
+        """Open file in slicer with auto-generation if needed."""
+        
+        # If no file exists, auto-generate the complete workflow
+        if file_obj is None:
+            print("[AUTO-SLICER] No 3MF file found, starting auto-generation workflow...")
+            
+            # Step 1: Generate preview if needed
+            if preview_cache is None or not preview_cache:
+                print("[AUTO-SLICER] Step 1/2: Generating preview...")
+                try:
+                    preview_img, cache, status, glb = generate_preview_cached_with_fit(
+                        single_image, lut_path, target_width_mm, auto_bg, bg_tol,
+                        color_mode, modeling_mode, quantize_colors, enable_cleanup, theme_is_dark
+                    )
+                    preview_cache = cache
+                    print(f"[AUTO-SLICER] Preview generated: {status}")
+                except Exception as e:
+                    print(f"[AUTO-SLICER] Failed to generate preview: {e}")
+                    return gr.update(), gr.update(), gr.update(), f"❌ 预览生成失败: {e}"
+            
+            # Step 2: Generate 3MF model
+            print("[AUTO-SLICER] Step 2/2: Generating 3MF model...")
+            try:
+                file_obj, glb, preview_img, status = process_batch_generation(
+                    batch_files, is_batch, single_image, lut_path, target_width_mm,
+                    spacer_thick, structure_mode, auto_bg, bg_tol, color_mode,
+                    add_loop, loop_width, loop_length, loop_hole, loop_pos,
+                    modeling_mode, quantize_colors, color_replacements,
+                    separate_backing, enable_relief, color_height_map,
+                    heightmap_path, heightmap_max_height,
+                    enable_cleanup, enable_outline, outline_width,
+                    enable_cloisonne, wire_width_mm, wire_height_mm,
+                    free_color_set, enable_coating, coating_height_mm
+                )
+                print(f"[AUTO-SLICER] 3MF generated: {status}")
+            except Exception as e:
+                print(f"[AUTO-SLICER] Failed to generate 3MF: {e}")
+                return gr.update(), gr.update(), gr.update(), f"❌ 3MF生成失败: {e}"
+        
+        # Now open in slicer or download
         if slicer_id == "download":
             # Make file component visible so user can download
             if file_obj is not None:
-                return gr.update(visible=True), "📥 请点击下方文件下载"
-            return gr.update(), "❌ 没有可下载的文件"
+                return file_obj, gr.update(visible=True), gr.update(), "📥 请点击下方文件下载"
+            return None, gr.update(), gr.update(), "❌ 没有可下载的文件"
         
         # Get actual file path from Gradio File object
         actual_path = None
@@ -3571,15 +3766,58 @@ def create_converter_tab_content(lang: str, lang_state=None, theme_state=None) -
                 actual_path = file_obj
         
         if not actual_path:
-            return gr.update(), "❌ 请先生成模型"
+            return None, gr.update(), gr.update(), "❌ 生成失败，无法打开"
         
         status = open_in_slicer(actual_path, slicer_id)
-        return gr.update(), status
+        return file_obj, gr.update(), gr.update(), status
 
     components['btn_conv_open_slicer'].click(
         fn=on_open_slicer_click,
-        inputs=[components['file_conv_download_file'], components['dropdown_conv_slicer']],
-        outputs=[components['file_conv_download_file'], components['textbox_conv_status']]
+        inputs=[
+            components['file_conv_download_file'], 
+            components['dropdown_conv_slicer'],
+            # All generation parameters
+            components['file_conv_batch_input'],
+            components['checkbox_conv_batch_mode'],
+            components['image_conv_image_label'],
+            conv_lut_path,
+            components['slider_conv_width'],
+            components['slider_conv_thickness'],
+            components['radio_conv_structure'],
+            components['checkbox_conv_auto_bg'],
+            components['slider_conv_tolerance'],
+            components['radio_conv_color_mode'],
+            components['checkbox_conv_loop_enable'],
+            components['slider_conv_loop_width'],
+            components['slider_conv_loop_length'],
+            components['slider_conv_loop_hole'],
+            conv_loop_pos,
+            components['radio_conv_modeling_mode'],
+            components['slider_conv_quantize_colors'],
+            conv_replacement_map,
+            components['checkbox_conv_separate_backing'],
+            components['checkbox_conv_relief_mode'],
+            conv_color_height_map,
+            components['image_conv_heightmap'],
+            components['slider_conv_auto_height_max'],
+            components['checkbox_conv_cleanup'],
+            components['checkbox_conv_outline_enable'],
+            components['slider_conv_outline_width'],
+            components['checkbox_conv_cloisonne_enable'],
+            components['slider_conv_wire_width'],
+            components['slider_conv_wire_height'],
+            conv_free_color_set,
+            components['checkbox_conv_coating_enable'],
+            components['slider_conv_coating_height'],
+            conv_preview_cache,
+            theme_state
+        ],
+        outputs=[
+            components['file_conv_download_file'],
+            components['file_conv_download_file'],
+            conv_3d_preview,
+            components['textbox_conv_status']
+        ]
     )
 
     # ========== Fullscreen 3D Toggle Events ==========

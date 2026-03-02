@@ -351,6 +351,18 @@ def test_update_preview_applies_regions_in_order_without_map(monkeypatch):
     assert tuple(updated['matched_rgb'][0, 1]) == (170, 187, 204)
 
 
+def test_create_converter_tab_content_initializes_without_replacement_map_nameerror():
+    import gradio as gr
+    from ui.layout_new import create_converter_tab_content
+
+    with gr.Blocks():
+        lang_state = gr.State(value='zh')
+        theme_state = gr.State(value=False)
+        components = create_converter_tab_content('zh', lang_state, theme_state)
+
+    assert isinstance(components, dict)
+
+
 from core.converter import _apply_regions_to_raster_outputs
 
 

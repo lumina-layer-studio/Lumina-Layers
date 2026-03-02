@@ -4084,7 +4084,7 @@ def create_converter_tab_content(lang: str, lang_state=None, theme_state=None) -
             conv_loop_pos,
             components['radio_conv_modeling_mode'],
             components['slider_conv_quantize_colors'],
-            conv_replacement_map,
+            conv_replacement_regions,
             components['checkbox_conv_separate_backing'],
             components['checkbox_conv_relief_mode'],
             conv_color_height_map,

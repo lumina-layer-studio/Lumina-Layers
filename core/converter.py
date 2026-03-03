@@ -277,7 +277,8 @@ def convert_image_to_3d(image_path, lut_path, target_width_mm, spacer_thick,
                          enable_cloisonne=False, wire_width_mm=0.4,
                          wire_height_mm=0.4,
                          free_color_set=None,
-                         enable_coating=False, coating_height_mm=0.08):
+                         enable_coating=False, coating_height_mm=0.08,
+                         enable_hue_aware=False, hue_weight=0.3):
     """
     Main conversion function: Convert image to 3D model.
     
@@ -526,7 +527,9 @@ def convert_image_to_3d(image_path, lut_path, target_width_mm, spacer_thick,
             auto_bg=auto_bg,
             bg_tol=bg_tol,
             blur_kernel=blur_kernel,
-            smooth_sigma=smooth_sigma
+            smooth_sigma=smooth_sigma,
+            enable_hue_aware=enable_hue_aware,
+            hue_weight=hue_weight
         )
     except Exception as e:
         return None, None, None, f"❌ Image processing failed: {e}"
@@ -2085,7 +2088,9 @@ def generate_preview_cached(image_path, lut_path, target_width_mm,
                             quantize_colors: int = 64,
                             backing_color_id: int = 0,
                             enable_cleanup: bool = True,
-                            is_dark: bool = True):
+                            is_dark: bool = True,
+                            enable_hue_aware: bool = False,
+                            hue_weight: float = 0.3):
     """
     Generate preview and cache data
     For 2D preview interface
@@ -2139,7 +2144,9 @@ def generate_preview_cached(image_path, lut_path, target_width_mm,
             auto_bg=auto_bg,
             bg_tol=bg_tol,
             blur_kernel=0,
-            smooth_sigma=10
+            smooth_sigma=10,
+            enable_hue_aware=enable_hue_aware,
+            hue_weight=hue_weight
         )
     except Exception as e:
         return None, None, f"❌ Preview generation failed: {e}"
@@ -2468,20 +2475,23 @@ def generate_final_model(image_path, lut_path, target_width_mm, spacer_thick,
                         enable_cloisonne=False, wire_width_mm=0.4,
                         wire_height_mm=0.4,
                         free_color_set=None,
-                        enable_coating=False, coating_height_mm=0.08):
+                        enable_coating=False, coating_height_mm=0.08,
+                        enable_hue_aware=False, hue_weight=0.3):
     """
     Wrapper function for generating final model.
-    
+
     Directly calls main conversion function with smart defaults:
     - blur_kernel=0 (disable median filter, preserve details)
     - smooth_sigma=10 (gentle bilateral filter, preserve edges)
-    
+
     Args:
         color_replacements: Optional dict of color replacements {hex: hex}
                            e.g., {'#ff0000': '#00ff00'}
         backing_color_name: Name of backing color (e.g., "White", "Cyan")
                            Will be converted to material ID based on color_mode
         separate_backing: Boolean flag to separate backing as individual object (default: False)
+        enable_hue_aware: Enable hue-aware color matching (default: False)
+        hue_weight: Weight for hue similarity in color matching (0.0-1.0, default: 0.3)
     """
     # Convert backing color name to ID or use special marker for separate backing
     # Error handling for separate_backing parameter (Requirement 8.4)
@@ -2490,7 +2500,7 @@ def generate_final_model(image_path, lut_path, target_width_mm, spacer_thick,
     except Exception as e:
         print(f"[CONVERTER] Error reading separate_backing parameter: {e}, using default (False)")
         separate_backing = False
-    
+
     if separate_backing:
         backing_color_id = -2  # Special marker for separate backing
         print(f"[CONVERTER] Backing will be separated as individual object (white)")
@@ -2498,11 +2508,11 @@ def generate_final_model(image_path, lut_path, target_width_mm, spacer_thick,
         color_conf = ColorSystem.get(color_mode)
         backing_color_id = color_conf['map'].get(backing_color_name, 0)
         print(f"[CONVERTER] Backing color: {backing_color_name} (ID={backing_color_id})")
-    
+
     # Handle relief mode parameters
     if color_height_map is None:
         color_height_map = {}
-    
+
     return convert_image_to_3d(
         image_path, lut_path, target_width_mm, spacer_thick,
         structure_mode, auto_bg, bg_tol, color_mode,
@@ -2525,8 +2535,12 @@ def generate_final_model(image_path, lut_path, target_width_mm, spacer_thick,
         wire_height_mm=wire_height_mm,
         free_color_set=free_color_set,
         enable_coating=enable_coating,
-        coating_height_mm=coating_height_mm
+        coating_height_mm=coating_height_mm,
+        enable_hue_aware=enable_hue_aware,
+        hue_weight=hue_weight
     )
+
+
 
 
 # ========== Color Replacement Functions ==========

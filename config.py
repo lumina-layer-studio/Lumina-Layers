@@ -109,12 +109,19 @@ class ColorSystem:
 
     EIGHT_COLOR = {
         'name': '8-Color Max',
-        'slots': ['Slot 1 (White)', 'Slot 2 (Cyan)', 'Slot 3 (Magenta)', 'Slot 4 (Yellow)', 'Slot 5 (Black)', 'Slot 6 (Red)', 'Slot 7 (Deep Blue)', 'Slot 8 (Green)'],
+        # 修正: 与 LUT 文件名顺序一致 (大红-品红-青-克莱因蓝-黄-白-柠檬绿-黑)
+        'slots': ['Slot 1 (Red)', 'Slot 2 (Magenta)', 'Slot 3 (Cyan)', 'Slot 4 (Deep Blue)', 'Slot 5 (Yellow)', 'Slot 6 (White)', 'Slot 7 (Green)', 'Slot 8 (Black)'],
         'preview': {
-            0: [255, 255, 255, 255], 1: [0, 134, 214, 255], 2: [236, 0, 140, 255], 3: [244, 238, 42, 255],
-            4: [0, 0, 0, 255], 5: [193, 46, 31, 255], 6: [10, 41, 137, 255], 7: [0, 174, 66, 255]
+            0: [193, 46, 31, 255],    # Red (大红)
+            1: [236, 0, 140, 255],    # Magenta (品红)
+            2: [0, 134, 214, 255],    # Cyan (青)
+            3: [10, 41, 137, 255],    # Deep Blue (克莱因蓝)
+            4: [244, 238, 42, 255],   # Yellow (黄)
+            5: [255, 255, 255, 255],  # White (白)
+            6: [0, 174, 66, 255],     # Green (柠檬绿)
+            7: [0, 0, 0, 255]         # Black (黑)
         },
-        'map': {'White': 0, 'Cyan': 1, 'Magenta': 2, 'Yellow': 3, 'Black': 4, 'Red': 5, 'Deep Blue': 6, 'Green': 7},
+        'map': {'Red': 0, 'Magenta': 1, 'Cyan': 2, 'Deep Blue': 3, 'Yellow': 4, 'White': 5, 'Green': 6, 'Black': 7},
         'corner_labels': ['TL', 'TR', 'BR', 'BL']
     }
 

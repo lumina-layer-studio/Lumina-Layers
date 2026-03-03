@@ -915,6 +915,7 @@ def process_batch_generation(batch_files, is_batch, single_image, lut_path, targ
                              wire_height_mm=0.4,
                              free_color_set=None,
                              enable_coating=False, coating_height_mm=0.08,
+                             enable_hue_aware=False, hue_weight=0.3,
                              progress=gr.Progress()):
     """Dispatch to single-image or batch generation; batch writes a ZIP of 3MFs.
 
@@ -949,7 +950,8 @@ def process_batch_generation(batch_files, is_batch, single_image, lut_path, targ
             enable_outline, outline_width,
             enable_cloisonne, wire_width_mm, wire_height_mm,
             free_color_set,
-            enable_coating, coating_height_mm)
+            enable_coating, coating_height_mm,
+            enable_hue_aware, hue_weight)
 
     if not is_batch:
         out_path, glb_path, preview_img, status = generate_final_model(single_image, *args)
@@ -1822,6 +1824,8 @@ def create_converter_tab_content(lang: str, lang_state=None, theme_state=None) -
             _user_prefs = _load_user_settings()
             saved_color_mode = _user_prefs.get("last_color_mode", "4-Color")
             saved_modeling_mode_str = _user_prefs.get("last_modeling_mode", ModelingMode.HIGH_FIDELITY.value)
+            saved_hue_aware = _user_prefs.get("enable_hue_aware", False)
+            saved_hue_weight = _user_prefs.get("hue_weight", 0.3)
             try:
                 saved_modeling_mode = ModelingMode(saved_modeling_mode_str)
             except (ValueError, KeyError):
@@ -2086,6 +2090,22 @@ def create_converter_tab_content(lang: str, lang_state=None, theme_state=None) -
                         label="底板单独一个对象 | Separate Backing",
                         value=False,
                         info="勾选后，底板将作为独立对象导出到3MF文件"
+                    )
+                with gr.Row():
+                    components['checkbox_conv_hue_aware'] = gr.Checkbox(
+                        label="🎨 同色系匹配 | Hue-Aware Matching",
+                        value=saved_hue_aware,
+                        info="优先匹配同色系的 LUT 颜色，避免色系跳跃 (如浅粉→绿)"
+                    )
+                with gr.Row():
+                    components['slider_conv_hue_weight'] = gr.Slider(
+                        minimum=0.0,
+                        maximum=1.0,
+                        value=saved_hue_weight,
+                        step=0.1,
+                        label="色相权重 | Hue Weight",
+                        info="0.0=纯距离匹配, 1.0=完全色系优先",
+                        visible=saved_hue_aware
                     )
             
             # Crop interface toggle - outside Accordion for immediate DOM availability
@@ -2576,6 +2596,28 @@ def create_converter_tab_content(lang: str, lang_state=None, theme_state=None) -
         outputs=None
     )
 
+    # ========== Hue-Aware Matching Events ==========
+    # 勾选时显示/隐藏滑块
+    components['checkbox_conv_hue_aware'].change(
+        fn=lambda enable: gr.update(visible=enable),
+        inputs=[components['checkbox_conv_hue_aware']],
+        outputs=[components['slider_conv_hue_weight']]
+    )
+    
+    # 保存 checkbox 状态
+    components['checkbox_conv_hue_aware'].change(
+        fn=lambda v: _save_user_setting("enable_hue_aware", v),
+        inputs=[components['checkbox_conv_hue_aware']],
+        outputs=None
+    )
+    
+    # 保存滑块值
+    components['slider_conv_hue_weight'].change(
+        fn=lambda v: _save_user_setting("hue_weight", v),
+        inputs=[components['slider_conv_hue_weight']],
+        outputs=None
+    )
+
     # ========== Image Crop Extension Events (Non-invasive) ==========
     from core.image_preprocessor import ImagePreprocessor
     
@@ -2876,13 +2918,17 @@ def create_converter_tab_content(lang: str, lang_state=None, theme_state=None) -
     def generate_preview_cached_with_fit(image_path, lut_path, target_width_mm,
                                          auto_bg, bg_tol, color_mode,
                                          modeling_mode, quantize_colors, enable_cleanup,
-                                         is_dark_theme=False):
+                                         is_dark_theme=False,
+                                         enable_hue_aware=False,
+                                         hue_weight=0.3):
         display, cache, status = generate_preview_cached(
             image_path, lut_path, target_width_mm,
             auto_bg, bg_tol, color_mode,
             modeling_mode, quantize_colors,
             enable_cleanup=enable_cleanup,
-            is_dark=is_dark_theme
+            is_dark=is_dark_theme,
+            enable_hue_aware=enable_hue_aware,
+            hue_weight=hue_weight
         )
         # Generate realtime 3D preview GLB
         glb_path = generate_realtime_glb(cache) if cache is not None else None
@@ -2924,7 +2970,9 @@ def create_converter_tab_content(lang: str, lang_state=None, theme_state=None) -
                 components['radio_conv_modeling_mode'],
                 components['slider_conv_quantize_colors'],
                 components['checkbox_conv_cleanup'],
-                theme_state
+                theme_state,
+                components['checkbox_conv_hue_aware'],
+                components['slider_conv_hue_weight']
             ],
             outputs=[conv_preview, conv_preview_cache, components['textbox_conv_status'], conv_3d_preview]
     ).then(
@@ -3569,6 +3617,7 @@ def create_converter_tab_content(lang: str, lang_state=None, theme_state=None) -
                                    enable_cleanup, enable_outline, outline_width,
                                    enable_cloisonne, wire_width_mm, wire_height_mm,
                                    free_color_set, enable_coating, coating_height_mm,
+                                   enable_hue_aware, hue_weight,
                                    preview_cache, theme_is_dark, progress=gr.Progress()):
         """Generate 3MF with auto-preview if cache is missing."""
         
@@ -3581,7 +3630,8 @@ def create_converter_tab_content(lang: str, lang_state=None, theme_state=None) -
             try:
                 preview_img, cache, status, glb = generate_preview_cached_with_fit(
                     single_image, lut_path, target_width_mm, auto_bg, bg_tol,
-                    color_mode, modeling_mode, quantize_colors, enable_cleanup, theme_is_dark
+                    color_mode, modeling_mode, quantize_colors, enable_cleanup, theme_is_dark,
+                    enable_hue_aware, hue_weight
                 )
                 preview_cache = cache
                 print(f"[AUTO-PREVIEW] Preview generated: {status}")
@@ -3601,6 +3651,7 @@ def create_converter_tab_content(lang: str, lang_state=None, theme_state=None) -
             enable_cleanup, enable_outline, outline_width,
             enable_cloisonne, wire_width_mm, wire_height_mm,
             free_color_set, enable_coating, coating_height_mm,
+            enable_hue_aware, hue_weight,
             progress
         )
     
@@ -3639,6 +3690,8 @@ def create_converter_tab_content(lang: str, lang_state=None, theme_state=None) -
                 conv_free_color_set,
                 components['checkbox_conv_coating_enable'],
                 components['slider_conv_coating_height'],
+                components['checkbox_conv_hue_aware'],
+                components['slider_conv_hue_weight'],
                 conv_preview_cache,
                 theme_state
             ],
@@ -3710,6 +3763,7 @@ def create_converter_tab_content(lang: str, lang_state=None, theme_state=None) -
                             enable_cleanup, enable_outline, outline_width,
                             enable_cloisonne, wire_width_mm, wire_height_mm,
                             free_color_set, enable_coating, coating_height_mm,
+                            enable_hue_aware, hue_weight,
                             preview_cache, theme_is_dark):
         """Open file in slicer with auto-generation if needed."""
         
@@ -3723,7 +3777,8 @@ def create_converter_tab_content(lang: str, lang_state=None, theme_state=None) -
                 try:
                     preview_img, cache, status, glb = generate_preview_cached_with_fit(
                         single_image, lut_path, target_width_mm, auto_bg, bg_tol,
-                        color_mode, modeling_mode, quantize_colors, enable_cleanup, theme_is_dark
+                        color_mode, modeling_mode, quantize_colors, enable_cleanup, theme_is_dark,
+                        enable_hue_aware, hue_weight
                     )
                     preview_cache = cache
                     print(f"[AUTO-SLICER] Preview generated: {status}")
@@ -3743,7 +3798,8 @@ def create_converter_tab_content(lang: str, lang_state=None, theme_state=None) -
                     heightmap_path, heightmap_max_height,
                     enable_cleanup, enable_outline, outline_width,
                     enable_cloisonne, wire_width_mm, wire_height_mm,
-                    free_color_set, enable_coating, coating_height_mm
+                    free_color_set, enable_coating, coating_height_mm,
+                    enable_hue_aware, hue_weight
                 )
                 print(f"[AUTO-SLICER] 3MF generated: {status}")
             except Exception as e:
@@ -3809,6 +3865,8 @@ def create_converter_tab_content(lang: str, lang_state=None, theme_state=None) -
             conv_free_color_set,
             components['checkbox_conv_coating_enable'],
             components['slider_conv_coating_height'],
+            components['checkbox_conv_hue_aware'],
+            components['slider_conv_hue_weight'],
             conv_preview_cache,
             theme_state
         ],

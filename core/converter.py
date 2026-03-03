@@ -497,6 +497,17 @@ def convert_image_to_3d(image_path, lut_path, target_width_mm, spacer_thick,
     slot_names = color_conf['slots']
     preview_colors = color_conf['preview']
     
+    # [DEBUG] 打印实际使用的配置
+    print(f"[CONVERTER DEBUG] color_mode: {color_mode}")
+    print(f"[CONVERTER DEBUG] slot_names: {slot_names}")
+    print(f"[CONVERTER DEBUG] 测试堆叠 [7 5 6 6 1]:")
+    test_stack = [7, 5, 6, 6, 1]
+    for i, mat_id in enumerate(test_stack):
+        if mat_id < len(slot_names):
+            print(f"[CONVERTER DEBUG]   Layer {i+1}: {slot_names[mat_id]} (ID={mat_id})")
+        else:
+            print(f"[CONVERTER DEBUG]   Layer {i+1}: Unknown (ID={mat_id})")
+    
     # Validate backing_color_id (allow -2 as special marker for separation)
     num_materials = len(slot_names)
     if backing_color_id != -2 and (backing_color_id < 0 or backing_color_id >= num_materials):

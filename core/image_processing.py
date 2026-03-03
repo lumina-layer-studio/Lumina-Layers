@@ -359,7 +359,8 @@ class LuminaImageProcessor:
     
     def process_image(self, image_path, target_width_mm, modeling_mode,
                      quantize_colors, auto_bg, bg_tol,
-                     blur_kernel=0, smooth_sigma=10):
+                     blur_kernel=0, smooth_sigma=10,
+                     enable_hue_aware=False, hue_weight=0.3):
         """
         Main image processing method
         
@@ -372,6 +373,8 @@ class LuminaImageProcessor:
             bg_tol: Background tolerance
             blur_kernel: Median filter kernel size (0=disabled, recommended 0-5)
             smooth_sigma: Bilateral filter sigma value (recommended 5-20)
+            enable_hue_aware: Enable hue-aware color matching (default: False)
+            hue_weight: Hue weight for color matching (0.0-1.0, default: 0.3)
         
         Returns:
             dict: Dictionary containing processing results
@@ -474,11 +477,12 @@ class LuminaImageProcessor:
         debug_data = None
         if modeling_mode == ModelingMode.HIGH_FIDELITY:
             matched_rgb, material_matrix, bg_reference, debug_data = self._process_high_fidelity_mode(
-                rgb_arr, target_h, target_w, quantize_colors, blur_kernel, smooth_sigma
+                rgb_arr, target_h, target_w, quantize_colors, blur_kernel, smooth_sigma,
+                enable_hue_aware, hue_weight
             )
         else:
             matched_rgb, material_matrix, bg_reference = self._process_pixel_mode(
-                rgb_arr, target_h, target_w
+                rgb_arr, target_h, target_w, enable_hue_aware, hue_weight
             )
         
         # >>> 孤立像素清理（可选后处理）<<<
@@ -521,7 +525,7 @@ class LuminaImageProcessor:
 
     
     def _process_high_fidelity_mode(self, rgb_arr, target_h, target_w, quantize_colors,
-                                    blur_kernel, smooth_sigma):
+                                    blur_kernel, smooth_sigma, enable_hue_aware=False, hue_weight=0.3):
         """
         High-fidelity mode image processing
         Includes configurable filtering, K-Means quantization and color matching
@@ -537,6 +541,8 @@ class LuminaImageProcessor:
             quantize_colors: K-Means color count
             blur_kernel: Median filter kernel size (0=disabled)
             smooth_sigma: Bilateral filter sigma value
+            enable_hue_aware: Enable hue-aware color matching (default: False)
+            hue_weight: Weight for hue similarity in color matching (0.0-1.0, default: 0.3)
         
         Returns:
             tuple: (matched_rgb, material_matrix, quantized_image, debug_data)
@@ -661,7 +667,16 @@ class LuminaImageProcessor:
         t0 = time.time()
         print(f"[IMAGE_PROCESSOR] Matching colors to LUT (CIELAB space)...")
         unique_lab = self._rgb_to_lab(unique_colors)
-        _, unique_indices = self.kdtree.query(unique_lab)
+        
+        # 同色系匹配逻辑
+        if enable_hue_aware:
+            from core.color_matching_hue_aware import HueAwareColorMatcher
+            print(f"[HUE_MATCHER] 启用同色系匹配, hue_weight={hue_weight}")
+            matcher = HueAwareColorMatcher(self.lut_rgb, self.lut_lab, hue_weight=hue_weight)
+            unique_indices = matcher.match_colors_batch(unique_colors, k=50)
+        else:
+            _, unique_indices = self.kdtree.query(unique_lab)
+        
         print(f"[IMAGE_PROCESSOR] ⏱️ LUT matching: {time.time() - t0:.2f}s")
         
         # 🚀 优化：构建颜色编码查找表
@@ -715,7 +730,7 @@ class LuminaImageProcessor:
         
         return matched_rgb, material_matrix, quantized_image, debug_data
     
-    def _process_pixel_mode(self, rgb_arr, target_h, target_w):
+    def _process_pixel_mode(self, rgb_arr, target_h, target_w, enable_hue_aware=False, hue_weight=0.3):
         """
         Pixel art mode image processing
         Direct pixel-level color matching, no smoothing
@@ -724,7 +739,15 @@ class LuminaImageProcessor:
         
         flat_rgb = rgb_arr.reshape(-1, 3)
         flat_lab = self._rgb_to_lab(flat_rgb)
-        _, indices = self.kdtree.query(flat_lab)
+        
+        # 同色系匹配逻辑
+        if enable_hue_aware:
+            from core.color_matching_hue_aware import HueAwareColorMatcher
+            print(f"[HUE_MATCHER] 启用同色系匹配 (像素模式), hue_weight={hue_weight}")
+            matcher = HueAwareColorMatcher(self.lut_rgb, self.lut_lab, hue_weight=hue_weight)
+            indices = matcher.match_colors_batch(flat_rgb, k=50)
+        else:
+            _, indices = self.kdtree.query(flat_lab)
         
         matched_rgb = self.lut_rgb[indices].reshape(target_h, target_w, 3)
         material_matrix = self.ref_stacks[indices].reshape(

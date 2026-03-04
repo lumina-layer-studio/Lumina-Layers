@@ -8,7 +8,7 @@ Physics-Based Multi-Material FDM Color System
 
 ## Project Status
 
-**Current Version**: v1.5.7  
+**Current Version**: v1.6.0  
 **License**: CC BY-NC-SA 4.0 (with Commercial Exemption)  
 **Nature**: Non-profit independent implementation, open-source community project
 
@@ -147,6 +147,121 @@ Converts images into printable 3D models using calibrated data.
 - **Structure Options**: Double-sided (keychain) or Single-sided (relief) modes
 - **Smart Background Removal**: Automatic transparency detection with adjustable tolerance
 - **Correct 3MF Naming**: Objects are named by color (e.g., "Cyan", "Magenta") instead of "geometry_0" for easy slicer identification
+
+---
+
+## What's New in v1.6.0 🚀
+
+### 🎨 Cloisonné Mode (掐丝珐琅)
+
+- **Metal Wire Frame Generation** - Automatically extracts color boundaries to generate metal wire frames
+- **Independent Wire Export** - Wire exported as separate object, assignable to metallic material in slicer
+- **Adjustable Parameters** - Wire width (0.2-1.2mm) and height (0.04-1.0mm) fully customizable
+- **Single-Sided Mode** - Enforces viewing surface facing up for optimal visual effect
+
+### 🆓 Free Color Mode
+
+- **Break LUT Limitations** - Use any RGB color beyond LUT constraints
+- **Custom Color Sets** - Define your own color palette, each color exports as independent 3MF object
+- **Full Creative Freedom** - Perfect for artistic projects requiring specific brand colors
+
+### 🪟 Transparent Coating Layer
+
+- **Protective Coating** - Add transparent protective layer at model bottom
+- **Adjustable Height** - Coating thickness (0.04-0.12mm) fully customizable
+- **Independent Export** - Coating exports as separate object for transparent material assignment
+- **Outline Compatibility** - When both coating and outline enabled, coating properly extends to cover outline base layer
+
+### 🔲 Outline Border
+
+- **Model Framing** - Add customizable border around model
+- **Adjustable Width** - Outline width (0.5-5.0mm) fully customizable
+- **Smart Integration** - Automatically extends downward to cover coating layers when both features enabled
+
+### 🎴 Card Palette Layout
+
+- **Physical Calibration Layout** - Display LUT colors in spatial arrangement matching physical calibration board
+- **8-Color Split View** - 8-color LUTs automatically split into A/B groups displayed side-by-side
+- **Toggle Modes** - Switch between block/card layout in advanced settings
+
+### 🔍 Color Search & Filter
+
+- **Color Picker Search** - "Find by color" - pick any color and auto-match closest physical color in LUT
+- **Text Search** - Support Hex (#FF0000) and RGB (255,0,0) input with auto-locate and highlight
+- **Hue Filtering** - Filter by color family: Red/Orange/Yellow/Green/Cyan/Blue/Purple/Neutral
+- **Smart Navigation** - Matched color blocks auto-scroll to center with breathing light animation
+
+### 🏔️ 2.5D Relief Mode
+
+- **Height-Based Modeling** - Assign independent Z-axis heights to different colors
+- **Optical Layering Preserved** - Top 5 layers maintain optical color mixing, bottom filled with backing material
+- **Auto Height Generator** - Automatically assign heights based on color brightness (Min-Max normalization)
+- **Heightmap Support** - Upload grayscale heightmap (PNG/JPG/BMP) to drive per-pixel relief height
+- **Smart Validation** - Auto-warning for aspect ratio deviation >20% and low contrast
+- **Performance Optimized** - Vectorized voxel matrix filling for large images
+
+### 🧹 Isolated Pixel Cleanup
+
+- **Automatic Noise Reduction** - Intelligently detect and merge isolated color pixels
+- **Print Quality** - Reduces printing artifacts from fragmented regions
+- **Auto-Enabled** - Automatically active in High-Fidelity mode
+
+### 🔄 Connected Region Color Replacement
+
+- **Local Color Replacement** - Replace colors by 4-connected regions based on quantized colors
+- **Dual-List Palette** - Refactored palette into user replacement / auto-matched dual-list interaction
+- **Stable Behavior** - Display original matched colors while maintaining stable replacement behavior
+- **Click to Replace** - Click on 2D preview to select connected region and replace its color
+
+### 🎨 CIELAB Perceptual Color Matching
+
+- **Perceptual Uniformity** - Color matching switched from RGB Euclidean distance to CIELAB perceptual uniform space
+- **Better Visual Results** - Matches colors based on human perception rather than mathematical distance
+- **Comprehensive Coverage** - Applied to all color matching operations: LUT loading, high-fidelity mode, pixel mode, and color replacement
+
+### 🔀 Automatic Color Merging
+
+- **Low-Usage Color Consolidation** - Automatically merge colors with usage below threshold
+- **CIELAB Delta-E Distance** - Uses perceptual color difference for intelligent merging
+- **UI Controls** - Adjustable threshold, max distance, with preview/apply/revert options
+- **Dramatic Reduction** - Test case: 390 colors → 62 colors (84% reduction)
+
+### 🔌 Slicer Integration
+
+- **One-Click Launch** - Auto-detect installed slicers: Bambu Studio / OrcaSlicer / ElegooSlicer
+- **Direct Workflow** - Generate model and open directly in slicer without manual drag-and-drop
+- **Persistent Selection** - Dropdown to switch slicers, remembers last choice
+
+### 🖱️ Preview Interaction Improvements
+
+- **Gradio 6.0 Compatible** - Fixed preview click coordinate transformation for latest Gradio
+- **3D Preview Redesign** - Fullscreen 3D preview with improved controls
+- **Crop Presets** - Added aspect ratio presets (1:1, 4:3, 3:2, 16:9, etc.)
+- **Smart Workflow** - Generate 3MF button auto-generates preview if missing
+- **Persistent Settings** - Remembers color mode and modeling mode selections
+- **Crop Toggle Memory** - Crop interface toggle state persists to user_settings.json
+
+### 🏗️ Complete BambuStudio 3MF Export
+
+- **Multi-Material Support** - Full support for BambuStudio's multi-material 3MF format
+- **Proper Object Naming** - Objects named by color (e.g., "Cyan", "Magenta") for easy slicer identification
+- **Metadata Integration** - Complete metadata for optimal slicer compatibility
+
+### 🐛 Critical Bug Fixes
+
+- **8-Color Stacking Order** - Fixed incorrect stacking order causing wrong color mixing in 8-color mode
+- **Data Consistency** - Ensured 8-color ref_stacks format matches 4-color/6-color [top...bottom]
+- **Viewing Surface** - Fixed viewing surface (Z=0) and back surface inversion
+- **RYBW Detection** - Fixed RYBW mode incorrectly detected as BW mode
+- **Color Replacement** - Fixed color replacement now correctly updates material_matrix stacking data
+- **Outline Mesh** - Fixed outline mesh missing on image boundary edges
+- **Calibration Import** - Fixed missing import for safe_fix_3mf_names in BW calibration generation
+
+### 🧪 Testing & Quality
+
+- **Comprehensive Test Suite** - 78+ tests covering all major features
+- **Property-Based Testing** - 24 heightmap tests (16 unit + 8 property)
+- **Code Quality** - Replaced all bare exception catches with `except Exception:`
 
 ---
 

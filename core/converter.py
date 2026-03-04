@@ -15,8 +15,8 @@ import gradio as gr
 from typing import List, Dict, Tuple, Optional
 
 from config import PrinterConfig, ColorSystem, ModelingMode, PREVIEW_SCALE, PREVIEW_MARGIN, OUTPUT_DIR, BedManager
-from utils import Stats, safe_fix_3mf_names
-from utils.bambu_3mf_writer import export_scene_with_bambu_metadata, inject_bambu_metadata
+from utils import Stats
+from utils.bambu_3mf_writer import export_scene_with_bambu_metadata
 
 from core.image_processing import LuminaImageProcessor
 from core.mesh_generators import get_mesher
@@ -625,37 +625,15 @@ def convert_image_to_3d(image_path, lut_path, target_width_mm, spacer_thick,
             }
 
             export_t0 = time.perf_counter()
-            is_5color_vec = "5-Color Extended" in color_mode
-            if is_5color_vec:
-                # 5-Color face-up: Z 翻转修正 vector engine 的顶底方向
-                max_z = max(
-                    g.vertices[:, 2].max()
-                    for g in scene.geometry.values()
-                    if hasattr(g, 'vertices') and len(g.vertices) > 0
-                )
-                z_flip = np.array([
-                    [1, 0, 0, 0],
-                    [0, 1, 0, 0],
-                    [0, 0, -1, max_z],
-                    [0, 0, 0, 1]
-                ])
-                for geom_name in list(scene.geometry.keys()):
-                    scene.geometry[geom_name].apply_transform(z_flip)
-
-                scene.export(out_path)
-                safe_fix_3mf_names(out_path, vec_slot_names)
-                inject_bambu_metadata(out_path, vec_print_settings, vec_slot_names, vec_preview_colors, vec_color_mode)
-                print(f"[CONVERTER] Vector 5-Color 3MF exported (Z-flipped + trimesh + Bambu metadata): {out_path}")
-            else:
-                export_scene_with_bambu_metadata(
-                    scene=scene,
-                    output_path=out_path,
-                    slot_names=vec_slot_names,
-                    preview_colors=vec_preview_colors,
-                    settings=vec_print_settings,
-                    color_mode=vec_color_mode,
-                )
-                print(f"[CONVERTER] Vector 3MF exported with Bambu metadata: {out_path}")
+            export_scene_with_bambu_metadata(
+                scene=scene,
+                output_path=out_path,
+                slot_names=vec_slot_names,
+                preview_colors=vec_preview_colors,
+                settings=vec_print_settings,
+                color_mode=vec_color_mode,
+            )
+            print(f"[CONVERTER] Vector 3MF exported with Bambu metadata: {out_path}")
             vector_timing["export_3mf_s"] = time.perf_counter() - export_t0
             
             # 4. Generate GLB Preview
@@ -1282,8 +1260,24 @@ def convert_image_to_3d(image_path, lut_path, target_width_mm, spacer_thick,
     is_single_sided = "单面" in structure_mode or "Single" in structure_mode
     is_5color = "5-Color Extended" in color_mode
 
-    # Non-5-Color 单面模式：X 轴镜像修正（BambuStudio writer 需要）
-    if is_single_sided and not is_5color:
+    # 5-Color 高保真：体素 Z 与 BambuStudio 显示约定相反，需 Z 翻转使顶面（观看面）朝上
+    if is_5color:
+        max_z = max(
+            g.vertices[:, 2].max()
+            for g in scene.geometry.values()
+            if hasattr(g, "vertices") and len(g.vertices) > 0
+        )
+        z_flip = np.array([
+            [1, 0, 0, 0],
+            [0, 1, 0, 0],
+            [0, 0, -1, max_z],
+            [0, 0, 0, 1],
+        ])
+        for geom_name in list(scene.geometry.keys()):
+            scene.geometry[geom_name].apply_transform(z_flip)
+
+    # 单面模式：X 轴镜像修正（BambuStudio writer 需要）
+    if is_single_sided:
         model_width_mm = target_w * pixel_scale
         mirror_transform = np.array([
             [-1, 0, 0, model_width_mm],
@@ -1293,6 +1287,18 @@ def convert_image_to_3d(image_path, lut_path, target_width_mm, spacer_thick,
         ])
         for geom_name in list(scene.geometry.keys()):
             scene.geometry[geom_name].apply_transform(mirror_transform)
+
+    # 5-Color 高保真：单面 X 镜像后左右仍反，再补一次 X 镜像使左右正确
+    if is_5color:
+        model_width_mm = target_w * pixel_scale
+        x_mirror_again = np.array([
+            [-1, 0, 0, model_width_mm],
+            [0, 1, 0, 0],
+            [0, 0, 1, 0],
+            [0, 0, 0, 1]
+        ])
+        for geom_name in list(scene.geometry.keys()):
+            scene.geometry[geom_name].apply_transform(x_mirror_again)
 
     base_name = os.path.splitext(os.path.basename(image_path))[0]
     out_path = os.path.join(OUTPUT_DIR, generate_model_filename(base_name, modeling_mode, color_mode))
@@ -1322,39 +1328,16 @@ def convert_image_to_3d(image_path, lut_path, target_width_mm, spacer_thick,
     }
     
     try:
-        if is_5color:
-            # 5-Color face-up: Z 翻转修正顶底方向 + trimesh 导出 + BambuStudio 元数据
-            print(f"[CONVERTER] 5-Color: Z-flip + trimesh export + BambuStudio metadata...")
-            max_z = max(
-                g.vertices[:, 2].max()
-                for g in scene.geometry.values()
-                if hasattr(g, 'vertices') and len(g.vertices) > 0
-            )
-            z_flip = np.array([
-                [1, 0, 0, 0],
-                [0, 1, 0, 0],
-                [0, 0, -1, max_z],
-                [0, 0, 0, 1]
-            ])
-            for geom_name in list(scene.geometry.keys()):
-                scene.geometry[geom_name].apply_transform(z_flip)
-
-            scene.export(out_path)
-            safe_fix_3mf_names(out_path, valid_slot_names)
-            inject_bambu_metadata(out_path, print_settings, valid_slot_names, preview_colors, color_mode)
-            print(f"[CONVERTER] 3MF exported (Z-flipped + trimesh + BambuStudio metadata): {out_path}")
-        else:
-            # 其他模式：BambuStudio writer 完整导出
-            print(f"[CONVERTER] Exporting with BambuStudio metadata...")
-            export_scene_with_bambu_metadata(
-                scene=scene,
-                output_path=out_path,
-                slot_names=valid_slot_names,
-                preview_colors=preview_colors,
-                settings=print_settings,
-                color_mode=color_mode
-            )
-            print(f"[CONVERTER] 3MF exported with embedded settings: {out_path}")
+        print(f"[CONVERTER] Exporting with BambuStudio metadata...")
+        export_scene_with_bambu_metadata(
+            scene=scene,
+            output_path=out_path,
+            slot_names=valid_slot_names,
+            preview_colors=preview_colors,
+            settings=print_settings,
+            color_mode=color_mode
+        )
+        print(f"[CONVERTER] 3MF exported with embedded settings: {out_path}")
     except Exception as e:
         print(f"[CONVERTER] Error exporting 3MF: {e}")
         return None, None, None, f"[ERROR] 3MF export failed: {e}"

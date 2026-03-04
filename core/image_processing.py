@@ -59,6 +59,7 @@ class LuminaImageProcessor:
             lut_path: LUT file path (.npy)
             color_mode: Color mode string (CMYW/RYBW/6-Color)
         """
+        self.lut_path = lut_path  # Store LUT path for color recipe logging
         self.color_mode = color_mode
         self.lut_rgb = None
         self.lut_lab = None  # CIELAB 空间的 LUT 颜色（用于 KDTree 匹配）

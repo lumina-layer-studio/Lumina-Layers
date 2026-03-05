@@ -482,6 +482,28 @@ class VectorProcessor:
         except Exception as e:
             raise ValueError(f"Failed to parse SVG: {e}")
 
+        def _sample_path_to_polygon(path_obj):
+            path_len = path_obj.length()
+            if path_len == 0:
+                return None
+
+            # Adaptive sampling: coarser for larger precision settings.
+            sample_step_svg = max(0.5, min(4.0, self.sampling_precision * 20.0))
+            num_points = max(10, min(int(path_len / sample_step_svg), 1200))
+            t_vals = np.linspace(0, 1, num_points)
+            pts = [path_obj.point(t) for t in t_vals]
+
+            if len(pts) < 3:
+                return None
+
+            poly = Polygon([(p.x, p.y) for p in pts])
+            if not poly.is_valid:
+                poly = poly.buffer(0)
+
+            if poly.is_valid and not poly.is_empty:
+                return poly
+            return None
+
         raw_shapes = []
         print("[VECTOR] Parsing SVG geometry...")
 
@@ -499,25 +521,33 @@ class VectorProcessor:
                 except Exception:
                     continue
 
+            sampled_any = False
             try:
-                path_len = element.length()
-                if path_len == 0:
+                subpaths = list(element.as_subpaths())
+            except Exception:
+                subpaths = []
+
+            # Parse subpaths independently to avoid "bridging" disjoint contours
+            # into one invalidly large polygon.
+            for subpath in subpaths:
+                try:
+                    sub_path = subpath if isinstance(subpath, Path) else Path(subpath)
+                    poly = _sample_path_to_polygon(sub_path)
+                except Exception:
                     continue
-
-                # Adaptive sampling: coarser for larger precision settings.
-                sample_step_svg = max(0.5, min(4.0, self.sampling_precision * 20.0))
-                num_points = max(10, min(int(path_len / sample_step_svg), 1200))
-                t_vals = np.linspace(0, 1, num_points)
-                pts = [element.point(t) for t in t_vals]
-
-                if len(pts) < 3:
+                if poly is None:
                     continue
+                raw_shapes.append({"poly": poly, "color": rgb})
+                sampled_any = True
 
-                poly = Polygon([(p.x, p.y) for p in pts])
-                if not poly.is_valid:
-                    poly = poly.buffer(0)
+            if sampled_any:
+                continue
 
-                if poly.is_valid and not poly.is_empty:
+            # Fallback for compatibility if subpath splitting is unavailable
+            # or yields no valid polygon.
+            try:
+                poly = _sample_path_to_polygon(element)
+                if poly is not None:
                     raw_shapes.append({"poly": poly, "color": rgb})
             except Exception:
                 continue

@@ -45,6 +45,13 @@ def _rect(x0, y0, x1, y1, color=(255, 0, 0)):
     return {"poly": box(x0, y0, x1, y1), "color": color}
 
 
+def _make_parse_only_processor(sampling_precision=0.05):
+    """Create a VectorProcessor instance without running heavy __init__."""
+    vp = object.__new__(VectorProcessor)
+    vp.sampling_precision = sampling_precision
+    return vp
+
+
 # =====================================================================
 # 1. Occlusion clipping
 # =====================================================================
@@ -295,3 +302,83 @@ class TestExtrudeGeometry:
         assert len(meshes1) == 1
         assert len(meshes2) == 1
         assert call_count["n"] == 1
+
+
+# =====================================================================
+# 5. SVG parse regression (multi-subpath)
+# =====================================================================
+
+class TestParseSvgSubpaths:
+
+    def test_split_multi_subpath_path_into_multiple_polygons(self, tmp_path):
+        """Single <path> with two subpaths should yield two polygons."""
+        svg_file = tmp_path / "multi_subpath.svg"
+        svg_file.write_text(
+            (
+                '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 120">\n'
+                '  <path fill="#ff0000" d="'
+                'M0,0 L100,0 L100,100 L0,100 Z '
+                'M200,0 L300,0 L300,100 L200,100 Z"/>\n'
+                '</svg>\n'
+            ),
+            encoding="utf-8",
+        )
+
+        vp = _make_parse_only_processor()
+        shapes, scale, bbox = vp._parse_svg(str(svg_file), target_width_mm=100.0)
+
+        assert len(shapes) == 2
+        areas = sorted(s["poly"].area for s in shapes)
+        assert abs(areas[0] - 10000.0) < 5.0
+        assert abs(areas[1] - 10000.0) < 5.0
+        assert all(s["color"] == (255, 0, 0) for s in shapes)
+        assert scale > 0
+        assert bbox[2] > 0
+
+    def test_parse_falls_back_when_subpath_split_unavailable(self, tmp_path):
+        """If as_subpaths fails, parser should still sample whole path."""
+        svg_file = tmp_path / "fallback.svg"
+        svg_file.write_text(
+            (
+                '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120">\n'
+                '  <path fill="#00ff00" d="M0,0 L100,0 L100,100 L0,100 Z"/>\n'
+                '</svg>\n'
+            ),
+            encoding="utf-8",
+        )
+
+        vp = _make_parse_only_processor()
+        with patch.object(_ve.Path, "as_subpaths", side_effect=RuntimeError("boom")):
+            shapes, _, _ = vp._parse_svg(str(svg_file), target_width_mm=100.0)
+
+        assert len(shapes) == 1
+        assert shapes[0]["poly"].area > 0
+
+    def test_occlusion_keeps_uncovered_large_block(self, tmp_path):
+        """Top shape covering only one subpath must not erase the other block."""
+        svg_file = tmp_path / "occlusion_regression.svg"
+        svg_file.write_text(
+            (
+                '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 120">\n'
+                '  <path fill="#ff0000" d="'
+                'M0,0 L100,0 L100,100 L0,100 Z '
+                'M200,0 L300,0 L300,100 L200,100 Z"/>\n'
+                '  <path fill="#0000ff" d="M0,0 L100,0 L100,100 L0,100 Z"/>\n'
+                '</svg>\n'
+            ),
+            encoding="utf-8",
+        )
+
+        vp = _make_parse_only_processor()
+        shapes, _, _ = vp._parse_svg(str(svg_file), target_width_mm=100.0)
+        clipped = VectorProcessor._clip_occlusion(shapes)
+
+        red_area = sum(
+            item["geometry"].area for item in clipped if item["color"] == (255, 0, 0)
+        )
+        blue_area = sum(
+            item["geometry"].area for item in clipped if item["color"] == (0, 0, 255)
+        )
+
+        assert abs(red_area - 10000.0) < 5.0
+        assert abs(blue_area - 10000.0) < 5.0

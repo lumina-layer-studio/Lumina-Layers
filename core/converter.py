@@ -473,7 +473,8 @@ def convert_image_to_3d(image_path, lut_path, target_width_mm, spacer_thick,
                          enable_cloisonne=False, wire_width_mm=0.4,
                          wire_height_mm=0.4,
                          free_color_set=None,
-                         enable_coating=False, coating_height_mm=0.08):
+                         enable_coating=False, coating_height_mm=0.08,
+                         hue_weight=0.3):
     """
     Main conversion function: Convert image to 3D model.
     
@@ -787,7 +788,7 @@ def convert_image_to_3d(image_path, lut_path, target_width_mm, spacer_thick,
     
     # Step 1: Image Processing
     try:
-        processor = LuminaImageProcessor(actual_lut_path, color_mode)
+        processor = LuminaImageProcessor(actual_lut_path, color_mode, hue_weight=hue_weight)
         processor.enable_cleanup = enable_cleanup
         result = processor.process_image(
             image_path=image_path,
@@ -2405,7 +2406,8 @@ def generate_preview_cached(image_path, lut_path, target_width_mm,
                             quantize_colors: int = 64,
                             backing_color_id: int = 0,
                             enable_cleanup: bool = True,
-                            is_dark: bool = True):
+                            is_dark: bool = True,
+                            hue_weight: float = 0.3):
     """
     Generate preview and cache data
     For 2D preview interface
@@ -2449,7 +2451,7 @@ def generate_preview_cached(image_path, lut_path, target_width_mm,
     color_conf = ColorSystem.get(color_mode)
     
     try:
-        processor = LuminaImageProcessor(actual_lut_path, color_mode)
+        processor = LuminaImageProcessor(actual_lut_path, color_mode, hue_weight=hue_weight)
         processor.enable_cleanup = enable_cleanup
         result = processor.process_image(
             image_path=image_path,
@@ -2793,7 +2795,8 @@ def generate_final_model(image_path, lut_path, target_width_mm, spacer_thick,
                         enable_cloisonne=False, wire_width_mm=0.4,
                         wire_height_mm=0.4,
                         free_color_set=None,
-                        enable_coating=False, coating_height_mm=0.08):
+                        enable_coating=False, coating_height_mm=0.08,
+                        hue_weight=0.3):
     """
     Wrapper function for generating final model.
     
@@ -2851,7 +2854,8 @@ def generate_final_model(image_path, lut_path, target_width_mm, spacer_thick,
         wire_height_mm=wire_height_mm,
         free_color_set=free_color_set,
         enable_coating=enable_coating,
-        coating_height_mm=coating_height_mm
+        coating_height_mm=coating_height_mm,
+        hue_weight=hue_weight
     )
 
 

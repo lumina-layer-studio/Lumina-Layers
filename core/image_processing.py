@@ -12,6 +12,7 @@ from PIL import Image
 from scipy.spatial import KDTree
 
 from config import PrinterConfig, ModelingMode
+from core.color_matching_hybrid import HueAwareColorMatcher
 
 # SVG support (optional dependency)
 try:
@@ -51,20 +52,26 @@ class LuminaImageProcessor:
             return lab.reshape(original_shape)
         return lab
 
-    def __init__(self, lut_path, color_mode):
+    def __init__(self, lut_path, color_mode, hue_weight=0.3):
         """
         Initialize image processor.
         
         Args:
             lut_path: LUT file path (.npy)
             color_mode: Color mode string (CMYW/RYBW/6-Color)
+            hue_weight: 色相权重 (0.0-1.0)
+                - 0.0: 纯 CIELAB 距离（当前行为）
+                - 0.3: 平衡模式（推荐，默认）
+                - 0.5-0.7: 强调同色系
         """
         self.lut_path = lut_path  # Store LUT path for color recipe logging
         self.color_mode = color_mode
+        self.hue_weight = hue_weight
         self.lut_rgb = None
         self.lut_lab = None  # CIELAB 空间的 LUT 颜色（用于 KDTree 匹配）
         self.ref_stacks = None
         self.kdtree = None
+        self.hue_matcher = None  # 色相感知匹配器
         self.enable_cleanup = True  # 默认开启孤立像素清理
         
         self._load_lut(lut_path)
@@ -357,6 +364,18 @@ class LuminaImageProcessor:
         # Build KD-Tree in CIELAB space for perceptually accurate color matching
         self.lut_lab = self._rgb_to_lab(self.lut_rgb)
         self.kdtree = KDTree(self.lut_lab)
+        
+        # 初始化色相感知匹配器
+        if self.hue_weight > 0:
+            self.hue_matcher = HueAwareColorMatcher(
+                lut_rgb=self.lut_rgb,
+                lut_lab=self.lut_lab,
+                hue_weight=self.hue_weight
+            )
+            print(f"✅ 色相感知匹配器已启用 (hue_weight={self.hue_weight})")
+        else:
+            self.hue_matcher = None
+            print(f"ℹ️ 使用纯 CIELAB 匹配 (hue_weight=0.0)")
     
     def process_image(self, image_path, target_width_mm, modeling_mode,
                      quantize_colors, auto_bg, bg_tol,
@@ -660,11 +679,15 @@ class LuminaImageProcessor:
         print(f"[IMAGE_PROCESSOR] Found {len(unique_colors)} unique colors")
         print(f"[IMAGE_PROCESSOR] ⏱️ Find unique colors: {time.time() - t0:.2f}s")
         
-        # Match to LUT (in CIELAB space for perceptual accuracy)
+        # Match to LUT (使用色相感知匹配或纯 CIELAB)
         t0 = time.time()
-        print(f"[IMAGE_PROCESSOR] Matching colors to LUT (CIELAB space)...")
-        unique_lab = self._rgb_to_lab(unique_colors)
-        _, unique_indices = self.kdtree.query(unique_lab)
+        if self.hue_matcher is not None:
+            print(f"[IMAGE_PROCESSOR] Matching colors to LUT (色相感知模式, hue_weight={self.hue_weight})...")
+            unique_indices = self.hue_matcher.match_colors_batch(unique_colors)
+        else:
+            print(f"[IMAGE_PROCESSOR] Matching colors to LUT (纯 CIELAB 模式)...")
+            unique_lab = self._rgb_to_lab(unique_colors)
+            _, unique_indices = self.kdtree.query(unique_lab)
         print(f"[IMAGE_PROCESSOR] ⏱️ LUT matching: {time.time() - t0:.2f}s")
         
         # 🚀 优化：构建颜色编码查找表
@@ -723,11 +746,20 @@ class LuminaImageProcessor:
         Pixel art mode image processing
         Direct pixel-level color matching, no smoothing
         """
-        print(f"[IMAGE_PROCESSOR] Direct pixel-level matching (Pixel Art mode, CIELAB space)...")
+        if self.hue_matcher is not None:
+            print(f"[IMAGE_PROCESSOR] Direct pixel-level matching (Pixel Art mode, 色相感知, hue_weight={self.hue_weight})...")
+        else:
+            print(f"[IMAGE_PROCESSOR] Direct pixel-level matching (Pixel Art mode, 纯 CIELAB)...")
         
         flat_rgb = rgb_arr.reshape(-1, 3)
-        flat_lab = self._rgb_to_lab(flat_rgb)
-        _, indices = self.kdtree.query(flat_lab)
+        
+        if self.hue_matcher is not None:
+            # 使用色相感知匹配
+            indices = self.hue_matcher.match_colors_batch(flat_rgb)
+        else:
+            # 使用纯 CIELAB 匹配
+            flat_lab = self._rgb_to_lab(flat_rgb)
+            _, indices = self.kdtree.query(flat_lab)
         
         matched_rgb = self.lut_rgb[indices].reshape(target_h, target_w, 3)
         material_matrix = self.ref_stacks[indices].reshape(

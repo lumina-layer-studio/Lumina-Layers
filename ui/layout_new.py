@@ -921,6 +921,7 @@ def process_batch_generation(batch_files, is_batch, single_image, lut_path, targ
                              wire_height_mm=0.4,
                              free_color_set=None,
                              enable_coating=False, coating_height_mm=0.08,
+                             hue_weight=0.3,
                              progress=gr.Progress()):
     """Dispatch to single-image or batch generation; batch writes a ZIP of 3MFs.
 
@@ -955,7 +956,7 @@ def process_batch_generation(batch_files, is_batch, single_image, lut_path, targ
             enable_outline, outline_width,
             enable_cloisonne, wire_width_mm, wire_height_mm,
             free_color_set,
-            enable_coating, coating_height_mm)
+            enable_coating, coating_height_mm, hue_weight)
 
     if not is_batch:
         out_path, glb_path, preview_img, status, color_recipe_path = generate_final_model(
@@ -990,6 +991,7 @@ def process_batch_generation(batch_files, is_batch, single_image, lut_path, targ
             free_color_set=free_color_set,
             enable_coating=enable_coating,
             coating_height_mm=coating_height_mm,
+            hue_weight=hue_weight,
         )
         return out_path, glb_path, _preview_update(preview_img), status, color_recipe_path
 
@@ -2096,6 +2098,12 @@ def create_converter_tab_content(lang: str, lang_state=None, theme_state=None) -
                         info=I18n.get('conv_quantize_info', lang)
                     )
                 with gr.Row():
+                    components['slider_conv_hue_weight'] = gr.Slider(
+                        minimum=0.0, maximum=1.0, step=0.1, value=0.3,
+                        label="色相权重 | Hue Weight",
+                        info="0.0=纯CIELAB距离, 0.3=平衡(推荐), 0.7=强调同色系 | 0.0=Pure CIELAB, 0.3=Balanced(Recommended), 0.7=Emphasize Same Hue"
+                    )
+                with gr.Row():
                     components['btn_conv_auto_color'] = gr.Button(
                         I18n.get('conv_auto_color_btn', lang),
                         variant="secondary",
@@ -3014,13 +3022,14 @@ def create_converter_tab_content(lang: str, lang_state=None, theme_state=None) -
     def generate_preview_cached_with_fit(image_path, lut_path, target_width_mm,
                                          auto_bg, bg_tol, color_mode,
                                          modeling_mode, quantize_colors, enable_cleanup,
-                                         is_dark_theme=False):
+                                         is_dark_theme=False, hue_weight=0.3):
         display, cache, status = generate_preview_cached(
             image_path, lut_path, target_width_mm,
             auto_bg, bg_tol, color_mode,
             modeling_mode, quantize_colors,
             enable_cleanup=enable_cleanup,
-            is_dark=is_dark_theme
+            is_dark=is_dark_theme,
+            hue_weight=hue_weight
         )
         # Generate realtime 3D preview GLB
         glb_path = generate_realtime_glb(cache) if cache is not None else None
@@ -3135,7 +3144,8 @@ def create_converter_tab_content(lang: str, lang_state=None, theme_state=None) -
                 components['radio_conv_modeling_mode'],
                 components['slider_conv_quantize_colors'],
                 components['checkbox_conv_cleanup'],
-                theme_state
+                theme_state,
+                components['slider_conv_hue_weight']
             ],
             outputs=[conv_preview, conv_preview_cache, components['textbox_conv_status'], conv_3d_preview]
     ).then(
@@ -4001,7 +4011,7 @@ def create_converter_tab_content(lang: str, lang_state=None, theme_state=None) -
                                    enable_cleanup, enable_outline, outline_width,
                                    enable_cloisonne, wire_width_mm, wire_height_mm,
                                    free_color_set, enable_coating, coating_height_mm,
-                                   preview_cache, theme_is_dark, progress=gr.Progress()):
+                                   preview_cache, theme_is_dark, hue_weight, progress=gr.Progress()):
         """Generate 3MF with auto-preview if cache is missing."""
         
         # Check if preview cache exists
@@ -4013,7 +4023,7 @@ def create_converter_tab_content(lang: str, lang_state=None, theme_state=None) -
             try:
                 preview_img, cache, status, glb = generate_preview_cached_with_fit(
                     single_image, lut_path, target_width_mm, auto_bg, bg_tol,
-                    color_mode, modeling_mode, quantize_colors, enable_cleanup, theme_is_dark
+                    color_mode, modeling_mode, quantize_colors, enable_cleanup, theme_is_dark, hue_weight
                 )
                 preview_cache = cache
                 print(f"[AUTO-PREVIEW] Preview generated: {status}")
@@ -4033,7 +4043,7 @@ def create_converter_tab_content(lang: str, lang_state=None, theme_state=None) -
             enable_cleanup, enable_outline, outline_width,
             enable_cloisonne, wire_width_mm, wire_height_mm,
             free_color_set, enable_coating, coating_height_mm,
-            progress
+            hue_weight, progress
         )
     
     generate_event = components['btn_conv_generate_btn'].click(
@@ -4072,7 +4082,8 @@ def create_converter_tab_content(lang: str, lang_state=None, theme_state=None) -
                 components['checkbox_conv_coating_enable'],
                 components['slider_conv_coating_height'],
                 conv_preview_cache,
-                theme_state
+                theme_state,
+                components['slider_conv_hue_weight']
             ],
             outputs=[
                 components['file_conv_download_file'],
@@ -4146,7 +4157,7 @@ def create_converter_tab_content(lang: str, lang_state=None, theme_state=None) -
                             enable_cleanup, enable_outline, outline_width,
                             enable_cloisonne, wire_width_mm, wire_height_mm,
                             free_color_set, enable_coating, coating_height_mm,
-                            preview_cache, theme_is_dark):
+                            preview_cache, theme_is_dark, hue_weight):
         """Open file in slicer with auto-generation if needed."""
         
         # If no file exists, auto-generate the complete workflow
@@ -4159,7 +4170,7 @@ def create_converter_tab_content(lang: str, lang_state=None, theme_state=None) -
                 try:
                     preview_img, cache, status, glb = generate_preview_cached_with_fit(
                         single_image, lut_path, target_width_mm, auto_bg, bg_tol,
-                        color_mode, modeling_mode, quantize_colors, enable_cleanup, theme_is_dark
+                        color_mode, modeling_mode, quantize_colors, enable_cleanup, theme_is_dark, hue_weight
                     )
                     preview_cache = cache
                     print(f"[AUTO-SLICER] Preview generated: {status}")
@@ -4179,7 +4190,7 @@ def create_converter_tab_content(lang: str, lang_state=None, theme_state=None) -
                     heightmap_path, heightmap_max_height,
                     enable_cleanup, enable_outline, outline_width,
                     enable_cloisonne, wire_width_mm, wire_height_mm,
-                    free_color_set, enable_coating, coating_height_mm
+                    free_color_set, enable_coating, coating_height_mm, hue_weight
                 )
                 print(f"[AUTO-SLICER] 3MF generated: {status}")
             except Exception as e:
@@ -4246,7 +4257,8 @@ def create_converter_tab_content(lang: str, lang_state=None, theme_state=None) -
             components['checkbox_conv_coating_enable'],
             components['slider_conv_coating_height'],
             conv_preview_cache,
-            theme_state
+            theme_state,
+            components['slider_conv_hue_weight']
         ],
         outputs=[
             components['file_conv_download_file'],

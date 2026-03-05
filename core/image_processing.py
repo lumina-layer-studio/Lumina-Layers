@@ -59,6 +59,7 @@ class LuminaImageProcessor:
             lut_path: LUT file path (.npy)
             color_mode: Color mode string (CMYW/RYBW/6-Color)
         """
+        self.lut_path = lut_path  # Store LUT path for color recipe logging
         self.color_mode = color_mode
         self.layer_count = ColorSystem.get(color_mode).get('layer_count', PrinterConfig.COLOR_LAYERS)
         self.lut_rgb = None

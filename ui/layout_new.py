@@ -960,7 +960,7 @@ def process_batch_generation(batch_files, is_batch, single_image, lut_path, targ
             enable_coating, coating_height_mm)
 
     if not is_batch:
-        out_path, glb_path, preview_img, status = generate_final_model(
+        out_path, glb_path, preview_img, status, color_recipe_path = generate_final_model(
             image_path=single_image,
             lut_path=lut_path,
             target_width_mm=target_width_mm,
@@ -993,7 +993,7 @@ def process_batch_generation(batch_files, is_batch, single_image, lut_path, targ
             enable_coating=enable_coating,
             coating_height_mm=coating_height_mm,
         )
-        return out_path, glb_path, _preview_update(preview_img), status
+        return out_path, glb_path, _preview_update(preview_img), status, color_recipe_path
 
     if not batch_files:
         return None, None, None, "[ERROR] 请先上传图片 / Please upload images first"
@@ -1033,8 +1033,8 @@ def process_batch_generation(batch_files, is_batch, single_image, lut_path, targ
             for f in generated_files:
                 zipf.write(f, os.path.basename(f))
         logs.append(f"✅ Batch done: {len(generated_files)} model(s).")
-        return zip_path, None, _preview_update(None), "\n".join(logs)
-    return None, None, _preview_update(None), "[ERROR] Batch failed: no valid models.\n" + "\n".join(logs)
+        return zip_path, None, _preview_update(None), "\n".join(logs), None
+    return None, None, _preview_update(None), "[ERROR] Batch failed: no valid models.\n" + "\n".join(logs), None
 
 
 # ========== Advanced Tab Callbacks ==========
@@ -2604,6 +2604,13 @@ def create_converter_tab_content(lang: str, lang_state=None, theme_state=None) -
                         label=I18n.get('conv_download_file', lang),
                         visible=_show_file
                     )
+                    
+                    # Color recipe log download
+                    components['file_conv_color_recipe'] = gr.File(
+                        label="颜色配方日志 / Color Recipe Log",
+                        visible=_show_file
+                    )
+                    
                     components['btn_conv_stop'] = gr.Button(
                         value=I18n.get('conv_stop', lang),
                         variant="stop",
@@ -4119,7 +4126,8 @@ def create_converter_tab_content(lang: str, lang_state=None, theme_state=None) -
                 components['file_conv_download_file'],
                 conv_3d_preview,
                 conv_preview,
-                components['textbox_conv_status']
+                components['textbox_conv_status'],
+                components['file_conv_color_recipe']
             ]
     )
     components['conv_event'] = generate_event
@@ -4145,10 +4153,12 @@ def create_converter_tab_content(lang: str, lang_state=None, theme_state=None) -
                     gr.update(value=label, elem_classes=[css_cls]),
                     gr.update(elem_classes=[css_cls]),
                     gr.update(visible=show_file),
+                    gr.update(visible=show_file),
                 )
         return (
             gr.update(value="📥 下载 3MF", elem_classes=["slicer-download"]),
             gr.update(elem_classes=["slicer-download"]),
+            gr.update(visible=True),
             gr.update(visible=True),
         )
 
@@ -4159,6 +4169,7 @@ def create_converter_tab_content(lang: str, lang_state=None, theme_state=None) -
             components['btn_conv_open_slicer'],
             components['btn_conv_slicer_arrow'],
             components['file_conv_download_file'],
+            components['file_conv_color_recipe'],
         ]
     )
 
@@ -4207,7 +4218,7 @@ def create_converter_tab_content(lang: str, lang_state=None, theme_state=None) -
             # Step 2: Generate 3MF model
             print("[AUTO-SLICER] Step 2/2: Generating 3MF model...")
             try:
-                file_obj, glb, preview_img, status = process_batch_generation(
+                file_obj, glb, preview_img, status, color_recipe_path = process_batch_generation(
                     batch_files, is_batch, single_image, lut_path, target_width_mm,
                     spacer_thick, structure_mode, auto_bg, bg_tol, color_mode,
                     add_loop, loop_width, loop_length, loop_hole, loop_pos,
@@ -4227,8 +4238,8 @@ def create_converter_tab_content(lang: str, lang_state=None, theme_state=None) -
         if slicer_id == "download":
             # Make file component visible so user can download
             if file_obj is not None:
-                return file_obj, gr.update(visible=True), gr.update(), "📥 请点击下方文件下载"
-            return None, gr.update(), gr.update(), "[ERROR] 没有可下载的文件"
+                return file_obj, gr.update(visible=True), gr.update(visible=True), gr.update(), "📥 请点击下方文件下载"
+            return None, gr.update(), gr.update(), gr.update(), "[ERROR] 没有可下载的文件"
         
         # Get actual file path from Gradio File object
         actual_path = None
@@ -4239,10 +4250,10 @@ def create_converter_tab_content(lang: str, lang_state=None, theme_state=None) -
                 actual_path = file_obj
         
         if not actual_path:
-            return None, gr.update(), gr.update(), "[ERROR] 生成失败，无法打开"
+            return None, gr.update(), gr.update(), gr.update(), "[ERROR] 生成失败，无法打开"
         
         status = open_in_slicer(actual_path, slicer_id)
-        return file_obj, gr.update(), gr.update(), status
+        return file_obj, gr.update(), color_recipe_path, gr.update(), status
 
     components['btn_conv_open_slicer'].click(
         fn=on_open_slicer_click,
@@ -4288,6 +4299,7 @@ def create_converter_tab_content(lang: str, lang_state=None, theme_state=None) -
         outputs=[
             components['file_conv_download_file'],
             components['file_conv_download_file'],
+            components['file_conv_color_recipe'],
             conv_3d_preview,
             components['textbox_conv_status']
         ]

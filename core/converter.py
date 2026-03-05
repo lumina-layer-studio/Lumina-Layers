@@ -745,9 +745,9 @@ def convert_image_to_3d(image_path, lut_path, target_width_mm, spacer_thick,
                     f"total={vector_timing.get('vector_branch_total_s', 0.0):.3f}"
                 )
             
-            # Return results
+            # Return results (Vector mode doesn't generate color recipe)
             msg = f"✅ Vector conversion complete! Objects merged by material."
-            return out_path, glb_path, preview_img, msg
+            return out_path, glb_path, preview_img, msg, None
             
         except Exception as e:
             error_msg = f"❌ Vector processing failed: {e}\n\n"
@@ -1342,6 +1342,23 @@ def convert_image_to_3d(image_path, lut_path, target_width_mm, spacer_thick,
         print(f"[CONVERTER] Error exporting 3MF: {e}")
         return None, None, None, f"[ERROR] 3MF export failed: {e}"
     
+    # Step 8.5: Generate Color Recipe Report
+    color_recipe_path = None
+    try:
+        from utils.color_recipe_logger import ColorRecipeLogger
+        
+        model_filename = os.path.basename(out_path)
+        color_recipe_path = ColorRecipeLogger.create_from_processor(
+            processor=processor,
+            output_dir=OUTPUT_DIR,
+            model_filename=model_filename,
+            matched_rgb=matched_rgb,
+            material_matrix=material_matrix,
+            mask_solid=mask_solid
+        )
+    except Exception as e:
+        print(f"[CONVERTER] Warning: Failed to generate color recipe report: {e}")
+    
     # Step 9: Generate 3D Preview
     preview_mesh = _create_preview_mesh(
         matched_rgb, mask_solid, total_layers,
@@ -1441,7 +1458,7 @@ def convert_image_to_3d(image_path, lut_path, target_width_mm, spacer_thick,
     elif glb_path and total_pixels > 500_000:
         msg += " | ℹ️ 3D preview simplified"
     
-    return out_path, glb_path, preview_img, msg
+    return out_path, glb_path, preview_img, msg, color_recipe_path
 
 
 

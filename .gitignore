@@ -266,6 +266,9 @@ lut-npyԤ��/Custom/*.npy
 # Kiro documentation and internal files (personal use only)
 .kiro/
 
+# Trae AI IDE internal files
+.trae/
+
 # Reference projects (for development reference only)
 LD_ColorLayering-main/
 ChromaStack-main/

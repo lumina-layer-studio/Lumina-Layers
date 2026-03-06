@@ -22,6 +22,9 @@ except ImportError:
     HAS_SVG = False
     print("⚠️ [SVG] svglib/reportlab not installed. SVG support disabled.")
 
+_SVG_RASTER_CACHE = {}
+_SVG_RASTER_CACHE_MAX = 4
+
 
 class LuminaImageProcessor:
     """
@@ -70,7 +73,7 @@ class LuminaImageProcessor:
         
         self._load_lut(lut_path)
     
-    def _load_svg(self, svg_path, target_width_mm):
+    def _load_svg(self, svg_path, target_width_mm, pixels_per_mm: float = 20.0):
         """
         [Final Fix] Safe Padding + Dual-Pass Transparency Detection.
         
@@ -79,9 +82,24 @@ class LuminaImageProcessor:
         - If pixel stays same -> It's content (Opaque) -> Keep it 100% intact.
         
         This guarantees NO internal image damage.
+        
+        Args:
+            pixels_per_mm: Rasterization density. 20.0 for final output, 10.0 for previews.
         """
         if not HAS_SVG:
             raise ImportError("Please install 'svglib' and 'reportlab'.")
+
+        cache_key = None
+        try:
+            svg_abs = os.path.abspath(svg_path)
+            svg_mtime = os.path.getmtime(svg_abs)
+            cache_key = (svg_abs, round(float(target_width_mm), 4), round(float(pixels_per_mm), 2), svg_mtime)
+            cached = _SVG_RASTER_CACHE.get(cache_key)
+            if cached is not None:
+                print(f"[SVG] Cache hit: {os.path.basename(svg_abs)} @ {pixels_per_mm}px/mm")
+                return cached.copy()
+        except Exception:
+            cache_key = None
         
         print(f"[SVG] Rasterizing: {svg_path}")
         
@@ -102,7 +120,6 @@ class LuminaImageProcessor:
         drawing.height = raw_h + (padding_y * 2)
         
         # 2. 缩放
-        pixels_per_mm = 20.0
         target_width_px = int(target_width_mm * pixels_per_mm)
         
         if raw_w > 0:
@@ -166,6 +183,10 @@ class LuminaImageProcessor:
                 print("[SVG] Warning: Image appears fully transparent.")
             
             print(f"[SVG] Final resolution: {img_final.shape[1]}x{img_final.shape[0]} px")
+            if cache_key is not None:
+                _SVG_RASTER_CACHE[cache_key] = img_final.copy()
+                while len(_SVG_RASTER_CACHE) > _SVG_RASTER_CACHE_MAX:
+                    _SVG_RASTER_CACHE.pop(next(iter(_SVG_RASTER_CACHE)))
             return img_final
             
         except Exception as e:
@@ -175,7 +196,12 @@ class LuminaImageProcessor:
             
             # 最后的保底：如果双重渲染失败，回退到普通渲染
             pil_img = renderPM.drawToPIL(drawing, bg=None, configPIL={'transparent': True})
-            return np.array(pil_img.convert('RGBA'))
+            img_fallback = np.array(pil_img.convert('RGBA'))
+            if cache_key is not None:
+                _SVG_RASTER_CACHE[cache_key] = img_fallback.copy()
+                while len(_SVG_RASTER_CACHE) > _SVG_RASTER_CACHE_MAX:
+                    _SVG_RASTER_CACHE.pop(next(iter(_SVG_RASTER_CACHE)))
+            return img_fallback
     
     def _load_lut(self, lut_path):
         """
@@ -458,7 +484,7 @@ class LuminaImageProcessor:
         
         if is_svg:
             print("[IMAGE_PROCESSOR] SVG detected - Engaging Ultra-High-Fidelity Vector Mode")
-            img_arr = self._load_svg(image_path, target_width_mm)
+            img_arr = self._load_svg(image_path, target_width_mm, pixels_per_mm=10.0)
             # SVG reset to PIL object to reuse subsequent logic (e.g., get dimensions)
             img = Image.fromarray(img_arr)
             

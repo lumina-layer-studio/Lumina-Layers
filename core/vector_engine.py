@@ -16,6 +16,7 @@ Key changes from v1:
     - Output objects sorted by material ID for stable slicer ordering
 """
 
+import os
 import numpy as np
 import time
 import trimesh
@@ -23,11 +24,14 @@ from svgelements import SVG, Path, Shape
 from shapely.geometry import Polygon, MultiPolygon
 from shapely import affinity
 from shapely.ops import unary_union
+from shapely.strtree import STRtree
 
 from config import PrinterConfig, ColorSystem
 
 # Lazy import to avoid circular dependency at module load time
 _LuminaImageProcessor = None
+_VECTOR_PARSE_CLIP_CACHE = {}
+_VECTOR_PARSE_CLIP_CACHE_MAX = 3
 
 
 def _get_image_processor_class():
@@ -92,19 +96,56 @@ class VectorProcessor:
         stage_timings = {}
         t_total_start = time.perf_counter()
 
-        # === Stage 1: Parse SVG (preserving draw order) ===
-        t0 = time.perf_counter()
-        shape_data, scale_factor, bbox = self._parse_svg(svg_path, target_width_mm)
-        if not shape_data:
-            raise ValueError("No valid filled shapes found in SVG.")
-        stage_timings["parse_s"] = time.perf_counter() - t0
-        print(f"[VECTOR] Parsed {len(shape_data)} shapes. Scale: {scale_factor:.4f}")
+        # === Stage 1+2: Parse & Occlusion clip (with cache) ===
+        cache_key = None
+        cached_entry = None
+        try:
+            svg_abs = os.path.abspath(svg_path)
+            svg_mtime = os.path.getmtime(svg_abs)
+            cache_key = (
+                svg_abs,
+                round(float(target_width_mm), 4),
+                round(float(self.sampling_precision), 4),
+                svg_mtime,
+            )
+            cached_entry = _VECTOR_PARSE_CLIP_CACHE.get(cache_key)
+        except Exception:
+            cache_key = None
 
-        # === Stage 2: Occlusion clip ===
-        t0 = time.perf_counter()
-        clipped_shapes, silhouette = self._clip_occlusion(shape_data, return_silhouette=True)
-        stage_timings["occlusion_s"] = time.perf_counter() - t0
-        print(f"[VECTOR] After occlusion clip: {len(clipped_shapes)} non-overlapping shapes")
+        if cached_entry is not None:
+            shape_data = cached_entry["shape_data"]
+            clipped_shapes = cached_entry["clipped_shapes"]
+            silhouette = cached_entry["silhouette"]
+            scale_factor = cached_entry["scale_factor"]
+            bbox = cached_entry["bbox"]
+            stage_timings["parse_s"] = 0.0
+            stage_timings["occlusion_s"] = 0.0
+            print(f"[VECTOR] Parse/clip cache hit: {os.path.basename(svg_path)}")
+            print(f"[VECTOR] Parsed {len(shape_data)} shapes. Scale: {scale_factor:.4f}")
+            print(f"[VECTOR] After occlusion clip: {len(clipped_shapes)} non-overlapping shapes")
+        else:
+            t0 = time.perf_counter()
+            shape_data, scale_factor, bbox = self._parse_svg(svg_path, target_width_mm)
+            if not shape_data:
+                raise ValueError("No valid filled shapes found in SVG.")
+            stage_timings["parse_s"] = time.perf_counter() - t0
+            print(f"[VECTOR] Parsed {len(shape_data)} shapes. Scale: {scale_factor:.4f}")
+
+            t0 = time.perf_counter()
+            clipped_shapes, silhouette = self._clip_occlusion(shape_data, return_silhouette=True)
+            stage_timings["occlusion_s"] = time.perf_counter() - t0
+            print(f"[VECTOR] After occlusion clip: {len(clipped_shapes)} non-overlapping shapes")
+
+            if cache_key is not None:
+                _VECTOR_PARSE_CLIP_CACHE[cache_key] = {
+                    "shape_data": shape_data,
+                    "clipped_shapes": clipped_shapes,
+                    "silhouette": silhouette,
+                    "scale_factor": scale_factor,
+                    "bbox": bbox,
+                }
+                while len(_VECTOR_PARSE_CLIP_CACHE) > _VECTOR_PARSE_CLIP_CACHE_MAX:
+                    _VECTOR_PARSE_CLIP_CACHE.pop(next(iter(_VECTOR_PARSE_CLIP_CACHE)))
 
         # === Stage 3: Resolve color system config ===
         is_six_color = len(self.img_processor.lut_rgb) == 1296
@@ -262,36 +303,57 @@ class VectorProcessor:
         if n == 0:
             return ([], None) if return_silhouette else []
 
+        valid = []
+        for i, item in enumerate(shape_data):
+            geom = item["poly"]
+            if geom is None or geom.is_empty:
+                continue
+            valid.append((i, geom))
+
+        if not valid:
+            return ([], None) if return_silhouette else []
+
+        orders = [v[0] for v in valid]
+        geoms = [v[1] for v in valid]
+        tree = STRtree(geoms)
+        geom_id_to_idx = {id(g): idx for idx, g in enumerate(geoms)}
         result = []
-        accumulated = None
-        accum_bounds = None
 
         for i in range(n - 1, -1, -1):
             item = shape_data[i]
             geom = item["poly"]
-
             if geom is None or geom.is_empty:
                 continue
 
-            if accumulated is None:
+            occluders = []
+            try:
+                candidate_refs = tree.query(geom)
+            except Exception:
+                candidate_refs = []
+
+            for ref in candidate_refs:
+                if isinstance(ref, (int, np.integer)):
+                    idx = int(ref)
+                else:
+                    idx = geom_id_to_idx.get(id(ref), -1)
+                if idx < 0:
+                    continue
+                if orders[idx] <= i:
+                    continue
+                cand = geoms[idx]
+                try:
+                    if cand.intersects(geom):
+                        occluders.append(cand)
+                except Exception:
+                    continue
+
+            if not occluders:
                 clipped = geom
             else:
-                if accum_bounds is None:
-                    accum_bounds = accumulated.bounds
-                geom_bounds = geom.bounds
-                intersects = not (
-                    geom_bounds[2] < accum_bounds[0] or
-                    geom_bounds[0] > accum_bounds[2] or
-                    geom_bounds[3] < accum_bounds[1] or
-                    geom_bounds[1] > accum_bounds[3]
-                )
-                if not intersects:
+                try:
+                    clipped = geom.difference(occluders[0] if len(occluders) == 1 else unary_union(occluders))
+                except Exception:
                     clipped = geom
-                else:
-                    try:
-                        clipped = geom.difference(accumulated)
-                    except Exception:
-                        clipped = geom
 
             if clipped is not None and not clipped.is_empty:
                 if not clipped.is_valid:
@@ -303,25 +365,13 @@ class VectorProcessor:
                         "draw_order": i,
                     })
 
-            try:
-                if accumulated is None:
-                    accumulated = geom
-                    accum_bounds = geom.bounds
-                else:
-                    accumulated = accumulated.union(geom)
-                    gb = geom.bounds
-                    accum_bounds = (
-                        min(accum_bounds[0], gb[0]),
-                        min(accum_bounds[1], gb[1]),
-                        max(accum_bounds[2], gb[2]),
-                        max(accum_bounds[3], gb[3]),
-                    )
-            except Exception:
-                pass
-
         result.reverse()
         if return_silhouette:
-            return result, accumulated
+            try:
+                silhouette = unary_union(geoms)
+            except Exception:
+                silhouette = None
+            return result, silhouette
         return result
 
     # ── Stage 4: Color matching with per-color cache ─────────────────────
@@ -336,8 +386,10 @@ class VectorProcessor:
         """
         if num_layers is None:
             num_layers = PrinterConfig.COLOR_LAYERS
+        recipe_log_mode = os.getenv("LUMINA_VECTOR_RECIPE_LOG", "summary").strip().lower()
         color_cache = {}
         matched = []
+        sample_logs = []
 
         for item in clipped_shapes:
             rgb = item["color"]
@@ -367,13 +419,21 @@ class VectorProcessor:
                 color_cache[rgb] = recipe
 
                 hex_c = f"#{rgb[0]:02x}{rgb[1]:02x}{rgb[2]:02x}"
-                print(f"  {hex_c} -> recipe {recipe}")
+                if recipe_log_mode == "full":
+                    print(f"  {hex_c} -> recipe {recipe}")
+                elif recipe_log_mode == "summary" and len(sample_logs) < 8:
+                    sample_logs.append(f"{hex_c} -> {recipe}")
 
             matched.append({
                 "geometry": item["geometry"],
                 "recipe": recipe,
                 "color": rgb,
             })
+
+        if recipe_log_mode == "summary":
+            print(f"[VECTOR] Recipe cache summary: unique_colors={len(color_cache)}, shapes={len(clipped_shapes)}")
+            if sample_logs:
+                print(f"[VECTOR] Recipe samples: {'; '.join(sample_logs)}")
 
         return matched
 
@@ -610,18 +670,22 @@ class VectorProcessor:
                 cache_key = None
                 cached_base = None
                 if extrude_cache is not None:
-                    cache_key = (poly.wkb, round(float(height), 6), round(float(scale), 8))
+                    # Key excludes height: cache unit-height (h=1) base mesh,
+                    # then scale Z per call. Avoids re-triangulating the same
+                    # polygon when it appears in multiple layers at different heights.
+                    cache_key = (poly.wkb, round(float(scale), 8))
                     cached_base = extrude_cache.get(cache_key)
 
                 if cached_base is None:
-                    m_base = trimesh.creation.extrude_polygon(poly, height=height)
-                    m_base.apply_scale([scale, scale, 1])
+                    m_base = trimesh.creation.extrude_polygon(poly, height=1.0)
+                    m_base.apply_scale([scale, scale, 1.0])
                     if extrude_cache is not None and cache_key is not None:
                         extrude_cache[cache_key] = m_base.copy()
                 else:
                     m_base = cached_base
 
                 m = m_base.copy()
+                m.apply_scale([1.0, 1.0, float(height)])
                 m.apply_translation([0, 0, z_offset])
                 meshes.append(m)
             except Exception as e:

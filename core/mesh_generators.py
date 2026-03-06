@@ -26,6 +26,60 @@ import cv2
 import trimesh
 from config import ModelingMode
 
+try:
+    import numba
+    HAS_NUMBA = True
+except ImportError:
+    numba = None
+    HAS_NUMBA = False
+
+
+if HAS_NUMBA:
+    @numba.njit(cache=True)
+    def _greedy_rect_numba(mask):
+        h, w = mask.shape
+        processed = np.zeros((h, w), dtype=np.uint8)
+        rects = np.empty((h * w, 4), dtype=np.int32)
+        count = 0
+
+        for y in range(h):
+            x = 0
+            while x < w:
+                if mask[y, x] and processed[y, x] == 0:
+                    x_start = x
+                    x_end = x + 1
+                    while x_end < w and mask[y, x_end] and processed[y, x_end] == 0:
+                        x_end += 1
+
+                    y_end = y + 1
+                    while y_end < h:
+                        valid = 1
+                        for xx in range(x_start, x_end):
+                            if (not mask[y_end, xx]) or processed[y_end, xx] != 0:
+                                valid = 0
+                                break
+                        if valid == 0:
+                            break
+                        y_end += 1
+
+                    for yy in range(y, y_end):
+                        for xx in range(x_start, x_end):
+                            processed[yy, xx] = 1
+
+                    rects[count, 0] = x_start
+                    rects[count, 1] = y
+                    rects[count, 2] = x_end
+                    rects[count, 3] = y_end
+                    count += 1
+                    x = x_end
+                else:
+                    x += 1
+
+        return rects[:count]
+else:
+    def _greedy_rect_numba(mask):
+        return None
+
 
 class BaseMesher(ABC):
     """Mesh generator abstract base class"""
@@ -269,6 +323,13 @@ class HighFidelityMesher(BaseMesher):
             List of rectangles: [(x0, y0, x1, y1), ...]
             Coordinates are in pixel space (not world space)
         """
+        if HAS_NUMBA:
+            rects = _greedy_rect_numba(mask)
+            return [
+                (float(r[0]), float(r[1]), float(r[2]), float(r[3]))
+                for r in rects
+            ]
+
         h, w = mask.shape
         processed = np.zeros_like(mask, dtype=bool)
         rectangles = []

@@ -657,7 +657,7 @@ def convert_image_to_3d(image_path, lut_path, target_width_mm, spacer_thick,
             elif HAS_SVG_LIB:
                 try:
                     # Use SVG-safe rasterization with bounds normalization
-                    preview_rgba = vec_processor.img_processor._load_svg(image_path, target_width_mm)
+                    preview_rgba = vec_processor.img_processor._load_svg(image_path, target_width_mm, pixels_per_mm=10.0)
 
                     # Apply color replacements to preview if provided
                     if vector_replacements:
@@ -1366,20 +1366,35 @@ def convert_image_to_3d(image_path, lut_path, target_width_mm, spacer_thick,
     
     # Step 8.5: Generate Color Recipe Report
     color_recipe_path = None
+    recipe_policy = os.getenv("LUMINA_COLOR_RECIPE_POLICY", "auto").strip().lower()
     try:
-        from utils.color_recipe_logger import ColorRecipeLogger
-        
-        model_filename = os.path.basename(out_path)
-        color_recipe_path = ColorRecipeLogger.create_from_processor(
-            processor=processor,
-            output_dir=OUTPUT_DIR,
-            model_filename=model_filename,
-            matched_rgb=matched_rgb,
-            material_matrix=material_matrix,
-            mask_solid=mask_solid
+        recipe_auto_max_pixels = int(os.getenv("LUMINA_COLOR_RECIPE_AUTO_MAX_PIXELS", "1200000"))
+    except Exception:
+        recipe_auto_max_pixels = 1200000
+    solid_pixels = int(np.count_nonzero(mask_solid))
+    enable_recipe = recipe_policy == "on" or (
+        recipe_policy == "auto" and solid_pixels <= recipe_auto_max_pixels
+    )
+    if enable_recipe:
+        try:
+            from utils.color_recipe_logger import ColorRecipeLogger
+
+            model_filename = os.path.basename(out_path)
+            color_recipe_path = ColorRecipeLogger.create_from_processor(
+                processor=processor,
+                output_dir=OUTPUT_DIR,
+                model_filename=model_filename,
+                matched_rgb=matched_rgb,
+                material_matrix=material_matrix,
+                mask_solid=mask_solid
+            )
+        except Exception as e:
+            print(f"[CONVERTER] Warning: Failed to generate color recipe report: {e}")
+    else:
+        print(
+            f"[CONVERTER] Skipping color recipe report: policy={recipe_policy}, "
+            f"solid_pixels={solid_pixels}, auto_max={recipe_auto_max_pixels}"
         )
-    except Exception as e:
-        print(f"[CONVERTER] Warning: Failed to generate color recipe report: {e}")
     
     # Step 9: Generate 3D Preview
     preview_mesh = _create_preview_mesh(

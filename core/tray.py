@@ -3,8 +3,8 @@
 ║                          LUMINA STUDIO v1.6.0                                 ║
 ║                    Multi-Material 3D Print Color System                       ║
 ╠═══════════════════════════════════════════════════════════════════════════════╣
-║  Author: [MIN]                                                                ║
-║  License: CC BY-NC-SA 4.0                                                     ║
+║  Copyright (C) 2025 Lumina Studio Contributors                                ║
+║  License: GNU GPL v3.0                                                        ║
 ╚═══════════════════════════════════════════════════════════════════════════════╝
 
 System Tray Icon Module

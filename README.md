@@ -9,7 +9,7 @@ Physics-Based Multi-Material FDM Color System
 ## Project Status
 
 **Current Version**: v1.6.0  
-**License**: CC BY-NC-SA 4.0 (with Commercial Exemption)  
+**License**: GNU GPL v3.0 (with Commercial Use & "Street Vendor" Support)  
 **Nature**: Non-profit independent implementation, open-source community project
 
 ---
@@ -78,24 +78,22 @@ All calibration presets (`.npy` files) are **completely free and open**, adherin
 
 ## License
 
-### Core License: CC BY-NC-SA 4.0
+### Core License: GNU GPL v3.0
 
-- ✅ **Attribution**: You must give appropriate credit
-- ❌ **NonCommercial**: You may not sell the source code or close it
-- 🔄 **ShareAlike**: If you modify it, you must distribute it under the same license
+- ✅ **Open & Free**: You are free to run, study, modify, and distribute this software.
+- 🔄 **Copyleft**: If you modify and distribute this software, you must release the source code under GPL v3.0.
+- ❌ **No Proprietary Derivatives**: Selling closed-source versions of this software or its derivatives is strictly prohibited.
 
-### Commercial Exemption ("Street Vendor" Special Authorization)
+### Commercial Use & "Street Vendor" Support Statement
 
-**For individual creators, street vendors, and small private businesses**:
+**To individual creators, street vendors, and small businesses**:
 
-You **do NOT need to ask for permission**. You automatically have the right to:
+GPL permits and encourages commercial use. We specifically support you to earn a living through your craft. You do **NOT** need to ask for additional permission to:
 - Use this software to generate models
 - Sell physical prints (keychains, reliefs, etc.)
-- Sell at night markets, fairs, and small online shops
+- Sell at night markets, fairs, or personal online shops
 
-**Go set up your stall and make money! This is your right.**
-
-*Note: Batch industrial production, SaaS platform operations, and OEM branding still require commercial licensing from the author.*
+**Go set up your stall and make a living! This is your right.**
 
 ---
 
@@ -609,13 +607,13 @@ The LUT-based approach solves this by measuring actual printed colors and matchi
 
 ## License
 
-This project is licensed under the **Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International** (CC BY-NC-SA 4.0).
+This project is licensed under the **GNU GPL v3.0** Open Source License.
 
-- ✅ **Attribution**: You must give appropriate credit
-- ❌ **NonCommercial**: You may not use this for commercial purposes (at the source code level)
-- 🔄 **ShareAlike**: If you modify it, you must distribute it under the same license
+- ✅ **Open & Free**: You are free to run, study, modify, and distribute this software.
+- 🔄 **Copyleft**: If you modify and distribute this software, you must release the source code under GPL v3.0.
+- ❌ **No Proprietary Derivatives**: Selling closed-source versions of this software or its derivatives is strictly prohibited.
 
-**Commercial Exemption**: Individual creators, street vendors, and small private businesses may freely use this software to generate models and sell physical prints.
+**Commercial Use & "Street Vendor" Support Statement**: GPL permits and encourages commercial use. We specifically support individual creators, street vendors, and small businesses to earn a living through their craft. You may freely use this software to generate models and sell physical prints without additional permission.
 
 ---
 
@@ -629,6 +627,12 @@ Special thanks to:
 
 ---
 
-Made with ❤️ by [MIN]
+## Contributors
+
+<a href="https://github.com/MOVIBALE/Lumina-Layers/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=MOVIBALE/Lumina-Layers" />
+</a>
+
+Made with ❤️ by all our contributors!
 
 ⭐ Star this repo if you find it useful!

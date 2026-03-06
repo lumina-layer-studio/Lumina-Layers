@@ -113,10 +113,6 @@ class VectorProcessor:
         except Exception:
             cache_key = None
 
-        def _p(val: float, desc: str = ""):
-            if progress_fn is not None:
-                progress_fn(val, desc)
-
         if cached_entry is not None:
             shape_data = cached_entry["shape_data"]
             clipped_shapes = cached_entry["clipped_shapes"]
@@ -128,9 +124,7 @@ class VectorProcessor:
             print(f"[VECTOR] Parse/clip cache hit: {os.path.basename(svg_path)}")
             print(f"[VECTOR] Parsed {len(shape_data)} shapes. Scale: {scale_factor:.4f}")
             print(f"[VECTOR] After occlusion clip: {len(clipped_shapes)} non-overlapping shapes")
-            _p(0.40, "缓存命中，跳过解析... | Cache hit, skipping parse...")
         else:
-            _p(0.08, "SVG 解析中... | Parsing SVG shapes...")
             t0 = time.perf_counter()
             shape_data, scale_factor, bbox = self._parse_svg(svg_path, target_width_mm)
             if not shape_data:
@@ -138,7 +132,6 @@ class VectorProcessor:
             stage_timings["parse_s"] = time.perf_counter() - t0
             print(f"[VECTOR] Parsed {len(shape_data)} shapes. Scale: {scale_factor:.4f}")
 
-            _p(0.40, "遮挡剪裁中... | Clipping occlusion...")
             t0 = time.perf_counter()
             clipped_shapes, silhouette = self._clip_occlusion(shape_data, return_silhouette=True)
             stage_timings["occlusion_s"] = time.perf_counter() - t0
@@ -184,7 +177,6 @@ class VectorProcessor:
         print(f"[VECTOR] Matched {len(matched_shapes)} shapes to LUT recipes")
 
         # === Stage 5: Run-length extrude per channel ===
-        _p(0.45, "几何挤出中... | Extruding geometry...")
         layer_h = PrinterConfig.LAYER_HEIGHT
         extrude_cache = {}
         is_5color = "5-Color Extended" in self.color_mode
@@ -253,7 +245,6 @@ class VectorProcessor:
         stage_timings["extrude_top_s"] = time.perf_counter() - t0
 
         # === Stage 8: Assemble scene (sorted by material ID) ===
-        _p(0.65, "组装场景中... | Assembling scene...")
         t0 = time.perf_counter()
         scene = trimesh.Scene()
         svg_height_mm = bbox[3] * scale_factor

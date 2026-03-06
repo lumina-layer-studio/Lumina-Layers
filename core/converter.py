@@ -569,7 +569,7 @@ def convert_image_to_3d(image_path, lut_path, target_width_mm, spacer_thick,
             vec_processor = VectorProcessor(actual_lut_path, color_mode)
 
             # Convert SVG to 3D scene
-            _prog(0.05, "SVG 解析与几何处理中... | Parsing SVG...")
+            _prog(0.05, "SVG 解析与几何处理中... | Parsing & extruding SVG...")
             mesh_t0 = time.perf_counter()
             scene = vec_processor.svg_to_mesh(
                 svg_path=image_path,
@@ -577,7 +577,6 @@ def convert_image_to_3d(image_path, lut_path, target_width_mm, spacer_thick,
                 thickness_mm=spacer_thick,
                 structure_mode=structure_mode,
                 color_replacements=vector_replacements,
-                progress_fn=_prog,
             )
             vector_timing["mesh_total_s"] = time.perf_counter() - mesh_t0
             if isinstance(getattr(vec_processor, "last_stage_timings", None), dict):

@@ -251,12 +251,20 @@ class HeightmapLoader:
         if contrast_warning:
             warnings_list.append(contrast_warning)
 
-        # Step 5: 灰度值映射为高度矩阵
+        # Step 5: 参数钳位校验
+        if max_relief_height < base_thickness:
+            warnings_list.append(
+                f"WARNING: max_relief_height ({max_relief_height}mm) < base_thickness ({base_thickness}mm), "
+                f"clamping to base_thickness"
+            )
+            max_relief_height = base_thickness
+
+        # Step 6: 灰度值映射为高度矩阵
         height_matrix = HeightmapLoader._map_grayscale_to_height(
             grayscale, max_relief_height, base_thickness
         )
 
-        # Step 6: 计算统计信息
+        # Step 7: 计算统计信息
         stats = {
             'min_mm': float(np.min(height_matrix)),
             'max_mm': float(np.max(height_matrix)),

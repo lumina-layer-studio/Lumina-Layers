@@ -225,6 +225,22 @@ def save_modeling_mode(modeling_mode):
     _save_user_setting("last_modeling_mode", val)
 
 
+def resolve_height_mode(radio_value: str) -> str:
+    """Map the UI radio selection to the backend ``height_mode`` parameter.
+
+    Args:
+        radio_value: Current value of the height-mode radio button
+                     (e.g. "深色凸起", "浅色凸起", "根据高度图").
+
+    Returns:
+        ``"heightmap"`` when the user selected heightmap mode,
+        ``"color"`` for all colour-based modes.
+    """
+    if radio_value == "根据高度图":
+        return "heightmap"
+    return "color"
+
+
 # ---------- Slicer Integration ----------
 
 import subprocess
@@ -916,6 +932,7 @@ def process_batch_generation(batch_files, is_batch, single_image, lut_path, targ
                              add_loop, loop_width, loop_length, loop_hole, loop_pos,
                              modeling_mode, quantize_colors, replacement_regions=None,
                              separate_backing=False, enable_relief=False, color_height_map=None,
+                             height_mode: str = "color",
                              heightmap_path=None, heightmap_max_height=None,
                              enable_cleanup=True,
                              enable_outline=False, outline_width=2.0,
@@ -930,6 +947,7 @@ def process_batch_generation(batch_files, is_batch, single_image, lut_path, targ
         separate_backing: Boolean flag to separate backing as individual object (default: False)
         enable_relief: Boolean flag to enable 2.5D relief mode (default: False)
         color_height_map: Dict mapping hex colors to heights in mm (default: None)
+        height_mode: "color" or "heightmap", determines relief branch selection (default: "color")
         heightmap_path: Optional path to heightmap image file (default: None)
         heightmap_max_height: Optional max height for heightmap mode in mm (default: None)
 
@@ -952,6 +970,7 @@ def process_batch_generation(batch_files, is_batch, single_image, lut_path, targ
             color_mode, add_loop, loop_width, loop_length, loop_hole, loop_pos,
             modeling_mode, quantize_colors, replacement_regions, backing_color_name,
             separate_backing, enable_relief, color_height_map,
+            height_mode,
             heightmap_path, heightmap_max_height,
             enable_cleanup,
             enable_outline, outline_width,
@@ -981,6 +1000,7 @@ def process_batch_generation(batch_files, is_batch, single_image, lut_path, targ
             separate_backing=separate_backing,
             enable_relief=enable_relief,
             color_height_map=color_height_map,
+            height_mode=height_mode,
             heightmap_path=heightmap_path,
             heightmap_max_height=heightmap_max_height,
             enable_cleanup=enable_cleanup,
@@ -1057,18 +1077,18 @@ def _update_lut_grid(lut_path, lang, palette_mode="swatch"):
 def _detect_and_enforce_structure(lut_path):
     """Detect color mode from LUT, and enforce structure constraints for 5-Color Extended.
 
-    Returns (color_mode_update, structure_update) for two component outputs.
+    Returns (color_mode_update, structure_update, relief_update) for three component outputs.
     """
     mode = detect_lut_color_mode(lut_path)
     if mode and "5-Color Extended" in mode:
-        gr.Info("5-Color Extended 模式：自动切换为单面模式")
+        gr.Info("5-Color Extended 模式：自动切换为单面模式，2.5D 浮雕不可用")
         return mode, gr.update(
             value=I18n.get('conv_structure_single', 'en'),
             interactive=False,
-        )
+        ), gr.update(value=False, interactive=False)
     if mode:
-        return mode, gr.update(interactive=True)
-    return gr.update(), gr.update(interactive=True)
+        return mode, gr.update(interactive=True), gr.update(interactive=True)
+    return gr.update(), gr.update(interactive=True), gr.update(interactive=True)
 
 
 def create_app():
@@ -1426,7 +1446,7 @@ console.log('[CROP] Global scripts loaded, openCropModal:', typeof window.openCr
         ).then(
             fn=_detect_and_enforce_structure,
             inputs=[components['state_conv_lut_path']],
-            outputs=[components['radio_conv_color_mode'], components['radio_conv_structure']]
+            outputs=[components['radio_conv_color_mode'], components['radio_conv_structure'], components['checkbox_conv_relief_mode']]
         )
 
         # Settings: cache clearing and counter reset
@@ -1462,7 +1482,16 @@ console.log('[CROP] Global scripts loaded, openCropModal:', typeof window.openCr
             return status_msg, _get_stats_html(lang, new_stats)
 
         # ========== Advanced Tab Events ==========
-        # (No events currently)
+        def on_unlock_max_size(unlock: bool):
+            """Toggle max size limit for width/height sliders."""
+            new_max = 9999 if unlock else 400
+            return gr.update(maximum=new_max), gr.update(maximum=new_max)
+
+        components['checkbox_unlock_max_size'].change(
+            on_unlock_max_size,
+            inputs=[components['checkbox_unlock_max_size']],
+            outputs=[components['slider_conv_width'], components['slider_conv_height']]
+        )
 
         # ========== About Tab Events ==========
         components['btn_clear_cache'].click(
@@ -2051,8 +2080,8 @@ def create_converter_tab_content(lang: str, lang_state=None, theme_state=None) -
             components['slider_conv_auto_height_max'] = gr.Slider(
                 minimum=0.08,
                 maximum=15.0,
-                value=5.0,
-                step=0.1,
+                value=2.4,
+                step=0.08,
                 label="最大浮雕高度 | Max Relief Height (mm)",
                 info="所有颜色的最大高度（相对于底板）",
                 visible=False
@@ -2566,7 +2595,7 @@ def create_converter_tab_content(lang: str, lang_state=None, theme_state=None) -
                             value=False
                         )
                     components['slider_conv_coating_height'] = gr.Slider(
-                        0.04, 0.12, 0.08, step=0.04,
+                        0.08, 0.16, 0.08, step=0.08,
                         label=I18n.get('conv_coating_height', lang)
                     )
                     # ========== END Coating Settings ==========
@@ -3027,7 +3056,7 @@ def create_converter_tab_content(lang: str, lang_state=None, theme_state=None) -
     ).then(
             fn=_detect_and_enforce_structure,
             inputs=[conv_lut_path],
-            outputs=[components['radio_conv_color_mode'], components['radio_conv_structure']]
+            outputs=[components['radio_conv_color_mode'], components['radio_conv_structure'], components['checkbox_conv_relief_mode']]
     )
 
 
@@ -3044,7 +3073,7 @@ def create_converter_tab_content(lang: str, lang_state=None, theme_state=None) -
     ).then(
             fn=lambda lut_file: _detect_and_enforce_structure(lut_file.name if lut_file else None),
             inputs=[conv_lut_upload],
-            outputs=[components['radio_conv_color_mode'], components['radio_conv_structure']]
+            outputs=[components['radio_conv_color_mode'], components['radio_conv_structure'], components['checkbox_conv_relief_mode']]
     )
     
     components['image_conv_image_label'].change(
@@ -3180,18 +3209,20 @@ def create_converter_tab_content(lang: str, lang_state=None, theme_state=None) -
     )
 
     def _on_color_mode_update_structure(color_mode):
-        """5-Color Extended requires single-sided face-up (max 4 materials per Z layer)."""
+        """5-Color Extended requires single-sided face-up (max 4 materials per Z layer).
+        Also disables 2.5D relief mode which is incompatible with 5-Color Extended.
+        """
         if color_mode and "5-Color Extended" in color_mode:
             return gr.update(
                 value=I18n.get('conv_structure_single', 'en'),
                 interactive=False,
-            )
-        return gr.update(interactive=True)
+            ), gr.update(value=False, interactive=False)
+        return gr.update(interactive=True), gr.update(interactive=True)
 
     components['radio_conv_color_mode'].change(
         fn=_on_color_mode_update_structure,
         inputs=[components['radio_conv_color_mode']],
-        outputs=[components['radio_conv_structure']],
+        outputs=[components['radio_conv_structure'], components['checkbox_conv_relief_mode']],
     )
 
     preview_event = components['btn_conv_preview_btn'].click(
@@ -3654,15 +3685,30 @@ def create_converter_tab_content(lang: str, lang_state=None, theme_state=None) -
         return _preview_update(img), selected_html, state_hex, rec_html, msg
 
     # Relief mode: update slider when color is selected
-    def on_color_selected_for_relief(hex_color, enable_relief, height_map, base_thickness):
-        """When user clicks a color in preview, update relief slider"""
+    def on_color_selected_for_relief(hex_color, enable_relief, height_map, base_thickness, cache):
+        """When user clicks a color in preview, update relief slider.
+        用户点击预览图选色后，更新浮雕高度 slider。
+
+        Args:
+            hex_color (str | None): Quantized hex from click selection. (点击选中的量化色 hex)
+            enable_relief (bool): Whether relief mode is enabled. (浮雕模式是否开启)
+            height_map (dict): Color-to-height mapping keyed by matched hex. (matched hex 为 key 的颜色高度映射)
+            base_thickness (float): Base thickness fallback in mm. (底板厚度回退值，单位 mm)
+            cache (dict | None): Preview cache containing selected_matched_hex. (预览缓存，包含 selected_matched_hex)
+
+        Returns:
+            tuple: (slider update, relief_selected_color, selected_color). (slider 更新, 浮雕选中色, 选中色)
+        """
         if not enable_relief or not hex_color:
             return gr.update(visible=False), hex_color, hex_color
 
-        # Get current height for this color (default to base thickness)
-        current_height = height_map.get(hex_color, base_thickness)
+        # Use matched hex (same key space as color_height_map) for lookup
+        matched_hex = (cache or {}).get('selected_matched_hex', hex_color) if cache else hex_color
+        current_height = height_map.get(matched_hex, base_thickness)
 
-        return gr.update(visible=True, value=current_height), hex_color, hex_color
+        # Store matched_hex in conv_relief_selected_color so slider edits
+        # write back with the correct key
+        return gr.update(visible=True, value=current_height), matched_hex, hex_color
 
     conv_preview.select(
             fn=on_preview_click_sync_ui,
@@ -3681,7 +3727,8 @@ def create_converter_tab_content(lang: str, lang_state=None, theme_state=None) -
             conv_selected_color,
             components['checkbox_conv_relief_mode'],
             conv_color_height_map,
-            components['slider_conv_thickness']
+            components['slider_conv_thickness'],
+            conv_preview_cache
         ],
         outputs=[
             components['slider_conv_relief_height'],
@@ -3740,9 +3787,10 @@ def create_converter_tab_content(lang: str, lang_state=None, theme_state=None) -
         - conv_relief_selected_color
         - radio_conv_auto_height_mode (reset to default)
         - checkbox_conv_cloisonne_enable (auto-disable)
+        - image_conv_heightmap (clear on disable)
         """
         if not enable_relief:
-            # 关闭浮雕模式 - 隐藏所有浮雕相关控件
+            # 关闭浮雕模式 - 隐藏所有浮雕相关控件，清除 heightmap 残留值
             return (
                 gr.update(visible=False),   # slider_conv_relief_height
                 gr.update(visible=False),   # accordion_conv_auto_height
@@ -3753,6 +3801,7 @@ def create_converter_tab_content(lang: str, lang_state=None, theme_state=None) -
                 None,                       # conv_relief_selected_color
                 gr.update(value="深色凸起"), # radio_conv_auto_height_mode reset
                 gr.update(),                # checkbox_conv_cloisonne_enable (no change)
+                gr.update(value=None),      # image_conv_heightmap（清除）
             )
         else:
             # 开启浮雕模式 - 默认「深色凸起」，隐藏高度图上传区，自动关闭掐丝珐琅
@@ -3769,6 +3818,7 @@ def create_converter_tab_content(lang: str, lang_state=None, theme_state=None) -
                     selected_color,             # conv_relief_selected_color
                     gr.update(value="深色凸起"), # radio_conv_auto_height_mode reset
                     gr.update(value=False),     # checkbox_conv_cloisonne_enable (disable)
+                    gr.update(),                # image_conv_heightmap（不变）
                 )
             else:
                 return (
@@ -3781,6 +3831,7 @@ def create_converter_tab_content(lang: str, lang_state=None, theme_state=None) -
                     selected_color,             # conv_relief_selected_color
                     gr.update(value="深色凸起"), # radio_conv_auto_height_mode reset
                     gr.update(value=False),     # checkbox_conv_cloisonne_enable (disable)
+                    gr.update(),                # image_conv_heightmap（不变）
                 )
 
     def on_cloisonne_mode_toggle(enable_cloisonne):
@@ -3807,7 +3858,8 @@ def create_converter_tab_content(lang: str, lang_state=None, theme_state=None) -
             conv_color_height_map,
             conv_relief_selected_color,
             components['radio_conv_auto_height_mode'],
-            components['checkbox_conv_cloisonne_enable']
+            components['checkbox_conv_cloisonne_enable'],
+            components['image_conv_heightmap'],
         ]
     )
 
@@ -3822,19 +3874,21 @@ def create_converter_tab_content(lang: str, lang_state=None, theme_state=None) -
     )
 
     # ========== Sorting Rule Radio Change Handler ==========
-    def on_height_mode_change(mode):
-        """切换排列规则时，控制高度图上传区和一键生成按钮的显隐。"""
+    def on_height_mode_change(mode: str):
+        """切换排列规则时，控制高度图上传区和一键生成按钮的显隐，并清除残留值。"""
         if mode == "根据高度图":
             return (
                 gr.update(visible=True),    # row_conv_heightmap - 显示高度图上传区
                 gr.update(visible=False),   # btn_conv_auto_height_apply - 隐藏一键生成按钮
                 gr.update(visible=False),   # image_conv_heightmap_preview
+                gr.update(),                # image_conv_heightmap（不变）
             )
         else:
             return (
                 gr.update(visible=False),   # row_conv_heightmap - 隐藏高度图上传区
                 gr.update(visible=True),    # btn_conv_auto_height_apply - 显示一键生成按钮
                 gr.update(visible=False),   # image_conv_heightmap_preview
+                gr.update(value=None),      # image_conv_heightmap（清除）
             )
     
     components['radio_conv_auto_height_mode'].change(
@@ -3844,6 +3898,7 @@ def create_converter_tab_content(lang: str, lang_state=None, theme_state=None) -
             components['row_conv_heightmap'],
             components['btn_conv_auto_height_apply'],
             components['image_conv_heightmap_preview'],
+            components['image_conv_heightmap'],
         ]
     )
 
@@ -3951,7 +4006,7 @@ def create_converter_tab_content(lang: str, lang_state=None, theme_state=None) -
         display_hex, state_hex = _resolve_click_selection_hexes(new_cache, q_hex)
         selected_html = build_selected_dual_color_html(state_hex, display_hex, lang=lang)
         relief_slider, relief_selected_color, _ = on_color_selected_for_relief(
-            state_hex, enable_relief, height_map, base_thickness
+            state_hex, enable_relief, height_map, base_thickness, new_cache
         )
         return _preview_update(display), selected_html, state_hex, rec_html, new_cache, gr.update(), relief_slider, relief_selected_color
 
@@ -4025,17 +4080,25 @@ def create_converter_tab_content(lang: str, lang_state=None, theme_state=None) -
         
         matched_rgb = cache['matched_rgb']
         
-        # Extract unique colors (convert to hex)
-        unique_colors = set()
-        h, w = matched_rgb.shape[:2]
-        for y in range(h):
-            for x in range(w):
-                r, g, b = matched_rgb[y, x]
-                # Skip transparent/background pixels (assuming black is background)
-                if r == 0 and g == 0 and b == 0:
-                    continue
-                hex_color = f'#{r:02x}{g:02x}{b:02x}'
-                unique_colors.add(hex_color)
+        # Extract unique colors using mask_solid for background detection
+        # instead of hardcoded (0,0,0) skip
+        mask_solid: np.ndarray | None = cache.get('mask_solid')
+        unique_colors: set[str] = set()
+        
+        if mask_solid is not None:
+            # Vectorized: select only solid (non-background) pixels
+            solid_pixels = matched_rgb[mask_solid]  # shape: (N, 3)
+            if solid_pixels.size > 0:
+                unique_rgb = np.unique(solid_pixels, axis=0)
+                for r, g, b in unique_rgb:
+                    unique_colors.add(f'#{r:02x}{g:02x}{b:02x}')
+        else:
+            # Fallback: no mask_solid available, collect all colors (no black skip)
+            h, w = matched_rgb.shape[:2]
+            flat_pixels = matched_rgb.reshape(-1, 3)
+            unique_rgb = np.unique(flat_pixels, axis=0)
+            for r, g, b in unique_rgb:
+                unique_colors.add(f'#{r:02x}{g:02x}{b:02x}')
         
         if not unique_colors:
             gr.Warning("⚠️ 未找到有效颜色 | No valid colors found")
@@ -4072,8 +4135,31 @@ def create_converter_tab_content(lang: str, lang_state=None, theme_state=None) -
                                    enable_cleanup, enable_outline, outline_width,
                                    enable_cloisonne, wire_width_mm, wire_height_mm,
                                    free_color_set, enable_coating, coating_height_mm,
+                                   radio_height_mode: str,
                                    preview_cache, theme_is_dark, progress=gr.Progress()):
-        """Generate 3MF directly without automatic preview pre-run."""
+        """Generate 3MF with auto-preview if cache is missing."""
+        
+        # Resolve UI radio value to backend height_mode parameter
+        height_mode = resolve_height_mode(radio_height_mode)
+
+        # Check if preview cache exists
+        if preview_cache is None or not preview_cache:
+            print("[AUTO-PREVIEW] No preview cache found, generating preview first...")
+            progress(0.1, desc="生成预览中... | Generating preview...")
+            
+            # Generate preview first
+            try:
+                preview_img, cache, status, glb = generate_preview_cached_with_fit(
+                    single_image, lut_path, target_width_mm, auto_bg, bg_tol,
+                    color_mode, modeling_mode, quantize_colors, enable_cleanup, theme_is_dark
+                )
+                preview_cache = cache
+                print(f"[AUTO-PREVIEW] Preview generated: {status}")
+            except Exception as e:
+                print(f"[AUTO-PREVIEW] Failed to generate preview: {e}")
+                return None, None, None, f"[ERROR] 预览生成失败: {e}"
+        
+        # Now generate 3MF with the cache
         progress(0.3, desc="生成3MF模型中... | Generating 3MF model...")
         return process_batch_generation(
             batch_files, is_batch, single_image, lut_path, target_width_mm,
@@ -4081,6 +4167,7 @@ def create_converter_tab_content(lang: str, lang_state=None, theme_state=None) -
             add_loop, loop_width, loop_length, loop_hole, loop_pos,
             modeling_mode, quantize_colors, color_replacements,
             separate_backing, enable_relief, color_height_map,
+            height_mode,
             heightmap_path, heightmap_max_height,
             enable_cleanup, enable_outline, outline_width,
             enable_cloisonne, wire_width_mm, wire_height_mm,
@@ -4123,6 +4210,7 @@ def create_converter_tab_content(lang: str, lang_state=None, theme_state=None) -
                 conv_free_color_set,
                 components['checkbox_conv_coating_enable'],
                 components['slider_conv_coating_height'],
+                components['radio_conv_auto_height_mode'],
                 conv_preview_cache,
                 theme_state
             ],
@@ -4198,11 +4286,15 @@ def create_converter_tab_content(lang: str, lang_state=None, theme_state=None) -
                             enable_cleanup, enable_outline, outline_width,
                             enable_cloisonne, wire_width_mm, wire_height_mm,
                             free_color_set, enable_coating, coating_height_mm,
+                            radio_height_mode: str,
                             preview_cache, theme_is_dark):
         """Open file in slicer with auto-generation if needed."""
         
         # Initialize color_recipe_path to avoid UnboundLocalError
         color_recipe_path = None
+        
+        # Resolve UI radio value to backend height_mode parameter
+        height_mode = resolve_height_mode(radio_height_mode)
         
         # If no file exists, auto-generate the complete workflow
         if file_obj is None:
@@ -4231,6 +4323,7 @@ def create_converter_tab_content(lang: str, lang_state=None, theme_state=None) -
                     add_loop, loop_width, loop_length, loop_hole, loop_pos,
                     modeling_mode, quantize_colors, color_replacements,
                     separate_backing, enable_relief, color_height_map,
+                    height_mode,
                     heightmap_path, heightmap_max_height,
                     enable_cleanup, enable_outline, outline_width,
                     enable_cloisonne, wire_width_mm, wire_height_mm,
@@ -4300,6 +4393,7 @@ def create_converter_tab_content(lang: str, lang_state=None, theme_state=None) -
             conv_free_color_set,
             components['checkbox_conv_coating_enable'],
             components['slider_conv_coating_height'],
+            components['radio_conv_auto_height_mode'],
             conv_preview_cache,
             theme_state
         ],
@@ -4784,23 +4878,39 @@ def create_merge_tab_content(lang: str) -> dict:
 
 
 def create_advanced_tab_content(lang: str) -> dict:
-    """Build Advanced tab content for LUT merging. Returns component dict."""
-    components = {}
-    
-    # Title and description
-    components['md_advanced_title'] = gr.Markdown("### 🔬 高级功能 | Advanced Features" if lang == 'zh' else "### 🔬 Advanced Features")
+    """Build Advanced tab content with independent setting groups.
+    独立分组构建高级设置标签页内容。
 
-    # Palette display mode
-    palette_label = "调色板样式" if lang == "zh" else "Palette Style"
-    palette_swatch = "色块模式" if lang == "zh" else "Swatch Grid"
-    palette_card = "色卡模式" if lang == "zh" else "Card Layout"
-    saved_mode = _load_user_settings().get("palette_mode", "swatch")
-    components['radio_palette_mode'] = gr.Radio(
-        choices=[(palette_swatch, "swatch"), (palette_card, "card")],
-        value=saved_mode,
-        label=palette_label,
-    )
-    
+    Args:
+        lang (str): Language code, 'zh' or 'en'. (语言代码)
+
+    Returns:
+        dict: Gradio component dictionary. (组件字典)
+    """
+    components = {}
+
+    # --- Group 1: Palette display mode ---
+    with gr.Group():
+        palette_label = "调色板样式" if lang == "zh" else "Palette Style"
+        palette_swatch = "色块模式" if lang == "zh" else "Swatch Grid"
+        palette_card = "色卡模式" if lang == "zh" else "Card Layout"
+        saved_mode = _load_user_settings().get("palette_mode", "swatch")
+        components['radio_palette_mode'] = gr.Radio(
+            choices=[(palette_swatch, "swatch"), (palette_card, "card")],
+            value=saved_mode,
+            label=palette_label,
+        )
+
+    # --- Group 2: Unlock max size limit ---
+    with gr.Group():
+        unlock_label = "解除最大尺寸限制" if lang == "zh" else "Unlock Max Size Limit"
+        unlock_info = "开启后，图像转换的宽度/高度滑块将不再限制最大值（默认上限 400mm）" if lang == "zh" else "When enabled, width/height sliders in Image Converter will have no upper limit (default max 400mm)"
+        components['checkbox_unlock_max_size'] = gr.Checkbox(
+            label=unlock_label,
+            value=False,
+            info=unlock_info,
+        )
+
     return components
 
 

@@ -1147,9 +1147,15 @@ class I18n:
 
 ### 📄 许可证
 
-**CC BY-NC-SA 4.0** - Attribution-NonCommercial-ShareAlike
+**GNU GPL v3.0** 开源协议
 
-**商业豁免**: 个人创作者、街边摊贩、小型私营企业可免费使用本软件生成模型并销售实体打印品。
+GPL 协议允许并鼓励商业使用。我们特别支持大家通过劳动获取收益，你无需获得额外授权即可：
+
+使用本软件生成模型或辅助生产；
+
+销售物理打印成品（如挂件、浮雕、3D 打印件等）；
+
+在夜市、市集、展会或个人网店销售。
 
 ---
 
@@ -1163,7 +1169,7 @@ class I18n:
 ---
 
 <div style="text-align:center; color:#888; margin-top:20px;">
-    Made with ❤️ by [MIN]<br>
+    Made with ❤️ by Lumina Studio Contributors<br>
     v1.6.0 | 2025
 </div>
 """,
@@ -1313,9 +1319,9 @@ Accurate color reproduction for FDM printing
 
 ### 📄 License
 
-**CC BY-NC-SA 4.0** - Attribution-NonCommercial-ShareAlike
+**GNU GPL v3.0** Open Source License
 
-**Commercial Exemption**: Individual creators, street vendors, and small businesses may freely use this software to generate models and sell physical prints.
+**Commercial Use & "Street Vendor" Support Statement**: GPL permits and encourages commercial use. We specifically support individual creators, street vendors, and small businesses to earn a living through their craft. You may freely use this software to generate models and sell physical prints without additional permission.
 
 ---
 
@@ -1329,7 +1335,7 @@ Special thanks to:
 ---
 
 <div style="text-align:center; color:#888; margin-top:20px;">
-    Made with ❤️ by [MIN]<br>
+    Made with ❤️ by Lumina Studio Contributors<br>
     v1.6.0 | 2025
 </div>
 """

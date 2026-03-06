@@ -234,57 +234,270 @@ def test_voxel_matrix_structure(size, max_height, backing_color_id):
 
 
 # ============================================================================
-# Property 4: 模式优先级正确性
-# Feature: heightmap-relief-mode, Property 4: 模式优先级正确性
-# **Validates: Requirements 1.4, 6.3**
+# Property 1: 模式选择决策矩阵正确性
+# Feature: fix-2-5d-relief-mode, Property 1: 模式选择决策矩阵正确性
+# **Validates: Requirements 2.2, 2.3, 2.4**
 # ============================================================================
+
+
+def _simulate_branch_selection(
+    enable_relief: bool,
+    height_mode: str,
+    heightmap_path: str | None,
+    color_height_map: dict | None,
+) -> str:
+    """Simulate the branch selection logic from converter.py.
+
+    Mirrors the explicit height_mode decision matrix implemented in
+    convert_image_to_3d (task 1.1).  Returns one of:
+      - "heightmap"     – heightmap relief branch
+      - "color_height"  – color-height-map relief branch
+      - "flat"          – standard flat mode
+      - "flat_warning"  – flat mode with warning (heightmap mode but no path)
+    """
+    # Phase 1: heightmap loading decision (mirrors converter.py lines ~930-954)
+    heightmap_height_matrix = None
+    if enable_relief and height_mode == "heightmap" and heightmap_path is not None:
+        # In real code this loads the heightmap; simulate success
+        heightmap_height_matrix = np.ones((4, 4), dtype=np.float32)
+    elif enable_relief and height_mode == "heightmap" and heightmap_path is None:
+        # Warning path – fall through with heightmap_height_matrix = None
+        pass
+
+    # Phase 2: voxel matrix branch selection (mirrors converter.py lines ~956-990)
+    if heightmap_height_matrix is not None:
+        return "heightmap"
+    elif enable_relief and height_mode == "color" and color_height_map:
+        return "color_height"
+    else:
+        # Distinguish the warning sub-case for assertion clarity
+        if enable_relief and height_mode == "heightmap" and heightmap_path is None:
+            return "flat_warning"
+        return "flat"
+
+
+def _expected_branch(
+    enable_relief: bool,
+    height_mode: str,
+    heightmap_path: str | None,
+    color_height_map: dict | None,
+) -> str:
+    """Return the expected branch according to the design decision matrix."""
+    if not enable_relief:
+        return "flat"
+    if height_mode == "color":
+        if color_height_map:
+            return "color_height"
+        return "flat"
+    if height_mode == "heightmap":
+        if heightmap_path is not None:
+            return "heightmap"
+        return "flat_warning"
+    # Unknown height_mode falls to flat
+    return "flat"
+
+
+# Strategy: generate realistic input combinations
+_height_mode_st = st.sampled_from(["color", "heightmap"])
+_heightmap_path_st = st.one_of(st.none(), st.just("/fake/heightmap.png"))
+_color_height_map_st = st.one_of(
+    st.none(),
+    st.just({}),
+    st.dictionaries(
+        keys=st.from_regex(r"#[0-9a-f]{6}", fullmatch=True),
+        values=st.floats(0.5, 10.0, allow_nan=False, allow_infinity=False),
+        min_size=1,
+        max_size=4,
+    ),
+)
+
+
+@settings(max_examples=200)
+@given(
+    enable_relief=st.booleans(),
+    height_mode=_height_mode_st,
+    heightmap_path=_heightmap_path_st,
+    color_height_map=_color_height_map_st,
+)
+def test_decision_matrix_correctness(
+    enable_relief: bool,
+    height_mode: str,
+    heightmap_path: str | None,
+    color_height_map: dict | None,
+) -> None:
+    """Property 1: 模式选择决策矩阵正确性
+
+    For any combination of (enable_relief, height_mode, heightmap_path,
+    color_height_map), the converter branch selection must strictly follow
+    the decision matrix defined in the design document:
+
+    | enable_relief | height_mode | heightmap_path | color_height_map | 结果              |
+    |---------------|-------------|----------------|------------------|-------------------|
+    | False         | 任意        | 任意           | 任意             | flat 模式         |
+    | True          | "color"     | 任意（忽略）   | 非空             | color_height 分支 |
+    | True          | "color"     | 任意（忽略）   | 空               | flat 模式         |
+    | True          | "heightmap" | 有效路径       | 任意（忽略）     | heightmap 分支    |
+    | True          | "heightmap" | None           | 任意             | flat 模式 + 警告  |
+
+    **Validates: Requirements 2.2, 2.3, 2.4**
+    """
+    # Normalise empty dict to falsy for the decision matrix (matches Python
+    # truthiness used in the converter: ``if color_height_map:``)
+    actual = _simulate_branch_selection(
+        enable_relief, height_mode, heightmap_path, color_height_map
+    )
+    expected = _expected_branch(
+        enable_relief, height_mode, heightmap_path, color_height_map
+    )
+
+    assert actual == expected, (
+        f"Decision matrix mismatch!\n"
+        f"  enable_relief={enable_relief}, height_mode={height_mode!r}, "
+        f"heightmap_path={heightmap_path!r}, color_height_map={color_height_map!r}\n"
+        f"  expected={expected!r}, actual={actual!r}"
+    )
+
+
+# ============================================================================
+# Property 2: 参数钳位产生 flat 输出
+# Feature: fix-2-5d-relief-mode, Property 2: 参数钳位产生 flat 输出
+# **Validates: Requirements 3.1, 3.2**
+# ============================================================================
+
+# Strategy: base_thickness in a reasonable range, max_relief_height <= base_thickness
+_base_thickness_st = st.floats(0.2, 10.0, allow_nan=False, allow_infinity=False)
+
 
 @settings(max_examples=100)
 @given(
-    use_heightmap=st.booleans(),
-    enable_relief=st.booleans(),
-    has_color_height_map=st.booleans(),
+    img_h=st.integers(4, 32),
+    img_w=st.integers(4, 32),
+    base_thickness=_base_thickness_st,
+    relief_ratio=st.floats(0.0, 1.0, allow_nan=False, allow_infinity=False),
 )
-def test_mode_priority(use_heightmap, enable_relief, has_color_height_map):
-    """Property 4: 模式优先级正确性
+def test_clamping_flat_output(
+    img_h: int,
+    img_w: int,
+    base_thickness: float,
+    relief_ratio: float,
+) -> None:
+    """Property 2: 参数钳位产生 flat 输出
 
-    直接测试 convert_image_to_3d 中的模式优先级决策逻辑：
-    - heightmap_path 不为 None 且 enable_relief=True → 高度图模式
-    - heightmap_path 为 None 且 enable_relief=True → color_height_map 模式
-    - enable_relief=False → 标准平面模式
+    For any max_relief_height <= base_thickness and any valid grayscale image,
+    HeightmapLoader.load_and_process should produce a height_matrix where ALL
+    values equal base_thickness (i.e. a flat matrix).
+
+    We generate max_relief_height = base_thickness * relief_ratio so that
+    max_relief_height is always <= base_thickness.
+
+    **Validates: Requirements 3.1, 3.2**
     """
-    heightmap_path = "/fake/heightmap.png" if use_heightmap else None
-    color_height_map = {"#ff0000": 3.0} if has_color_height_map else None
+    max_relief_height = base_thickness * relief_ratio
 
-    use_heightmap_mode = False
-    use_color_height_mode = False
-    use_flat_mode = False
+    # Generate a random grayscale image with varied pixel values
+    img = np.random.randint(0, 256, (img_h, img_w), dtype=np.uint8)
 
-    # 模拟 convert_image_to_3d 中的优先级逻辑
-    heightmap_height_matrix = None
-    if heightmap_path is not None and enable_relief:
-        heightmap_height_matrix = np.ones((4, 4), dtype=np.float32)
+    with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as f:
+        tmp_path = f.name
+        cv2.imwrite(tmp_path, img)
 
-    if heightmap_height_matrix is not None:
-        use_heightmap_mode = True
-    elif enable_relief and color_height_map:
-        use_color_height_mode = True
-    else:
-        use_flat_mode = True
+    try:
+        result = HeightmapLoader.load_and_process(
+            heightmap_path=tmp_path,
+            target_w=img_w,
+            target_h=img_h,
+            max_relief_height=max_relief_height,
+            base_thickness=base_thickness,
+        )
 
-    if use_heightmap and enable_relief:
-        assert use_heightmap_mode
-        assert not use_color_height_mode
-        assert not use_flat_mode
-    elif not use_heightmap and enable_relief and has_color_height_map:
-        assert use_color_height_mode
-        assert not use_heightmap_mode
-    elif not enable_relief:
-        assert use_flat_mode
+        assert result["success"], f"load_and_process failed: {result.get('error')}"
 
-    # 高度图模式优先于 color_height_map
-    if use_heightmap and enable_relief and has_color_height_map:
-        assert use_heightmap_mode and not use_color_height_mode
+        hm = result["height_matrix"]
+
+        # All values must equal base_thickness (flat matrix)
+        assert np.allclose(hm, base_thickness, atol=1e-4), (
+            f"Expected flat matrix with all values == {base_thickness}, "
+            f"but got min={np.min(hm)}, max={np.max(hm)}, "
+            f"max_relief_height={max_relief_height}"
+        )
+
+        # When max_relief_height < base_thickness, a warning should be present
+        if max_relief_height < base_thickness:
+            has_clamping_warning = any("clamping" in w.lower() for w in result["warnings"])
+            assert has_clamping_warning, (
+                f"Expected clamping warning when max_relief_height ({max_relief_height}) "
+                f"< base_thickness ({base_thickness}), warnings: {result['warnings']}"
+            )
+    finally:
+        os.unlink(tmp_path)
+
+
+# ============================================================================
+# Property 3: 钳位后高度矩阵值域不变量
+# Feature: fix-2-5d-relief-mode, Property 3: 钳位后高度矩阵值域不变量
+# **Validates: Requirements 3.3**
+# ============================================================================
+
+
+@settings(max_examples=100)
+@given(
+    img_h=st.integers(4, 32),
+    img_w=st.integers(4, 32),
+    max_relief_height=st.floats(0.1, 15.0, allow_nan=False, allow_infinity=False),
+    base_thickness=st.floats(0.1, 10.0, allow_nan=False, allow_infinity=False),
+)
+def test_range_invariant_after_clamping(
+    img_h: int,
+    img_w: int,
+    max_relief_height: float,
+    base_thickness: float,
+) -> None:
+    """Property 3: 钳位后高度矩阵值域不变量
+
+    For any max_relief_height and base_thickness (including cases where
+    max_relief_height <= base_thickness), HeightmapLoader.load_and_process
+    should produce a height_matrix where ALL values satisfy:
+        base_thickness <= value <= max(max_relief_height, base_thickness)
+
+    This covers all parameter combinations, not just the clamping case.
+
+    **Validates: Requirements 3.3**
+    """
+    effective_max = max(max_relief_height, base_thickness)
+
+    # Generate a random grayscale image
+    img = np.random.randint(0, 256, (img_h, img_w), dtype=np.uint8)
+
+    with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as f:
+        tmp_path = f.name
+        cv2.imwrite(tmp_path, img)
+
+    try:
+        result = HeightmapLoader.load_and_process(
+            heightmap_path=tmp_path,
+            target_w=img_w,
+            target_h=img_h,
+            max_relief_height=max_relief_height,
+            base_thickness=base_thickness,
+        )
+
+        assert result["success"], f"load_and_process failed: {result.get('error')}"
+
+        hm = result["height_matrix"]
+
+        # All values must be >= base_thickness
+        assert np.all(hm >= base_thickness - 1e-4), (
+            f"Found value below base_thickness: min={np.min(hm)}, "
+            f"base_thickness={base_thickness}"
+        )
+
+        # All values must be <= max(max_relief_height, base_thickness)
+        assert np.all(hm <= effective_max + 1e-4), (
+            f"Found value above effective max: max={np.max(hm)}, "
+            f"effective_max={effective_max}"
+        )
+    finally:
+        os.unlink(tmp_path)
 
 
 # ============================================================================

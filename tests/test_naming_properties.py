@@ -31,7 +31,7 @@ valid_color_modes = st.sampled_from(list(COLOR_MODE_TAGS.keys()))
 
 # Expected regex for model filenames
 MODEL_FILENAME_RE = re.compile(
-    r"^.+_Lumina_(HiFi|Pixel|Vector)_(4C|6C|8C|BW|Merged)_\d{8}_\d{6}\.3mf$"
+    r"^.+_Lumina_(HiFi|Pixel|Vector)_(4C|5C|6C|8C|BW|Merged)_\d{8}_\d{6}\.3mf$"
 )
 
 
@@ -140,11 +140,11 @@ def test_generate_parse_round_trip(base_name, modeling_mode, color_mode):
 # batch patterns so we only test truly non-standard inputs.
 # ---------------------------------------------------------------------------
 _MODEL_PATTERN = re.compile(
-    r"^.+_Lumina_(HiFi|Pixel|Vector)_(4C|6C|8C|BW|Merged)_\d{8}_\d{6}\.[\w]+$"
+    r"^.+_Lumina_(HiFi|Pixel|Vector)_(4C|5C|6C|8C|BW|Merged)_\d{8}_\d{6}\.[\w]+$"
 )
 _PREVIEW_PATTERN = re.compile(r"^.+_Preview_\d{8}_\d{6}\.[\w]+$")
 _CALIBRATION_PATTERN = re.compile(
-    r"^Lumina_Calibration_.+?_(4C|6C|8C|BW|Merged)_\d{8}_\d{6}\.[\w]+$"
+    r"^Lumina_Calibration_.+?_(4C|5C|6C|8C|BW|Merged)_\d{8}_\d{6}\.[\w]+$"
 )
 _BATCH_PATTERN = re.compile(r"^Lumina_Batch_\d{8}_\d{6}\.[\w]+$")
 

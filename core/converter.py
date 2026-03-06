@@ -468,6 +468,7 @@ def convert_image_to_3d(image_path, lut_path, target_width_mm, spacer_thick,
                          blur_kernel=0, smooth_sigma=10,
                          color_replacements=None, replacement_regions=None, backing_color_id=0, separate_backing=False,
                          enable_relief=False, color_height_map=None,
+                         height_mode: str = "color",
                          heightmap_path=None, heightmap_max_height=None,
                          enable_cleanup=True,
                          enable_outline=False, outline_width=2.0,
@@ -900,6 +901,9 @@ def convert_image_to_3d(image_path, lut_path, target_width_mm, spacer_thick,
         if "5-Color Extended" in color_mode:
             print(f"[CONVERTER] 5-Color Extended: forcing single-sided face-up")
             structure_mode = "单面"
+            if enable_relief:
+                print(f"[CONVERTER] 5-Color Extended: 2.5D relief mode disabled (incompatible)")
+                enable_relief = False
             full_matrix, backing_metadata = _build_voxel_matrix_faceup(
                 material_matrix, mask_solid, spacer_thick, backing_color_id
             )
@@ -921,11 +925,11 @@ def convert_image_to_3d(image_path, lut_path, target_width_mm, spacer_thick,
                 spacer_thick, wire_height_mm, backing_color_id
             )
         # ========== 2.5D Relief Mode Support ==========
-        # 高度图模式优先级：heightmap_path > color_height_map
+        # 显式模式判断：height_mode 参数决定分支
         heightmap_height_matrix = None
         heightmap_stats = None
-        if heightmap_path is not None and enable_relief:
-            print(f"[CONVERTER] 🗺️ Heightmap Relief Mode: 尝试加载高度图...")
+        if enable_relief and height_mode == "heightmap" and heightmap_path is not None:
+            print(f"[CONVERTER] Heightmap Relief Mode: 尝试加载高度图...")
             print(f"[CONVERTER] 高度图路径: {heightmap_path}")
             try:
                 hm_max = heightmap_max_height if heightmap_max_height is not None else 5.0
@@ -941,15 +945,17 @@ def convert_image_to_3d(image_path, lut_path, target_width_mm, spacer_thick,
                     heightmap_stats = hm_result['stats']
                     for w in hm_result.get('warnings', []):
                         print(f"[CONVERTER] {w}")
-                    print(f"[CONVERTER] ✅ 高度图加载成功: {heightmap_height_matrix.shape}")
+                    print(f"[CONVERTER] 高度图加载成功: {heightmap_height_matrix.shape}")
                 else:
-                    print(f"[CONVERTER] ⚠️ 高度图处理失败: {hm_result['error']}，回退到 color_height_map 模式")
+                    print(f"[CONVERTER] WARNING: 高度图处理失败: {hm_result['error']}，回退到 flat 模式")
             except Exception as e:
-                print(f"[CONVERTER] ⚠️ 高度图处理异常: {e}，回退到 color_height_map 模式")
+                print(f"[CONVERTER] WARNING: 高度图处理异常: {e}，回退到 flat 模式")
+        elif enable_relief and height_mode == "heightmap" and heightmap_path is None:
+            print("[CONVERTER] WARNING: heightmap mode selected but no heightmap provided, falling back to flat")
 
         if heightmap_height_matrix is not None:
             # 高度图模式：使用逐像素高度矩阵
-            print(f"[CONVERTER] 🎨 2.5D Heightmap Relief Mode ENABLED")
+            print(f"[CONVERTER] 2.5D Heightmap Relief Mode ENABLED")
             full_matrix, backing_metadata = _build_relief_voxel_matrix(
                 matched_rgb=matched_rgb,
                 material_matrix=material_matrix,
@@ -961,8 +967,8 @@ def convert_image_to_3d(image_path, lut_path, target_width_mm, spacer_thick,
                 pixel_scale=pixel_scale,
                 height_matrix=heightmap_height_matrix
             )
-        elif enable_relief and color_height_map:
-            print(f"[CONVERTER] 🎨 2.5D Relief Mode ENABLED")
+        elif enable_relief and height_mode == "color" and color_height_map:
+            print(f"[CONVERTER] 2.5D Relief Mode ENABLED")
             print(f"[CONVERTER] Color height map: {color_height_map}")
             
             # Build relief voxel matrix with per-color heights
@@ -2928,6 +2934,7 @@ def generate_final_model(image_path, lut_path, target_width_mm, spacer_thick,
                         modeling_mode=ModelingMode.VECTOR, quantize_colors=64,
                         color_replacements=None, replacement_regions=None, backing_color_name="White",
                         separate_backing=False, enable_relief=False, color_height_map=None,
+                        height_mode: str = "color",
                         heightmap_path=None, heightmap_max_height=None,
                         enable_cleanup=True,
                         enable_outline=False, outline_width=2.0,
@@ -2948,6 +2955,7 @@ def generate_final_model(image_path, lut_path, target_width_mm, spacer_thick,
         backing_color_name: Name of backing color (e.g., "White", "Cyan")
                            Will be converted to material ID based on color_mode
         separate_backing: Boolean flag to separate backing as individual object (default: False)
+        height_mode: "color" or "heightmap", determines relief branch selection
     """
     # Convert backing color name to ID or use special marker for separate backing
     # Error handling for separate_backing parameter (Requirement 8.4)
@@ -2982,6 +2990,7 @@ def generate_final_model(image_path, lut_path, target_width_mm, spacer_thick,
         separate_backing=separate_backing,
         enable_relief=enable_relief,
         color_height_map=color_height_map,
+        height_mode=height_mode,
         heightmap_path=heightmap_path,
         heightmap_max_height=heightmap_max_height,
         enable_cleanup=enable_cleanup,

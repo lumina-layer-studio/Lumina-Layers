@@ -17,7 +17,7 @@ from colormath.color_objects import sRGBColor, LabColor
 from colormath.color_conversions import convert_color
 from colormath.color_diff import delta_e_cie2000
 
-from config import PrinterConfig, ColorSystem, SmartConfig, OUTPUT_DIR
+from config import PrinterConfig, ColorSystem, SmartConfig, OUTPUT_DIR, get_asset_path
 from core.naming import generate_calibration_filename
 from utils import Stats
 from utils.bambu_3mf_writer import export_scene_with_bambu_metadata
@@ -437,8 +437,7 @@ def generate_smart_board(block_size_mm=5.0, gap_mm=0.8):
 def generate_8color_board(page_index=0):
     # 1. Load Data
     try:
-        path = os.path.join("assets", "smart_8color_stacks.npy")
-        if not os.path.exists(path): path = os.path.join("..", "assets", "smart_8color_stacks.npy")
+        path = get_asset_path('smart_8color_stacks.npy')
         all_stacks = np.load(path)
         print(f"[8COLOR] Loaded {len(all_stacks)} stacks from {path}")
         

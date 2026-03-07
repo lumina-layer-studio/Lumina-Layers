@@ -17,6 +17,43 @@ OUTPUT_DIR = os.path.join(_BASE_DIR, "output")
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 
+def get_asset_path(relative_path: str) -> str:
+    """Resolve asset file path for both script and PyInstaller frozen modes.
+    解析资源文件路径，兼容脚本运行和 PyInstaller 打包模式。
+
+    Args:
+        relative_path (str): Relative path under assets/, e.g. 'smart_8color_stacks.npy'.
+                             (assets/ 下的相对路径)
+
+    Returns:
+        str: Absolute path to the asset file. (资源文件的绝对路径)
+
+    Raises:
+        FileNotFoundError: If the asset file cannot be found. (找不到资源文件时抛出)
+    """
+    candidates = []
+    asset_rel = os.path.join("assets", relative_path)
+
+    if getattr(sys, 'frozen', False):
+        # PyInstaller bundled: check _MEIPASS first, then CWD
+        candidates.append(os.path.join(sys._MEIPASS, asset_rel))
+        candidates.append(os.path.join(os.getcwd(), asset_rel))
+    else:
+        # Script mode: check project root, then parent dir
+        candidates.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), asset_rel))
+        candidates.append(os.path.join(os.getcwd(), asset_rel))
+        candidates.append(os.path.join("..", asset_rel))
+
+    for path in candidates:
+        if os.path.exists(path):
+            return path
+
+    raise FileNotFoundError(
+        f"Asset not found: {relative_path}\n"
+        f"Searched: {candidates}"
+    )
+
+
 class PrinterConfig:
     """Physical printer parameters (layer height, nozzle, backing)."""
     LAYER_HEIGHT: float = 0.08

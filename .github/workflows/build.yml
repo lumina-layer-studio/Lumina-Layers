@@ -48,6 +48,7 @@ jobs:
         # 确保生成的 exe 文件名符合要求
         pyinstaller --noconfirm --onefile `
           --icon="icon.ico" `
+          --add-data "assets;assets" `
           --collect-all "gradio" `
           --collect-all "safehttpx" `
           --collect-all "groovy" `

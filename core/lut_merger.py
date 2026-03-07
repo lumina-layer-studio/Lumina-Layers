@@ -277,10 +277,8 @@ class LUTMerger:
             return (rgb[:min_len], _remap_stacks(stacks_arr, color_mode, lut_path))
 
         elif color_mode == "8-Color":
-            if getattr(sys, 'frozen', False):
-                stacks_path = os.path.join(sys._MEIPASS, 'assets', 'smart_8color_stacks.npy')
-            else:
-                stacks_path = 'assets/smart_8color_stacks.npy'
+            from config import get_asset_path
+            stacks_path = get_asset_path('smart_8color_stacks.npy')
             raw_stacks = np.load(stacks_path).tolist()
             # 约定转换：底到顶 → 顶到底
             stacks = [tuple(reversed(s)) for s in raw_stacks]

@@ -2803,14 +2803,37 @@ def create_converter_tab_content(lang: str, lang_state=None, theme_state=None) -
             )
         
         try:
-            # SVG: bypass PIL-based preprocessor to avoid "cannot identify image file" noise.
+            # SVG: Gradio's gr.Image stores SVG as base64 data-URL internally, but the
+            # base64 decode fails on subsequent events (binascii.Error: Incorrect padding).
+            # Fix: render the SVG to a temp PNG for display in gr.Image, while keeping the
+            # original SVG path in preprocess_processed_path for the vector converter.
             if isinstance(image_path, str) and image_path.lower().endswith(".svg"):
                 width, height = _parse_svg_dimensions(image_path)
                 dimensions_html = (
                     f'<div id="preprocess-dimensions-data" data-width="{width}" '
                     f'data-height="{height}" data-is-svg="1" style="display:none;"></div>'
                 )
-                return (width, height, image_path, dimensions_html, image_path)
+                # Try to render SVG → PNG so gr.Image gets a safe raster file
+                display_path = gr.update()
+                try:
+                    from svglib.svglib import svg2rlg
+                    from reportlab.graphics import renderPM
+                    import tempfile, os as _os
+                    drawing = svg2rlg(image_path)
+                    if drawing is not None:
+                        tmp_png = tempfile.NamedTemporaryFile(
+                            suffix=".png", delete=False,
+                            dir=_os.path.dirname(image_path)
+                        )
+                        tmp_png.close()
+                        renderPM.drawToFile(drawing, tmp_png.name, fmt="PNG")
+                        display_path = tmp_png.name
+                        print(f"[SVG_UPLOAD] Rendered SVG preview → {tmp_png.name}")
+                except Exception as render_err:
+                    print(f"[SVG_UPLOAD] Could not render SVG preview: {render_err}")
+                # preprocess_processed_path keeps the original SVG for the converter;
+                # image_conv_image_label gets the PNG (or unchanged) to avoid base64 errors.
+                return (width, height, image_path, dimensions_html, display_path)
 
             info = ImagePreprocessor.process_upload(image_path)
             # 不在这里分析颜色，等用户确认裁剪后再分析
@@ -3097,8 +3120,11 @@ def create_converter_tab_content(lang: str, lang_state=None, theme_state=None) -
             outputs=[components['slider_conv_width'], conv_target_height_mm]
     ).then(
             # 自动检测图像类型并切换建模模式
+            # 使用 preprocess_processed_path 而非 image_conv_image_label，
+            # 因为 SVG 上传后 image_conv_image_label 存的是 PNG 缩略图，
+            # 只有 preprocess_processed_path 保留原始 SVG 路径。
             fn=detect_image_type,
-            inputs=[components['image_conv_image_label']],
+            inputs=[preprocess_processed_path],
             outputs=[components['radio_conv_modeling_mode']]
     ).then(
             # 清空已生成的 3MF 文件，强制下次点击切片按钮时重新生成
@@ -3119,7 +3145,11 @@ def create_converter_tab_content(lang: str, lang_state=None, theme_state=None) -
     def generate_preview_cached_with_fit(image_path, lut_path, target_width_mm,
                                          auto_bg, bg_tol, color_mode,
                                          modeling_mode, quantize_colors, enable_cleanup,
-                                         is_dark_theme=False):
+                                         is_dark_theme=False, processed_path=None):
+        # When SVG was uploaded, image_conv_image_label holds a PNG thumbnail while
+        # preprocess_processed_path holds the original SVG. Use SVG for the converter.
+        if processed_path and isinstance(processed_path, str) and processed_path.lower().endswith('.svg'):
+            image_path = processed_path
         display, cache, status = generate_preview_cached(
             image_path, lut_path, target_width_mm,
             auto_bg, bg_tol, color_mode,
@@ -3257,7 +3287,8 @@ def create_converter_tab_content(lang: str, lang_state=None, theme_state=None) -
                 components['radio_conv_modeling_mode'],
                 components['slider_conv_quantize_colors'],
                 components['checkbox_conv_cleanup'],
-                theme_state
+                theme_state,
+                preprocess_processed_path,
             ],
             outputs=[conv_preview, conv_preview_cache, components['textbox_conv_status'], conv_3d_preview]
     ).then(
@@ -4175,7 +4206,8 @@ def create_converter_tab_content(lang: str, lang_state=None, theme_state=None) -
                                    enable_cloisonne, wire_width_mm, wire_height_mm,
                                    free_color_set, enable_coating, coating_height_mm,
                                    radio_height_mode: str,
-                                   preview_cache, theme_is_dark, progress=gr.Progress()):
+                                   preview_cache, theme_is_dark, processed_path=None,
+                                   progress=gr.Progress()):
         """Generate 3MF directly; preview is generated internally by convert_image_to_3d.
         
         Auto-preview pre-run is intentionally removed: it caused a full duplicate
@@ -4184,6 +4216,10 @@ def create_converter_tab_content(lang: str, lang_state=None, theme_state=None) -
         parse+clip, O-4 SVG raster) already prevent redundant work when the user
         runs preview before clicking this button.
         """
+        # When SVG was uploaded, image_conv_image_label holds a PNG thumbnail while
+        # preprocess_processed_path holds the original SVG. Use SVG for the converter.
+        if processed_path and isinstance(processed_path, str) and processed_path.lower().endswith('.svg'):
+            single_image = processed_path
         # Resolve UI radio value to backend height_mode parameter
         height_mode = resolve_height_mode(radio_height_mode)
 
@@ -4239,7 +4275,8 @@ def create_converter_tab_content(lang: str, lang_state=None, theme_state=None) -
                 components['slider_conv_coating_height'],
                 components['radio_conv_auto_height_mode'],
                 conv_preview_cache,
-                theme_state
+                theme_state,
+                preprocess_processed_path,
             ],
             outputs=[
                 components['file_conv_download_file'],
@@ -4354,9 +4391,14 @@ def create_converter_tab_content(lang: str, lang_state=None, theme_state=None) -
                             enable_cloisonne, wire_width_mm, wire_height_mm,
                             free_color_set, enable_coating, coating_height_mm,
                             radio_height_mode: str,
-                            preview_cache, theme_is_dark):
+                            preview_cache, theme_is_dark, processed_path=None):
         """Open file in slicer with auto-generation if needed."""
         
+        # When SVG was uploaded, image_conv_image_label holds a PNG thumbnail while
+        # preprocess_processed_path holds the original SVG. Use SVG for the converter.
+        if processed_path and isinstance(processed_path, str) and processed_path.lower().endswith('.svg'):
+            single_image = processed_path
+
         # Initialize color_recipe_path to avoid UnboundLocalError
         color_recipe_path = None
         
@@ -4462,7 +4504,8 @@ def create_converter_tab_content(lang: str, lang_state=None, theme_state=None) -
             components['slider_conv_coating_height'],
             components['radio_conv_auto_height_mode'],
             conv_preview_cache,
-            theme_state
+            theme_state,
+            preprocess_processed_path,
         ],
         outputs=[
             components['file_conv_download_file'],

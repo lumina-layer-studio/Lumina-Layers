@@ -625,9 +625,15 @@ class BambuStudio3MFWriter:
             tree.write(f, encoding='utf-8', xml_declaration=False)
     
     def _write_object_file_to_zip(self, zf: zipfile.ZipFile):
-        # Write bytes directly to the raw zip entry — avoids TextIOWrapper per-string
-        # encoding overhead (significant for meshes with millions of vertices).
-        with zf.open('3D/Objects/object_1.model', 'w') as raw:
+        """Stream mesh data directly into ZIP with DEFLATE compression and ZIP64 support.
+        将 mesh 数据以流式方式直接写入 ZIP，启用 DEFLATE 压缩和 ZIP64 大文件支持。
+        """
+        # Use ZipInfo to enable DEFLATE compression for the streamed entry.
+        # zf.open('name', 'w') alone defaults to ZIP_STORED (no compression),
+        # which causes "file size too large" errors on large models (>2 GiB).
+        zi = zipfile.ZipInfo('3D/Objects/object_1.model')
+        zi.compress_type = zipfile.ZIP_DEFLATED
+        with zf.open(zi, 'w', force_zip64=True) as raw:
             raw.write(b'<?xml version="1.0" encoding="UTF-8"?>\n')
             raw.write(b'<model xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02" xmlns:p="http://schemas.microsoft.com/3dmanufacturing/production/2015/06" unit="millimeter" xml:lang="en-US" requiredextensions="p">\n')
             raw.write(b' <resources>\n')

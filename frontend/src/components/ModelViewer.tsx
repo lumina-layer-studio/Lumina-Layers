@@ -50,17 +50,34 @@ function ModelViewer({ url }: ModelViewerProps) {
     });
     toRemove.forEach((obj) => obj.removeFromParent());
 
-    // Trimesh exports Z-up, Three.js is Y-up → rotate -90° around X
-    clone.rotation.x = -Math.PI / 2;
+    // Convert all mesh materials to pure diffuse (no specular reflections).
+    // Trimesh-exported GLB uses MeshStandardMaterial which reflects the HDR
+    // environment map, causing unwanted glare on the color surfaces.
+    clone.traverse((child) => {
+      if (child instanceof THREE.Mesh && child.material) {
+        const mats = Array.isArray(child.material)
+          ? child.material
+          : [child.material];
+        for (const mat of mats) {
+          if (mat instanceof THREE.MeshStandardMaterial) {
+            mat.roughness = 1.0;
+            mat.metalness = 0.0;
+          }
+        }
+      }
+    });
+
+    // Trimesh exports Z-up with image in XY plane.
+    // Keep as-is: image faces camera in XY, thickness along +Z.
     clone.updateMatrixWorld(true);
 
-    // Compute bounding box after rotation
+    // Compute bounding box
     const box = new THREE.Box3().setFromObject(clone);
 
-    // Center on XZ plane, sit on Y=0 (on top of bed)
+    // Center on X and Y (model centered on bed), center Z (thickness)
     const center = new THREE.Vector3();
     box.getCenter(center);
-    clone.position.set(-center.x, -box.min.y, -center.z);
+    clone.position.set(-center.x, -center.y, -center.z);
 
     return clone;
   }, [scene]);
@@ -79,8 +96,9 @@ function ModelViewer({ url }: ModelViewerProps) {
     const perspCam = camera as THREE.PerspectiveCamera;
     const dist = computeFitDistance(sphere.radius, perspCam.fov);
 
-    camera.position.set(dist * 0.3, dist * 0.5, dist * 0.8);
-    camera.lookAt(sphere.center);
+    // Model is already centered at origin — camera looks straight at (0,0,0) from +Z
+    camera.position.set(0, 0, dist);
+    camera.lookAt(0, 0, 0);
     camera.updateProjectionMatrix();
 
     if (controls) {
@@ -90,7 +108,7 @@ function ModelViewer({ url }: ModelViewerProps) {
         minDistance: number;
         update: () => void;
       };
-      oc.target.copy(sphere.center);
+      oc.target.set(0, 0, 0);
       oc.maxDistance = dist * 5;
       oc.minDistance = dist * 0.1;
       oc.update();

@@ -11,12 +11,12 @@ export const LIGHTING_CONFIG = {
   },
   /** Key directional light for directional shading (主方向光源) */
   keyLight: {
-    /** Position [x, y, z] in scene units (位置) */
-    position: [300, 500, 300] as [number, number, number],
+    /** Position [x, y, z] in scene units — front-right-top for vertical XY-plane model (位置：竖直 XY 平面模型的右上前方) */
+    position: [150, 200, 500] as [number, number, number],
     /** Light intensity (光照强度) */
-    intensity: 0.6,
+    intensity: 0.5,
     /** Light color hex (光照颜色) */
-    color: "#fff5e6",
+    color: "#ffffff",
   },
 } as const;
 

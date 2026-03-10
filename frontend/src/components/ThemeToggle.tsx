@@ -22,7 +22,7 @@ export function ThemeToggle() {
     <button
       onClick={handleToggle}
       aria-label="Toggle theme"
-      className="px-3 py-1 rounded text-sm font-medium bg-gray-700 text-gray-300 hover:bg-gray-600 transition-colors"
+      className="px-3 py-1 rounded text-sm font-medium bg-gray-200 text-gray-700 hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600 transition-colors"
     >
       {theme === "light" ? "🌙" : "☀️"}
     </button>

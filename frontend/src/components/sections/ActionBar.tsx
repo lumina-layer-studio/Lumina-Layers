@@ -14,6 +14,8 @@ export default function ActionBar() {
   const modelUrl = useConverterStore((s) => s.modelUrl);
   const submitPreview = useConverterStore((s) => s.submitPreview);
   const submitGenerate = useConverterStore((s) => s.submitGenerate);
+  const threemfDiskPath = useConverterStore((s) => s.threemfDiskPath);
+  const downloadUrl = useConverterStore((s) => s.downloadUrl);
 
   const batchMode = useConverterStore((s) => s.batchMode);
   const batchFiles = useConverterStore((s) => s.batchFiles);
@@ -83,7 +85,16 @@ export default function ActionBar() {
         />
       )}
 
-      {modelUrl && <SlicerSelector filePath={modelUrl} />}
+      {(modelUrl || threemfDiskPath) && (
+        <SlicerSelector
+          threemfDiskPath={threemfDiskPath}
+          downloadUrl={downloadUrl}
+          onAutoGenerate={async () => {
+            await submitGenerate();
+            return useConverterStore.getState().threemfDiskPath ?? null;
+          }}
+        />
+      )}
     </div>
   );
 }

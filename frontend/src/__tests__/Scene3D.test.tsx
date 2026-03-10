@@ -39,7 +39,12 @@ vi.mock("@react-three/fiber", () => ({
     capturedCanvasProps = props;
     return <div data-testid="mock-canvas">{props.children}</div>;
   },
-  useThree: () => ({ gl: { domElement: document.createElement("canvas") } }),
+  useThree: () => ({
+    gl: {
+      domElement: document.createElement("canvas"),
+      setClearColor: vi.fn(),
+    },
+  }),
 }));
 
 // Must import Scene3D after mocks are set up
@@ -164,12 +169,12 @@ describe("Scene3D", () => {
       const { container } = render(<Scene3D />);
       const light = container.querySelector("directionalLight");
       expect(light).not.toBeNull();
-      // Position [300, 500, 300] — all positive means right, upper, front
+      // Position [200, 300, 500] — front-upper-right for vertical view
       const pos = light?.getAttribute("position");
       expect(pos).toBeTruthy();
     });
 
-    it("Canvas clearColor remains #1e1e26", () => {
+    it("Canvas clearColor uses theme config value", () => {
       render(<Scene3D />);
       expect(capturedCanvasProps.onCreated).toBeTypeOf("function");
       const mockGl = {
@@ -181,7 +186,8 @@ describe("Scene3D", () => {
       (capturedCanvasProps.onCreated as (state: { gl: typeof mockGl }) => void)({
         gl: mockGl,
       });
-      expect(mockGl.setClearColor).toHaveBeenCalledWith("#1e1e26");
+      // Default theme is "light", so canvasClearColor should be "#e8e8ec"
+      expect(mockGl.setClearColor).toHaveBeenCalledWith("#e8e8ec");
     });
   });
 });

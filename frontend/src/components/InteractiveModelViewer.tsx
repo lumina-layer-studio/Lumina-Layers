@@ -73,17 +73,37 @@ function InteractiveModelViewer({
     });
     toRemove.forEach((obj) => obj.removeFromParent());
 
-    // Trimesh exports Z-up, Three.js is Y-up → rotate -90° around X
-    clone.rotation.x = -Math.PI / 2;
+    // Convert all mesh materials to pure diffuse (no specular reflections).
+    // Trimesh-exported GLB uses MeshStandardMaterial which reflects the HDR
+    // environment map, causing unwanted glare on the color surfaces.
+    clone.traverse((child) => {
+      if (child instanceof THREE.Mesh && child.material) {
+        const mats = Array.isArray(child.material)
+          ? child.material
+          : [child.material];
+        for (const mat of mats) {
+          if (mat instanceof THREE.MeshStandardMaterial) {
+            mat.roughness = 1.0;
+            mat.metalness = 0.0;
+          }
+        }
+      }
+    });
+
+    // Trimesh exports Z-up with image in XY plane.
+    // We want the image to face the camera (stand upright in XY),
+    // with thickness along +Z (toward camera).
+    // No rotation needed — keep the Trimesh coordinate system as-is,
+    // since Three.js XY plane is the screen plane.
     clone.updateMatrixWorld(true);
 
-    // Compute bounding box after rotation
+    // Compute bounding box
     const box = new THREE.Box3().setFromObject(clone);
 
-    // Center on XZ plane, sit on Y=0
+    // Center on X and Y (model centered on bed), center Z (thickness)
     const center = new THREE.Vector3();
     box.getCenter(center);
-    clone.position.set(-center.x, -box.min.y, -center.z);
+    clone.position.set(-center.x, -center.y, -center.z);
     clone.updateMatrixWorld(true);
 
     // Separate color_ meshes from the rest
@@ -94,7 +114,13 @@ function InteractiveModelViewer({
       if (child instanceof THREE.Mesh && child.name.startsWith("color_")) {
         // Clone material so mutations don't affect the GLTF cache
         if (child.material) {
-          child.material = (child.material as THREE.Material).clone();
+          const cloned = (child.material as THREE.Material).clone();
+          // Ensure pure diffuse (no specular reflections)
+          if (cloned instanceof THREE.MeshStandardMaterial) {
+            cloned.roughness = 1.0;
+            cloned.metalness = 0.0;
+          }
+          child.material = cloned;
         }
         colorMeshList.push(child);
         if (child.parent) {
@@ -103,23 +129,30 @@ function InteractiveModelViewer({
       }
     });
 
+    // Bake the parent's centering offset into each color mesh's geometry
+    // so they remain centered after detachment from the clone tree.
+    for (const mesh of colorMeshList) {
+      mesh.geometry.applyMatrix4(mesh.matrixWorld);
+      mesh.position.set(0, 0, 0);
+      mesh.rotation.set(0, 0, 0);
+      mesh.scale.set(1, 1, 1);
+      mesh.updateMatrixWorld(true);
+    }
+
     // Detach color meshes from the clone tree so they can be rendered as individual JSX
     for (const { mesh, parent } of colorMeshParents) {
       parent.remove(mesh);
     }
 
-    // Compute model bounding box (from all meshes including color ones, before detach)
-    // We need to re-add temporarily or compute from stored geometry
+    // Compute model bounding box from all meshes after centering
     const boundsBox = new THREE.Box3();
     // Add bounds from the remaining non-color scene
     boundsBox.expandByObject(clone);
-    // Add bounds from each color mesh
+    // Add bounds from each color mesh (geometry already in centered world space)
     for (const mesh of colorMeshList) {
       mesh.geometry.computeBoundingBox();
       if (mesh.geometry.boundingBox) {
-        const meshBox = mesh.geometry.boundingBox.clone();
-        meshBox.applyMatrix4(mesh.matrixWorld);
-        boundsBox.union(meshBox);
+        boundsBox.union(mesh.geometry.boundingBox);
       }
     }
 
@@ -128,9 +161,9 @@ function InteractiveModelViewer({
       : {
           minX: boundsBox.min.x,
           maxX: boundsBox.max.x,
-          minY: boundsBox.min.z, // Three.js Y-up: model depth is along Z
-          maxY: boundsBox.max.z,
-          maxZ: boundsBox.max.y, // model height is along Y after rotation
+          minY: boundsBox.min.y,
+          maxY: boundsBox.max.y,
+          maxZ: boundsBox.max.z, // thickness direction (toward camera)
         };
 
     return { nonColorObject: clone, colorMeshes: colorMeshList, modelBounds: bounds };
@@ -160,8 +193,9 @@ function InteractiveModelViewer({
     const perspCam = camera as THREE.PerspectiveCamera;
     const dist = computeFitDistance(sphere.radius, perspCam.fov);
 
-    camera.position.set(dist * 0.3, dist * 0.5, dist * 0.8);
-    camera.lookAt(sphere.center);
+    // Model is already centered at origin — camera looks straight at (0,0,0) from +Z
+    camera.position.set(0, 0, dist);
+    camera.lookAt(0, 0, 0);
     camera.updateProjectionMatrix();
 
     if (controls) {
@@ -171,7 +205,7 @@ function InteractiveModelViewer({
         minDistance: number;
         update: () => void;
       };
-      oc.target.copy(sphere.center);
+      oc.target.set(0, 0, 0);
       oc.maxDistance = dist * 5;
       oc.minDistance = dist * 0.1;
       oc.update();
@@ -180,15 +214,57 @@ function InteractiveModelViewer({
     wrapper.clear();
   }, [nonColorObject, colorMeshes, camera, controls]);
 
-  // Handle click on a color mesh
-  const handleMeshClick = useCallback(
-    (meshName: string) => {
-      const hex = extractHexFromMeshName(meshName);
-      const result = toggleColorSelection(selectedColor, hex);
-      onColorClick(result);
+  // Raycaster for manual hit-testing on click (avoids per-mesh R3F pointer events).
+  const raycasterRef = useRef(new THREE.Raycaster());
+  const pointerRef = useRef(new THREE.Vector2());
+
+  // Store Three.js context for manual raycasting
+  const threeCtx = useThree();
+
+  // Flag to suppress onPointerMissed when a color mesh was clicked via native event.
+  // We store this on the converterStore so Scene3D can read it.
+  const colorHitRef = useRef(false);
+
+  const handlePointerDown = useCallback(
+    (event: PointerEvent) => {
+      if (event.button !== 0) return; // Only left click
+      colorHitRef.current = false;
+
+      const canvas = threeCtx.gl.domElement;
+      const rect = canvas.getBoundingClientRect();
+      pointerRef.current.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+      pointerRef.current.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+
+      raycasterRef.current.setFromCamera(pointerRef.current, threeCtx.camera);
+      const intersects = raycasterRef.current.intersectObjects(colorMeshes, false);
+
+      if (intersects.length > 0) {
+        const hitMesh = intersects[0].object as THREE.Mesh;
+        if (hitMesh.name.startsWith("color_")) {
+          colorHitRef.current = true;
+          const hex = extractHexFromMeshName(hitMesh.name);
+          const result = toggleColorSelection(selectedColor, hex);
+          onColorClick(result);
+        }
+      }
     },
-    [selectedColor, onColorClick],
+    [threeCtx.gl, threeCtx.camera, colorMeshes, selectedColor, onColorClick],
   );
+
+  // Expose colorHitRef check so Scene3D's onPointerMissed can query it
+  useEffect(() => {
+    (window as unknown as Record<string, unknown>).__luminaColorHitRef = colorHitRef;
+    return () => {
+      delete (window as unknown as Record<string, unknown>).__luminaColorHitRef;
+    };
+  }, []);
+
+  // Attach/detach native pointer event for color mesh click detection
+  useEffect(() => {
+    const canvas = threeCtx.gl.domElement;
+    canvas.addEventListener("pointerdown", handlePointerDown);
+    return () => canvas.removeEventListener("pointerdown", handlePointerDown);
+  }, [threeCtx.gl, handlePointerDown]);
 
   // Imperative Three.js mutations: color remap, highlight, and relief scaling.
   // Runs on every prop change without triggering React re-renders of the Canvas.
@@ -221,14 +297,7 @@ function InteractiveModelViewer({
     <group ref={groupRef}>
       <primitive object={nonColorObject} />
       {colorMeshes.map((mesh) => (
-        <primitive
-          key={mesh.uuid}
-          object={mesh}
-          onPointerDown={(e: { stopPropagation: () => void }) => {
-            e.stopPropagation();
-            handleMeshClick(mesh.name);
-          }}
-        />
+        <primitive key={mesh.uuid} object={mesh} />
       ))}
     </group>
   );

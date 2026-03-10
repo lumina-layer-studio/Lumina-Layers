@@ -27,6 +27,7 @@ export default function BasicSettings() {
     imagePreviewUrl,
     lut_name,
     lutList,
+    color_mode,
     target_width_mm,
     target_height_mm,
     spacer_thick,
@@ -114,6 +115,12 @@ export default function BasicSettings() {
         onChange={setLutName}
         placeholder="选择 LUT..."
       />
+
+      {lut_name && (
+        <div className="text-xs text-gray-500 -mt-2 px-1">
+          色彩模式: {color_mode}
+        </div>
+      )}
 
       <Slider
         label="宽度"

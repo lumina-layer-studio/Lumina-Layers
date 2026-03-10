@@ -25,7 +25,7 @@ import {
   convertBatch as apiConvertBatch,
   replaceColor as apiReplaceColor,
 } from "../api/converter";
-import type { LutColorEntry } from "../api/types";
+import type { LutColorEntry, LutInfo } from "../api/types";
 import {
   computeAutoHeightMap,
   colorRemapToReplacementRegions,
@@ -141,6 +141,7 @@ export interface ConverterState {
   // LUT 列表
   lutList: string[];
   lutListLoading: boolean;
+  lutListFull: LutInfo[];
 
   // LUT 全部颜色
   lutColors: LutColorEntry[];
@@ -159,6 +160,10 @@ export interface ConverterState {
 
   // 颜色替换预览
   replacePreviewLoading: boolean;
+
+  // 切片集成：3MF 路径
+  threemfDiskPath: string | null;
+  downloadUrl: string | null;
 }
 
 // ========== Actions Interface ==========
@@ -315,6 +320,7 @@ const DEFAULT_STATE: ConverterState = {
   modelUrl: null,
   lutList: [],
   lutListLoading: false,
+  lutListFull: [],
   lutColors: [],
   lutColorsLoading: false,
   bed_label: "256×256 mm",
@@ -325,7 +331,13 @@ const DEFAULT_STATE: ConverterState = {
   batchLoading: false,
   batchResult: null,
   replacePreviewLoading: false,
+  threemfDiskPath: null,
+  downloadUrl: null,
 };
+
+// ========== Preview AbortController ==========
+
+let _previewAbortController: AbortController | null = null;
 
 // ========== Store ==========
 
@@ -365,7 +377,15 @@ export const useConverterStore = create<ConverterState & ConverterActions>(
     },
 
     // --- 基础参数 ---
-    setLutName: (name: string) => set({ lut_name: name }),
+    setLutName: (name: string) => {
+      const state = _get();
+      const lutInfo = state.lutListFull.find((l) => l.name === name);
+      const updates: Partial<ConverterState> = { lut_name: name };
+      if (lutInfo && lutInfo.color_mode) {
+        updates.color_mode = lutInfo.color_mode as ColorMode;
+      }
+      set(updates);
+    },
 
     setTargetWidthMm: (width: number) =>
       set((state) => {
@@ -378,9 +398,11 @@ export const useConverterStore = create<ConverterState & ConverterActions>(
               10,
               400
             ),
+            threemfDiskPath: null,
+            downloadUrl: null,
           };
         }
-        return { target_width_mm: clamped };
+        return { target_width_mm: clamped, threemfDiskPath: null, downloadUrl: null };
       }),
 
     setTargetHeightMm: (height: number) =>
@@ -400,23 +422,23 @@ export const useConverterStore = create<ConverterState & ConverterActions>(
       }),
 
     setSpacerThick: (thick: number) =>
-      set({ spacer_thick: clampValue(thick, 0.2, 3.5) }),
+      set({ spacer_thick: clampValue(thick, 0.2, 3.5), threemfDiskPath: null, downloadUrl: null }),
 
-    setStructureMode: (mode: StructureMode) => set({ structure_mode: mode }),
-    setColorMode: (mode: ColorMode) => set({ color_mode: mode }),
-    setModelingMode: (mode: ModelingMode) => set({ modeling_mode: mode }),
+    setStructureMode: (mode: StructureMode) => set({ structure_mode: mode, threemfDiskPath: null, downloadUrl: null }),
+    setColorMode: (mode: ColorMode) => set({ color_mode: mode, threemfDiskPath: null, downloadUrl: null }),
+    setModelingMode: (mode: ModelingMode) => set({ modeling_mode: mode, threemfDiskPath: null, downloadUrl: null }),
 
     // --- 高级设置 ---
-    setAutoBg: (enabled: boolean) => set({ auto_bg: enabled }),
-    setBgTol: (tol: number) => set({ bg_tol: clampValue(tol, 0, 150) }),
+    setAutoBg: (enabled: boolean) => set({ auto_bg: enabled, threemfDiskPath: null, downloadUrl: null }),
+    setBgTol: (tol: number) => set({ bg_tol: clampValue(tol, 0, 150), threemfDiskPath: null, downloadUrl: null }),
     setQuantizeColors: (colors: number) =>
-      set({ quantize_colors: clampValue(colors, 8, 256) }),
-    setEnableCleanup: (enabled: boolean) => set({ enable_cleanup: enabled }),
+      set({ quantize_colors: clampValue(colors, 8, 256), threemfDiskPath: null, downloadUrl: null }),
+    setEnableCleanup: (enabled: boolean) => set({ enable_cleanup: enabled, threemfDiskPath: null, downloadUrl: null }),
     setSeparateBacking: (enabled: boolean) =>
       set({ separate_backing: enabled }),
 
     // --- 挂件环 ---
-    setAddLoop: (enabled: boolean) => set({ add_loop: enabled }),
+    setAddLoop: (enabled: boolean) => set({ add_loop: enabled, threemfDiskPath: null, downloadUrl: null }),
     setLoopWidth: (width: number) =>
       set({ loop_width: clampValue(width, 2, 10) }),
     setLoopLength: (length: number) =>
@@ -430,6 +452,8 @@ export const useConverterStore = create<ConverterState & ConverterActions>(
         const updates: Partial<ConverterState> = {
           enable_relief: enabled,
           enable_cloisonne: enabled ? false : state.enable_cloisonne,
+          threemfDiskPath: null,
+          downloadUrl: null,
         };
         // Requirement 6.5: When switching enable_relief from false to true,
         // auto-initialize color_height_map ONLY if it is currently empty
@@ -454,7 +478,7 @@ export const useConverterStore = create<ConverterState & ConverterActions>(
       set({ heightmap_max_height: clampValue(height, 0.08, 15.0) }),
 
     // --- 描边 ---
-    setEnableOutline: (enabled: boolean) => set({ enable_outline: enabled }),
+    setEnableOutline: (enabled: boolean) => set({ enable_outline: enabled, threemfDiskPath: null, downloadUrl: null }),
     setOutlineWidth: (width: number) =>
       set({ outline_width: clampValue(width, 0.5, 10.0) }),
 
@@ -463,6 +487,8 @@ export const useConverterStore = create<ConverterState & ConverterActions>(
       set((state) => ({
         enable_cloisonne: enabled,
         enable_relief: enabled ? false : state.enable_relief,
+        threemfDiskPath: null,
+        downloadUrl: null,
       })),
     setWireWidthMm: (width: number) =>
       set({ wire_width_mm: clampValue(width, 0.2, 1.2) }),
@@ -470,7 +496,7 @@ export const useConverterStore = create<ConverterState & ConverterActions>(
       set({ wire_height_mm: clampValue(height, 0.04, 1.0) }),
 
     // --- 涂层 ---
-    setEnableCoating: (enabled: boolean) => set({ enable_coating: enabled }),
+    setEnableCoating: (enabled: boolean) => set({ enable_coating: enabled, threemfDiskPath: null, downloadUrl: null }),
     setCoatingHeightMm: (height: number) =>
       set({ coating_height_mm: clampValue(height, 0.04, 0.12) }),
 
@@ -491,7 +517,7 @@ export const useConverterStore = create<ConverterState & ConverterActions>(
       const newHistory = [...state.remapHistory, snapshot];
       // 更新 map
       const newMap = { ...state.colorRemapMap, [origHex]: newHex };
-      set({ colorRemapMap: newMap, remapHistory: newHistory });
+      set({ colorRemapMap: newMap, remapHistory: newHistory, threemfDiskPath: null, downloadUrl: null });
     },
 
     undoColorRemap: () => {
@@ -499,11 +525,11 @@ export const useConverterStore = create<ConverterState & ConverterActions>(
       if (state.remapHistory.length === 0) return;
       const newHistory = [...state.remapHistory];
       const previousMap = newHistory.pop()!;
-      set({ colorRemapMap: previousMap, remapHistory: newHistory });
+      set({ colorRemapMap: previousMap, remapHistory: newHistory, threemfDiskPath: null, downloadUrl: null });
     },
 
     clearAllRemaps: () => {
-      set({ colorRemapMap: {}, remapHistory: [] });
+      set({ colorRemapMap: {}, remapHistory: [], threemfDiskPath: null, downloadUrl: null });
     },
 
     // --- 浮雕高度 ---
@@ -580,7 +606,11 @@ export const useConverterStore = create<ConverterState & ConverterActions>(
       set({ lutListLoading: true });
       try {
         const response = await apiFetchLutList();
-        set({ lutList: response.luts.map((l) => l.name), lutListLoading: false });
+        set({
+          lutList: response.luts.map((l) => l.name),
+          lutListFull: response.luts,
+          lutListLoading: false,
+        });
       } catch (err) {
         set({
           lutListLoading: false,
@@ -616,6 +646,14 @@ export const useConverterStore = create<ConverterState & ConverterActions>(
         set({ error: "请先选择 LUT" });
         return;
       }
+
+      // Cancel any in-flight preview request
+      if (_previewAbortController) {
+        _previewAbortController.abort();
+      }
+      _previewAbortController = new AbortController();
+      const { signal } = _previewAbortController;
+
       set({ isLoading: true, error: null });
       try {
         const response = await apiConvertPreview(state.imageFile, {
@@ -627,7 +665,7 @@ export const useConverterStore = create<ConverterState & ConverterActions>(
           modeling_mode: state.modeling_mode,
           quantize_colors: state.quantize_colors,
           enable_cleanup: state.enable_cleanup,
-        });
+        }, signal);
         // 后端返回 JSON，preview_url 是相对路径如 /api/files/xxx
         const previewUrl = `http://localhost:8000${response.preview_url}`;
         const glbUrl = response.preview_glb_url
@@ -647,6 +685,10 @@ export const useConverterStore = create<ConverterState & ConverterActions>(
           previewGlbUrl: glbUrl,
         });
       } catch (err) {
+        // Ignore aborted requests (user started a new preview)
+        if (err instanceof Error && err.name === "CanceledError") {
+          return;
+        }
         set({
           isLoading: false,
           error: err instanceof Error ? err.message : "预览失败",
@@ -731,7 +773,14 @@ export const useConverterStore = create<ConverterState & ConverterActions>(
         const modelUrl = response.preview_3d_url
           ? `http://localhost:8000${response.preview_3d_url}`
           : null;
-        set({ isLoading: false, modelUrl });
+        set({
+          isLoading: false,
+          modelUrl,
+          threemfDiskPath: response.threemf_disk_path ?? null,
+          downloadUrl: response.download_url
+            ? `http://localhost:8000${response.download_url}`
+            : null,
+        });
         return modelUrl;
       } catch (err) {
         set({

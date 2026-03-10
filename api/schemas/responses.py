@@ -59,6 +59,7 @@ class GenerateResponse(BaseModel):
     message: str
     download_url: str
     preview_3d_url: Optional[str] = None
+    threemf_disk_path: Optional[str] = None
 
 
 class BatchItemResult(BaseModel):

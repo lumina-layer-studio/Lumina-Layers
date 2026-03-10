@@ -4,6 +4,7 @@ import {
   detectSlicers as apiDetectSlicers,
   launchSlicer as apiLaunchSlicer,
 } from "../api/slicer";
+import { useSettingsStore } from "./settingsStore";
 
 // ========== State Interface ==========
 
@@ -47,10 +48,12 @@ export const useSlicerStore = create<SlicerState & SlicerActions>(
       try {
         const response = await apiDetectSlicers();
         const slicers = response.slicers;
+        const lastId = useSettingsStore.getState().lastSlicerId;
+        const restored = slicers.find((s) => s.id === lastId);
         set({
           slicers,
           isDetecting: false,
-          selectedSlicerId: slicers.length > 0 ? slicers[0].id : null,
+          selectedSlicerId: restored ? restored.id : (slicers[0]?.id ?? null),
         });
       } catch (err) {
         set({
@@ -60,7 +63,13 @@ export const useSlicerStore = create<SlicerState & SlicerActions>(
       }
     },
 
-    setSelectedSlicerId: (id: string | null) => set({ selectedSlicerId: id }),
+    setSelectedSlicerId: (id: string | null) => {
+      set({ selectedSlicerId: id });
+      if (id) {
+        useSettingsStore.getState().setLastSlicerId(id);
+        void useSettingsStore.getState().syncToBackend();
+      }
+    },
 
     launchSlicer: async (filePath: string) => {
       const state = _get();

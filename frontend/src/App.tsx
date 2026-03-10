@@ -61,8 +61,8 @@ function App() {
 
   return (
     <I18nProvider>
-    <div className="min-h-screen bg-gray-950 text-white flex flex-col">
-      <header className="flex items-center justify-between px-6 py-4 border-b border-gray-800">
+    <div className="min-h-screen bg-gray-100 dark:bg-gray-950 text-gray-900 dark:text-white flex flex-col">
+      <header className="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-gray-800">
         <h1 className="text-xl font-semibold tracking-tight">
           Lumina Studio 2.0
         </h1>
@@ -76,7 +76,7 @@ function App() {
             className={`px-4 py-1.5 rounded text-sm font-medium transition-colors ${
               activeTab === "converter"
                 ? "bg-blue-600 text-white"
-                : "bg-gray-700 text-gray-300 hover:bg-gray-600"
+                : "bg-gray-200 text-gray-700 hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600"
             }`}
             onClick={() => setActiveTab("converter")}
           >
@@ -90,7 +90,7 @@ function App() {
             className={`px-4 py-1.5 rounded text-sm font-medium transition-colors ${
               activeTab === "calibration"
                 ? "bg-blue-600 text-white"
-                : "bg-gray-700 text-gray-300 hover:bg-gray-600"
+                : "bg-gray-200 text-gray-700 hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600"
             }`}
             onClick={() => setActiveTab("calibration")}
           >
@@ -104,7 +104,7 @@ function App() {
             className={`px-4 py-1.5 rounded text-sm font-medium transition-colors ${
               activeTab === "extractor"
                 ? "bg-blue-600 text-white"
-                : "bg-gray-700 text-gray-300 hover:bg-gray-600"
+                : "bg-gray-200 text-gray-700 hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600"
             }`}
             onClick={() => setActiveTab("extractor")}
           >
@@ -118,7 +118,7 @@ function App() {
             className={`px-4 py-1.5 rounded text-sm font-medium transition-colors ${
               activeTab === "lut-manager"
                 ? "bg-blue-600 text-white"
-                : "bg-gray-700 text-gray-300 hover:bg-gray-600"
+                : "bg-gray-200 text-gray-700 hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600"
             }`}
             onClick={() => setActiveTab("lut-manager")}
           >
@@ -132,7 +132,7 @@ function App() {
             className={`px-4 py-1.5 rounded text-sm font-medium transition-colors ${
               activeTab === "five-color"
                 ? "bg-blue-600 text-white"
-                : "bg-gray-700 text-gray-300 hover:bg-gray-600"
+                : "bg-gray-200 text-gray-700 hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600"
             }`}
             onClick={() => setActiveTab("five-color")}
           >
@@ -146,7 +146,7 @@ function App() {
             className={`px-4 py-1.5 rounded text-sm font-medium transition-colors ${
               activeTab === "about"
                 ? "bg-blue-600 text-white"
-                : "bg-gray-700 text-gray-300 hover:bg-gray-600"
+                : "bg-gray-200 text-gray-700 hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600"
             }`}
             onClick={() => setActiveTab("about")}
           >
@@ -158,11 +158,11 @@ function App() {
           <LanguageToggle />
           <ThemeToggle />
           {connected === null ? (
-            <span className="text-sm text-gray-400">Checking backend…</span>
+            <span className="text-sm text-gray-500 dark:text-gray-400">Checking backend…</span>
           ) : connected ? (
             <span
               data-testid="health-badge-ok"
-              className="inline-flex items-center gap-1.5 rounded-full bg-green-900/60 px-3 py-1 text-sm text-green-300"
+              className="inline-flex items-center gap-1.5 rounded-full bg-green-100 px-3 py-1 text-sm text-green-700 dark:bg-green-900/60 dark:text-green-300"
             >
               <span className="h-2 w-2 rounded-full bg-green-400" />
               Backend Connected
@@ -170,7 +170,7 @@ function App() {
           ) : (
             <span
               data-testid="health-badge-fail"
-              className="inline-flex items-center gap-1.5 rounded-full bg-red-900/60 px-3 py-1 text-sm text-red-300"
+              className="inline-flex items-center gap-1.5 rounded-full bg-red-100 px-3 py-1 text-sm text-red-700 dark:bg-red-900/60 dark:text-red-300"
             >
               <span className="h-2 w-2 rounded-full bg-red-400" />
               Backend Unreachable
@@ -203,7 +203,7 @@ function App() {
           ) : (
             <SceneErrorBoundary
               fallback={
-                <div className="absolute inset-0 flex items-center justify-center bg-gray-950">
+                <div className="absolute inset-0 flex items-center justify-center bg-gray-100 dark:bg-gray-950">
                   <p className="text-red-400 text-sm">3D 场景加载失败</p>
                 </div>
               }

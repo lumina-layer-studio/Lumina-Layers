@@ -9,6 +9,7 @@ import BedPlatform from "./BedPlatform";
 import KeychainRing3D from "./KeychainRing3D";
 import { useConverterStore } from "../stores/converterStore";
 import { useI18n } from "../i18n/context";
+import { useThemeConfig } from "../hooks/useThemeConfig";
 
 interface Scene3DProps {
   modelUrl?: string;
@@ -30,8 +31,22 @@ function ScreenshotHelper({
   return null;
 }
 
+/**
+ * Inner component that syncs the Canvas clear color with the active theme.
+ * Canvas 内部组件，将清除色与当前主题同步。
+ */
+function ThemeUpdater() {
+  const { gl } = useThree();
+  const themeColors = useThemeConfig();
+  useEffect(() => {
+    gl.setClearColor(themeColors.canvasClearColor);
+  }, [gl, themeColors.canvasClearColor]);
+  return null;
+}
+
 function Scene3D({ modelUrl }: Scene3DProps) {
   const { t } = useI18n();
+  const themeColors = useThemeConfig();
   const containerRef = useRef<HTMLDivElement>(null);
   const glRef = useRef<THREE.WebGLRenderer | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -110,7 +125,7 @@ function Scene3D({ modelUrl }: Scene3DProps) {
         {fullscreenSupported && (
           <button
             onClick={toggleFullscreen}
-            className="px-2 py-1 rounded text-xs font-medium bg-gray-700/80 text-gray-200 hover:bg-gray-600 transition-colors backdrop-blur-sm"
+            className="px-2 py-1 rounded text-xs font-medium bg-white/80 text-gray-700 hover:bg-gray-200 dark:bg-gray-700/80 dark:text-gray-200 dark:hover:bg-gray-600 transition-colors backdrop-blur-sm"
             aria-label={isFullscreen ? t("viewer_exit_fullscreen") : t("viewer_fullscreen")}
             title={isFullscreen ? t("viewer_exit_fullscreen") : t("viewer_fullscreen")}
           >
@@ -119,7 +134,7 @@ function Scene3D({ modelUrl }: Scene3DProps) {
         )}
         <button
           onClick={takeScreenshot}
-          className="px-2 py-1 rounded text-xs font-medium bg-gray-700/80 text-gray-200 hover:bg-gray-600 transition-colors backdrop-blur-sm"
+          className="px-2 py-1 rounded text-xs font-medium bg-white/80 text-gray-700 hover:bg-gray-200 dark:bg-gray-700/80 dark:text-gray-200 dark:hover:bg-gray-600 transition-colors backdrop-blur-sm"
           aria-label={t("viewer_screenshot")}
           title={t("viewer_screenshot")}
         >
@@ -140,9 +155,19 @@ function Scene3D({ modelUrl }: Scene3DProps) {
       <Canvas
         camera={{ position: [0, 200, 400], fov: 45 }}
         gl={{ preserveDrawingBuffer: true }}
-        onPointerMissed={() => setSelectedColor(null)}
+        onPointerMissed={() => {
+          // Skip deselection if a color mesh was just clicked via native event
+          const hitRef = (window as unknown as Record<string, unknown>).__luminaColorHitRef as
+            | React.RefObject<boolean>
+            | undefined;
+          if (hitRef?.current) {
+            hitRef.current = false;
+            return;
+          }
+          setSelectedColor(null);
+        }}
         onCreated={({ gl }) => {
-          gl.setClearColor("#1e1e26");
+          gl.setClearColor(themeColors.canvasClearColor);
           const canvas = gl.domElement;
           canvas.addEventListener("webglcontextlost", (e) => {
             e.preventDefault();
@@ -153,17 +178,18 @@ function Scene3D({ modelUrl }: Scene3DProps) {
         }}
       >
         <ScreenshotHelper onGlReady={handleGlReady} />
+        <ThemeUpdater />
         <Suspense fallback={null}>
           <Environment
             files={LIGHTING_CONFIG.environment.hdrFile}
             background={false}
-            environmentIntensity={LIGHTING_CONFIG.environment.intensity}
+            environmentIntensity={themeColors.environmentIntensity}
           />
         </Suspense>
         <directionalLight
           position={[...LIGHTING_CONFIG.keyLight.position]}
-          intensity={LIGHTING_CONFIG.keyLight.intensity}
-          color={LIGHTING_CONFIG.keyLight.color}
+          intensity={themeColors.keyLightIntensity}
+          color={themeColors.keyLightColor}
         />
         <OrbitControls
           makeDefault

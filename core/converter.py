@@ -2693,7 +2693,8 @@ def generate_segmented_glb(cache: dict, max_meshes: int = 64) -> Optional[str]:
         scene = trimesh.Scene()
 
         # Physical scale: pixel coords -> mm
-        pixel_scale = target_width_mm / target_w if target_w and target_w > 0 else 0.42
+        # Use current `width` (may be downsampled) instead of original `target_w`
+        pixel_scale = target_width_mm / width if width > 0 else 0.42
         scale_transform = np.eye(4)
         scale_transform[0, 0] = pixel_scale
         scale_transform[1, 1] = pixel_scale
@@ -2784,7 +2785,10 @@ def generate_realtime_glb(cache):
             return None
         
         # Scale from pixel/voxel coords to mm
-        pixel_scale = target_width_mm / target_w if target_w > 0 else 0.42
+        # _create_preview_mesh may downsample internally, so we must compute
+        # pixel_scale from the mesh's actual bounding box width, not target_w.
+        mesh_width = preview_mesh.bounds[1][0] - preview_mesh.bounds[0][0]
+        pixel_scale = target_width_mm / mesh_width if mesh_width > 0 else 0.42
         transform = np.eye(4)
         transform[0, 0] = pixel_scale
         transform[1, 1] = pixel_scale

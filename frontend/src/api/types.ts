@@ -109,6 +109,7 @@ export interface GenerateResponse {
   message: string;
   download_url: string;
   preview_3d_url?: string;
+  threemf_disk_path?: string;
 }
 
 export interface LutListResponse {

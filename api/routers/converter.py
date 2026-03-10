@@ -518,6 +518,7 @@ def convert_generate(
         message=status_msg or "Model generated",
         download_url=f"/api/files/{download_id}",
         preview_3d_url=preview_3d_url,
+        threemf_disk_path=threemf_path,
     )
 
 

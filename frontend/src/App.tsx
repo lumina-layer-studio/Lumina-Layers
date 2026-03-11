@@ -2,6 +2,7 @@ import { useState, useEffect, Suspense, Component } from "react";
 import type { ReactNode } from "react";
 import apiClient from "./api/client";
 import type { HealthResponse } from "./api/types";
+import { useAutoPreview } from "./hooks/useAutoPreview";
 import Scene3D from "./components/Scene3D";
 import ExtractorCanvas from "./components/ExtractorCanvas";
 import LoadingSpinner from "./components/LoadingSpinner";
@@ -86,6 +87,8 @@ function WidgetToggles() {
 /* ---------- App ---------- */
 
 function App() {
+  useAutoPreview();
+
   const [connected, setConnected] = useState<boolean | null>(null);
   const activeTab = useWidgetStore((s) => s.activeTab);
   const setActiveTab = useWidgetStore((s) => s.setActiveTab);

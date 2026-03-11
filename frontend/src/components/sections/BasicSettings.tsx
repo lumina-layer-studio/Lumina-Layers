@@ -1,3 +1,4 @@
+import { useShallow } from "zustand/react/shallow";
 import { useConverterStore, isValidImageType } from "../../stores/converterStore";
 import {
   ModelingMode,
@@ -23,6 +24,7 @@ const modelingModeOptions = Object.values(ModelingMode).map((v) => ({
 }));
 
 export default function BasicSettings() {
+  // 状态字段使用 useShallow 分组提取，避免无关字段变化触发重渲染
   const {
     imagePreviewUrl,
     lut_name,
@@ -33,26 +35,45 @@ export default function BasicSettings() {
     spacer_thick,
     structure_mode,
     modeling_mode,
+    enable_relief,
     enableCrop,
     cropModalOpen,
     isCropping,
     batchMode,
     batchFiles,
-    setImageFile,
-    setLutName,
-    setTargetWidthMm,
-    setTargetHeightMm,
-    setSpacerThick,
-    setStructureMode,
-    setModelingMode,
-    setEnableCrop,
-    setCropModalOpen,
-    submitCrop,
-    setError,
-    setBatchMode,
-    addBatchFiles,
-    removeBatchFile,
-  } = useConverterStore();
+  } = useConverterStore(useShallow((s) => ({
+    imagePreviewUrl: s.imagePreviewUrl,
+    lut_name: s.lut_name,
+    lutList: s.lutList,
+    color_mode: s.color_mode,
+    target_width_mm: s.target_width_mm,
+    target_height_mm: s.target_height_mm,
+    spacer_thick: s.spacer_thick,
+    structure_mode: s.structure_mode,
+    modeling_mode: s.modeling_mode,
+    enable_relief: s.enable_relief,
+    enableCrop: s.enableCrop,
+    cropModalOpen: s.cropModalOpen,
+    isCropping: s.isCropping,
+    batchMode: s.batchMode,
+    batchFiles: s.batchFiles,
+  })));
+
+  // Action 函数单独提取（函数引用稳定，不需要 shallow）
+  const setImageFile = useConverterStore((s) => s.setImageFile);
+  const setLutName = useConverterStore((s) => s.setLutName);
+  const setTargetWidthMm = useConverterStore((s) => s.setTargetWidthMm);
+  const setTargetHeightMm = useConverterStore((s) => s.setTargetHeightMm);
+  const setSpacerThick = useConverterStore((s) => s.setSpacerThick);
+  const setStructureMode = useConverterStore((s) => s.setStructureMode);
+  const setModelingMode = useConverterStore((s) => s.setModelingMode);
+  const setEnableCrop = useConverterStore((s) => s.setEnableCrop);
+  const setCropModalOpen = useConverterStore((s) => s.setCropModalOpen);
+  const submitCrop = useConverterStore((s) => s.submitCrop);
+  const setError = useConverterStore((s) => s.setError);
+  const setBatchMode = useConverterStore((s) => s.setBatchMode);
+  const addBatchFiles = useConverterStore((s) => s.addBatchFiles);
+  const removeBatchFile = useConverterStore((s) => s.removeBatchFile);
 
   const lutOptions = lutList.map((name) => ({ label: name, value: name }));
 
@@ -157,6 +178,7 @@ export default function BasicSettings() {
         value={structure_mode}
         options={structureModeOptions}
         onChange={(v) => setStructureMode(v as StructureMode)}
+        disabled={enable_relief}
       />
 
       <RadioGroup

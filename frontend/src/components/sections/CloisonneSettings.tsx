@@ -4,15 +4,13 @@ import Checkbox from "../ui/Checkbox";
 import Slider from "../ui/Slider";
 
 export default function CloisonneSettings() {
-  const {
-    enable_cloisonne,
-    wire_width_mm,
-    wire_height_mm,
-    modeling_mode,
-    setEnableCloisonne,
-    setWireWidthMm,
-    setWireHeightMm,
-  } = useConverterStore();
+  const enable_cloisonne = useConverterStore((s) => s.enable_cloisonne);
+  const wire_width_mm = useConverterStore((s) => s.wire_width_mm);
+  const wire_height_mm = useConverterStore((s) => s.wire_height_mm);
+  const modeling_mode = useConverterStore((s) => s.modeling_mode);
+  const setEnableCloisonne = useConverterStore((s) => s.setEnableCloisonne);
+  const setWireWidthMm = useConverterStore((s) => s.setWireWidthMm);
+  const setWireHeightMm = useConverterStore((s) => s.setWireHeightMm);
 
   const isVector = modeling_mode === ModelingMode.VECTOR;
 

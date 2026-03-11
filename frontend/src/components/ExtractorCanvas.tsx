@@ -209,20 +209,20 @@ export default function ExtractorCanvas() {
       >
         {warp_view_url && (
           <div className="flex flex-col items-center gap-2">
-            <span className="text-xs text-gray-400">
+            <span className="text-xs text-gray-500 dark:text-gray-400">
               透视校正 / Warp View
             </span>
             <img
               data-testid="warp-view-image"
               src={warp_view_url}
               alt="Warp view"
-              className="max-w-full max-h-[40vh] rounded border border-gray-700"
+              className="max-w-full max-h-[40vh] rounded border border-gray-300 dark:border-gray-700"
             />
           </div>
         )}
         {lut_preview_url && (
           <div className="flex flex-col items-center gap-2">
-            <span className="text-xs text-gray-400">
+            <span className="text-xs text-gray-500 dark:text-gray-400">
               LUT 预览 / 点击色块修正颜色
             </span>
             <img
@@ -231,7 +231,7 @@ export default function ExtractorCanvas() {
               src={lut_preview_url}
               alt="LUT preview"
               onClick={handleLutPreviewClick}
-              className="max-w-full max-h-[40vh] rounded border border-gray-700 cursor-crosshair"
+              className="max-w-full max-h-[40vh] rounded border border-gray-300 dark:border-gray-700 cursor-crosshair"
             />
           </div>
         )}
@@ -239,9 +239,9 @@ export default function ExtractorCanvas() {
         {selectedCell && (
           <div
             data-testid="manual-fix-popup"
-            className="flex items-center gap-3 bg-gray-800 border border-gray-600 rounded-lg px-4 py-3"
+            className="flex items-center gap-3 bg-gray-100 dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg px-4 py-3"
           >
-            <span className="text-sm text-gray-300">
+            <span className="text-sm text-gray-700 dark:text-gray-300">
               行 {selectedCell[0] + 1} / 列 {selectedCell[1] + 1}
             </span>
             <input
@@ -249,9 +249,9 @@ export default function ExtractorCanvas() {
               type="color"
               value={fixColor}
               onChange={(e) => setFixColor(e.target.value)}
-              className="w-10 h-8 rounded border border-gray-500 cursor-pointer bg-transparent"
+              className="w-10 h-8 rounded border border-gray-300 dark:border-gray-500 cursor-pointer bg-transparent"
             />
-            <span className="text-xs text-gray-400 font-mono">{fixColor}</span>
+            <span className="text-xs text-gray-500 dark:text-gray-400 font-mono">{fixColor}</span>
             <button
               data-testid="fix-submit-button"
               onClick={handleFixSubmit}
@@ -262,7 +262,7 @@ export default function ExtractorCanvas() {
             </button>
             <button
               onClick={() => setSelectedCell(null)}
-              className="px-2 py-1 text-sm rounded bg-gray-600 hover:bg-gray-500 text-gray-300"
+              className="px-2 py-1 text-sm rounded bg-gray-200 hover:bg-gray-300 dark:bg-gray-600 dark:hover:bg-gray-500 text-gray-700 dark:text-gray-300"
             >
               取消
             </button>
@@ -277,7 +277,7 @@ export default function ExtractorCanvas() {
     return (
       <div
         data-testid="extractor-empty-state"
-        className="flex-1 flex flex-col items-center justify-center gap-3 text-gray-500"
+        className="flex-1 flex flex-col items-center justify-center gap-3 text-gray-400 dark:text-gray-500"
       >
         <svg
           xmlns="http://www.w3.org/2000/svg"
@@ -294,7 +294,7 @@ export default function ExtractorCanvas() {
           />
         </svg>
         <p className="text-sm">请在左侧面板上传校准板照片</p>
-        <p className="text-xs text-gray-600">
+        <p className="text-xs text-gray-500 dark:text-gray-600">
           Upload a calibration board photo to begin
         </p>
       </div>
@@ -308,7 +308,7 @@ export default function ExtractorCanvas() {
       <p
         data-testid="corner-hint"
         className={`text-sm font-medium ${
-          cornerCount >= 4 ? "text-green-400" : "text-yellow-300"
+          cornerCount >= 4 ? "text-green-500 dark:text-green-400" : "text-yellow-500 dark:text-yellow-300"
         }`}
       >
         {hintText}
@@ -321,7 +321,7 @@ export default function ExtractorCanvas() {
         width={imageNaturalWidth ?? 800}
         height={imageNaturalHeight ?? 600}
         onClick={handleCanvasClick}
-        className="max-w-full max-h-[75vh] rounded border border-gray-700 cursor-crosshair"
+        className="max-w-full max-h-[75vh] rounded border border-gray-300 dark:border-gray-700 cursor-crosshair"
         style={{ objectFit: "contain" }}
       />
     </div>

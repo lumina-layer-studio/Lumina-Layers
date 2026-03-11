@@ -1,3 +1,5 @@
+import { useId } from "react";
+
 interface RadioGroupProps {
   label: string;
   value: string;
@@ -13,9 +15,11 @@ export default function RadioGroup({
   onChange,
   disabled = false,
 }: RadioGroupProps) {
+  const groupId = useId();
+
   return (
     <fieldset className="flex flex-col gap-1.5" disabled={disabled}>
-      <legend className="text-sm text-gray-300">{label}</legend>
+      <legend className="text-sm text-gray-700 dark:text-gray-300">{label}</legend>
       <div className="flex flex-col gap-1">
         {options.map((opt) => (
           <label
@@ -24,14 +28,14 @@ export default function RadioGroup({
           >
             <input
               type="radio"
-              name={label}
+              name={`${groupId}-${label}`}
               value={opt.value}
               checked={value === opt.value}
               disabled={disabled}
               onChange={() => onChange(opt.value)}
-              className="h-4 w-4 border-gray-600 bg-gray-700 text-blue-500 accent-blue-500 disabled:cursor-not-allowed"
+              className="h-4 w-4 border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-blue-500 accent-blue-500 disabled:cursor-not-allowed"
             />
-            <span className="text-gray-300">{opt.label}</span>
+            <span className="text-gray-700 dark:text-gray-300">{opt.label}</span>
           </label>
         ))}
       </div>

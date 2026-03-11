@@ -8,7 +8,7 @@
  * 在拖拽结束时计算吸附，并管理 z-index 分层以与 Three.js 共存。
  */
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import {
   DndContext,
   DragOverlay,
@@ -71,7 +71,6 @@ interface WidgetWorkspaceProps {
 }
 
 export function WidgetWorkspace({ children }: WidgetWorkspaceProps) {
-  const widgets = useWidgetStore((s) => s.widgets);
   const moveWidget = useWidgetStore((s) => s.moveWidget);
   const snapToEdge = useWidgetStore((s) => s.snapToEdge);
   const setDragging = useWidgetStore((s) => s.setDragging);
@@ -87,7 +86,8 @@ export function WidgetWorkspace({ children }: WidgetWorkspaceProps) {
   useConverterDataInit();
 
   const containerRef = useRef<HTMLDivElement>(null);
-  const [dragPosition, setDragPosition] = useState<{ x: number; y: number } | null>(null);
+  const dragPositionRef = useRef<{ x: number; y: number } | null>(null);
+  const isDraggingRef = useRef(false);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
@@ -146,6 +146,7 @@ export function WidgetWorkspace({ children }: WidgetWorkspaceProps) {
 
     let debounceTimer: ReturnType<typeof setTimeout> | null = null;
     const debouncedRecalc = () => {
+      if (isDraggingRef.current) return;
       if (debounceTimer) clearTimeout(debounceTimer);
       debounceTimer = setTimeout(() => recalculateStacks(), 50);
     };
@@ -182,18 +183,23 @@ export function WidgetWorkspace({ children }: WidgetWorkspaceProps) {
     };
   }, [recalculateStacks]);
 
-  // Recalculate stack positions when any widget's collapsed state changes
-  // This prevents widgets from overlapping after expand/collapse.
-  // The immediate call uses current DOM heights; the final accurate
-  // recalculation happens via the 'widget-animation-complete' event
-  // fired by WidgetPanel after framer-motion finishes animating.
-  const collapsedKey = activeWidgetIds
-    .map((id) => `${id}:${widgets[id].collapsed ? 1 : 0}`)
-    .join(',');
+  // Recalculate stack positions when any widget's collapsed state or
+  // expandedHeight changes. This prevents widgets from overlapping after
+  // expand/collapse or when content dynamically changes height.
+  // Uses a targeted selector to avoid subscribing to the entire widgets object.
+  const layoutKey = useWidgetStore(
+    useCallback(
+      (s: { widgets: Record<WidgetId, { collapsed: boolean; expandedHeight: number }> }) =>
+        activeWidgetIds
+          .map((id) => `${id}:${s.widgets[id].collapsed ? 1 : 0}:${s.widgets[id].expandedHeight}`)
+          .join(','),
+      [activeWidgetIds]
+    )
+  );
 
   useEffect(() => {
     recalculateStacks();
-  }, [collapsedKey, activeTab, recalculateStacks]);
+  }, [layoutKey, activeTab, recalculateStacks]);
 
   // Auto-detect backdrop-filter support and disable blur if unsupported
   useEffect(() => {
@@ -205,6 +211,7 @@ export function WidgetWorkspace({ children }: WidgetWorkspaceProps) {
 
   const handleDragStart = useCallback(
     (event: DragStartEvent) => {
+      isDraggingRef.current = true;
       setDragging(true, event.active.id as WidgetId);
     },
     [setDragging]
@@ -214,27 +221,27 @@ export function WidgetWorkspace({ children }: WidgetWorkspaceProps) {
     (event: DragMoveEvent) => {
       const { active, delta } = event;
       const id = active.id as WidgetId;
-      const widget = widgets[id];
+      const widget = useWidgetStore.getState().widgets[id];
       if (widget) {
-        setDragPosition({
+        dragPositionRef.current = {
           x: widget.position.x + delta.x,
           y: widget.position.y + delta.y,
-        });
+        };
       }
     },
-    [widgets]
+    []
   );
 
   const handleDragEnd = useCallback(
     (event: DragEndEvent) => {
       const { active, delta } = event;
       const id = active.id as WidgetId;
-      const widget = widgets[id];
+      const widget = useWidgetStore.getState().widgets[id];
       const container = containerRef.current;
 
       if (!widget || !container) {
         setDragging(false);
-        setDragPosition(null);
+        dragPositionRef.current = null;
         return;
       }
 
@@ -254,18 +261,23 @@ export function WidgetWorkspace({ children }: WidgetWorkspaceProps) {
       // Always snap to nearest edge — widgets are never free-floating
       moveWidget(id, snap.snappedPosition);
       snapToEdge(id, snap.edge!);
+
+      // Reset isDraggingRef BEFORE scheduling recalculateStacks so the
+      // ResizeObserver guard won't block the recalculation.
+      isDraggingRef.current = false;
       requestAnimationFrame(() => recalculateStacks());
 
       setDragging(false);
-      setDragPosition(null);
+      dragPositionRef.current = null;
     },
-    [widgets, moveWidget, snapToEdge, setDragging, recalculateStacks]
+    [moveWidget, snapToEdge, setDragging, recalculateStacks]
   );
 
   const handleDragCancel = useCallback(
     (_event: DragCancelEvent) => {
+      isDraggingRef.current = false;
       setDragging(false);
-      setDragPosition(null);
+      dragPositionRef.current = null;
     },
     [setDragging]
   );
@@ -290,8 +302,8 @@ export function WidgetWorkspace({ children }: WidgetWorkspaceProps) {
 
         {/* Snap Guides — z-20 */}
         <SnapGuides
-          isDragging={isDragging}
-          dragPosition={dragPosition}
+          isDraggingRef={isDraggingRef}
+          dragPositionRef={dragPositionRef}
           containerRef={containerRef}
         />
 

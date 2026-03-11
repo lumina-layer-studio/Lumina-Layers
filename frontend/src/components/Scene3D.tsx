@@ -8,6 +8,7 @@ import InteractiveModelViewer from "./InteractiveModelViewer";
 import BedPlatform from "./BedPlatform";
 import KeychainRing3D from "./KeychainRing3D";
 import { useConverterStore } from "../stores/converterStore";
+import { computeScaleFactor } from "../utils/scaleUtils";
 import { useI18n } from "../i18n/context";
 import { useThemeConfig } from "../hooks/useThemeConfig";
 
@@ -59,6 +60,16 @@ function Scene3D({ modelUrl }: Scene3DProps) {
   const enableRelief = useConverterStore((s) => s.enable_relief);
   const isLoading = useConverterStore((s) => s.isLoading);
   const setSelectedColor = useConverterStore((s) => s.setSelectedColor);
+
+  // Real-time scale dimensions
+  const targetWidth = useConverterStore((s) => s.target_width_mm);
+  const targetHeight = useConverterStore((s) => s.target_height_mm);
+  const previewWidth = useConverterStore((s) => s.preview_width_mm);
+  const previewHeight = useConverterStore((s) => s.preview_height_mm);
+
+  const { scaleX, scaleY } = computeScaleFactor(
+    targetWidth, targetHeight, previewWidth, previewHeight
+  );
 
   // Keychain ring params
   const addLoop = useConverterStore((s) => s.add_loop);
@@ -213,6 +224,8 @@ function Scene3D({ modelUrl }: Scene3DProps) {
               baseHeight={baseHeight}
               enableRelief={enableRelief}
               onColorClick={handleColorClick}
+              scaleX={scaleX}
+              scaleY={scaleY}
             />
           </Suspense>
         ) : null}

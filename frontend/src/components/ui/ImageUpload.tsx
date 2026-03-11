@@ -61,7 +61,7 @@ export default function ImageUpload({
 
   const borderClass = isDragging
     ? "border-blue-500 bg-blue-500/10"
-    : "border-gray-600 border-dashed";
+    : "border-gray-300 dark:border-gray-600 border-dashed";
 
   return (
     <div
@@ -90,7 +90,7 @@ export default function ImageUpload({
           className="max-h-[160px] max-w-full rounded object-contain p-2"
         />
       ) : (
-        <span className="text-sm text-gray-400 select-none">
+        <span className="text-sm text-gray-500 dark:text-gray-400 select-none">
           拖拽图片或点击上传
         </span>
       )}

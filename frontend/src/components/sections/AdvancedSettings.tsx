@@ -3,18 +3,16 @@ import Slider from "../ui/Slider";
 import Checkbox from "../ui/Checkbox";
 
 export default function AdvancedSettings() {
-  const {
-    quantize_colors,
-    bg_tol,
-    auto_bg,
-    enable_cleanup,
-    separate_backing,
-    setQuantizeColors,
-    setBgTol,
-    setAutoBg,
-    setEnableCleanup,
-    setSeparateBacking,
-  } = useConverterStore();
+  const quantize_colors = useConverterStore((s) => s.quantize_colors);
+  const bg_tol = useConverterStore((s) => s.bg_tol);
+  const auto_bg = useConverterStore((s) => s.auto_bg);
+  const enable_cleanup = useConverterStore((s) => s.enable_cleanup);
+  const separate_backing = useConverterStore((s) => s.separate_backing);
+  const setQuantizeColors = useConverterStore((s) => s.setQuantizeColors);
+  const setBgTol = useConverterStore((s) => s.setBgTol);
+  const setAutoBg = useConverterStore((s) => s.setAutoBg);
+  const setEnableCleanup = useConverterStore((s) => s.setEnableCleanup);
+  const setSeparateBacking = useConverterStore((s) => s.setSeparateBacking);
 
   return (
     <div className="flex flex-col gap-4">

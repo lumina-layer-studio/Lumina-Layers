@@ -31,6 +31,7 @@ export interface WidgetLayoutState {
   visible: boolean;
   snapEdge: 'left' | 'right' | null;  // 当前吸附的边缘
   stackOrder: number;                   // 在 Widget_Stack 中的排序
+  expandedHeight: number;               // 预计算的展开高度（像素）
 }
 
 // ===== Widget Store（仅布局状态）=====
@@ -50,6 +51,7 @@ export interface WidgetStore {
   snapToEdge: (id: WidgetId, edge: 'left' | 'right') => void;
   detachFromEdge: (id: WidgetId) => void;
   setDragging: (isDragging: boolean, activeId?: WidgetId) => void;
+  setExpandedHeight: (id: WidgetId, height: number) => void;
   autoArrange: () => void;
   resetLayout: () => void;
 
@@ -82,6 +84,7 @@ export interface PersistedWidgetState {
     visible: boolean;
     snapEdge: 'left' | 'right' | null;
     stackOrder: number;
+    expandedHeight: number;
   }>;
   version: number;  // 用于数据迁移
 }

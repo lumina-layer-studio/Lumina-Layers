@@ -3,12 +3,10 @@ import Checkbox from "../ui/Checkbox";
 import Slider from "../ui/Slider";
 
 export default function CoatingSettings() {
-  const {
-    enable_coating,
-    coating_height_mm,
-    setEnableCoating,
-    setCoatingHeightMm,
-  } = useConverterStore();
+  const enable_coating = useConverterStore((s) => s.enable_coating);
+  const coating_height_mm = useConverterStore((s) => s.coating_height_mm);
+  const setEnableCoating = useConverterStore((s) => s.setEnableCoating);
+  const setCoatingHeightMm = useConverterStore((s) => s.setCoatingHeightMm);
 
   return (
     <div className="flex flex-col gap-4">

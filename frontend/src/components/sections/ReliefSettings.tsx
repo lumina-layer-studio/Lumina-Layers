@@ -1,4 +1,5 @@
 import { useCallback } from "react";
+import { useShallow } from "zustand/react/shallow";
 import { useConverterStore } from "../../stores/converterStore";
 import type { AutoHeightMode } from "../../api/types";
 import Checkbox from "../ui/Checkbox";
@@ -13,19 +14,28 @@ const AUTO_HEIGHT_OPTIONS: { label: string; value: AutoHeightMode }[] = [
 ];
 
 export default function ReliefSettings() {
+  // State fields grouped with useShallow
   const {
     enable_relief,
     heightmap_max_height,
     autoHeightMode,
     heightmapFile,
     heightmapThumbnailUrl,
-    setEnableRelief,
-    setHeightmapMaxHeight,
-    setAutoHeightMode,
-    applyAutoHeight,
-    setHeightmapFile,
-    uploadHeightmap,
-  } = useConverterStore();
+  } = useConverterStore(useShallow((s) => ({
+    enable_relief: s.enable_relief,
+    heightmap_max_height: s.heightmap_max_height,
+    autoHeightMode: s.autoHeightMode,
+    heightmapFile: s.heightmapFile,
+    heightmapThumbnailUrl: s.heightmapThumbnailUrl,
+  })));
+
+  // Actions extracted individually (stable references)
+  const setEnableRelief = useConverterStore((s) => s.setEnableRelief);
+  const setHeightmapMaxHeight = useConverterStore((s) => s.setHeightmapMaxHeight);
+  const setAutoHeightMode = useConverterStore((s) => s.setAutoHeightMode);
+  const applyAutoHeight = useConverterStore((s) => s.applyAutoHeight);
+  const setHeightmapFile = useConverterStore((s) => s.setHeightmapFile);
+  const uploadHeightmap = useConverterStore((s) => s.uploadHeightmap);
 
   const handleModeChange = useCallback(
     (value: string) => {

@@ -118,6 +118,11 @@ export interface ConverterState {
   // 3D 预览
   previewGlbUrl: string | null;
 
+  // 预览时的原始尺寸（用于实时缩放比例计算）
+  preview_width_mm: number | null;   // 预览时的原始宽度
+  preview_height_mm: number | null;  // 预览时的原始高度
+  preview_spacer_thick: number | null; // 预览时的原始厚度
+
   // 模型边界（供 KeychainRing3D 定位）
   modelBounds: {
     minX: number;
@@ -267,6 +272,14 @@ function loadEnableCrop(): boolean {
   }
 }
 
+function loadLutName(): string {
+  try {
+    return localStorage.getItem("lumina_lastLut") ?? "";
+  } catch {
+    return "";
+  }
+}
+
 // ========== Default State ==========
 
 const DEFAULT_STATE: ConverterState = {
@@ -274,7 +287,7 @@ const DEFAULT_STATE: ConverterState = {
   imagePreviewUrl: null,
   aspectRatio: null,
   sessionId: null,
-  lut_name: "",
+  lut_name: loadLutName(),
   target_width_mm: 60,
   target_height_mm: 60,
   spacer_thick: 1.2,
@@ -310,6 +323,9 @@ const DEFAULT_STATE: ConverterState = {
   heightmapFile: null,
   heightmapThumbnailUrl: null,
   previewGlbUrl: null,
+  preview_width_mm: null,
+  preview_height_mm: null,
+  preview_spacer_thick: null,
   modelBounds: null,
   enableCrop: loadEnableCrop(),
   cropModalOpen: false,
@@ -385,6 +401,7 @@ export const useConverterStore = create<ConverterState & ConverterActions>(
         updates.color_mode = lutInfo.color_mode as ColorMode;
       }
       set(updates);
+      try { localStorage.setItem("lumina_lastLut", name); } catch { /* noop */ }
     },
 
     setTargetWidthMm: (width: number) =>
@@ -452,6 +469,8 @@ export const useConverterStore = create<ConverterState & ConverterActions>(
         const updates: Partial<ConverterState> = {
           enable_relief: enabled,
           enable_cloisonne: enabled ? false : state.enable_cloisonne,
+          // Relief only supports single-sided structure
+          structure_mode: enabled ? StructureModeEnum.SINGLE_SIDED : state.structure_mode,
           threemfDiskPath: null,
           downloadUrl: null,
         };
@@ -606,11 +625,27 @@ export const useConverterStore = create<ConverterState & ConverterActions>(
       set({ lutListLoading: true });
       try {
         const response = await apiFetchLutList();
-        set({
-          lutList: response.luts.map((l) => l.name),
-          lutListFull: response.luts,
+        const luts = response.luts;
+        const updates: Partial<ConverterState> = {
+          lutList: luts.map((l) => l.name),
+          lutListFull: luts,
           lutListLoading: false,
-        });
+        };
+
+        // If a remembered LUT exists, apply its color_mode
+        const remembered = _get().lut_name;
+        if (remembered) {
+          const info = luts.find((l) => l.name === remembered);
+          if (info && info.color_mode) {
+            updates.color_mode = info.color_mode as ColorMode;
+          } else if (!info) {
+            // Remembered LUT no longer exists — clear it
+            updates.lut_name = "";
+            try { localStorage.removeItem("lumina_lastLut"); } catch { /* noop */ }
+          }
+        }
+
+        set(updates);
       } catch (err) {
         set({
           lutListLoading: false,
@@ -683,6 +718,9 @@ export const useConverterStore = create<ConverterState & ConverterActions>(
           previewImageUrl: previewUrl,
           palette: normalizedPalette,
           previewGlbUrl: glbUrl,
+          preview_width_mm: state.target_width_mm,
+          preview_height_mm: state.target_height_mm,
+          preview_spacer_thick: state.spacer_thick,
         });
       } catch (err) {
         // Ignore aborted requests (user started a new preview)

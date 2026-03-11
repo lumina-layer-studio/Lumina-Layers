@@ -3,16 +3,14 @@ import Checkbox from "../ui/Checkbox";
 import Slider from "../ui/Slider";
 
 export default function KeychainLoopSettings() {
-  const {
-    add_loop,
-    loop_width,
-    loop_length,
-    loop_hole,
-    setAddLoop,
-    setLoopWidth,
-    setLoopLength,
-    setLoopHole,
-  } = useConverterStore();
+  const add_loop = useConverterStore((s) => s.add_loop);
+  const loop_width = useConverterStore((s) => s.loop_width);
+  const loop_length = useConverterStore((s) => s.loop_length);
+  const loop_hole = useConverterStore((s) => s.loop_hole);
+  const setAddLoop = useConverterStore((s) => s.setAddLoop);
+  const setLoopWidth = useConverterStore((s) => s.setLoopWidth);
+  const setLoopLength = useConverterStore((s) => s.setLoopLength);
+  const setLoopHole = useConverterStore((s) => s.setLoopHole);
 
   return (
     <div className="flex flex-col gap-4">

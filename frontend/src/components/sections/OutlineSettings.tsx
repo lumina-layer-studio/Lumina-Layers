@@ -4,13 +4,11 @@ import Checkbox from "../ui/Checkbox";
 import Slider from "../ui/Slider";
 
 export default function OutlineSettings() {
-  const {
-    enable_outline,
-    outline_width,
-    modeling_mode,
-    setEnableOutline,
-    setOutlineWidth,
-  } = useConverterStore();
+  const enable_outline = useConverterStore((s) => s.enable_outline);
+  const outline_width = useConverterStore((s) => s.outline_width);
+  const modeling_mode = useConverterStore((s) => s.modeling_mode);
+  const setEnableOutline = useConverterStore((s) => s.setEnableOutline);
+  const setOutlineWidth = useConverterStore((s) => s.setOutlineWidth);
 
   const isVector = modeling_mode === ModelingMode.VECTOR;
 

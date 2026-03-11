@@ -43,6 +43,8 @@ export interface InteractiveModelViewerProps {
   baseHeight: number;
   enableRelief: boolean;
   onColorClick: (hex: string | null) => void;
+  scaleX?: number;  // X 方向缩放比例，默认 1.0
+  scaleY?: number;  // Y 方向缩放比例，默认 1.0
 }
 
 function InteractiveModelViewer({
@@ -53,6 +55,8 @@ function InteractiveModelViewer({
   baseHeight,
   enableRelief,
   onColorClick,
+  scaleX = 1,
+  scaleY = 1,
 }: InteractiveModelViewerProps) {
   const { scene } = useGLTF(url);
   const { camera, controls } = useThree();
@@ -294,7 +298,7 @@ function InteractiveModelViewer({
   }, [colorMeshes, colorRemapMap, colorHeightMap, selectedColor, enableRelief, baseHeight]);
 
   return (
-    <group ref={groupRef}>
+    <group ref={groupRef} scale={[scaleX, scaleY, 1]}>
       <primitive object={nonColorObject} />
       {colorMeshes.map((mesh) => (
         <primitive key={mesh.uuid} object={mesh} />

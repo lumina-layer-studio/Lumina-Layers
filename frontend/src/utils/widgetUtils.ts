@@ -93,10 +93,10 @@ export function computeSnap(
  * Compute stacked positions for widgets snapped to the same edge.
  * 计算吸附到同一边缘的 Widget 堆叠位置。
  *
- * Uses actual DOM-measured heights when provided via `measuredHeights`,
- * falling back to EXPANDED_HEIGHT for expanded widgets without measurements.
- * 优先使用 `measuredHeights` 提供的实际 DOM 高度，
- * 对于没有测量值的展开 Widget 回退到 EXPANDED_HEIGHT。
+ * Uses the pre-calculated expandedHeight from widget state for expanded widgets,
+ * with optional DOM-measured heights as override for final accuracy.
+ * 展开的 Widget 使用状态中预计算的 expandedHeight，
+ * 可选的 DOM 测量高度作为最终精度覆盖。
  *
  * Args:
  *   stackWidgets (WidgetLayoutState[]): Widgets snapped to the target edge. (吸附到目标边缘的 Widget 列表)
@@ -122,7 +122,7 @@ export function computeStackPositions(
     positions.set(widget.id, { x, y: currentY });
     const height = widget.collapsed
       ? COLLAPSED_HEIGHT
-      : (measuredHeights?.get(widget.id) ?? EXPANDED_HEIGHT);
+      : (measuredHeights?.get(widget.id) ?? widget.expandedHeight ?? EXPANDED_HEIGHT);
     currentY += height + STACK_GAP;
   }
 

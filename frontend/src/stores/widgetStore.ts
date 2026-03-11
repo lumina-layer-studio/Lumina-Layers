@@ -10,6 +10,7 @@
 
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { EXPANDED_HEIGHT } from '../utils/widgetUtils';
 import type { WidgetId, WidgetLayoutState, WidgetStore, WidgetConfig, TabId } from '../types/widget';
 
 // ===== TAB → Widget 映射 =====
@@ -37,6 +38,7 @@ export const DEFAULT_LAYOUT: Record<WidgetId, WidgetLayoutState> = {
     visible: true,
     snapEdge: 'left',
     stackOrder: 0,
+    expandedHeight: EXPANDED_HEIGHT,
   },
   'advanced-settings': {
     id: 'advanced-settings',
@@ -45,6 +47,7 @@ export const DEFAULT_LAYOUT: Record<WidgetId, WidgetLayoutState> = {
     visible: true,
     snapEdge: 'left',
     stackOrder: 1,
+    expandedHeight: EXPANDED_HEIGHT,
   },
   'relief-settings': {
     id: 'relief-settings',
@@ -53,6 +56,7 @@ export const DEFAULT_LAYOUT: Record<WidgetId, WidgetLayoutState> = {
     visible: true,
     snapEdge: 'left',
     stackOrder: 2,
+    expandedHeight: EXPANDED_HEIGHT,
   },
   'palette-panel': {
     id: 'palette-panel',
@@ -61,6 +65,7 @@ export const DEFAULT_LAYOUT: Record<WidgetId, WidgetLayoutState> = {
     visible: true,
     snapEdge: 'left',
     stackOrder: 3,
+    expandedHeight: EXPANDED_HEIGHT,
   },
   'lut-color-grid': {
     id: 'lut-color-grid',
@@ -69,6 +74,7 @@ export const DEFAULT_LAYOUT: Record<WidgetId, WidgetLayoutState> = {
     visible: true,
     snapEdge: 'left',
     stackOrder: 4,
+    expandedHeight: EXPANDED_HEIGHT,
   },
   'outline-settings': {
     id: 'outline-settings',
@@ -77,6 +83,7 @@ export const DEFAULT_LAYOUT: Record<WidgetId, WidgetLayoutState> = {
     visible: true,
     snapEdge: 'left',
     stackOrder: 5,
+    expandedHeight: EXPANDED_HEIGHT,
   },
   'cloisonne-settings': {
     id: 'cloisonne-settings',
@@ -85,6 +92,7 @@ export const DEFAULT_LAYOUT: Record<WidgetId, WidgetLayoutState> = {
     visible: true,
     snapEdge: 'left',
     stackOrder: 6,
+    expandedHeight: EXPANDED_HEIGHT,
   },
   'coating-settings': {
     id: 'coating-settings',
@@ -93,6 +101,7 @@ export const DEFAULT_LAYOUT: Record<WidgetId, WidgetLayoutState> = {
     visible: true,
     snapEdge: 'left',
     stackOrder: 7,
+    expandedHeight: EXPANDED_HEIGHT,
   },
   'keychain-loop': {
     id: 'keychain-loop',
@@ -101,6 +110,7 @@ export const DEFAULT_LAYOUT: Record<WidgetId, WidgetLayoutState> = {
     visible: true,
     snapEdge: 'left',
     stackOrder: 8,
+    expandedHeight: EXPANDED_HEIGHT,
   },
   'action-bar': {
     id: 'action-bar',
@@ -109,6 +119,7 @@ export const DEFAULT_LAYOUT: Record<WidgetId, WidgetLayoutState> = {
     visible: true,
     snapEdge: 'left',
     stackOrder: 9,
+    expandedHeight: EXPANDED_HEIGHT,
   },
   // --- 其他 4 个页面：各 1 个 Widget，左侧吸附，stackOrder 0 ---
   'calibration': {
@@ -118,6 +129,7 @@ export const DEFAULT_LAYOUT: Record<WidgetId, WidgetLayoutState> = {
     visible: true,
     snapEdge: 'left',
     stackOrder: 0,
+    expandedHeight: EXPANDED_HEIGHT,
   },
   'extractor': {
     id: 'extractor',
@@ -126,6 +138,7 @@ export const DEFAULT_LAYOUT: Record<WidgetId, WidgetLayoutState> = {
     visible: true,
     snapEdge: 'left',
     stackOrder: 0,
+    expandedHeight: EXPANDED_HEIGHT,
   },
   'lut-manager': {
     id: 'lut-manager',
@@ -134,6 +147,7 @@ export const DEFAULT_LAYOUT: Record<WidgetId, WidgetLayoutState> = {
     visible: true,
     snapEdge: 'left',
     stackOrder: 0,
+    expandedHeight: EXPANDED_HEIGHT,
   },
   'five-color': {
     id: 'five-color',
@@ -142,6 +156,7 @@ export const DEFAULT_LAYOUT: Record<WidgetId, WidgetLayoutState> = {
     visible: true,
     snapEdge: 'left',
     stackOrder: 0,
+    expandedHeight: EXPANDED_HEIGHT,
   },
 };
 
@@ -279,6 +294,23 @@ export const useWidgetStore = create<WidgetStore>()(
       },
 
       /**
+       * Update the pre-measured expanded height for a widget.
+       * 更新 Widget 预测量的展开高度。
+       */
+      setExpandedHeight: (id: WidgetId, height: number) => {
+        set((state) => {
+          // Only update if height actually changed to avoid unnecessary re-renders
+          if (state.widgets[id].expandedHeight === height) return state;
+          return {
+            widgets: {
+              ...state.widgets,
+              [id]: { ...state.widgets[id], expandedHeight: height },
+            },
+          };
+        });
+      },
+
+      /**
        * Auto-arrange all free-floating visible widgets to the left edge.
        * 将所有自由浮动的可见 Widget 自动收纳到左侧边缘。
        */
@@ -338,9 +370,9 @@ export const useWidgetStore = create<WidgetStore>()(
     }),
     {
       name: 'lumina-widget-layout',
-      version: 2,
+      version: 3,
       migrate: (persistedState, version) => {
-        if (version < 2) {
+        if (version < 3) {
           return { widgets: { ...DEFAULT_LAYOUT }, activeTab: 'converter' };
         }
         return persistedState as WidgetStore;

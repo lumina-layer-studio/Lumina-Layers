@@ -114,7 +114,7 @@ export default function ZoomableImage({ src, alt, className }: ZoomableImageProp
       <button
         type="button"
         onClick={resetZoom}
-        className="absolute top-2 right-2 rounded bg-black/60 px-2 py-1 text-xs text-white hover:bg-black/80 transition-colors"
+        className="absolute top-2 right-2 rounded bg-black/30 dark:bg-black/60 px-2 py-1 text-xs text-white hover:bg-black/50 dark:hover:bg-black/80 transition-colors"
       >
         重置缩放
       </button>

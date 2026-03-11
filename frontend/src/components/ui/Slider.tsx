@@ -22,8 +22,8 @@ export default function Slider({
   return (
     <div className="flex flex-col gap-1">
       <div className="flex items-center justify-between text-sm">
-        <label className="text-gray-300">{label}</label>
-        <span className="text-gray-400 tabular-nums">
+        <label className="text-gray-700 dark:text-gray-300">{label}</label>
+        <span className="text-gray-500 dark:text-gray-400 tabular-nums">
           {value}
           {unit ? ` ${unit}` : ""}
         </span>
@@ -36,7 +36,7 @@ export default function Slider({
         value={value}
         disabled={disabled}
         onChange={(e) => onChange(Number(e.target.value))}
-        className="w-full h-1.5 rounded-full appearance-none cursor-pointer bg-gray-700 accent-blue-500 disabled:opacity-40 disabled:cursor-not-allowed"
+        className="w-full h-1.5 rounded-full appearance-none cursor-pointer bg-gray-300 dark:bg-gray-700 accent-blue-500 disabled:opacity-40 disabled:cursor-not-allowed"
       />
     </div>
   );

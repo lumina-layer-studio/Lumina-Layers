@@ -31,7 +31,7 @@ export default function ActionBar() {
       {batchMode ? (
         <>
           {!canBatchSubmit && (
-            <p className="text-xs text-yellow-400">请先添加图片并选择 LUT</p>
+            <p className="text-xs text-yellow-600 dark:text-yellow-400">请先添加图片并选择 LUT</p>
           )}
 
           <div className="flex gap-2">
@@ -49,7 +49,7 @@ export default function ActionBar() {
       ) : (
         <>
           {!canSubmit && (
-            <p className="text-xs text-yellow-400">请先上传图片并选择 LUT</p>
+            <p className="text-xs text-yellow-600 dark:text-yellow-400">请先上传图片并选择 LUT</p>
           )}
 
           <div className="flex gap-2">
@@ -72,7 +72,7 @@ export default function ActionBar() {
       )}
 
       {error && (
-        <div className="text-xs text-red-400">{error}</div>
+        <div className="text-xs text-red-500 dark:text-red-400">{error}</div>
       )}
 
       <BedSizeSelector />
@@ -81,7 +81,7 @@ export default function ActionBar() {
         <ZoomableImage
           src={previewImageUrl}
           alt="预览结果"
-          className="w-full rounded-md border border-gray-700"
+          className="w-full rounded-md border border-gray-300 dark:border-gray-700"
         />
       )}
 

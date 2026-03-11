@@ -69,7 +69,7 @@ export default function ExtractorPanel() {
   return (
     <aside
       data-testid="extractor-panel"
-      className="w-[350px] h-full overflow-y-auto bg-gray-800 p-4 flex flex-col gap-4"
+      className="w-[350px] h-full overflow-y-auto bg-white dark:bg-gray-800 p-4 flex flex-col gap-4"
     >
       {/* 颜色模式 */}
       <div data-testid="color-mode-select">
@@ -95,7 +95,7 @@ export default function ExtractorPanel() {
 
       {/* 图片上传 */}
       <div data-testid="image-upload">
-        <label className="text-sm text-gray-300 mb-1 block">上传校准板照片</label>
+        <label className="text-sm text-gray-700 dark:text-gray-300 mb-1 block">上传校准板照片</label>
         <ImageUpload
           onFileSelect={(file) => setImageFile(file)}
           accept="image/*"
@@ -169,13 +169,13 @@ export default function ExtractorPanel() {
 
       {/* 双页模式：页面提取状态 + 合并按钮 */}
       {isMultiPage && (
-        <div data-testid="merge-section" className="flex flex-col gap-2 border border-gray-700 rounded-md p-3">
-          <span className="text-xs text-gray-400">{mergeTitle}</span>
+        <div data-testid="merge-section" className="flex flex-col gap-2 border border-gray-200 dark:border-gray-700 rounded-md p-3">
+          <span className="text-xs text-gray-500 dark:text-gray-400">{mergeTitle}</span>
           <div className="flex gap-2 text-xs">
-            <span className={p1Done ? "text-green-400" : "text-gray-500"}>
+            <span className={p1Done ? "text-green-600 dark:text-green-400" : "text-gray-400 dark:text-gray-500"}>
               Page 1: {p1Done ? "已提取" : "未提取"}
             </span>
-            <span className={p2Done ? "text-green-400" : "text-gray-500"}>
+            <span className={p2Done ? "text-green-600 dark:text-green-400" : "text-gray-400 dark:text-gray-500"}>
               Page 2: {p2Done ? "已提取" : "未提取"}
             </span>
           </div>
@@ -213,7 +213,7 @@ export default function ExtractorPanel() {
 
       {/* 手动修正提示 */}
       {lut_download_url && (
-        <div data-testid="manual-fix-section" className="text-xs text-gray-500 border border-gray-700 rounded-md p-2">
+        <div data-testid="manual-fix-section" className="text-xs text-gray-500 dark:text-gray-500 border border-gray-200 dark:border-gray-700 rounded-md p-2">
           点击右侧 LUT 预览图中的色块可手动修正颜色
         </div>
       )}

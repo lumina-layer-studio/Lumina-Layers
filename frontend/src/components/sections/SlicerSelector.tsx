@@ -66,12 +66,14 @@ export function getButtonLabel(
 interface SlicerSelectorProps {
   threemfDiskPath: string | null;
   downloadUrl: string | null;
+  canSubmit: boolean;
   onAutoGenerate: () => Promise<string | null>;
 }
 
 export default function SlicerSelector({
   threemfDiskPath,
   downloadUrl,
+  canSubmit,
   onAutoGenerate,
 }: SlicerSelectorProps) {
   const slicers = useSlicerStore((s) => s.slicers);
@@ -191,7 +193,7 @@ export default function SlicerSelector({
     setIsDropdownOpen(false);
   };
 
-  const isDisabled = isDetecting || isLaunching || isAutoGenerating;
+  const isDisabled = !canSubmit || isDetecting || isLaunching || isAutoGenerating;
 
   const mainButtonLabel = getButtonLabel(
     hasSlicers,

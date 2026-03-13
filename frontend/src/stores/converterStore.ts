@@ -260,6 +260,9 @@ export interface ConverterActions {
   submitReplacePreview: () => Promise<void>;
   submitSingleReplace: (origHex: string, newHex: string) => Promise<void>;
 
+  // 完整流水线（preview → generate）
+  submitFullPipeline: () => Promise<string | null>;
+
   // UI 状态
   setError: (error: string | null) => void;
   clearError: () => void;
@@ -1059,6 +1062,24 @@ export const useConverterStore = create<ConverterState & ConverterActions>(
           error: err instanceof Error ? err.message : "颜色替换预览失败",
         });
       }
+    },
+
+    // --- 完整流水线（preview → generate） ---
+    submitFullPipeline: async () => {
+      const state = _get();
+
+      // 步骤 1：如果没有 sessionId，先执行预览
+      if (!state.sessionId) {
+        await _get().submitPreview();
+        // 检查预览是否成功
+        const afterPreview = _get();
+        if (!afterPreview.sessionId) {
+          return null; // 预览失败，错误已由 submitPreview 设置
+        }
+      }
+
+      // 步骤 2：执行生成
+      return await _get().submitGenerate();
     },
 
     // --- UI 状态 ---

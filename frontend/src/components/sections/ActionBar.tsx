@@ -11,9 +11,9 @@ export default function ActionBar() {
   const isLoading = useConverterStore((s) => s.isLoading);
   const error = useConverterStore((s) => s.error);
   const previewImageUrl = useConverterStore((s) => s.previewImageUrl);
-  const modelUrl = useConverterStore((s) => s.modelUrl);
   const submitPreview = useConverterStore((s) => s.submitPreview);
   const submitGenerate = useConverterStore((s) => s.submitGenerate);
+  const submitFullPipeline = useConverterStore((s) => s.submitFullPipeline);
   const threemfDiskPath = useConverterStore((s) => s.threemfDiskPath);
   const downloadUrl = useConverterStore((s) => s.downloadUrl);
 
@@ -85,16 +85,15 @@ export default function ActionBar() {
         />
       )}
 
-      {(modelUrl || threemfDiskPath) && (
-        <SlicerSelector
-          threemfDiskPath={threemfDiskPath}
-          downloadUrl={downloadUrl}
-          onAutoGenerate={async () => {
-            await submitGenerate();
-            return useConverterStore.getState().threemfDiskPath ?? null;
-          }}
-        />
-      )}
+      <SlicerSelector
+        threemfDiskPath={threemfDiskPath}
+        downloadUrl={downloadUrl}
+        canSubmit={canSubmit}
+        onAutoGenerate={async () => {
+          await submitFullPipeline();
+          return useConverterStore.getState().threemfDiskPath ?? null;
+        }}
+      />
     </div>
   );
 }

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useSlicerStore } from "../../stores/slicerStore";
 import { useConverterStore } from "../../stores/converterStore";
+import { useI18n } from "../../i18n/context";
 
 /** Brand color style for a slicer button. 切片软件品牌配色样式。 */
 export interface SlicerBrandStyle {
@@ -54,13 +55,14 @@ export function getButtonLabel(
   hasSlicers: boolean,
   threemfDiskPath: string | null,
   slicerName: string | null,
+  t: (key: string) => string,
 ): string {
   if (hasSlicers) {
     return threemfDiskPath
-      ? `在 ${slicerName} 中打开`
-      : `生成并在 ${slicerName} 中打开`;
+      ? t("slicer_open_in").replace("{name}", slicerName ?? "")
+      : t("slicer_generate_open_in").replace("{name}", slicerName ?? "");
   }
-  return threemfDiskPath ? "下载 3MF" : "生成并下载";
+  return threemfDiskPath ? t("slicer_download_3mf") : t("slicer_generate_download");
 }
 
 interface SlicerSelectorProps {
@@ -90,6 +92,7 @@ export default function SlicerSelector({
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [isAutoGenerating, setIsAutoGenerating] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const { t } = useI18n();
 
   // Auto-detect slicers on mount
   useEffect(() => {
@@ -199,6 +202,7 @@ export default function SlicerSelector({
     hasSlicers,
     threemfDiskPath,
     selectedSlicer?.display_name ?? null,
+    t,
   );
 
   return (
@@ -229,7 +233,7 @@ export default function SlicerSelector({
               onClick={() => setIsDropdownOpen((prev) => !prev)}
               disabled={isDisabled}
               className={`flex items-center justify-center rounded-r-md border-l border-white/20 px-2 py-2 text-sm transition-colors ${brandStyle.bg} ${brandStyle.hover} ${brandStyle.text} disabled:opacity-40 disabled:cursor-not-allowed`}
-              aria-label="切换切片软件列表"
+              aria-label={t("slicer_toggle_list")}
               aria-expanded={isDropdownOpen}
               aria-haspopup="listbox"
             >
@@ -273,7 +277,7 @@ export default function SlicerSelector({
                   <path d="M10.75 2.75a.75.75 0 00-1.5 0v8.614L6.295 8.235a.75.75 0 10-1.09 1.03l4.25 4.5a.75.75 0 001.09 0l4.25-4.5a.75.75 0 00-1.09-1.03l-2.955 3.129V2.75z" />
                   <path d="M3.5 12.75a.75.75 0 00-1.5 0v2.5A2.75 2.75 0 004.75 18h10.5A2.75 2.75 0 0018 15.25v-2.5a.75.75 0 00-1.5 0v2.5c0 .69-.56 1.25-1.25 1.25H4.75c-.69 0-1.25-.56-1.25-1.25v-2.5z" />
                 </svg>
-                下载 3MF
+                {t("slicer_download_3mf")}
               </button>
             </div>
           )}
@@ -281,10 +285,10 @@ export default function SlicerSelector({
       ) : (
         <div className="flex items-center gap-2">
           {isDetecting ? (
-            <p className="text-xs text-gray-400">正在检测切片软件...</p>
+            <p className="text-xs text-gray-400">{t("slicer_detecting")}</p>
           ) : (
             <>
-              <p className="text-xs text-gray-400">未检测到切片软件</p>
+              <p className="text-xs text-gray-400">{t("slicer_not_detected")}</p>
               <button
                 type="button"
                 onClick={() => void handleMainClick()}
@@ -297,7 +301,7 @@ export default function SlicerSelector({
                     <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
                   </svg>
                 )}
-                {getButtonLabel(false, threemfDiskPath, null)}
+                {getButtonLabel(false, threemfDiskPath, null, t)}
               </button>
             </>
           )}

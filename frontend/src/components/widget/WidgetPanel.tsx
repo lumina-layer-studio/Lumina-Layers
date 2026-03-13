@@ -17,6 +17,7 @@ import { useWidgetStore } from '../../stores/widgetStore';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { COLLAPSED_HEIGHT, WIDGET_WIDTH } from '../../utils/widgetUtils';
 import type { WidgetId } from '../../types/widget';
+import { useI18n } from '../../i18n/context';
 
 // ===== ErrorBoundary =====
 
@@ -39,19 +40,26 @@ class WidgetErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySta
   render() {
     if (this.state.hasError) {
       return (
-        <div className="p-4 text-center text-sm text-red-500">
-          <p>Widget error</p>
-          <button
-            className="mt-2 px-3 py-1 text-xs bg-red-100 dark:bg-red-900/30 rounded hover:bg-red-200"
-            onClick={() => this.setState({ hasError: false })}
-          >
-            Retry
-          </button>
-        </div>
+        <WidgetErrorFallback onRetry={() => this.setState({ hasError: false })} />
       );
     }
     return this.props.children;
   }
+}
+
+function WidgetErrorFallback({ onRetry }: { onRetry: () => void }) {
+  const { t } = useI18n();
+  return (
+    <div className="p-4 text-center text-sm text-red-500">
+      <p>{t('widget_error')}</p>
+      <button
+        className="mt-2 px-3 py-1 text-xs bg-red-100 dark:bg-red-900/30 rounded hover:bg-red-200"
+        onClick={onRetry}
+      >
+        {t('widget_retry')}
+      </button>
+    </div>
+  );
 }
 
 // ===== WidgetPanel =====

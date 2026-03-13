@@ -1,7 +1,9 @@
 import { useEffect } from "react";
 import { useSettingsStore } from "../stores/settingsStore";
+import { useI18n } from "../i18n/context";
 
 export function ThemeToggle() {
+  const { t } = useI18n();
   const theme = useSettingsStore((s) => s.theme);
   const setTheme = useSettingsStore((s) => s.setTheme);
 
@@ -21,7 +23,7 @@ export function ThemeToggle() {
   return (
     <button
       onClick={handleToggle}
-      aria-label="Toggle theme"
+      aria-label={t("app_toggle_theme")}
       className="px-3 py-1 rounded text-sm font-medium bg-gray-200 text-gray-700 hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600 transition-colors"
     >
       {theme === "light" ? "🌙" : "☀️"}

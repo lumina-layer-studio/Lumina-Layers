@@ -1,4 +1,5 @@
 import { useState, useRef, useCallback } from "react";
+import { useI18n } from "../../i18n/context";
 
 interface ImageUploadProps {
   onFileSelect: (file: File) => void;
@@ -11,6 +12,7 @@ export default function ImageUpload({
   accept,
   preview,
 }: ImageUploadProps) {
+  const { t } = useI18n();
   const [isDragging, setIsDragging] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -91,7 +93,7 @@ export default function ImageUpload({
         />
       ) : (
         <span className="text-sm text-gray-500 dark:text-gray-400 select-none">
-          拖拽图片或点击上传
+          {t("upload_drag_hint")}
         </span>
       )}
     </div>

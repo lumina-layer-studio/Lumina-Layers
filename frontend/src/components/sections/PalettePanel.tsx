@@ -2,6 +2,7 @@ import { useConverterStore } from "../../stores/converterStore";
 import type { PaletteEntry } from "../../api/types";
 import Slider from "../ui/Slider";
 import Button from "../ui/Button";
+import { useI18n } from "../../i18n/context";
 
 // ========== PaletteItem ==========
 
@@ -26,6 +27,7 @@ function PaletteItem({
   onSelect,
   onHeightChange,
 }: PaletteItemProps) {
+  const { t } = useI18n();
   const displayHex = remappedHex ?? entry.matched_hex;
   const isRemapped = !!remappedHex;
 
@@ -35,7 +37,7 @@ function PaletteItem({
       <div
         role="button"
         tabIndex={0}
-        aria-label={`颜色 #${entry.matched_hex}，占比 ${entry.percentage.toFixed(1)}%${isRemapped ? `，已替换为 #${remappedHex}` : ""}`}
+        aria-label={`${t("lut_grid_color_label").replace("{hex}", entry.matched_hex)}，${entry.percentage.toFixed(1)}%${isRemapped ? `，${t("palette_replaced").replace("{hex}", `#${remappedHex}`)}` : ""}`}
         aria-pressed={isSelected}
         onClick={onSelect}
         onKeyDown={(e) => {
@@ -68,7 +70,7 @@ function PaletteItem({
     <div
       role="button"
       tabIndex={0}
-      aria-label={`颜色 #${entry.matched_hex}，占比 ${entry.percentage.toFixed(1)}%${isRemapped ? `，已替换为 #${remappedHex}` : ""}`}
+      aria-label={`${t("lut_grid_color_label").replace("{hex}", entry.matched_hex)}，${entry.percentage.toFixed(1)}%${isRemapped ? `，${t("palette_replaced").replace("{hex}", `#${remappedHex}`)}` : ""}`}
       aria-pressed={isSelected}
       onClick={onSelect}
       onKeyDown={(e) => {
@@ -141,11 +143,12 @@ interface SelectedColorDetailProps {
 }
 
 function SelectedColorDetail({ entry, remappedHex }: SelectedColorDetailProps) {
+  const { t } = useI18n();
   return (
     <div className="flex gap-4 items-start py-2 px-3 bg-gray-800/40 rounded-lg mb-2">
-      <ColorBlock label="量化色" hex={entry.quantized_hex} />
-      <ColorBlock label="匹配色" hex={entry.matched_hex} />
-      {remappedHex && <ColorBlock label="替换色" hex={remappedHex} />}
+      <ColorBlock label={t("palette_quantized")} hex={entry.quantized_hex} />
+      <ColorBlock label={t("palette_matched")} hex={entry.matched_hex} />
+      {remappedHex && <ColorBlock label={t("palette_replaced")} hex={remappedHex} />}
     </div>
   );
 }
@@ -153,6 +156,7 @@ function SelectedColorDetail({ entry, remappedHex }: SelectedColorDetailProps) {
 // ========== PalettePanel ==========
 
 export default function PalettePanel() {
+  const { t } = useI18n();
   const palette = useConverterStore((s) => s.palette);
   const selectedColor = useConverterStore((s) => s.selectedColor);
   const setSelectedColor = useConverterStore((s) => s.setSelectedColor);
@@ -176,7 +180,7 @@ export default function PalettePanel() {
     <div>
       {palette.length === 0 ? (
         <p className="text-xs text-gray-500 py-2">
-          暂无调色板数据，请先完成预览
+          {t("palette_no_data")}
         </p>
       ) : (
         <div className="flex flex-col gap-1">
@@ -197,13 +201,13 @@ export default function PalettePanel() {
           {/* Undo / Clear buttons */}
           <div className="flex gap-2 mb-2">
             <Button
-              label="撤销"
+              label={t("palette_undo")}
               variant="secondary"
               onClick={undoColorRemap}
               disabled={!hasHistory}
             />
             <Button
-              label="清空替换"
+              label={t("palette_clear_remaps")}
               variant="secondary"
               onClick={clearAllRemaps}
               disabled={!hasRemaps}
@@ -214,7 +218,7 @@ export default function PalettePanel() {
           <div
             className="max-h-80 overflow-y-auto"
             role="listbox"
-            aria-label="调色板颜色列表"
+            aria-label={t("palette_list_label")}
           >
             <div
               className={

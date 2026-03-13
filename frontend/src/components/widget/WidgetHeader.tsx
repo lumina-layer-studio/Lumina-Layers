@@ -50,7 +50,7 @@ export function WidgetHeader({
       </span>
       <button
         type="button"
-        aria-label={collapsed ? 'Expand' : 'Collapse'}
+        aria-label={collapsed ? t('widget_expand') : t('widget_collapse')}
         onClick={(e) => {
           e.stopPropagation();
           onToggleCollapse();

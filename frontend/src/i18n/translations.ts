@@ -1094,7 +1094,7 @@ export const translations: Record<string, Record<"zh" | "en", string>> = {
     en: "LUT Manager",
   },
   "widget.fiveColor": {
-    zh: "五色查询",
+    zh: "配方查询",
     en: "Five-Color",
   },
   "widget.basicSettings": {
@@ -1122,7 +1122,7 @@ export const translations: Record<string, Record<"zh" | "en", string>> = {
     en: "Outline Settings",
   },
   "widget.cloisonneSettings": {
-    zh: "景泰蓝设置",
+    zh: "掐丝珐琅设置",
     en: "Cloisonné Settings",
   },
   "widget.coatingSettings": {
@@ -1160,7 +1160,853 @@ export const translations: Record<string, Record<"zh" | "en", string>> = {
     en: "LUT Manager",
   },
   "tab.fiveColor": {
-    zh: "五色查询",
+    zh: "配方查询",
     en: "Five-Color",
+  },
+
+  // ==================== App Header ====================
+  app_header_title: {
+    zh: "Lumina Studio 2.0",
+    en: "Lumina Studio 2.0",
+  },
+  app_checking_backend: {
+    zh: "正在检查后端…",
+    en: "Checking backend…",
+  },
+  app_backend_connected: {
+    zh: "后端已连接",
+    en: "Backend Connected",
+  },
+  app_backend_unreachable: {
+    zh: "后端不可达",
+    en: "Backend Unreachable",
+  },
+  app_reset_layout: {
+    zh: "重置布局",
+    en: "Reset Layout",
+  },
+  app_3d_scene_error: {
+    zh: "3D 场景加载失败",
+    en: "3D scene failed to load",
+  },
+  app_toggle_language: {
+    zh: "切换语言",
+    en: "Toggle language",
+  },
+  app_toggle_theme: {
+    zh: "切换主题",
+    en: "Toggle theme",
+  },
+
+  // ==================== LUT Manager Panel ====================
+  lut_manager_title: {
+    zh: "LUT 合并工具",
+    en: "LUT Merge Tool",
+  },
+  lut_manager_desc: {
+    zh: "将多个 LUT 合并为一个，支持 Delta-E 去重。主 LUT 必须为 6-Color 或 8-Color 模式。",
+    en: "Merge multiple LUTs into one with Delta-E dedup. Primary LUT must be 6-Color or 8-Color mode.",
+  },
+  lut_manager_primary_label: {
+    zh: "主 LUT",
+    en: "Primary LUT",
+  },
+  lut_manager_primary_placeholder: {
+    zh: "选择主 LUT...",
+    en: "Select primary LUT...",
+  },
+  lut_manager_loading: {
+    zh: "加载中...",
+    en: "Loading...",
+  },
+  lut_manager_primary_mode_invalid: {
+    zh: "主 LUT 必须为 6-Color 或 8-Color 模式",
+    en: "Primary LUT must be 6-Color or 8-Color mode",
+  },
+  lut_manager_secondary_label: {
+    zh: "副 LUT",
+    en: "Secondary LUTs",
+  },
+  lut_manager_no_secondary: {
+    zh: "无可用的副 LUT",
+    en: "No secondary LUTs available",
+  },
+  lut_manager_select_primary_first: {
+    zh: "请先选择主 LUT",
+    en: "Please select a primary LUT first",
+  },
+  lut_manager_dedup_label: {
+    zh: "去重阈值",
+    en: "Dedup Threshold",
+  },
+  lut_manager_dedup_hint: {
+    zh: "0 = 仅精确去重，值越大去除越多相近色",
+    en: "0 = exact dedup only, higher = remove more similar colors",
+  },
+  lut_manager_merge_btn: {
+    zh: "合并并保存",
+    en: "Merge & Save",
+  },
+  lut_manager_merge_success: {
+    zh: "✓ 合并成功！",
+    en: "✓ Merge successful!",
+  },
+  lut_manager_merge_before: {
+    zh: "合并前",
+    en: "Before",
+  },
+  lut_manager_merge_after: {
+    zh: "合并后",
+    en: "After",
+  },
+  lut_manager_exact_dupes: {
+    zh: "精确去重",
+    en: "Exact dupes",
+  },
+  lut_manager_similar_removed: {
+    zh: "相近色去除",
+    en: "Similar removed",
+  },
+  lut_manager_file: {
+    zh: "文件",
+    en: "File",
+  },
+  lut_manager_close_error: {
+    zh: "关闭错误",
+    en: "Close error",
+  },
+
+  // ==================== About View ====================
+  about_title: {
+    zh: "Lumina Studio 2.0",
+    en: "Lumina Studio 2.0",
+  },
+  about_desc: {
+    zh: "更多信息即将推出",
+    en: "More info coming soon",
+  },
+  about_clear_cache_loading: {
+    zh: "清理中...",
+    en: "Clearing...",
+  },
+  about_clear_cache: {
+    zh: "清除系统缓存",
+    en: "Clear System Cache",
+  },
+  about_close_notification: {
+    zh: "关闭通知",
+    en: "Close notification",
+  },
+
+  // ==================== Calibration Panel ====================
+  cal_color_mode_label: {
+    zh: "颜色模式",
+    en: "Color Mode",
+  },
+  cal_block_size_label: {
+    zh: "色块尺寸",
+    en: "Block Size",
+  },
+  cal_gap_label: {
+    zh: "色块间距",
+    en: "Block Gap",
+  },
+  cal_backing_label: {
+    zh: "底板颜色",
+    en: "Backing Color",
+  },
+  cal_generate_btn: {
+    zh: "生成校准板",
+    en: "Generate Calibration",
+  },
+  cal_download_3mf: {
+    zh: "下载 3MF 文件",
+    en: "Download 3MF File",
+  },
+  cal_preview_alt: {
+    zh: "校准板预览",
+    en: "Calibration preview",
+  },
+
+  // ==================== Extractor Panel ====================
+  ext_color_mode_label: {
+    zh: "颜色模式",
+    en: "Color Mode",
+  },
+  ext_page_label: {
+    zh: "页码",
+    en: "Page",
+  },
+  ext_upload_label: {
+    zh: "上传校准板照片",
+    en: "Upload Calibration Photo",
+  },
+  ext_offset_x_label: {
+    zh: "水平偏移 (offset_x)",
+    en: "Horizontal Offset (offset_x)",
+  },
+  ext_offset_y_label: {
+    zh: "垂直偏移 (offset_y)",
+    en: "Vertical Offset (offset_y)",
+  },
+  ext_zoom_label: {
+    zh: "缩放 (zoom)",
+    en: "Zoom",
+  },
+  ext_distortion_label: {
+    zh: "畸变校正 (distortion)",
+    en: "Distortion Correction",
+  },
+  ext_wb_label: {
+    zh: "白平衡校正",
+    en: "White Balance Correction",
+  },
+  ext_vignette_label: {
+    zh: "暗角校正",
+    en: "Vignette Correction",
+  },
+  ext_extract_btn_label: {
+    zh: "提取颜色",
+    en: "Extract Colors",
+  },
+  ext_clear_corners: {
+    zh: "清除角点",
+    en: "Clear Corners",
+  },
+  ext_merge_5c_title: {
+    zh: "5色扩展双页合并",
+    en: "5-Color Extended Dual-Page Merge",
+  },
+  ext_merge_8c_title: {
+    zh: "8色双页合并",
+    en: "8-Color Dual-Page Merge",
+  },
+  ext_merge_5c_btn: {
+    zh: "合并 5 色 LUT",
+    en: "Merge 5-Color LUT",
+  },
+  ext_merge_8c_btn: {
+    zh: "合并 8 色 LUT",
+    en: "Merge 8-Color LUT",
+  },
+  ext_page_extracted: {
+    zh: "已提取",
+    en: "Extracted",
+  },
+  ext_page_not_extracted: {
+    zh: "未提取",
+    en: "Not extracted",
+  },
+  ext_download_lut: {
+    zh: "下载 LUT 文件 (.npy)",
+    en: "Download LUT File (.npy)",
+  },
+  ext_manual_fix_hint: {
+    zh: "点击右侧 LUT 预览图中的色块可手动修正颜色",
+    en: "Click a cell in the LUT preview to manually fix its color",
+  },
+
+  // ==================== Extractor Canvas ====================
+  ext_canvas_warp_view: {
+    zh: "透视校正",
+    en: "Warp View",
+  },
+  ext_canvas_lut_preview: {
+    zh: "LUT 预览 / 点击色块修正颜色",
+    en: "LUT Preview / Click cell to fix color",
+  },
+  ext_canvas_row: {
+    zh: "行",
+    en: "Row",
+  },
+  ext_canvas_col: {
+    zh: "列",
+    en: "Col",
+  },
+  ext_canvas_fixing: {
+    zh: "修正中...",
+    en: "Fixing...",
+  },
+  ext_canvas_confirm_fix: {
+    zh: "确认修正",
+    en: "Confirm Fix",
+  },
+  ext_canvas_cancel: {
+    zh: "取消",
+    en: "Cancel",
+  },
+  ext_canvas_upload_hint: {
+    zh: "请在左侧面板上传校准板照片",
+    en: "Upload a calibration board photo from the left panel",
+  },
+  ext_canvas_upload_hint_en: {
+    zh: "上传校准板照片以开始",
+    en: "Upload a calibration board photo to begin",
+  },
+  ext_canvas_positioning_done: {
+    zh: "定位完成",
+    en: "Positioning Complete",
+  },
+  ext_canvas_click_corner: {
+    zh: "请点击第 {n} 个角点: {label}",
+    en: "Click corner {n}: {label}",
+  },
+
+  // ==================== Basic Settings ====================
+  basic_batch_mode: {
+    zh: "批量模式",
+    en: "Batch Mode",
+  },
+  basic_crop_after_upload: {
+    zh: "上传后裁剪",
+    en: "Crop After Upload",
+  },
+  basic_lut_label: {
+    zh: "LUT",
+    en: "LUT",
+  },
+  basic_lut_placeholder: {
+    zh: "选择 LUT...",
+    en: "Select LUT...",
+  },
+  basic_color_mode_label: {
+    zh: "色彩模式",
+    en: "Color Mode",
+  },
+  basic_width: {
+    zh: "宽度",
+    en: "Width",
+  },
+  basic_height: {
+    zh: "高度",
+    en: "Height",
+  },
+  basic_thickness: {
+    zh: "厚度",
+    en: "Thickness",
+  },
+  basic_structure_mode: {
+    zh: "结构模式",
+    en: "Structure Mode",
+  },
+  basic_modeling_mode: {
+    zh: "建模模式",
+    en: "Modeling Mode",
+  },
+  basic_image_format_error: {
+    zh: "仅支持 JPG/PNG/SVG 格式",
+    en: "Only JPG/PNG/SVG formats are supported",
+  },
+
+  // ==================== Structure Mode Options ====================
+  "structure_mode.Double-sided": {
+    zh: "双面（钥匙扣）",
+    en: "Double-sided",
+  },
+  "structure_mode.Single-sided": {
+    zh: "单面（浮雕）",
+    en: "Single-sided",
+  },
+
+  // ==================== Modeling Mode Options ====================
+  "modeling_mode.high-fidelity": {
+    zh: "高保真",
+    en: "High-Fidelity",
+  },
+  "modeling_mode.pixel": {
+    zh: "像素艺术",
+    en: "Pixel Art",
+  },
+  "modeling_mode.vector": {
+    zh: "矢量模式",
+    en: "Vector",
+  },
+
+  // ==================== Advanced Settings ====================
+  adv_quantize_colors: {
+    zh: "量化颜色数",
+    en: "Quantize Colors",
+  },
+  adv_bg_tolerance: {
+    zh: "背景容差",
+    en: "Background Tolerance",
+  },
+  adv_auto_bg: {
+    zh: "自动背景",
+    en: "Auto Background",
+  },
+  adv_enable_cleanup: {
+    zh: "启用清理",
+    en: "Enable Cleanup",
+  },
+  adv_separate_backing: {
+    zh: "分离底板",
+    en: "Separate Backing",
+  },
+
+  // ==================== Relief Settings ====================
+  relief_enable: {
+    zh: "启用浮雕",
+    en: "Enable Relief",
+  },
+  relief_max_height: {
+    zh: "最大高度",
+    en: "Max Height",
+  },
+  relief_auto_height_mode: {
+    zh: "自动高度模式",
+    en: "Auto Height Mode",
+  },
+  relief_darker_higher: {
+    zh: "深色凸起",
+    en: "Darker Higher",
+  },
+  relief_lighter_higher: {
+    zh: "浅色凸起",
+    en: "Lighter Higher",
+  },
+  relief_use_heightmap: {
+    zh: "根据高度图",
+    en: "Use Heightmap",
+  },
+  relief_heightmap_label: {
+    zh: "高度图",
+    en: "Heightmap",
+  },
+  relief_file_selected: {
+    zh: "已选择",
+    en: "Selected",
+  },
+
+  // ==================== Outline Settings ====================
+  outline_enable: {
+    zh: "启用描边",
+    en: "Enable Outline",
+  },
+  outline_width: {
+    zh: "描边宽度",
+    en: "Outline Width",
+  },
+
+  // ==================== Cloisonne Settings ====================
+  cloisonne_enable: {
+    zh: "启用掐丝珐琅",
+    en: "Enable Cloisonné",
+  },
+  cloisonne_wire_width: {
+    zh: "金属丝宽度",
+    en: "Wire Width",
+  },
+  cloisonne_wire_height: {
+    zh: "金属丝高度",
+    en: "Wire Height",
+  },
+
+  // ==================== Coating Settings ====================
+  coating_enable: {
+    zh: "启用涂层",
+    en: "Enable Coating",
+  },
+  coating_height: {
+    zh: "涂层高度",
+    en: "Coating Height",
+  },
+
+  // ==================== Keychain Loop Settings ====================
+  loop_enable: {
+    zh: "添加挂件环",
+    en: "Add Keychain Loop",
+  },
+  loop_width: {
+    zh: "环宽度",
+    en: "Loop Width",
+  },
+  loop_length: {
+    zh: "环长度",
+    en: "Loop Length",
+  },
+  loop_hole_diameter: {
+    zh: "环孔直径",
+    en: "Loop Hole Diameter",
+  },
+
+  // ==================== Action Bar ====================
+  action_upload_hint: {
+    zh: "请先上传图片并选择 LUT",
+    en: "Please upload an image and select a LUT first",
+  },
+  action_batch_upload_hint: {
+    zh: "请先添加图片并选择 LUT",
+    en: "Please add images and select a LUT first",
+  },
+  action_preview: {
+    zh: "预览",
+    en: "Preview",
+  },
+  action_generate: {
+    zh: "生成",
+    en: "Generate",
+  },
+  action_batch_generate: {
+    zh: "批量生成",
+    en: "Batch Generate",
+  },
+  action_preview_alt: {
+    zh: "预览结果",
+    en: "Preview result",
+  },
+
+  // ==================== Bed Size Selector ====================
+  bed_size_label: {
+    zh: "热床尺寸",
+    en: "Bed Size",
+  },
+  bed_size_loading: {
+    zh: "加载中...",
+    en: "Loading...",
+  },
+  bed_size_placeholder: {
+    zh: "选择热床尺寸...",
+    en: "Select bed size...",
+  },
+
+  // ==================== Palette Panel ====================
+  palette_no_data: {
+    zh: "暂无调色板数据，请先完成预览",
+    en: "No palette data. Please generate a preview first.",
+  },
+  palette_quantized: {
+    zh: "量化色",
+    en: "Quantized",
+  },
+  palette_matched: {
+    zh: "匹配色",
+    en: "Matched",
+  },
+  palette_replaced: {
+    zh: "替换色",
+    en: "Replaced",
+  },
+  palette_undo: {
+    zh: "撤销",
+    en: "Undo",
+  },
+  palette_clear_remaps: {
+    zh: "清空替换",
+    en: "Clear Remaps",
+  },
+  palette_list_label: {
+    zh: "调色板颜色列表",
+    en: "Palette color list",
+  },
+
+  // ==================== LUT Color Grid ====================
+  lut_grid_loading: {
+    zh: "加载 LUT 颜色中...",
+    en: "Loading LUT colors...",
+  },
+  lut_grid_select_lut: {
+    zh: "请先选择 LUT 以加载可用颜色",
+    en: "Select a LUT to load available colors",
+  },
+  lut_grid_total_colors: {
+    zh: "共 {total} 色，显示 {visible} 色",
+    en: "{total} colors, showing {visible}",
+  },
+  lut_grid_selected: {
+    zh: "已选中",
+    en: "Selected",
+  },
+  lut_grid_search_placeholder_short: {
+    zh: "搜索 HEX / RGB 颜色...",
+    en: "Search HEX / RGB...",
+  },
+  lut_grid_hue_all_short: {
+    zh: "全部",
+    en: "All",
+  },
+  lut_grid_hue_fav_short: {
+    zh: "收藏",
+    en: "Favorites",
+  },
+  lut_grid_hue_red_short: {
+    zh: "红",
+    en: "Red",
+  },
+  lut_grid_hue_orange_short: {
+    zh: "橙",
+    en: "Orange",
+  },
+  lut_grid_hue_yellow_short: {
+    zh: "黄",
+    en: "Yellow",
+  },
+  lut_grid_hue_green_short: {
+    zh: "绿",
+    en: "Green",
+  },
+  lut_grid_hue_cyan_short: {
+    zh: "青",
+    en: "Cyan",
+  },
+  lut_grid_hue_blue_short: {
+    zh: "蓝",
+    en: "Blue",
+  },
+  lut_grid_hue_purple_short: {
+    zh: "紫",
+    en: "Purple",
+  },
+  lut_grid_hue_neutral_short: {
+    zh: "中性",
+    en: "Neutral",
+  },
+  lut_grid_recommendations: {
+    zh: "推荐替换色",
+    en: "Recommended Replacements",
+  },
+  lut_grid_used_in_image: {
+    zh: "图中使用",
+    en: "Used in image",
+  },
+  lut_grid_other_available: {
+    zh: "其他可用",
+    en: "Other available",
+  },
+  lut_grid_all_available: {
+    zh: "全部可用",
+    en: "All available",
+  },
+  lut_grid_no_match: {
+    zh: "无匹配颜色",
+    en: "No matching colors",
+  },
+  lut_grid_color_label: {
+    zh: "颜色 {hex}",
+    en: "Color {hex}",
+  },
+  lut_grid_color_fav: {
+    zh: "已收藏",
+    en: "Favorited",
+  },
+  lut_grid_dblclick_fav: {
+    zh: "双击收藏",
+    en: "Double-click to favorite",
+  },
+  lut_grid_dblclick_unfav: {
+    zh: "双击取消收藏",
+    en: "Double-click to unfavorite",
+  },
+
+  // ==================== Batch File Uploader ====================
+  batch_drop_hint: {
+    zh: "拖拽图片或点击上传（支持多选）",
+    en: "Drag & drop images or click to upload (multi-select)",
+  },
+  batch_drop_aria: {
+    zh: "拖拽图片或点击上传多个文件",
+    en: "Drag images or click to upload multiple files",
+  },
+  batch_file_count: {
+    zh: "已选 {count} 个文件",
+    en: "{count} files selected",
+  },
+  batch_file_list_label: {
+    zh: "已选文件列表",
+    en: "Selected files list",
+  },
+  batch_delete_file: {
+    zh: "删除 {name}",
+    en: "Delete {name}",
+  },
+
+  // ==================== Image Upload ====================
+  upload_drag_hint: {
+    zh: "拖拽图片或点击上传",
+    en: "Drag & drop image or click to upload",
+  },
+
+  // ==================== Zoomable Image ====================
+  zoom_reset: {
+    zh: "重置缩放",
+    en: "Reset Zoom",
+  },
+
+  // ==================== Batch Result Summary ====================
+  batch_success: {
+    zh: "成功",
+    en: "Success",
+  },
+  batch_total: {
+    zh: "总计",
+    en: "Total",
+  },
+  batch_failed: {
+    zh: "失败",
+    en: "Failed",
+  },
+  batch_download_zip: {
+    zh: "下载 ZIP",
+    en: "Download ZIP",
+  },
+  batch_download_zip_aria: {
+    zh: "下载 ZIP 文件",
+    en: "Download ZIP file",
+  },
+  batch_failed_files: {
+    zh: "失败文件：",
+    en: "Failed files:",
+  },
+  batch_failed_list_label: {
+    zh: "失败文件列表",
+    en: "Failed files list",
+  },
+
+  // ==================== Slicer Selector ====================
+  slicer_open_in: {
+    zh: "在 {name} 中打开",
+    en: "Open in {name}",
+  },
+  slicer_generate_open_in: {
+    zh: "生成并在 {name} 中打开",
+    en: "Generate & open in {name}",
+  },
+  slicer_download_3mf: {
+    zh: "下载 3MF",
+    en: "Download 3MF",
+  },
+  slicer_generate_download: {
+    zh: "生成并下载",
+    en: "Generate & Download",
+  },
+  slicer_detecting: {
+    zh: "正在检测切片软件...",
+    en: "Detecting slicers...",
+  },
+  slicer_not_detected: {
+    zh: "未检测到切片软件",
+    en: "No slicers detected",
+  },
+  slicer_toggle_list: {
+    zh: "切换切片软件列表",
+    en: "Toggle slicer list",
+  },
+
+  // ==================== Crop Modal ====================
+  crop_modal_title: {
+    zh: "裁剪图片",
+    en: "Crop Image",
+  },
+  crop_modal_close: {
+    zh: "关闭",
+    en: "Close",
+  },
+  crop_modal_original: {
+    zh: "原图",
+    en: "Original",
+  },
+  crop_modal_selection: {
+    zh: "选区",
+    en: "Selection",
+  },
+  crop_modal_free: {
+    zh: "自由",
+    en: "Free",
+  },
+  crop_modal_use_original: {
+    zh: "使用原图",
+    en: "Use Original",
+  },
+  crop_modal_confirm: {
+    zh: "确认裁剪",
+    en: "Confirm Crop",
+  },
+
+  // ==================== Five Color Query Panel ====================
+  five_color_lut_label: {
+    zh: "LUT 选择",
+    en: "LUT Selection",
+  },
+  five_color_lut_placeholder: {
+    zh: "请选择 LUT",
+    en: "Select LUT",
+  },
+  five_color_clear: {
+    zh: "清除",
+    en: "Clear",
+  },
+  five_color_undo: {
+    zh: "撤销",
+    en: "Undo",
+  },
+  five_color_reverse: {
+    zh: "反序",
+    en: "Reverse",
+  },
+  five_color_query: {
+    zh: "查询",
+    en: "Query",
+  },
+  five_color_close_error: {
+    zh: "关闭错误",
+    en: "Close error",
+  },
+  five_color_result_hex: {
+    zh: "Hex",
+    en: "Hex",
+  },
+  five_color_result_rgb: {
+    zh: "RGB",
+    en: "RGB",
+  },
+  five_color_result_row: {
+    zh: "行号",
+    en: "Row",
+  },
+  five_color_result_color: {
+    zh: "结果颜色 {hex}",
+    en: "Result color {hex}",
+  },
+  five_color_not_found: {
+    zh: "未找到匹配",
+    en: "No match found",
+  },
+  five_color_selected: {
+    zh: "已选颜色 {n}: {name}",
+    en: "Selected color {n}: {name}",
+  },
+  five_color_slot_empty: {
+    zh: "颜色槽 {n}: 空",
+    en: "Color slot {n}: empty",
+  },
+  five_color_select_color: {
+    zh: "选择颜色 {name} ({hex})",
+    en: "Select color {name} ({hex})",
+  },
+  five_color_no_base_colors: {
+    zh: "未加载到基础颜色",
+    en: "No base colors loaded",
+  },
+  five_color_select_lut_first: {
+    zh: "请先选择 LUT 以加载基础颜色",
+    en: "Select a LUT to load base colors",
+  },
+
+  // ==================== Widget Error ====================
+  widget_error: {
+    zh: "组件出错",
+    en: "Widget error",
+  },
+  widget_retry: {
+    zh: "重试",
+    en: "Retry",
+  },
+  widget_expand: {
+    zh: "展开",
+    en: "Expand",
+  },
+  widget_collapse: {
+    zh: "折叠",
+    en: "Collapse",
   },
 };

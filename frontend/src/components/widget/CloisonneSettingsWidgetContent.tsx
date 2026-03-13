@@ -1,6 +1,6 @@
 /**
  * Cloisonné settings widget content wrapper.
- * 景泰蓝设置 Widget 内容包装组件。
+ * 掐丝珐琅设置 Widget 内容包装组件。
  */
 
 import CloisonneSettings from '../sections/CloisonneSettings';

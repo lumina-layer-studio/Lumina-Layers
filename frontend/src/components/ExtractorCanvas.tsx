@@ -1,6 +1,7 @@
 import { useRef, useEffect, useCallback, useState } from "react";
 import { useExtractorStore } from "../stores/extractorStore";
 import { ExtractorColorMode } from "../api/types";
+import { useI18n } from "../i18n/context";
 
 // ========== Corner Labels Mapping (exported for testing) ==========
 
@@ -104,6 +105,7 @@ export const LUT_GRID_SIZE: Record<string, number> = {
 // ========== Component ==========
 
 export default function ExtractorCanvas() {
+  const { t } = useI18n();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const imageRef = useRef<HTMLImageElement | null>(null);
 
@@ -175,8 +177,8 @@ export default function ExtractorCanvas() {
   const labels = CORNER_LABELS[color_mode] ?? CORNER_LABELS["4-Color"];
   const hintText =
     cornerCount >= 4
-      ? "定位完成 / Positioning Complete"
-      : `请点击第 ${cornerCount + 1} 个角点: ${labels[cornerCount]}`;
+      ? t("ext_canvas_positioning_done")
+      : t("ext_canvas_click_corner").replace("{n}", String(cornerCount + 1)).replace("{label}", labels[cornerCount]);
 
   // ---------- LUT preview click handler (for manual fix) ----------
   const handleLutPreviewClick = useCallback(
@@ -210,7 +212,7 @@ export default function ExtractorCanvas() {
         {warp_view_url && (
           <div className="flex flex-col items-center gap-2">
             <span className="text-xs text-gray-500 dark:text-gray-400">
-              透视校正 / Warp View
+              {t("ext_canvas_warp_view")}
             </span>
             <img
               data-testid="warp-view-image"
@@ -223,7 +225,7 @@ export default function ExtractorCanvas() {
         {lut_preview_url && (
           <div className="flex flex-col items-center gap-2">
             <span className="text-xs text-gray-500 dark:text-gray-400">
-              LUT 预览 / 点击色块修正颜色
+              {t("ext_canvas_lut_preview")}
             </span>
             <img
               ref={lutPreviewRef}
@@ -242,7 +244,7 @@ export default function ExtractorCanvas() {
             className="flex items-center gap-3 bg-gray-100 dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg px-4 py-3"
           >
             <span className="text-sm text-gray-700 dark:text-gray-300">
-              行 {selectedCell[0] + 1} / 列 {selectedCell[1] + 1}
+              {t("ext_canvas_row")} {selectedCell[0] + 1} / {t("ext_canvas_col")} {selectedCell[1] + 1}
             </span>
             <input
               data-testid="fix-color-picker"
@@ -258,13 +260,13 @@ export default function ExtractorCanvas() {
               disabled={manualFixLoading}
               className="px-3 py-1 text-sm rounded bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed text-white"
             >
-              {manualFixLoading ? "修正中..." : "确认修正"}
+              {manualFixLoading ? t("ext_canvas_fixing") : t("ext_canvas_confirm_fix")}
             </button>
             <button
               onClick={() => setSelectedCell(null)}
               className="px-2 py-1 text-sm rounded bg-gray-200 hover:bg-gray-300 dark:bg-gray-600 dark:hover:bg-gray-500 text-gray-700 dark:text-gray-300"
             >
-              取消
+              {t("ext_canvas_cancel")}
             </button>
           </div>
         )}
@@ -293,9 +295,9 @@ export default function ExtractorCanvas() {
             d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"
           />
         </svg>
-        <p className="text-sm">请在左侧面板上传校准板照片</p>
+        <p className="text-sm">{t("ext_canvas_upload_hint")}</p>
         <p className="text-xs text-gray-500 dark:text-gray-600">
-          Upload a calibration board photo to begin
+          {t("ext_canvas_upload_hint_en")}
         </p>
       </div>
     );

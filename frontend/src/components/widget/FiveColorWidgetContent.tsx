@@ -1,6 +1,6 @@
 /**
  * Five-Color Query widget content wrapper.
- * 五色查询 Widget 内容包装组件。
+ * 配方查询 Widget 内容包装组件。
  */
 
 import FiveColorQueryPanel from '../FiveColorQueryPanel';

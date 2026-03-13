@@ -1,10 +1,12 @@
 import { useEffect } from "react";
 import { useLutManagerStore } from "../stores/lutManagerStore";
+import { useI18n } from "../i18n/context";
 import Dropdown from "./ui/Dropdown";
 import Slider from "./ui/Slider";
 import Button from "./ui/Button";
 
 export default function LutManagerPanel() {
+  const { t } = useI18n();
   const {
     lutList,
     lutListLoading,
@@ -59,28 +61,28 @@ export default function LutManagerPanel() {
   return (
     <aside
       data-testid="lut-manager-panel"
-      className="w-[350px] h-full overflow-y-auto bg-gray-800 p-4 flex flex-col gap-4"
+      className="w-full max-w-2xl mx-auto h-full overflow-y-auto bg-white dark:bg-gray-800 p-6 flex flex-col gap-4"
     >
       <div>
-        <h2 className="text-lg font-semibold text-gray-100">LUT Merge Tool</h2>
+        <h2 className="text-lg font-semibold text-gray-100">{t("lut_manager_title")}</h2>
         <p className="text-xs text-gray-400 mt-1">
-          将多个 LUT 合并为一个，支持 Delta-E 去重。Primary LUT 必须为 6-Color 或 8-Color 模式。
+          {t("lut_manager_desc")}
         </p>
       </div>
 
       {/* Primary LUT 选择 */}
       <div data-testid="primary-dropdown">
         <Dropdown
-          label="Primary LUT"
+          label={t("lut_manager_primary_label")}
           value={primaryName}
           options={primaryOptions}
           onChange={(v) => void selectPrimary(v)}
           disabled={allDisabled || lutListLoading}
-          placeholder="选择主 LUT..."
+          placeholder={t("lut_manager_primary_placeholder")}
         />
         {primaryLoading && (
           <p data-testid="loading-indicator" className="text-xs text-gray-400 mt-1">
-            加载中...
+            {t("lut_manager_loading")}
           </p>
         )}
         {primaryInfo && (
@@ -90,18 +92,18 @@ export default function LutManagerPanel() {
         )}
         {isPrimaryModeInvalid && (
           <p className="text-xs text-yellow-400 mt-1">
-            主 LUT 必须为 6-Color 或 8-Color 模式
+            {t("lut_manager_primary_mode_invalid")}
           </p>
         )}
       </div>
 
       {/* Secondary LUT 多选 */}
       <div data-testid="secondary-list" className="flex flex-col gap-1">
-        <label className="text-sm text-gray-300">Secondary LUTs</label>
+        <label className="text-sm text-gray-300">{t("lut_manager_secondary_label")}</label>
         <div className="max-h-40 overflow-y-auto rounded-md border border-gray-600 bg-gray-700 p-2 flex flex-col gap-1">
           {filteredSecondaryOptions.length === 0 ? (
             <p className="text-xs text-gray-500">
-              {primaryName ? "无可用的 Secondary LUT" : "请先选择 Primary LUT"}
+              {primaryName ? t("lut_manager_no_secondary") : t("lut_manager_select_primary_first")}
             </p>
           ) : (
             filteredSecondaryOptions.map((name) => {
@@ -134,7 +136,7 @@ export default function LutManagerPanel() {
       {/* Dedup Threshold 滑块 */}
       <div>
         <Slider
-          label="Dedup Threshold"
+          label={t("lut_manager_dedup_label")}
           value={dedupThreshold}
           min={0}
           max={20}
@@ -143,13 +145,13 @@ export default function LutManagerPanel() {
           disabled={allDisabled}
         />
         <p className="text-xs text-gray-500 mt-1">
-          0 = 仅精确去重，值越大去除越多相近色
+          {t("lut_manager_dedup_hint")}
         </p>
       </div>
 
       {/* Merge & Save 按钮 */}
       <Button
-        label="Merge & Save"
+        label={t("lut_manager_merge_btn")}
         variant="primary"
         onClick={() => void executeMerge()}
         disabled={mergeDisabled}
@@ -159,14 +161,14 @@ export default function LutManagerPanel() {
       {/* 合并结果 */}
       {mergeResult && (
         <div data-testid="merge-result" className="rounded-md bg-green-900/30 border border-green-700 p-3 text-xs text-green-300 flex flex-col gap-1">
-          <p>✓ 合并成功！</p>
+          <p>{t("lut_manager_merge_success")}</p>
           <p>
-            合并前: {mergeResult.stats.total_before} 色 → 合并后: {mergeResult.stats.total_after} 色
+            {t("lut_manager_merge_before")}: {mergeResult.stats.total_before} → {t("lut_manager_merge_after")}: {mergeResult.stats.total_after}
           </p>
           <p>
-            精确去重: {mergeResult.stats.exact_dupes} | 相近色去除: {mergeResult.stats.similar_removed}
+            {t("lut_manager_exact_dupes")}: {mergeResult.stats.exact_dupes} | {t("lut_manager_similar_removed")}: {mergeResult.stats.similar_removed}
           </p>
-          <p>文件: {mergeResult.filename}</p>
+          <p>{t("lut_manager_file")}: {mergeResult.filename}</p>
         </div>
       )}
 
@@ -178,7 +180,7 @@ export default function LutManagerPanel() {
           <button
             onClick={clearError}
             className="ml-auto text-red-400 hover:text-red-200 shrink-0"
-            aria-label="关闭错误"
+            aria-label={t("lut_manager_close_error")}
           >
             ×
           </button>

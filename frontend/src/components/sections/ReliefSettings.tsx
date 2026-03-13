@@ -6,14 +6,16 @@ import Checkbox from "../ui/Checkbox";
 import Slider from "../ui/Slider";
 import Dropdown from "../ui/Dropdown";
 import ImageUpload from "../ui/ImageUpload";
-
-const AUTO_HEIGHT_OPTIONS: { label: string; value: AutoHeightMode }[] = [
-  { label: "深色凸起", value: "darker-higher" },
-  { label: "浅色凸起", value: "lighter-higher" },
-  { label: "根据高度图", value: "use-heightmap" },
-];
+import { useI18n } from "../../i18n/context";
 
 export default function ReliefSettings() {
+  const { t } = useI18n();
+
+  const AUTO_HEIGHT_OPTIONS: { label: string; value: AutoHeightMode }[] = [
+    { label: t("relief_darker_higher"), value: "darker-higher" },
+    { label: t("relief_lighter_higher"), value: "lighter-higher" },
+    { label: t("relief_use_heightmap"), value: "use-heightmap" },
+  ];
   // State fields grouped with useShallow
   const {
     enable_relief,
@@ -63,7 +65,7 @@ export default function ReliefSettings() {
   return (
     <div className="flex flex-col gap-4">
         <Checkbox
-          label="启用浮雕"
+          label={t("relief_enable")}
           checked={enable_relief}
           onChange={setEnableRelief}
         />
@@ -71,7 +73,7 @@ export default function ReliefSettings() {
         {enable_relief && (
           <>
             <Slider
-              label="最大高度"
+              label={t("relief_max_height")}
               value={heightmap_max_height}
               min={0.08}
               max={15.0}
@@ -81,7 +83,7 @@ export default function ReliefSettings() {
             />
 
             <Dropdown
-              label="自动高度模式"
+              label={t("relief_auto_height_mode")}
               value={autoHeightMode}
               options={AUTO_HEIGHT_OPTIONS}
               onChange={handleModeChange}
@@ -89,7 +91,7 @@ export default function ReliefSettings() {
 
             {autoHeightMode === "use-heightmap" && (
               <div className="flex flex-col gap-2">
-                <label className="text-sm text-gray-300">高度图</label>
+                <label className="text-sm text-gray-300">{t("relief_heightmap_label")}</label>
                 <ImageUpload
                   onFileSelect={handleHeightmapSelect}
                   accept="image/png,image/jpeg,image/bmp,image/tiff"
@@ -97,7 +99,7 @@ export default function ReliefSettings() {
                 />
                 {heightmapFile && !heightmapThumbnailUrl && (
                   <span className="text-xs text-gray-400">
-                    已选择: {heightmapFile.name}
+                    {t("relief_file_selected")}: {heightmapFile.name}
                   </span>
                 )}
               </div>

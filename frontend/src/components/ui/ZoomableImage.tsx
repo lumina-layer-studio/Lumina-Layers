@@ -1,4 +1,5 @@
 import { useState, useRef, useCallback, type WheelEvent, type MouseEvent } from "react";
+import { useI18n } from "../../i18n/context";
 
 /** Clamp scale to the allowed zoom range [0.5, 5.0]. */
 export function clampScale(value: number): number {
@@ -30,6 +31,7 @@ interface ZoomableImageProps {
 }
 
 export default function ZoomableImage({ src, alt, className }: ZoomableImageProps) {
+  const { t } = useI18n();
   const [scale, setScale] = useState(1);
   const [translate, setTranslate] = useState({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState(false);
@@ -116,7 +118,7 @@ export default function ZoomableImage({ src, alt, className }: ZoomableImageProp
         onClick={resetZoom}
         className="absolute top-2 right-2 rounded bg-black/30 dark:bg-black/60 px-2 py-1 text-xs text-white hover:bg-black/50 dark:hover:bg-black/80 transition-colors"
       >
-        重置缩放
+        {t("zoom_reset")}
       </button>
     </div>
   );

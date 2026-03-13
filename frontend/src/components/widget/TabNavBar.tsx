@@ -7,6 +7,7 @@ import type { TabId } from '../../types/widget';
 
 interface TabNavBarProps {
   activeTab: TabId;
+  modalTab?: TabId | null;
   onTabChange: (tab: TabId) => void;
 }
 
@@ -18,13 +19,13 @@ const TAB_LIST: { id: TabId; titleKey: string }[] = [
   { id: 'five-color',  titleKey: 'tab.fiveColor' },
 ];
 
-export default function TabNavBar({ activeTab, onTabChange }: TabNavBarProps) {
+export default function TabNavBar({ activeTab, modalTab, onTabChange }: TabNavBarProps) {
   const { t } = useI18n();
 
   return (
     <nav className="flex items-center gap-1 px-2 py-1">
       {TAB_LIST.map(({ id, titleKey }) => {
-        const isActive = id === activeTab;
+        const isActive = id === activeTab || id === modalTab;
         return (
           <button
             key={id}

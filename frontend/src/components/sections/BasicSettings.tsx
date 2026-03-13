@@ -12,18 +12,20 @@ import Slider from "../ui/Slider";
 import RadioGroup from "../ui/RadioGroup";
 import { CropModal } from "../ui/CropModal";
 import type { CropData } from "../ui/CropModal";
-
-const structureModeOptions = Object.values(StructureMode).map((v) => ({
-  label: v,
-  value: v,
-}));
-
-const modelingModeOptions = Object.values(ModelingMode).map((v) => ({
-  label: v,
-  value: v,
-}));
+import { useI18n } from "../../i18n/context";
 
 export default function BasicSettings() {
+  const { t } = useI18n();
+
+  const structureModeOptions = Object.values(StructureMode).map((v) => ({
+    label: t(`structure_mode.${v}`),
+    value: v,
+  }));
+
+  const modelingModeOptions = Object.values(ModelingMode).map((v) => ({
+    label: t(`modeling_mode.${v}`),
+    value: v,
+  }));
   // 状态字段使用 useShallow 分组提取，避免无关字段变化触发重渲染
   const {
     imagePreviewUrl,
@@ -79,7 +81,7 @@ export default function BasicSettings() {
 
   const handleFileSelect = (file: File) => {
     if (!isValidImageType(file.type)) {
-      setError("仅支持 JPG/PNG/SVG 格式");
+      setError(t("basic_image_format_error"));
       return;
     }
     setImageFile(file);
@@ -92,7 +94,7 @@ export default function BasicSettings() {
   return (
     <div className="flex flex-col gap-4">
       <Checkbox
-        label="批量模式"
+        label={t("basic_batch_mode")}
         checked={batchMode}
         onChange={setBatchMode}
       />
@@ -113,7 +115,7 @@ export default function BasicSettings() {
           />
 
           <Checkbox
-            label="上传后裁剪"
+            label={t("basic_crop_after_upload")}
             checked={enableCrop}
             onChange={setEnableCrop}
           />
@@ -130,21 +132,21 @@ export default function BasicSettings() {
       )}
 
       <Dropdown
-        label="LUT"
+        label={t("basic_lut_label")}
         value={lut_name}
         options={lutOptions}
         onChange={setLutName}
-        placeholder="选择 LUT..."
+        placeholder={t("basic_lut_placeholder")}
       />
 
       {lut_name && (
         <div className="text-xs text-gray-500 -mt-2 px-1">
-          色彩模式: {color_mode}
+          {t("basic_color_mode_label")}: {color_mode}
         </div>
       )}
 
       <Slider
-        label="宽度"
+        label={t("basic_width")}
         value={target_width_mm}
         min={10}
         max={400}
@@ -154,7 +156,7 @@ export default function BasicSettings() {
       />
 
       <Slider
-        label="高度"
+        label={t("basic_height")}
         value={target_height_mm}
         min={10}
         max={400}
@@ -164,7 +166,7 @@ export default function BasicSettings() {
       />
 
       <Slider
-        label="厚度"
+        label={t("basic_thickness")}
         value={spacer_thick}
         min={0.2}
         max={3.5}
@@ -174,7 +176,7 @@ export default function BasicSettings() {
       />
 
       <RadioGroup
-        label="结构模式"
+        label={t("basic_structure_mode")}
         value={structure_mode}
         options={structureModeOptions}
         onChange={(v) => setStructureMode(v as StructureMode)}
@@ -182,7 +184,7 @@ export default function BasicSettings() {
       />
 
       <RadioGroup
-        label="建模模式"
+        label={t("basic_modeling_mode")}
         value={modeling_mode}
         options={modelingModeOptions}
         onChange={(v) => setModelingMode(v as ModelingMode)}

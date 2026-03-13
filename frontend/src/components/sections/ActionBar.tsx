@@ -4,8 +4,10 @@ import BatchResultSummary from "../ui/BatchResultSummary";
 import ZoomableImage from "../ui/ZoomableImage";
 import BedSizeSelector from "./BedSizeSelector";
 import SlicerSelector from "./SlicerSelector";
+import { useI18n } from "../../i18n/context";
 
 export default function ActionBar() {
+  const { t } = useI18n();
   const imageFile = useConverterStore((s) => s.imageFile);
   const lut_name = useConverterStore((s) => s.lut_name);
   const isLoading = useConverterStore((s) => s.isLoading);
@@ -31,12 +33,12 @@ export default function ActionBar() {
       {batchMode ? (
         <>
           {!canBatchSubmit && (
-            <p className="text-xs text-yellow-600 dark:text-yellow-400">请先添加图片并选择 LUT</p>
+            <p className="text-xs text-yellow-600 dark:text-yellow-400">{t("action_batch_upload_hint")}</p>
           )}
 
           <div className="flex gap-2">
             <Button
-              label="批量生成"
+              label={t("action_batch_generate")}
               variant="primary"
               onClick={() => void submitBatch()}
               disabled={!canBatchSubmit || batchLoading}
@@ -49,19 +51,19 @@ export default function ActionBar() {
       ) : (
         <>
           {!canSubmit && (
-            <p className="text-xs text-yellow-600 dark:text-yellow-400">请先上传图片并选择 LUT</p>
+            <p className="text-xs text-yellow-600 dark:text-yellow-400">{t("action_upload_hint")}</p>
           )}
 
           <div className="flex gap-2">
             <Button
-              label="预览"
+              label={t("action_preview")}
               variant="secondary"
               onClick={submitPreview}
               disabled={!canSubmit || isLoading}
               loading={isLoading}
             />
             <Button
-              label="生成"
+              label={t("action_generate")}
               variant="primary"
               onClick={() => void submitGenerate()}
               disabled={!canSubmit || isLoading}
@@ -80,7 +82,7 @@ export default function ActionBar() {
       {previewImageUrl && (
         <ZoomableImage
           src={previewImageUrl}
-          alt="预览结果"
+          alt={t("action_preview_alt")}
           className="w-full rounded-md border border-gray-300 dark:border-gray-700"
         />
       )}

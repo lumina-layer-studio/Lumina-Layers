@@ -1,4 +1,5 @@
 import { useExtractorStore } from "../stores/extractorStore";
+import { useI18n } from "../i18n/context";
 import { ExtractorColorMode, ExtractorPage } from "../api/types";
 import Dropdown from "./ui/Dropdown";
 import Slider from "./ui/Slider";
@@ -17,6 +18,7 @@ const pageOptions = Object.values(ExtractorPage).map((v) => ({
 }));
 
 export default function ExtractorPanel() {
+  const { t } = useI18n();
   const {
     color_mode,
     page,
@@ -60,8 +62,8 @@ export default function ExtractorPanel() {
   const is5c = color_mode === ExtractorColorMode.FIVE_COLOR_EXT;
   const p1Done = is5c ? page1Extracted_5c : page1Extracted;
   const p2Done = is5c ? page2Extracted_5c : page2Extracted;
-  const mergeTitle = is5c ? "5色扩展双页合并" : "8色双页合并";
-  const mergeLabel = is5c ? "合并 5 色 LUT" : "合并 8 色 LUT";
+  const mergeTitle = is5c ? t("ext_merge_5c_title") : t("ext_merge_8c_title");
+  const mergeLabel = is5c ? t("ext_merge_5c_btn") : t("ext_merge_8c_btn");
 
   const extractDisabled =
     imageFile === null || corner_points.length < 4 || isLoading;
@@ -69,23 +71,23 @@ export default function ExtractorPanel() {
   return (
     <aside
       data-testid="extractor-panel"
-      className="w-[350px] h-full overflow-y-auto bg-white dark:bg-gray-800 p-4 flex flex-col gap-4"
+      className="w-[400px] shrink-0 h-full overflow-y-auto bg-white dark:bg-gray-800 p-4 flex flex-col gap-4"
     >
       {/* 颜色模式 */}
       <div data-testid="color-mode-select">
         <Dropdown
-          label="颜色模式"
+          label={t("ext_color_mode_label")}
           value={color_mode}
           options={colorModeOptions}
           onChange={(v) => setColorMode(v as ExtractorColorMode)}
         />
       </div>
 
-      {/* 页码 - 8-Color Max 和 5-Color Extended 模式显示 */}
+      {/* 页码 */}
       {isMultiPage && (
         <div data-testid="page-select">
           <Dropdown
-            label="页码"
+            label={t("ext_page_label")}
             value={page}
             options={pageOptions}
             onChange={(v) => setPage(v as ExtractorPage)}
@@ -95,7 +97,7 @@ export default function ExtractorPanel() {
 
       {/* 图片上传 */}
       <div data-testid="image-upload">
-        <label className="text-sm text-gray-700 dark:text-gray-300 mb-1 block">上传校准板照片</label>
+        <label className="text-sm text-gray-700 dark:text-gray-300 mb-1 block">{t("ext_upload_label")}</label>
         <ImageUpload
           onFileSelect={(file) => setImageFile(file)}
           accept="image/*"
@@ -104,67 +106,21 @@ export default function ExtractorPanel() {
       </div>
 
       {/* 参数 Sliders */}
-      <Slider
-        label="水平偏移 (offset_x)"
-        value={offset_x}
-        min={-30}
-        max={30}
-        step={1}
-        onChange={setOffsetX}
-      />
-      <Slider
-        label="垂直偏移 (offset_y)"
-        value={offset_y}
-        min={-30}
-        max={30}
-        step={1}
-        onChange={setOffsetY}
-      />
-      <Slider
-        label="缩放 (zoom)"
-        value={zoom}
-        min={0.8}
-        max={1.2}
-        step={0.01}
-        onChange={setZoom}
-      />
-      <Slider
-        label="畸变校正 (distortion)"
-        value={distortion}
-        min={-0.2}
-        max={0.2}
-        step={0.01}
-        onChange={setDistortion}
-      />
+      <Slider label={t("ext_offset_x_label")} value={offset_x} min={-30} max={30} step={1} onChange={setOffsetX} />
+      <Slider label={t("ext_offset_y_label")} value={offset_y} min={-30} max={30} step={1} onChange={setOffsetY} />
+      <Slider label={t("ext_zoom_label")} value={zoom} min={0.8} max={1.2} step={0.01} onChange={setZoom} />
+      <Slider label={t("ext_distortion_label")} value={distortion} min={-0.2} max={0.2} step={0.01} onChange={setDistortion} />
 
       {/* 布尔开关 */}
-      <Checkbox
-        label="白平衡校正"
-        checked={white_balance}
-        onChange={setWhiteBalance}
-      />
-      <Checkbox
-        label="暗角校正"
-        checked={vignette_correction}
-        onChange={setVignetteCorrection}
-      />
+      <Checkbox label={t("ext_wb_label")} checked={white_balance} onChange={setWhiteBalance} />
+      <Checkbox label={t("ext_vignette_label")} checked={vignette_correction} onChange={setVignetteCorrection} />
 
       {/* 操作按钮 */}
       <div data-testid="extract-button">
-        <Button
-          label="提取颜色"
-          variant="primary"
-          onClick={() => void submitExtract()}
-          disabled={extractDisabled}
-          loading={isLoading}
-        />
+        <Button label={t("ext_extract_btn_label")} variant="primary" onClick={() => void submitExtract()} disabled={extractDisabled} loading={isLoading} />
       </div>
       <div data-testid="clear-corners-button">
-        <Button
-          label="清除角点"
-          variant="secondary"
-          onClick={clearCornerPoints}
-        />
+        <Button label={t("ext_clear_corners")} variant="secondary" onClick={clearCornerPoints} />
       </div>
 
       {/* 双页模式：页面提取状态 + 合并按钮 */}
@@ -173,33 +129,23 @@ export default function ExtractorPanel() {
           <span className="text-xs text-gray-500 dark:text-gray-400">{mergeTitle}</span>
           <div className="flex gap-2 text-xs">
             <span className={p1Done ? "text-green-600 dark:text-green-400" : "text-gray-400 dark:text-gray-500"}>
-              Page 1: {p1Done ? "已提取" : "未提取"}
+              Page 1: {p1Done ? t("ext_page_extracted") : t("ext_page_not_extracted")}
             </span>
             <span className={p2Done ? "text-green-600 dark:text-green-400" : "text-gray-400 dark:text-gray-500"}>
-              Page 2: {p2Done ? "已提取" : "未提取"}
+              Page 2: {p2Done ? t("ext_page_extracted") : t("ext_page_not_extracted")}
             </span>
           </div>
-          <Button
-            label={mergeLabel}
-            variant="primary"
-            onClick={() => void submitMerge()}
-            disabled={!p1Done || !p2Done || mergeLoading}
-            loading={mergeLoading}
-          />
-          {mergeError && (
-            <p className="text-xs text-red-400">{mergeError}</p>
-          )}
+          <Button label={mergeLabel} variant="primary" onClick={() => void submitMerge()} disabled={!p1Done || !p2Done || mergeLoading} loading={mergeLoading} />
+          {mergeError && <p className="text-xs text-red-400">{mergeError}</p>}
         </div>
       )}
 
       {/* 错误信息 */}
       {error && (
-        <p data-testid="error-message" className="text-xs text-red-400">
-          {error}
-        </p>
+        <p data-testid="error-message" className="text-xs text-red-400">{error}</p>
       )}
 
-      {/* LUT 下载链接 - 提取完成后显示 */}
+      {/* LUT 下载链接 */}
       {lut_download_url && (
         <a
           data-testid="lut-download-link"
@@ -207,22 +153,20 @@ export default function ExtractorPanel() {
           download
           className="text-sm text-blue-400 underline hover:text-blue-300"
         >
-          下载 LUT 文件 (.npy)
+          {t("ext_download_lut")}
         </a>
       )}
 
       {/* 手动修正提示 */}
       {lut_download_url && (
         <div data-testid="manual-fix-section" className="text-xs text-gray-500 dark:text-gray-500 border border-gray-200 dark:border-gray-700 rounded-md p-2">
-          点击右侧 LUT 预览图中的色块可手动修正颜色
+          {t("ext_manual_fix_hint")}
         </div>
       )}
 
       {/* 手动修正错误 */}
       {manualFixError && (
-        <p data-testid="manual-fix-error" className="text-xs text-red-400">
-          {manualFixError}
-        </p>
+        <p data-testid="manual-fix-error" className="text-xs text-red-400">{manualFixError}</p>
       )}
     </aside>
   );

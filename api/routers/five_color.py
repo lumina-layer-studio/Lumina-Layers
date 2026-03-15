@@ -6,6 +6,8 @@ performing five-color combination lookups.
 提供从 LUT 获取基础颜色和执行五色组合查询的端点。
 """
 
+import threading
+
 from fastapi import APIRouter, HTTPException, Query
 
 from api.schemas.five_color import (
@@ -25,10 +27,14 @@ from utils.lut_manager import LUTManager
 
 router = APIRouter(prefix="/api/five-color", tags=["Five-Color"])
 
+# ---- LUT Engine 内存缓存 ----
+_engine_cache: dict[str, ColorQueryEngine] = {}
+_engine_cache_lock = threading.Lock()
+
 
 def _load_engine(lut_name: str) -> tuple[ColorQueryEngine, str]:
-    """Load a LUT and create a ColorQueryEngine.
-    加载 LUT 并创建 ColorQueryEngine。
+    """Load a LUT and create a ColorQueryEngine (with in-memory cache).
+    加载 LUT 并创建 ColorQueryEngine（带内存缓存）。
 
     Args:
         lut_name: LUT 显示名称。
@@ -41,6 +47,10 @@ def _load_engine(lut_name: str) -> tuple[ColorQueryEngine, str]:
         HTTPException 400: LUT 格式无法识别。
         HTTPException 500: 加载失败。
     """
+    with _engine_cache_lock:
+        if lut_name in _engine_cache:
+            return _engine_cache[lut_name], lut_name
+
     path: str | None = LUTManager.get_lut_path(lut_name)
     if path is None:
         raise HTTPException(status_code=404, detail=f"LUT not found: {lut_name}")
@@ -74,6 +84,9 @@ def _load_engine(lut_name: str) -> tuple[ColorQueryEngine, str]:
             engine = ColorQueryEngine(
                 stack_lut=stack_data, lut_rgb=rgb_data, color_count=color_count
             )
+
+        with _engine_cache_lock:
+            _engine_cache[lut_name] = engine
 
         return engine, lut_name
 

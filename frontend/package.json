@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
+    "@floating-ui/react": "^0.27.19",
     "@react-three/drei": "^10.7.7",
     "@react-three/fiber": "^9.5.0",
     "axios": "^1.13.6",

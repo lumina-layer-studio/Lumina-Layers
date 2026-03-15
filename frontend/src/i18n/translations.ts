@@ -2141,4 +2141,10 @@ export const translations: Record<string, Record<"zh" | "en", string>> = {
     zh: "折叠",
     en: "Collapse",
   },
+
+  // ==================== WikiTooltip ====================
+  wiki_tooltip_link: {
+    zh: "查看 Wiki 详情 ↗",
+    en: "View Wiki Details ↗",
+  },
 };

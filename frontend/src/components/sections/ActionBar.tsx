@@ -6,6 +6,7 @@ import BatchResultSummary from "../ui/BatchResultSummary";
 import ZoomableImage from "../ui/ZoomableImage";
 import BedSizeSelector from "./BedSizeSelector";
 import SlicerSelector from "./SlicerSelector";
+import WikiTooltip from "../ui/WikiTooltip";
 import { useI18n } from "../../i18n/context";
 
 export default function ActionBar() {
@@ -71,13 +72,19 @@ export default function ActionBar() {
               disabled={!canSubmit || isLoading}
               loading={isLoading}
             />
-            <Button
-              label={t("action_generate")}
-              variant="primary"
-              onClick={() => void submitGenerate()}
-              disabled={!canSubmit || isLoading}
-              loading={isLoading}
-            />
+            <WikiTooltip
+              title="生成 3D 模型"
+              description="基于当前图像和 LUT 校准数据，生成可打印的全彩 3MF 模型文件。"
+              wikiUrl="https://github.com/pekingduck/lumina-layers/wiki/Image-Converter"
+            >
+              <Button
+                label={t("action_generate")}
+                variant="primary"
+                onClick={() => void submitGenerate()}
+                disabled={!canSubmit || isLoading}
+                loading={isLoading}
+              />
+            </WikiTooltip>
             {hasPreview && (
               <Button
                 label={layerImagesLoading ? t("action_layers_loading") : t("action_view_layers")}

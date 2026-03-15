@@ -62,6 +62,7 @@ export interface ConvertGenerateRequest extends ConvertPreviewRequest {
   coating_height_mm: number;
   replacement_regions?: ColorReplacementItem[];
   free_color_set?: string[];
+  use_cached_matched_rgb?: boolean;
 }
 
 export interface ColorReplacementItem {
@@ -367,6 +368,8 @@ export interface RegionDetectResponse {
 /** 区域替换响应 */
 export interface RegionReplaceResponse {
   preview_url: string;
+  preview_glb_url?: string | null;
+  color_contours?: Record<string, number[][][]> | null;
   message: string;
 }
 

@@ -163,3 +163,12 @@ class CropResponse(BaseModel):
     cropped_url: str
     width: int
     height: int
+
+
+class ResetReplacementsResponse(BaseModel):
+    """颜色替换重置响应。"""
+
+    status: str
+    message: str
+    preview_url: str
+    preview_glb_url: str | None = None

@@ -195,17 +195,16 @@ export default function LutColorGrid() {
 
   const palette = useConverterStore((s) => s.palette);
   const selectedColor = useConverterStore((s) => s.selectedColor);
-  const applyColorRemap = useConverterStore((s) => s.applyColorRemap);
-  const setSelectedColor = useConverterStore((s) => s.setSelectedColor);
   const colorRemapMap = useConverterStore((s) => s.colorRemapMap);
   const lutColors = useConverterStore((s) => s.lutColors);
   const lutColorsLoading = useConverterStore((s) => s.lutColorsLoading);
   const lutColorsLutName = useConverterStore((s) => s.lutColorsLutName);
   const selectionMode = useConverterStore((s) => s.selectionMode);
   const selectedColors = useConverterStore((s) => s.selectedColors);
-  const applyBatchColorRemap = useConverterStore((s) => s.applyBatchColorRemap);
   const replacePreviewLoading = useConverterStore((s) => s.replacePreviewLoading);
-  const applyRegionReplace = useConverterStore((s) => s.applyRegionReplace);
+  const setPendingReplacement = useConverterStore((s) => s.setPendingReplacement);
+  const pendingReplacement = useConverterStore((s) => s.pendingReplacement);
+  const confirmReplacement = useConverterStore((s) => s.confirmReplacement);
   const [hueFilter, setHueFilter] = useState<HueCategory>("all");
   const [searchText, setSearchText] = useState("");
   const [favorites, setFavorites] = useState<Set<string>>(new Set());
@@ -264,37 +263,41 @@ export default function LutColorGrid() {
     return sortByColorDistance(hexToRgb(selectedColor), lutColors, 12);
   }, [selectedColor, lutColors]);
 
-  const handleColorClick = async (clickedHex: string) => {
+  const handleColorClick = (clickedHex: string) => {
     if (replacePreviewLoading) return;
 
     const hexNoHash = clickedHex.replace("#", "");
 
     switch (selectionMode) {
-      case 'current': {
-        // 当前模式 = 单区域替换，点击 LUT 颜色 → 替换已选中的连通区域
-        if (applyRegionReplace) {
-          await applyRegionReplace(hexNoHash);
-        }
-        break;
-      }
       case 'select-all': {
-        // 全选模式 = 全局单色替换，点击 LUT 颜色 → 替换 selectedColor 对应的全图颜色
+        // 全选模式：需要先选中源色
         if (!selectedColor) return;
-        applyColorRemap(selectedColor, hexNoHash);
-        setSelectedColor(null);
+        setPendingReplacement({
+          sourceHex: selectedColor,
+          targetHex: hexNoHash,
+          mode: 'select-all',
+        });
         break;
       }
       case 'multi-select': {
-        // 多选模式 = 批量替换所有 selectedColors
+        // 多选模式：需要先选中至少一个源色
         if (selectedColors.size === 0) return;
-        await applyBatchColorRemap(hexNoHash);
+        setPendingReplacement({
+          sourceHex: selectedColor ?? '',
+          targetHex: hexNoHash,
+          mode: 'multi-select',
+          sourceColors: Array.from(selectedColors),
+        });
         break;
       }
+      case 'current':
       case 'region': {
-        // 局部区域模式 → 替换已选中的连通区域
-        if (applyRegionReplace) {
-          await applyRegionReplace(hexNoHash);
-        }
+        // 当前/区域模式：设置 pending 状态
+        setPendingReplacement({
+          sourceHex: selectedColor ?? '',
+          targetHex: hexNoHash,
+          mode: selectionMode,
+        });
         break;
       }
     }
@@ -313,6 +316,57 @@ export default function LutColorGrid() {
         <p className="text-xs text-gray-500 py-2">{t("lut_grid_select_lut")}</p>
       ) : (
         <div className="flex flex-col gap-1">
+          {/* Confirmation preview bar */}
+          {pendingReplacement && (
+            <div className="flex items-center gap-1.5 px-2 py-1.5 rounded bg-gray-800 border border-gray-600">
+              {/* Source color swatch(es) */}
+              <div className="flex items-center gap-0.5">
+                {pendingReplacement.mode === 'multi-select' && pendingReplacement.sourceColors ? (
+                  pendingReplacement.sourceColors.map((hex) => (
+                    <span
+                      key={hex}
+                      className="inline-block w-5 h-5 rounded-sm border border-gray-500"
+                      style={{ backgroundColor: `#${hex}` }}
+                      title={`#${hex}`}
+                    />
+                  ))
+                ) : (
+                  <span
+                    className="inline-block w-5 h-5 rounded-sm border border-gray-500"
+                    style={{ backgroundColor: `#${pendingReplacement.sourceHex}` }}
+                    title={`#${pendingReplacement.sourceHex}`}
+                  />
+                )}
+              </div>
+              {/* Arrow */}
+              <span className="text-gray-400 text-xs">→</span>
+              {/* Target color swatch */}
+              <span
+                className="inline-block w-5 h-5 rounded-sm border border-gray-500"
+                style={{ backgroundColor: `#${pendingReplacement.targetHex}` }}
+                title={`#${pendingReplacement.targetHex}`}
+              />
+              {/* Spacer */}
+              <div className="flex-1" />
+              {/* Confirm button */}
+              <button
+                type="button"
+                onClick={() => confirmReplacement()}
+                className="px-2 py-0.5 text-[10px] rounded bg-blue-600 hover:bg-blue-500 text-white transition-colors"
+              >
+                {t("replace_confirm_btn")}
+              </button>
+              {/* Cancel button */}
+              <button
+                type="button"
+                onClick={() => setPendingReplacement(null)}
+                className="px-2 py-0.5 text-[10px] rounded bg-gray-600 hover:bg-gray-500 text-gray-200 transition-colors"
+              >
+                {t("replace_cancel_btn")}
+              </button>
+            </div>
+          )}
+
           {/* Status line */}
           <p className="text-[10px] text-gray-400 leading-tight">
             共 {lutColors.length} 色，显示 {visibleCount} 色

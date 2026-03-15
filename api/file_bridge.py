@@ -81,7 +81,10 @@ def file_to_response(path: str, filename: Optional[str] = None) -> FileResponse:
     if filename is None:
         filename = os.path.basename(path)
     media_type = _guess_media_type(path)
-    return FileResponse(path=path, filename=filename, media_type=media_type)
+    # Disable browser caching for image previews to ensure fresh content
+    # after color replacement / reset operations.
+    headers = {"Cache-Control": "no-cache, no-store, must-revalidate"}
+    return FileResponse(path=path, filename=filename, media_type=media_type, headers=headers)
 
 
 def _guess_media_type(path: str) -> str:

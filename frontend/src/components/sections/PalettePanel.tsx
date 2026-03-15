@@ -13,6 +13,7 @@ interface PaletteItemProps {
   heightMm: number | undefined;
   showHeightSlider: boolean;
   maxHeight: number;
+  isFreeColor?: boolean;
   onSelect: () => void;
   onHeightChange: (h: number) => void;
 }
@@ -24,12 +25,20 @@ function PaletteItem({
   heightMm,
   showHeightSlider,
   maxHeight,
+  isFreeColor = false,
   onSelect,
   onHeightChange,
 }: PaletteItemProps) {
   const { t } = useI18n();
   const displayHex = remappedHex ?? entry.matched_hex;
   const isRemapped = !!remappedHex;
+
+  // Border priority: isFreeColor > isRemapped > default
+  const borderClass = isFreeColor
+    ? "border-2 border-dashed border-red-400"
+    : isRemapped
+      ? "border border-yellow-500"
+      : "border border-gray-600";
 
   // Compact block mode (no height slider)
   if (!showHeightSlider) {
@@ -54,7 +63,7 @@ function PaletteItem({
         style={{ width: 52 }}
       >
         <span
-          className={`inline-block w-6 h-6 rounded border ${isRemapped ? "border-yellow-500" : "border-gray-600"}`}
+          className={`inline-block w-6 h-6 rounded ${borderClass}`}
           style={{ backgroundColor: `#${displayHex}` }}
           title={`#${displayHex}`}
         />
@@ -88,7 +97,7 @@ function PaletteItem({
       {/* Top row: swatch + percentage */}
       <div className="flex items-center gap-1.5">
         <span
-          className={`inline-block w-5 h-5 rounded border shrink-0 ${isRemapped ? "border-yellow-500" : "border-gray-600"}`}
+          className={`inline-block w-5 h-5 rounded shrink-0 ${borderClass}`}
           style={{ backgroundColor: `#${displayHex}` }}
           title={`#${displayHex}`}
         />
@@ -153,6 +162,26 @@ function SelectedColorDetail({ entry, remappedHex }: SelectedColorDetailProps) {
   );
 }
 
+// ========== FreeColorSummary ==========
+
+function FreeColorSummary({ freeColors }: { freeColors: Set<string> }) {
+  const { t } = useI18n();
+  if (freeColors.size === 0) return null;
+  return (
+    <div className="flex items-center gap-1.5 flex-wrap py-1">
+      <span className="text-[10px] text-gray-400">{t("conv_free_color_label")}:</span>
+      {Array.from(freeColors).sort().map(hex => (
+        <span
+          key={hex}
+          className="w-5 h-5 rounded border-2 border-dashed border-red-400"
+          style={{ backgroundColor: `#${hex}` }}
+          title={`#${hex}`}
+        />
+      ))}
+    </div>
+  );
+}
+
 // ========== PalettePanel ==========
 
 export default function PalettePanel() {
@@ -172,8 +201,12 @@ export default function PalettePanel() {
   const setSelectionMode = useConverterStore((s) => s.setSelectionMode);
   const selectedColors = useConverterStore((s) => s.selectedColors);
   const toggleColorInSelection = useConverterStore((s) => s.toggleColorInSelection);
+  const free_color_set = useConverterStore((s) => s.free_color_set);
+  const toggleFreeColor = useConverterStore((s) => s.toggleFreeColor);
+  const clearFreeColors = useConverterStore((s) => s.clearFreeColors);
+  const regionReplacementCount = useConverterStore((s) => s.regionReplacementCount);
 
-  const hasRemaps = Object.keys(colorRemapMap).length > 0;
+  const hasRemaps = Object.keys(colorRemapMap).length > 0 || regionReplacementCount > 0;
   const hasHistory = remapHistory.length > 0;
 
   const handleSelect = (hex: string) => {
@@ -268,6 +301,27 @@ export default function PalettePanel() {
             />
           </div>
 
+          {/* Free color buttons */}
+          <div className="flex gap-2 mb-2">
+            <Button
+              label={t("conv_free_color_btn")}
+              variant="secondary"
+              onClick={() => {
+                if (selectedColor) toggleFreeColor(selectedColor);
+              }}
+              disabled={selectedColor === null}
+            />
+            <Button
+              label={t("conv_free_color_clear_btn")}
+              variant="secondary"
+              onClick={clearFreeColors}
+              disabled={free_color_set.size === 0}
+            />
+          </div>
+
+          {/* Free color summary */}
+          <FreeColorSummary freeColors={free_color_set} />
+
           {/* Palette items */}
           <div
             className="max-h-80 overflow-y-auto"
@@ -290,6 +344,7 @@ export default function PalettePanel() {
                   heightMm={color_height_map[entry.matched_hex]}
                   showHeightSlider={enable_relief}
                   maxHeight={heightmap_max_height}
+                  isFreeColor={free_color_set.has(entry.matched_hex)}
                   onSelect={() => handleSelect(entry.matched_hex)}
                   onHeightChange={(h) => updateColorHeight(entry.matched_hex, h)}
                 />

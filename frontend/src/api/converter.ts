@@ -218,3 +218,23 @@ export async function regionReplace(
   );
   return response.data;
 }
+
+/** 重置所有颜色替换响应 */
+export interface ResetReplacementsResponse {
+  status: string;
+  message: string;
+  preview_url: string;
+  preview_glb_url?: string | null;
+}
+
+/** 重置所有颜色替换，恢复原始预览 */
+export async function resetReplacements(
+  sessionId: string,
+): Promise<ResetReplacementsResponse> {
+  const response = await apiClient.post<ResetReplacementsResponse>(
+    "/convert/reset-replacements",
+    { session_id: sessionId },
+    { timeout: 15_000 },
+  );
+  return response.data;
+}

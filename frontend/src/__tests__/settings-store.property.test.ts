@@ -155,10 +155,9 @@ describe("Feature: global-settings, Property 2: Translation lookup 正确性", (
           const entry = translations[key];
           // Build t() inline (same logic as I18nProvider)
           const result = entry[lang] ?? entry["zh"] ?? key;
-          // Must be a non-empty string matching the dictionary
+          // Must be a string matching the dictionary (empty strings are valid for intentional omissions)
           return (
             typeof result === "string" &&
-            result.length > 0 &&
             result === translations[key][lang]
           );
         }

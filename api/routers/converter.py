@@ -30,6 +30,7 @@ from api.schemas.converter import (
     RegionDetectResponse,
     RegionReplaceRequest,
     RegionReplaceResponse,
+    ResetReplacementsRequest,
 )
 from api.schemas.responses import (
     BatchItemResult,
@@ -40,6 +41,7 @@ from api.schemas.responses import (
     HeightmapUploadResponse,
     MergePreviewResponse,
     PreviewResponse,
+    ResetReplacementsResponse,
 )
 from api.session_store import SessionStore
 from api.worker_pool import WorkerPoolManager
@@ -272,6 +274,9 @@ async def convert_preview(
     store.put(session_id, "replacement_regions", [])
     store.put(session_id, "replacement_history", [])
     store.put(session_id, "free_color_set", set())
+    # Save a pristine copy of matched_rgb for reset-replacements
+    if cache_data and "matched_rgb" in cache_data:
+        store.put(session_id, "original_matched_rgb", cache_data["matched_rgb"].copy())
     store.register_temp_file(session_id, temp_path)
     # Register worker temp files for cleanup
     store.register_temp_file(session_id, result["preview_png_path"])
@@ -580,16 +585,25 @@ async def convert_generate(
     if request.enable_relief and height_mode == "heightmap":
         heightmap_grayscale = session_data.get("heightmap_grayscale")
         if heightmap_grayscale is not None:
-            import tempfile
-            import numpy as np
-            from PIL import Image
             fd, hm_temp_path = tempfile.mkstemp(suffix=".png")
             os.close(fd)
             Image.fromarray(heightmap_grayscale).save(hm_temp_path)
             heightmap_path = hm_temp_path
             store.register_temp_file(body.session_id, hm_temp_path)
 
-    # 2. Collect scalar parameters into a dict for the worker
+    # 2a. Serialize cached matched_rgb to temp file if requested
+    # 当存在区域替换时，将缓存的 matched_rgb 序列化为临时文件供 Worker 使用
+    matched_rgb_path: str | None = None
+    if request.use_cached_matched_rgb:
+        cached_matched_rgb = cache.get("matched_rgb")
+        if cached_matched_rgb is not None:
+            fd, mr_temp_path = tempfile.mkstemp(suffix=".npy")
+            os.close(fd)
+            np.save(mr_temp_path, cached_matched_rgb)
+            matched_rgb_path = mr_temp_path
+            store.register_temp_file(body.session_id, mr_temp_path)
+
+    # 2b. Collect scalar parameters into a dict for the worker
     params: dict = {
         "target_width_mm": request.target_width_mm,
         "spacer_thick": request.spacer_thick,
@@ -622,6 +636,7 @@ async def convert_generate(
         "coating_height_mm": request.coating_height_mm,
         "hue_weight": request.hue_weight,
         "chroma_gate": request.chroma_gate,
+        "matched_rgb_path": matched_rgb_path,
     }
 
     # 3. CPU computation offloaded to process pool (only paths and scalars)
@@ -870,6 +885,82 @@ def replace_color(
     )
 
 
+@router.post("/reset-replacements", response_model=ResetReplacementsResponse)
+def reset_replacements(
+    request: ResetReplacementsRequest,
+    store: SessionStore = Depends(get_session_store),
+    registry: FileRegistry = Depends(get_file_registry),
+) -> ResetReplacementsResponse:
+    """Reset all color replacements and restore original preview.
+    重置所有颜色替换并恢复原始预览。
+
+    Clears replacement_regions and replacement_history from the session,
+    then regenerates the preview from the original matched_rgb cache.
+    清空 session 中的 replacement_regions 和 replacement_history，
+    然后从原始 matched_rgb 缓存重新生成预览。
+
+    Args:
+        request (ResetReplacementsRequest): Reset request with session_id. (重置请求)
+        store (SessionStore): Session store dependency. (会话存储依赖)
+        registry (FileRegistry): File registry dependency. (文件注册表依赖)
+
+    Returns:
+        ResetReplacementsResponse: Reset result with original preview URL. (重置结果及原始预览 URL)
+
+    Raises:
+        HTTPException(404): Session not found. (会话不存在)
+        HTTPException(409): No preview cache available. (无预览缓存)
+        HTTPException(500): Internal processing error. (内部处理错误)
+    """
+    session_data = _require_session(store, request.session_id)
+    cache = _require_preview_cache(session_data)
+
+    try:
+        # Clear replacement state
+        store.put(request.session_id, "replacement_regions", [])
+        store.put(request.session_id, "replacement_history", [])
+
+        # Restore matched_rgb from the pristine original saved at preview time.
+        # region-replace mutates cache["matched_rgb"] in-place, so we must
+        # use the untouched copy to truly reset.
+        original_rgb: np.ndarray | None = session_data.get("original_matched_rgb")
+        if original_rgb is not None:
+            # Restore cache to original state
+            cache["matched_rgb"] = original_rgb.copy()
+            store.put(request.session_id, "preview_cache", cache)
+            source_rgb = original_rgb
+        else:
+            # Fallback: no original saved (legacy session), use current cache
+            source_rgb = cache["matched_rgb"]
+
+        # Regenerate preview from original matched_rgb (no replacements applied)
+        preview_bytes = _image_to_png_bytes(source_rgb)
+        preview_id = registry.register_bytes(
+            request.session_id, preview_bytes, "preview_reset.png"
+        )
+
+        # Regenerate segmented GLB from restored matched_rgb
+        glb_url: str | None = None
+        try:
+            glb_path = generate_segmented_glb(cache)
+            if glb_path and os.path.exists(glb_path):
+                glb_id = registry.register_path(request.session_id, glb_path)
+                glb_url = f"/api/files/{glb_id}"
+        except Exception as glb_err:
+            print(f"[API] Reset-replacements GLB regeneration failed (non-fatal): {glb_err}")
+    except HTTPException:
+        raise
+    except Exception as e:
+        _handle_core_error(e, "Reset replacements")
+
+    return ResetReplacementsResponse(
+        status="ok",
+        message="All replacements cleared",
+        preview_url=f"/api/files/{preview_id}",
+        preview_glb_url=glb_url,
+    )
+
+
 @router.post("/region-detect", response_model=RegionDetectResponse)
 def region_detect(
     request: RegionDetectRequest,
@@ -1063,6 +1154,19 @@ def region_replace(
             request.session_id, preview_bytes, "preview_region_replaced.png"
         )
 
+        # Regenerate segmented GLB from updated matched_rgb
+        glb_url: str | None = None
+        try:
+            glb_path = generate_segmented_glb(cache)
+            if glb_path and os.path.exists(glb_path):
+                glb_id = registry.register_path(request.session_id, glb_path)
+                glb_url = f"/api/files/{glb_id}"
+        except Exception as glb_err:
+            print(f"[API] Region-replace GLB regeneration failed (non-fatal): {glb_err}")
+
+        # Extract updated color_contours from cache
+        contours_data: dict | None = cache.get("color_contours")
+
         # Clear region mask after replacement
         store.put(request.session_id, "selected_region_mask", None)
         store.put(request.session_id, "selected_region_id", None)
@@ -1074,6 +1178,8 @@ def region_replace(
 
     return RegionReplaceResponse(
         preview_url=f"/api/files/{preview_id}",
+        preview_glb_url=glb_url,
+        color_contours=contours_data,
         message="Region color replaced successfully",
     )
 

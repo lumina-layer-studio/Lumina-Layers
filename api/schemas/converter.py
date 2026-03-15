@@ -301,6 +301,10 @@ class ConvertGenerateRequest(BaseModel):
     free_color_set: Optional[Set[str]] = Field(
         None, description="自由色集合 (hex)"
     )
+    use_cached_matched_rgb: bool = Field(
+        False,
+        description="使用 Session 缓存的 matched_rgb 而非从原始图像重新处理",
+    )
 
 
 class ConvertBatchRequest(BaseModel):
@@ -340,6 +344,23 @@ class ColorReplaceRequest(BaseModel):
     session_id: str = Field(..., description="Session ID")
     selected_color: str = Field(..., description="选中的原图颜色 (hex)")
     replacement_color: str = Field(..., description="替换目标色 (hex)")
+
+
+class ResetReplacementsRequest(BaseModel):
+    """Request model for resetting all color replacements in a session.
+    重置 session 中所有颜色替换的请求模型。
+
+    Used by ``POST /api/convert/reset-replacements`` to clear all
+    replacement_regions and replacement_history, restoring the preview
+    to its original state.
+    用于 ``POST /api/convert/reset-replacements``，清空所有
+    replacement_regions 和 replacement_history，将预览恢复到原始状态。
+
+    Attributes:
+        session_id: Active session identifier. (Session ID)
+    """
+
+    session_id: str = Field(..., description="Session ID")
 
 
 class ColorMergePreviewRequest(BaseModel):
@@ -438,15 +459,19 @@ class RegionReplaceResponse(BaseModel):
     """Response model for region color replacement.
     区域颜色替换的响应模型。
 
-    Returns the preview image URL after replacement and an operation message.
-    返回替换后的预览图 URL 和操作结果消息。
+    Returns the preview image URL after replacement, an optional GLB URL
+    for refreshing the 3D preview, and an operation message.
+    返回替换后的预览图 URL、可选的 GLB URL（用于刷新 3D 预览）和操作结果消息。
 
     Attributes:
         preview_url: URL of the post-replacement preview image. (替换后预览图 URL)
+        preview_glb_url: URL of the regenerated segmented GLB. (重新生成的分段 GLB URL)
         message: Operation result message. (操作结果消息)
     """
 
     preview_url: str = Field(..., description="替换后预览图 URL")
+    preview_glb_url: Optional[str] = Field(None, description="重新生成的分段 GLB URL")
+    color_contours: Optional[dict] = Field(None, description="更新后的颜色轮廓数据")
     message: str = Field("Region replaced", description="操作结果消息")
 
 

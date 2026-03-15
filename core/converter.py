@@ -279,8 +279,10 @@ def _normalize_color_replacements_input(color_replacements):
                 continue
             src = (item.get('matched') or item.get('matched_hex')
                    or item.get('source') or item.get('quantized')
-                   or item.get('quantized_hex') or '').strip().lower()
-            dst = (item.get('replacement') or item.get('replacement_hex') or '').strip().lower()
+                   or item.get('quantized_hex')
+                   or item.get('selected_color') or '').strip().lower()
+            dst = (item.get('replacement') or item.get('replacement_hex')
+                   or item.get('replacement_color') or '').strip().lower()
             if src and dst:
                 out[src] = dst
         return out
@@ -480,10 +482,12 @@ def convert_image_to_3d(image_path, lut_path, target_width_mm, spacer_thick,
                          enable_coating=False, coating_height_mm=0.08,
                          hue_weight: float = 0.0,
                          chroma_gate: float = 15.0,
+                         matched_rgb_path: Optional[str] = None,
                          progress=None):
     """
     Main conversion function: Convert image to 3D model.
-    
+    主转换函数：将图像转换为 3D 模型。
+
     This refactored coordinator function is responsible for:
     1. Calling LuminaImageProcessor to process the image
     2. Calling get_mesher to get the mesh generator
@@ -514,6 +518,12 @@ def convert_image_to_3d(image_path, lut_path, target_width_mm, spacer_thick,
         backing_color_id: Backing material ID (0-7), default is 0 (White)
         separate_backing: Boolean flag to separate backing as individual object (default: False)
                          When True, backing_color_id is overridden to -2
+        matched_rgb_path: Optional path to a .npy file containing pre-computed matched_rgb
+                         override array. When provided, the override replaces the matched_rgb
+                         from process_image and diff pixels get their material_matrix
+                         recomputed via KDTree. (可选的预计算 matched_rgb .npy 文件路径，
+                         提供时将替代 process_image 的结果，差异像素的 material_matrix
+                         通过 KDTree 重新计算。)
     
     Returns:
         Tuple of (3mf_path, glb_path, preview_image, status_message)
@@ -830,6 +840,33 @@ def convert_image_to_3d(image_path, lut_path, target_width_mm, spacer_thick,
     pixel_scale = result['pixel_scale']
     mode_info = result['mode_info']
     debug_data = result.get('debug_data', None)
+    
+    # Override matched_rgb with pre-computed array if provided
+    # 如果提供了预计算的 matched_rgb，使用它替代 process_image 的结果
+    if matched_rgb_path is not None:
+        try:
+            override_rgb = np.load(matched_rgb_path)
+            if override_rgb.shape != matched_rgb.shape:
+                print(f"[CONVERTER] Warning: matched_rgb_path shape {override_rgb.shape} "
+                      f"does not match processed shape {matched_rgb.shape}, ignoring override")
+            else:
+                # Detect pixels that differ between original and override
+                diff_mask = np.any(matched_rgb != override_rgb, axis=-1) & mask_solid
+                if np.any(diff_mask):
+                    diff_pixels = override_rgb[diff_mask]  # (N, 3)
+                    unique_colors = np.unique(diff_pixels, axis=0)
+                    for color in unique_colors:
+                        color_mask = np.all(override_rgb == color, axis=-1) & diff_mask
+                        repl_lab = processor._rgb_to_lab(color.reshape(1, 3))
+                        _, lut_idx = processor.kdtree.query(repl_lab)
+                        new_stacks = processor.ref_stacks[lut_idx[0]]
+                        material_matrix[color_mask] = new_stacks
+                    print(f"[CONVERTER] matched_rgb override applied: "
+                          f"{np.sum(diff_mask)} pixels updated across {len(unique_colors)} colors")
+                matched_rgb = override_rgb
+        except Exception as e:
+            print(f"[CONVERTER] Warning: Failed to load matched_rgb_path '{matched_rgb_path}': {e}, "
+                  f"using original processed result")
     
     # Apply color replacements if provided
     # Also convert API-format replacement_regions (without masks) into color_replacements
@@ -3328,9 +3365,10 @@ def generate_final_model(image_path, lut_path, target_width_mm, spacer_thick,
                         enable_coating=False, coating_height_mm=0.08,
                         hue_weight: float = 0.0,
                         chroma_gate: float = 15.0,
+                        matched_rgb_path: Optional[str] = None,
                         progress=None):
-    """
-    Wrapper function for generating final model.
+    """Wrapper function for generating final model.
+    生成最终模型的包装函数。
     
     Directly calls main conversion function with smart defaults:
     - blur_kernel=0 (disable median filter, preserve details)
@@ -3343,6 +3381,8 @@ def generate_final_model(image_path, lut_path, target_width_mm, spacer_thick,
                            Will be converted to material ID based on color_mode
         separate_backing: Boolean flag to separate backing as individual object (default: False)
         height_mode: "color" or "heightmap", determines relief branch selection
+        matched_rgb_path (Optional[str]): Path to pre-computed matched_rgb .npy file.
+            (预计算的 matched_rgb .npy 文件路径，用于区域替换后的 3MF 生成)
     """
     # Convert backing color name to ID or use special marker for separate backing
     # Error handling for separate_backing parameter (Requirement 8.4)
@@ -3391,6 +3431,7 @@ def generate_final_model(image_path, lut_path, target_width_mm, spacer_thick,
         coating_height_mm=coating_height_mm,
         hue_weight=hue_weight,
         chroma_gate=chroma_gate,
+        matched_rgb_path=matched_rgb_path,
         progress=progress,
     )
 

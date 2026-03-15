@@ -26,6 +26,7 @@ import {
   replaceColor as apiReplaceColor,
   detectRegion as apiDetectRegion,
   regionReplace as apiRegionReplace,
+  resetReplacements as apiResetReplacements,
 } from "../api/converter";
 import type { LutColorEntry, LutInfo } from "../api/types";
 import {
@@ -44,6 +45,15 @@ export interface RegionData {
   pixelCount: number;
   previewUrl: string;
   contours?: number[][][] | null;
+}
+
+// ========== Pending Replacement Types ==========
+
+export interface PendingReplacement {
+  sourceHex: string;      // 原色 hex（不带 #）
+  targetHex: string;      // 目标色 hex（不带 #）
+  mode: SelectionMode;    // 触发时的选择模式
+  sourceColors?: string[]; // multi-select 模式下的多个源色
 }
 
 // ========== Helpers ==========
@@ -207,6 +217,12 @@ export interface ConverterState {
   selectionMode: SelectionMode;
   selectedColors: Set<string>;
   regionData: RegionData | null;
+
+  // 待确认颜色替换
+  pendingReplacement: PendingReplacement | null;
+
+  // 区域替换计数（current 模式不走 colorRemapMap，需要独立计数以启用清除按钮）
+  regionReplacementCount: number;
 }
 
 // ========== Actions Interface ==========
@@ -260,6 +276,10 @@ export interface ConverterActions {
   detectRegion: (x: number, y: number) => Promise<void>;
   applyRegionReplace: (newHex: string) => Promise<void>;
 
+  // 待确认颜色替换
+  setPendingReplacement: (pending: PendingReplacement | null) => void;
+  confirmReplacement: () => Promise<void>;
+
   // 颜色替换（纯前端）
   applyColorRemap: (origHex: string, newHex: string) => void;
   undoColorRemap: () => void;
@@ -309,6 +329,10 @@ export interface ConverterActions {
 
   // 完整流水线（preview → generate）
   submitFullPipeline: () => Promise<string | null>;
+
+  // 自由色
+  toggleFreeColor: (hex: string) => void;
+  clearFreeColors: () => void;
 
   // UI 状态
   setError: (error: string | null) => void;
@@ -421,6 +445,8 @@ const DEFAULT_STATE: ConverterState = {
   selectionMode: 'current' as SelectionMode,
   selectedColors: new Set<string>(),
   regionData: null,
+  pendingReplacement: null,
+  regionReplacementCount: 0,
 };
 
 // ========== Preview AbortController ==========
@@ -806,18 +832,100 @@ export const useConverterStore = create<ConverterState & ConverterActions>(
       set({ replacePreviewLoading: true, error: null });
       try {
         const response = await apiRegionReplace(state.sessionId, `#${newHex}`);
-        set({
+        const updates: Partial<ConverterState> = {
           previewImageUrl: `http://localhost:8000${response.preview_url}`,
           regionData: null,
           replacePreviewLoading: false,
           threemfDiskPath: null,
           downloadUrl: null,
-        });
+        };
+
+        // 更新 3D 预览 GLB URL（仅当后端返回非空 URL 时）
+        if (response.preview_glb_url) {
+          updates.previewGlbUrl = `http://localhost:8000${response.preview_glb_url}`;
+        }
+        // preview_glb_url 为 null 时不清除现有 previewGlbUrl
+
+        // 更新颜色轮廓数据（仅当后端返回非空数据时）
+        if (response.color_contours) {
+          updates.colorContours = response.color_contours;
+        }
+
+        // 不递增 regionReplacementCount（已在 confirmReplacement 中处理）
+        set(updates);
       } catch (err) {
         set({
           replacePreviewLoading: false,
           error: err instanceof Error ? err.message : "区域颜色替换失败",
         });
+      }
+    },
+
+    // --- 待确认颜色替换 ---
+    setPendingReplacement: (pending: PendingReplacement | null) => {
+      set({ pendingReplacement: pending });
+    },
+
+    confirmReplacement: async () => {
+      const state = _get();
+      const pending = state.pendingReplacement;
+      if (!pending) return;
+
+      // 清除 pending 状态
+      set({ pendingReplacement: null });
+
+      switch (pending.mode) {
+        case 'select-all':
+          // 乐观更新 colorRemapMap → 3D 预览即时响应
+          _get().applyColorRemap(pending.sourceHex, pending.targetHex);
+          break;
+        case 'multi-select': {
+          // 使用 pending 中保存的 sourceColors，而非 state.selectedColors
+          const colors = pending.sourceColors ?? [];
+          if (colors.length === 0) break;
+          const curState = _get();
+          const snapshot = { ...curState.colorRemapMap };
+          const newHistory = [...curState.remapHistory, snapshot];
+          const newMap = { ...curState.colorRemapMap };
+          for (const hex of colors) {
+            newMap[hex] = pending.targetHex;
+          }
+          set({
+            colorRemapMap: newMap,
+            remapHistory: newHistory,
+            replacePreviewLoading: true,
+            threemfDiskPath: null,
+            downloadUrl: null,
+          });
+          try {
+            for (const hex of colors) {
+              await _get().submitSingleReplace(hex, pending.targetHex);
+            }
+            set({ replacePreviewLoading: false });
+          } catch {
+            set({
+              colorRemapMap: snapshot,
+              remapHistory: curState.remapHistory,
+              replacePreviewLoading: false,
+              error: "批量颜色替换失败",
+            });
+          }
+          break;
+        }
+        case 'current':
+        case 'region': {
+          // 不更新 colorRemapMap（避免 3D 预览全局变色）
+          // 仅递增 regionReplacementCount 并调用后端区域替换
+          const curState = _get();
+          set({
+            regionReplacementCount: curState.regionReplacementCount + 1,
+          });
+          // 调用后端 region-replace → 2D 预览精确区域替换
+          if (curState.regionData) {
+            await _get().applyRegionReplace(pending.targetHex);
+          }
+          break;
+        }
       }
     },
 
@@ -864,14 +972,45 @@ export const useConverterStore = create<ConverterState & ConverterActions>(
     },
 
     clearAllRemaps: () => {
-      const originalUrl = _get().originalPreviewUrl;
+      const state = _get();
       set({
         colorRemapMap: {},
         remapHistory: [],
         threemfDiskPath: null,
         downloadUrl: null,
-        ...(originalUrl ? { previewImageUrl: originalUrl } : {}),
+        regionData: null,
+        regionReplacementCount: 0,
       });
+      // 调用后端清空 replacement_regions 并从原始 matched_rgb 重新生成预览和 GLB
+      // 不能依赖 originalPreviewUrl，因为 region-replace 会修改后端缓存的 matched_rgb
+      if (state.sessionId) {
+        apiResetReplacements(state.sessionId)
+          .then((res) => {
+            const url = `http://localhost:8000${res.preview_url}`;
+            const updates: Partial<ConverterState> = {
+              previewImageUrl: url,
+              originalPreviewUrl: url,
+            };
+            // 后端 reset-replacements 现在也会重新生成 GLB
+            if (res.preview_glb_url) {
+              updates.previewGlbUrl = `http://localhost:8000${res.preview_glb_url}`;
+            }
+            set(updates);
+          })
+          .catch(() => {
+            // 后端清空失败时回退到 originalPreviewUrl
+            const fallback = _get().originalPreviewUrl;
+            if (fallback) {
+              set({ previewImageUrl: fallback });
+            }
+          });
+      } else {
+        // 无 session 时直接回退到 originalPreviewUrl
+        const originalUrl = state.originalPreviewUrl;
+        if (originalUrl) {
+          set({ previewImageUrl: originalUrl });
+        }
+      }
     },
 
     // --- 浮雕高度 ---
@@ -1156,8 +1295,9 @@ export const useConverterStore = create<ConverterState & ConverterActions>(
               : undefined,
           free_color_set:
             state.free_color_set.size > 0
-              ? Array.from(state.free_color_set)
+              ? Array.from(state.free_color_set).map(h => `#${h}`)
               : undefined,
+          use_cached_matched_rgb: state.regionReplacementCount > 0,
         });
         // 后端返回 download_url 和可选的 preview_3d_url
         // preview_3d_url 指向 GLB 文件（Three.js 可加载）
@@ -1382,6 +1522,23 @@ export const useConverterStore = create<ConverterState & ConverterActions>(
 
       // 步骤 2：执行生成
       return await _get().submitGenerate();
+    },
+
+    // --- 自由色 ---
+    toggleFreeColor: (hex: string) => {
+      set((state) => {
+        const next = new Set(state.free_color_set);
+        if (next.has(hex)) {
+          next.delete(hex);
+        } else {
+          next.add(hex);
+        }
+        return { free_color_set: next, threemfDiskPath: null, downloadUrl: null };
+      });
+    },
+
+    clearFreeColors: () => {
+      set({ free_color_set: new Set(), threemfDiskPath: null, downloadUrl: null });
     },
 
     // --- UI 状态 ---

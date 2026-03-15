@@ -397,6 +397,10 @@ export const translations: Record<string, Record<"zh" | "en", string>> = {
     zh: "清除自由色",
     en: "Clear Free Colors",
   },
+  conv_free_color_label: {
+    zh: "🎯 自由色",
+    en: "🎯 Free Colors",
+  },
   conv_coating_section: {
     zh: "##### 透明镀层",
     en: "##### Transparent Coating",
@@ -1890,6 +1894,20 @@ export const translations: Record<string, Record<"zh" | "en", string>> = {
   lut_grid_dblclick_unfav: {
     zh: "双击取消收藏",
     en: "Double-click to unfavorite",
+  },
+
+  // ==================== Replace Confirmation ====================
+  replace_confirm_btn: {
+    zh: "确认替换",
+    en: "Confirm Replace",
+  },
+  replace_cancel_btn: {
+    zh: "取消",
+    en: "Cancel",
+  },
+  replace_preview_label: {
+    zh: "替换预览",
+    en: "Replace Preview",
   },
 
   // ==================== Batch File Uploader ====================

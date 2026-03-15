@@ -175,9 +175,12 @@ def create_5color_tab_v2(lang="zh"):
             if lut_path.endswith('.npz'):
                 # NPZ 文件包含 rgb 和 stacks
                 _, _, stack_data, rgb_data = StackLUTLoader.load_npz_file(lut_path)
+                # 尝试从同名 JSON 加载 source 信息
+                sources = StackLUTLoader.load_sources_from_json(lut_path)
             else:
                 # NPY 文件，需要加载 RGB 数据
                 _, _, rgb_data = StackLUTLoader.load_lut_rgb(lut_path)
+                sources = StackLUTLoader.load_sources_from_json(lut_path)
                 
                 # 检测颜色数量
                 color_count, _ = ColorCountDetector.detect_color_count(rgb_data)
@@ -190,7 +193,7 @@ def create_5color_tab_v2(lang="zh"):
                 else:
                     stack_data = None
             
-            engine = ColorQueryEngine(stack_data, rgb_data)
+            engine = ColorQueryEngine(stack_data, rgb_data, sources=sources)
             result = engine.query(selected)
             
             return _result_html(result)
@@ -392,6 +395,11 @@ def _result_html(result):
     # 从消息中提取是否使用动态查询
     mode_text = "（动态查询）" if "动态查询" in result.message else ""
     
+    # 来源信息
+    source_html = ""
+    if result.source:
+        source_html = f'<div style="font-size:14px;color:#6b7280;margin-top:4px;">来源: {result.source}</div>'
+    
     return f'''
     <div style="padding:20px;border:2px solid #10b981;background:#f0fdf4;border-radius:8px;">
         <div style="text-align:center;margin-bottom:15px;">
@@ -403,6 +411,7 @@ def _result_html(result):
             <div style="text-align:left;">
                 <div style="font-size:16px;font-family:monospace;font-weight:600;color:#374151;">{hex_color}</div>
                 <div style="font-size:14px;color:#6b7280;">RGB({r}, {g}, {b})</div>
+                {source_html}
             </div>
         </div>
     </div>

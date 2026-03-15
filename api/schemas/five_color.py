@@ -42,3 +42,4 @@ class FiveColorQueryResponse(BaseModel):
     result_hex: Optional[str] = Field(None, description="结果 Hex")
     row_index: int = Field(..., description="Stack LUT 行索引")
     message: str = Field(..., description="状态消息")
+    source: str = Field("", description="来源标识")

@@ -60,7 +60,8 @@ def _load_engine(lut_name: str) -> tuple[ColorQueryEngine, str]:
             success, msg, stack_data, rgb_data = StackLUTLoader.load_npz_file(path)
             if not success:
                 raise HTTPException(status_code=500, detail=f"Failed to load LUT: {msg}")
-            engine = ColorQueryEngine(stack_lut=stack_data, lut_rgb=rgb_data)
+            sources = StackLUTLoader.load_sources_from_json(path)
+            engine = ColorQueryEngine(stack_lut=stack_data, lut_rgb=rgb_data, sources=sources)
         else:
             # .npy file
             success, msg, rgb_data = StackLUTLoader.load_lut_rgb(path)
@@ -82,7 +83,8 @@ def _load_engine(lut_name: str) -> tuple[ColorQueryEngine, str]:
                     stack_data = loaded_stack
 
             engine = ColorQueryEngine(
-                stack_lut=stack_data, lut_rgb=rgb_data, color_count=color_count
+                stack_lut=stack_data, lut_rgb=rgb_data, color_count=color_count,
+                sources=StackLUTLoader.load_sources_from_json(path)
             )
 
         with _engine_cache_lock:
@@ -148,4 +150,5 @@ def query_five_color(request: FiveColorQueryRequest) -> FiveColorQueryResponse:
         result_hex=rgb_to_hex(result.result_rgb) if result.result_rgb else None,
         row_index=result.row_index,
         message=result.message,
+        source=result.source,
     )

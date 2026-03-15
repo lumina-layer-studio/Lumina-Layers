@@ -344,6 +344,7 @@ export interface FiveColorQueryResponse {
   result_hex: string | null;
   row_index: number;
   message: string;
+  source: string;
 }
 
 // ========== Color Replace Models ==========

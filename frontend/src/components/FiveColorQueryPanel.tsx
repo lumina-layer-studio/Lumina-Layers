@@ -175,6 +175,11 @@ export default function FiveColorQueryPanel() {
             <p className="text-xs text-gray-500">
               {t("five_color_result_row")}: {queryResult.row_index}
             </p>
+            {queryResult.source && (
+              <p className="text-xs text-gray-500">
+                {t("five_color_result_source")}: {queryResult.source}
+              </p>
+            )}
           </div>
         )}
 

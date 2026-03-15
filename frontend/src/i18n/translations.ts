@@ -2057,6 +2057,10 @@ export const translations: Record<string, Record<"zh" | "en", string>> = {
     zh: "行号",
     en: "Row",
   },
+  five_color_result_source: {
+    zh: "来源",
+    en: "Source",
+  },
   five_color_result_color: {
     zh: "结果颜色 {hex}",
     en: "Result color {hex}",

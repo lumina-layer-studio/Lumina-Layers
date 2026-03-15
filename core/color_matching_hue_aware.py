@@ -43,21 +43,30 @@ class HueAwareColorMatcher:
     def __init__(self, lut_rgb: np.ndarray, lut_lab: np.ndarray,
                  hue_weight: float = 0.0,
                  preset: str = None,
-                 w_L: float = None, w_C: float = None, w_H: float = None):
+                 w_L: float = None, w_C: float = None, w_H: float = None,
+                 chroma_gate: float = 15.0):
         """
         初始化匹配器。
+        Initialize matcher.
 
-        参数:
+        参数 (Args):
             lut_rgb: LUT 的 RGB 数组 (N, 3), uint8
             lut_lab: LUT 的 CIELAB 数组 (N, 3), float (OpenCV 格式)
             hue_weight: 简化参数 (0.0-1.0)，自动映射到 w_L/w_H
                         0.0 = 纯 CIELAB，1.0 = 最强色相保护
             preset: 预设名称 ('classic', 'mild', 'balanced', 'strong')
             w_L, w_C, w_H: 手动指定权重（优先级最高）
+            chroma_gate: 暗色子集彩度门槛 (LCH 彩度)。
+                         输入像素彩度 > 此值时跳过暗色子集强制/过渡，
+                         走正常色相优先匹配。防止深色有彩色被错误匹配到灰色。
+                         (Chroma gate for dark subset bypass. Pixels with chroma
+                          above this skip dark-forced matching.)
+                         默认 15.0，0 = 禁用（所有低亮度都走暗色子集）。
         """
         self.lut_rgb = np.asarray(lut_rgb, dtype=np.uint8)
         self.lut_lab = np.asarray(lut_lab, dtype=np.float64)
         self.n_colors = len(lut_rgb)
+        self.chroma_gate = float(chroma_gate)
 
         # 预计算 LUT 的 LCH（基于 OpenCV LAB 格式）
         self.lut_lch = self._lab_to_lch(self.lut_lab)
@@ -74,6 +83,7 @@ class HueAwareColorMatcher:
 
         print(f"[HueAwareMatcher] 初始化: {self.n_colors} 色, "
               f"w_L={self.w_L:.2f}, w_C={self.w_C:.2f}, w_H={self.w_H:.2f}, "
+              f"chroma_gate={self.chroma_gate:.1f}, "
               f"暗色子集={len(self._dark_indices)} 色")
 
     def _resolve_weights(self, hue_weight, preset, w_L, w_C, w_H):
@@ -260,8 +270,11 @@ class HueAwareColorMatcher:
             input_c = input_lch[i, 1]
             input_h = input_lch[i, 2]
 
-            # v7: 低亮度强制在无彩暗色子集中匹配
-            if input_l < DARK_FORCE_L and has_dark and k_dark > 0:
+            # 彩度门槛：有彩色跳过暗色子集
+            is_chromatic = self.chroma_gate > 0 and input_c > self.chroma_gate
+
+            # v7: 低亮度强制在无彩暗色子集中匹配（仅低彩度）
+            if input_l < DARK_FORCE_L and has_dark and k_dark > 0 and not is_chromatic:
                 _, dark_cand_idx = self._dark_kdtree.query(input_lab[i], k=k_dark)
                 if np.ndim(dark_cand_idx) == 0:
                     dark_cand_idx = np.array([int(dark_cand_idx)])
@@ -271,8 +284,8 @@ class HueAwareColorMatcher:
                 result[i] = self._dark_indices[dark_cand_idx[best_dark]]
                 continue
 
-            # v7: 过渡区间 — 全 LUT 搜索但偏好暗色
-            if input_l < DARK_TRANSITION_L and has_dark and k_dark > 0:
+            # v7: 过渡区间 — 全 LUT 搜索但偏好暗色（仅低彩度）
+            if input_l < DARK_TRANSITION_L and has_dark and k_dark > 0 and not is_chromatic:
                 t = (input_l - DARK_FORCE_L) / (DARK_TRANSITION_L - DARK_FORCE_L)
 
                 # 全 LUT 候选

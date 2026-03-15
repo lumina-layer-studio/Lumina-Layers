@@ -207,6 +207,7 @@ async def convert_preview(
     quantize_colors: int = Form(48, description="K-Means 色彩细节"),
     enable_cleanup: bool = Form(True, description="孤立像素清理"),
     hue_weight: float = Form(0.0, description="色相保护权重"),
+    chroma_gate: float = Form(15.0, description="暗色彩度门槛"),
     is_dark: bool = Form(True, description="深色主题"),
     store: SessionStore = Depends(get_session_store),
     registry: FileRegistry = Depends(get_file_registry),
@@ -244,6 +245,7 @@ async def convert_preview(
             enable_cleanup,
             is_dark,
             hue_weight,
+            chroma_gate,
         )
     except asyncio.TimeoutError:
         raise HTTPException(status_code=504, detail="Preview generation timed out")
@@ -633,6 +635,7 @@ async def convert_generate(
         "enable_coating": request.enable_coating,
         "coating_height_mm": request.coating_height_mm,
         "hue_weight": request.hue_weight,
+        "chroma_gate": request.chroma_gate,
         "matched_rgb_path": matched_rgb_path,
     }
 
@@ -689,6 +692,7 @@ async def convert_batch(
     quantize_colors: int = Form(48, description="K-Means 色彩细节"),
     enable_cleanup: bool = Form(True, description="孤立像素清理"),
     hue_weight: float = Form(0.0, description="色相保护权重"),
+    chroma_gate: float = Form(15.0, description="暗色彩度门槛"),
     registry: FileRegistry = Depends(get_file_registry),
     pool: WorkerPoolManager = Depends(get_worker_pool),
 ) -> BatchResponse:
@@ -740,6 +744,7 @@ async def convert_batch(
                 quantize_colors,
                 enable_cleanup,
                 hue_weight,
+                chroma_gate,
             )
 
             # 3. Result processing (main thread)

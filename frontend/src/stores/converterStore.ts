@@ -102,7 +102,8 @@ export interface ConverterState {
   bg_tol: number;
   quantize_colors: number;
   enable_cleanup: boolean;
-  hue_weight: number;
+  hue_enable: boolean;
+  chroma_gate: number;
   separate_backing: boolean;
 
   // 挂件环
@@ -242,7 +243,8 @@ export interface ConverterActions {
   setBgTol: (tol: number) => void;
   setQuantizeColors: (colors: number) => void;
   setEnableCleanup: (enabled: boolean) => void;
-  setHueWeight: (weight: number) => void;
+  setHueEnable: (enabled: boolean) => void;
+  setChromaGate: (gate: number) => void;
   setSeparateBacking: (enabled: boolean) => void;
   setAddLoop: (enabled: boolean) => void;
   setLoopWidth: (width: number) => void;
@@ -379,7 +381,8 @@ const DEFAULT_STATE: ConverterState = {
   bg_tol: 40,
   quantize_colors: 48,
   enable_cleanup: true,
-  hue_weight: 0.0,
+  hue_enable: false,
+  chroma_gate: 15,
   separate_backing: false,
   add_loop: false,
   loop_width: 4.0,
@@ -580,9 +583,15 @@ export const useConverterStore = create<ConverterState & ConverterActions>(
         threemfDiskPath: null,
         downloadUrl: null,
       }),
-    setHueWeight: (weight: number) =>
+    setHueEnable: (enabled: boolean) =>
       set({
-        hue_weight: clampValue(weight, 0, 1),
+        hue_enable: enabled,
+        threemfDiskPath: null,
+        downloadUrl: null,
+      }),
+    setChromaGate: (gate: number) =>
+      set({
+        chroma_gate: clampValue(gate, 0, 50),
         threemfDiskPath: null,
         downloadUrl: null,
       }),
@@ -1166,7 +1175,8 @@ export const useConverterStore = create<ConverterState & ConverterActions>(
             modeling_mode: state.modeling_mode,
             quantize_colors: state.quantize_colors,
             enable_cleanup: state.enable_cleanup,
-            hue_weight: state.hue_weight,
+            hue_weight: state.hue_enable ? 0.5 : 0.0,
+            chroma_gate: state.hue_enable ? state.chroma_gate : 0,
             is_dark: useSettingsStore.getState().theme === "dark",
           },
           signal,
@@ -1253,7 +1263,8 @@ export const useConverterStore = create<ConverterState & ConverterActions>(
           modeling_mode: state.modeling_mode,
           quantize_colors: state.quantize_colors,
           enable_cleanup: state.enable_cleanup,
-          hue_weight: state.hue_weight,
+          hue_weight: state.hue_enable ? 0.5 : 0.0,
+          chroma_gate: state.hue_enable ? state.chroma_gate : 0,
           spacer_thick: state.spacer_thick,
           structure_mode: state.structure_mode,
           separate_backing: state.separate_backing,
@@ -1411,7 +1422,8 @@ export const useConverterStore = create<ConverterState & ConverterActions>(
           modeling_mode: state.modeling_mode,
           quantize_colors: state.quantize_colors,
           enable_cleanup: state.enable_cleanup,
-          hue_weight: state.hue_weight,
+          hue_weight: state.hue_enable ? 0.5 : 0.0,
+          chroma_gate: state.hue_enable ? state.chroma_gate : 0,
         };
         const result = await apiConvertBatch(state.batchFiles, params);
         set({ batchResult: result, batchLoading: false });

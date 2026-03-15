@@ -62,7 +62,7 @@ class LuminaImageProcessor:
             return lab.reshape(original_shape)
         return lab
 
-    def __init__(self, lut_path, color_mode, hue_weight: float = 0.0):
+    def __init__(self, lut_path, color_mode, hue_weight: float = 0.0, chroma_gate: float = 15.0):
         """
         Initialize image processor.
         
@@ -73,10 +73,13 @@ class LuminaImageProcessor:
                         0.0 = 纯 CIELAB 距离（默认，兼容原有行为）
                         0.3-0.5 = 平衡模式（推荐）
                         1.0 = 最强色相保护
+            chroma_gate: 暗色子集彩度门槛 (0-50)
+                         输入彩度 > 此值时跳过暗色强制匹配。默认 15.0。
         """
         self.lut_path = lut_path  # Store LUT path for color recipe logging
         self.color_mode = color_mode
         self.hue_weight = float(hue_weight)
+        self.chroma_gate = float(chroma_gate)
         self.layer_count = ColorSystem.get(color_mode).get('layer_count', PrinterConfig.COLOR_LAYERS)
         self.lut_rgb = None
         self.lut_lab = None  # CIELAB 空间的 LUT 颜色（用于 KDTree 匹配）
@@ -244,7 +247,8 @@ class LuminaImageProcessor:
                 if self.hue_weight > 0:
                     from core.color_matching_hue_aware import HueAwareColorMatcher
                     self.hue_matcher = HueAwareColorMatcher(
-                        self.lut_rgb, self.lut_lab, hue_weight=self.hue_weight
+                        self.lut_rgb, self.lut_lab, hue_weight=self.hue_weight,
+                        chroma_gate=self.chroma_gate
                     )
                 return
             except Exception as e:
@@ -363,7 +367,8 @@ class LuminaImageProcessor:
                         if self.hue_weight > 0:
                             from core.color_matching_hue_aware import HueAwareColorMatcher
                             self.hue_matcher = HueAwareColorMatcher(
-                                self.lut_rgb, self.lut_lab, hue_weight=self.hue_weight
+                                self.lut_rgb, self.lut_lab, hue_weight=self.hue_weight,
+                                chroma_gate=self.chroma_gate
                             )
                         return
                 except Exception as e:
@@ -424,7 +429,8 @@ class LuminaImageProcessor:
                     if self.hue_weight > 0:
                         from core.color_matching_hue_aware import HueAwareColorMatcher
                         self.hue_matcher = HueAwareColorMatcher(
-                            self.lut_rgb, self.lut_lab, hue_weight=self.hue_weight
+                            self.lut_rgb, self.lut_lab, hue_weight=self.hue_weight,
+                            chroma_gate=self.chroma_gate
                         )
                     return
                 except Exception as e:
@@ -484,7 +490,8 @@ class LuminaImageProcessor:
         if self.hue_weight > 0:
             from core.color_matching_hue_aware import HueAwareColorMatcher
             self.hue_matcher = HueAwareColorMatcher(
-                self.lut_rgb, self.lut_lab, hue_weight=self.hue_weight
+                self.lut_rgb, self.lut_lab, hue_weight=self.hue_weight,
+                chroma_gate=self.chroma_gate
             )
     
     def process_image(self, image_path, target_width_mm, modeling_mode,

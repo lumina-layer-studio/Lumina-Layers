@@ -13,18 +13,21 @@ export function useAutoPreview(): void {
   const imageFile = useConverterStore((s) => s.imageFile);
   const lut_name = useConverterStore((s) => s.lut_name);
   const cropModalOpen = useConverterStore((s) => s.cropModalOpen);
-  const hue_weight = useConverterStore((s) => s.hue_weight);
+  const hue_enable = useConverterStore((s) => s.hue_enable);
+  const chroma_gate = useConverterStore((s) => s.chroma_gate);
   const submitPreview = useConverterStore((s) => s.submitPreview);
 
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastTriggeredRef = useRef<{
     imageFile: File | null;
     lut_name: string;
-    hue_weight: number;
+    hue_enable: boolean;
+    chroma_gate: number;
   }>({
     imageFile: null,
     lut_name: "",
-    hue_weight: 0,
+    hue_enable: false,
+    chroma_gate: 15,
   });
 
   useEffect(() => {
@@ -44,14 +47,15 @@ export function useAutoPreview(): void {
     if (
       last.imageFile === imageFile &&
       last.lut_name === lut_name &&
-      last.hue_weight === hue_weight
+      last.hue_enable === hue_enable &&
+      last.chroma_gate === chroma_gate
     ) {
       return;
     }
 
     // Debounce 300ms then trigger preview
     timerRef.current = setTimeout(() => {
-      lastTriggeredRef.current = { imageFile, lut_name, hue_weight };
+      lastTriggeredRef.current = { imageFile, lut_name, hue_enable, chroma_gate };
       submitPreview();
     }, 300);
 
@@ -62,5 +66,5 @@ export function useAutoPreview(): void {
         timerRef.current = null;
       }
     };
-  }, [imageFile, lut_name, cropModalOpen, hue_weight, submitPreview]);
+  }, [imageFile, lut_name, cropModalOpen, hue_enable, chroma_gate, submitPreview]);
 }

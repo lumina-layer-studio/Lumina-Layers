@@ -37,6 +37,7 @@ export interface ConvertPreviewRequest {
   quantize_colors: number;
   enable_cleanup: boolean;
   hue_weight: number;
+  chroma_gate: number;
   is_dark: boolean;
 }
 
@@ -314,6 +315,7 @@ export interface BatchConvertParams {
   quantize_colors: number;
   enable_cleanup: boolean;
   hue_weight: number;
+  chroma_gate: number;
 }
 
 // ========== Five-Color Query Models ==========
@@ -343,6 +345,7 @@ export interface FiveColorQueryResponse {
   result_hex: string | null;
   row_index: number;
   message: string;
+  source: string;
 }
 
 // ========== Color Replace Models ==========

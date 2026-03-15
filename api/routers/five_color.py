@@ -6,6 +6,8 @@ performing five-color combination lookups.
 提供从 LUT 获取基础颜色和执行五色组合查询的端点。
 """
 
+import threading
+
 from fastapi import APIRouter, HTTPException, Query
 
 from api.schemas.five_color import (
@@ -25,10 +27,14 @@ from utils.lut_manager import LUTManager
 
 router = APIRouter(prefix="/api/five-color", tags=["Five-Color"])
 
+# ---- LUT Engine 内存缓存 ----
+_engine_cache: dict[str, ColorQueryEngine] = {}
+_engine_cache_lock = threading.Lock()
+
 
 def _load_engine(lut_name: str) -> tuple[ColorQueryEngine, str]:
-    """Load a LUT and create a ColorQueryEngine.
-    加载 LUT 并创建 ColorQueryEngine。
+    """Load a LUT and create a ColorQueryEngine (with in-memory cache).
+    加载 LUT 并创建 ColorQueryEngine（带内存缓存）。
 
     Args:
         lut_name: LUT 显示名称。
@@ -41,6 +47,10 @@ def _load_engine(lut_name: str) -> tuple[ColorQueryEngine, str]:
         HTTPException 400: LUT 格式无法识别。
         HTTPException 500: 加载失败。
     """
+    with _engine_cache_lock:
+        if lut_name in _engine_cache:
+            return _engine_cache[lut_name], lut_name
+
     path: str | None = LUTManager.get_lut_path(lut_name)
     if path is None:
         raise HTTPException(status_code=404, detail=f"LUT not found: {lut_name}")
@@ -50,7 +60,8 @@ def _load_engine(lut_name: str) -> tuple[ColorQueryEngine, str]:
             success, msg, stack_data, rgb_data = StackLUTLoader.load_npz_file(path)
             if not success:
                 raise HTTPException(status_code=500, detail=f"Failed to load LUT: {msg}")
-            engine = ColorQueryEngine(stack_lut=stack_data, lut_rgb=rgb_data)
+            sources = StackLUTLoader.load_sources_from_json(path)
+            engine = ColorQueryEngine(stack_lut=stack_data, lut_rgb=rgb_data, sources=sources)
         else:
             # .npy file
             success, msg, rgb_data = StackLUTLoader.load_lut_rgb(path)
@@ -72,8 +83,12 @@ def _load_engine(lut_name: str) -> tuple[ColorQueryEngine, str]:
                     stack_data = loaded_stack
 
             engine = ColorQueryEngine(
-                stack_lut=stack_data, lut_rgb=rgb_data, color_count=color_count
+                stack_lut=stack_data, lut_rgb=rgb_data, color_count=color_count,
+                sources=StackLUTLoader.load_sources_from_json(path)
             )
+
+        with _engine_cache_lock:
+            _engine_cache[lut_name] = engine
 
         return engine, lut_name
 
@@ -135,4 +150,5 @@ def query_five_color(request: FiveColorQueryRequest) -> FiveColorQueryResponse:
         result_hex=rgb_to_hex(result.result_rgb) if result.result_rgb else None,
         row_index=result.row_index,
         message=result.message,
+        source=result.source,
     )

@@ -1606,8 +1606,12 @@ export const translations: Record<string, Record<"zh" | "en", string>> = {
     en: "Separate Backing",
   },
   adv_hue_protection: {
-    zh: "色相保护",
-    en: "Hue Protection",
+    zh: "🎨 色相保护",
+    en: "🎨 Hue Protection",
+  },
+  adv_chroma_gate: {
+    zh: "🌈 暗色彩度门槛",
+    en: "🌈 Dark Chroma Gate",
   },
 
   // ==================== Relief Settings ====================
@@ -2070,6 +2074,10 @@ export const translations: Record<string, Record<"zh" | "en", string>> = {
   five_color_result_row: {
     zh: "行号",
     en: "Row",
+  },
+  five_color_result_source: {
+    zh: "来源",
+    en: "Source",
   },
   five_color_result_color: {
     zh: "结果颜色 {hex}",

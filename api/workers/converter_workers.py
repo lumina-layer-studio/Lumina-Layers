@@ -27,6 +27,7 @@ def worker_generate_preview(
     enable_cleanup: bool,
     is_dark: bool = True,
     hue_weight: float = 0.0,
+    chroma_gate: float = 15.0,
 ) -> dict:
     """Execute preview generation in a worker process.
     在工作进程中执行预览生成。
@@ -67,7 +68,7 @@ def worker_generate_preview(
     # Convert string modeling_mode to enum
     mode_enum = ModelingMode(modeling_mode)
 
-    print(f"[Worker preview] hue_weight={hue_weight}, lut_path={lut_path}")
+    print(f"[Worker preview] hue_weight={hue_weight}, chroma_gate={chroma_gate}, lut_path={lut_path}")
     preview_img, cache_data, status_msg = generate_preview_cached(
         image_path=image_path,
         lut_path=lut_path,
@@ -80,6 +81,7 @@ def worker_generate_preview(
         enable_cleanup=enable_cleanup,
         is_dark=is_dark,
         hue_weight=hue_weight,
+        chroma_gate=chroma_gate,
     )
 
     result: dict = {
@@ -122,6 +124,7 @@ def worker_batch_convert_item(
     quantize_colors: int,
     enable_cleanup: bool,
     hue_weight: float = 0.0,
+    chroma_gate: float = 15.0,
 ) -> dict:
     """Execute a single batch conversion item in a worker process.
     在工作进程中执行单个批量转换项。
@@ -172,6 +175,7 @@ def worker_batch_convert_item(
         quantize_colors=quantize_colors,
         enable_cleanup=enable_cleanup,
         hue_weight=hue_weight,
+        chroma_gate=chroma_gate,
     )
 
     return {

@@ -19,6 +19,7 @@ class ColorQueryResult:
     result_rgb: Optional[Tuple[int, int, int]]  # 结果 RGB 颜色
     row_index: int  # 在 stack LUT 中的行索引
     message: str  # 状态消息
+    source: str = ""  # 来源标识（例如 "Aliz-PETG-8色"）
 
 
 class ColorCountDetector:
@@ -219,20 +220,53 @@ class StackLUTLoader:
         except Exception as e:
             return False, f"加载失败: {str(e)}", None
 
+    @staticmethod
+    def load_sources_from_json(npz_path: str) -> List[str]:
+        """Load source info from NPZ 'sources' field, or fall back to companion JSON.
+        优先从 NPZ 的 sources 字段读取，回退到同名 JSON 文件。
+
+        Args:
+            npz_path: NPZ/NPY 文件路径
+
+        Returns:
+            list: source 字符串列表，如果没有则返回空列表
+        """
+        import json
+        # 1) 尝试从 NPZ 的 sources 字段读取
+        if npz_path.endswith('.npz'):
+            try:
+                data = np.load(npz_path, allow_pickle=True)
+                if 'sources' in data:
+                    return [str(s) for s in data['sources']]
+            except Exception:
+                pass
+        # 2) 回退到同名 JSON
+        json_path = npz_path.rsplit('.', 1)[0] + '.json'
+        try:
+            with open(json_path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            if isinstance(data, list):
+                return [entry.get('source', '') if isinstance(entry, dict) else '' for entry in data]
+        except Exception:
+            pass
+        return []
+
 
 class ColorQueryEngine:
     """颜色查询引擎"""
     
-    def __init__(self, stack_lut: Optional[np.ndarray], lut_rgb: np.ndarray, color_count: Optional[int] = None):
+    def __init__(self, stack_lut: Optional[np.ndarray], lut_rgb: np.ndarray, color_count: Optional[int] = None, sources: Optional[List[str]] = None):
         """初始化查询引擎
         
         Args:
             stack_lut: (N, 5) 堆叠查找表（可选，如果没有则使用动态查询）
             lut_rgb: (N, 3) RGB 颜色数据
             color_count: 颜色数量（可选，如果没有则自动检测）
+            sources: 每条记录的来源标识列表（可选）
         """
         self.lut_rgb = lut_rgb
         self.stack_lut = stack_lut
+        self.sources = sources or []
         
         # 检测颜色数量
         if color_count is not None:
@@ -293,12 +327,14 @@ class ColorQueryEngine:
         if len(matches) > 0:
             row_idx = matches[0]
             result_rgb = tuple(self.lut_rgb[row_idx])
+            source = self.sources[row_idx] if row_idx < len(self.sources) else ""
             return ColorQueryResult(
                 found=True,
                 selected_indices=selected_indices,
                 result_rgb=result_rgb,
                 row_index=row_idx,
-                message=f"找到匹配！行索引: {row_idx}"
+                message=f"找到匹配！行索引: {row_idx}",
+                source=source
             )
         else:
             return ColorQueryResult(
@@ -321,12 +357,14 @@ class ColorQueryEngine:
             if combo == target:
                 if idx < len(self.lut_rgb):
                     result_rgb = tuple(self.lut_rgb[idx])
+                    source = self.sources[idx] if idx < len(self.sources) else ""
                     return ColorQueryResult(
                         found=True,
                         selected_indices=selected_indices,
                         result_rgb=result_rgb,
                         row_index=idx,
-                        message=f"找到匹配！行索引: {idx}（动态查询）"
+                        message=f"找到匹配！行索引: {idx}（动态查询）",
+                        source=source
                     )
         
         return ColorQueryResult(

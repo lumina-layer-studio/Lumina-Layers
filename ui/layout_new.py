@@ -996,6 +996,7 @@ def process_batch_generation(batch_files, is_batch, single_image, lut_path, targ
                              free_color_set=None,
                              enable_coating=False, coating_height_mm=0.08,
                              hue_weight: float = 0.0,
+                             chroma_gate: float = 15.0,
                              progress=gr.Progress()):
     """Dispatch to single-image or batch generation; batch writes a ZIP of 3MFs.
 
@@ -1070,6 +1071,7 @@ def process_batch_generation(batch_files, is_batch, single_image, lut_path, targ
             enable_coating=enable_coating,
             coating_height_mm=coating_height_mm,
             hue_weight=float(hue_weight) if hue_weight else 0.0,
+            chroma_gate=float(chroma_gate) if chroma_gate else 15.0,
         )
         return out_path, glb_path, _preview_update(preview_img), status, color_recipe_path
 
@@ -1094,7 +1096,7 @@ def process_batch_generation(batch_files, is_batch, single_image, lut_path, targ
         logs.append(f"[{i+1}/{total_files}] 正在生成: {filename}")
 
         try:
-            result_3mf, _, _, _ = generate_final_model(path, *args, hue_weight=float(hue_weight) if hue_weight else 0.0)
+            result_3mf, _, _, _ = generate_final_model(path, *args, hue_weight=float(hue_weight) if hue_weight else 0.0, chroma_gate=float(chroma_gate) if chroma_gate else 15.0)
 
             if result_3mf and os.path.exists(result_3mf):
                 new_name = os.path.splitext(filename)[0] + ".3mf"
@@ -2276,11 +2278,18 @@ def create_converter_tab_content(lang: str, lang_state=None, theme_state=None) -
                         info="勾选后，底板将作为独立对象导出到3MF文件"
                     )
                 with gr.Row():
-                    components['slider_conv_hue_weight'] = gr.Slider(
-                        minimum=0.0, maximum=1.0, step=0.1, value=0.0,
+                    components['checkbox_conv_hue_enable'] = gr.Checkbox(
                         label="🎨 色相保护 | Hue Protection",
-                        info="0=纯色差匹配(默认), 0.3=明显保护, 0.5=强保护(推荐), 1.0=最强。避免浅色匹配到错误色系"
+                        value=False,
+                        info="开启后避免浅色/暗色匹配到错误色系"
                     )
+                with gr.Row(visible=False) as hue_chroma_gate_row:
+                    components['slider_conv_chroma_gate'] = gr.Slider(
+                        minimum=0, maximum=50, step=1, value=15,
+                        label="🌈 暗色彩度门槛 | Dark Chroma Gate",
+                        info="暗色像素彩度超过此值时跳过灰色子集匹配，保留原有色彩。0=禁用"
+                    )
+                components['row_conv_chroma_gate'] = hue_chroma_gate_row
             
             # Crop interface toggle - outside Accordion for immediate DOM availability
             with gr.Row():
@@ -2810,6 +2819,16 @@ def create_converter_tab_content(lang: str, lang_state=None, theme_state=None) -
         outputs=None
     )
 
+    # ========== Hue Protection Toggle → Chroma Gate Visibility ==========
+    def on_hue_enable_change(enabled):
+        return gr.update(visible=bool(enabled))
+
+    components['checkbox_conv_hue_enable'].change(
+        fn=on_hue_enable_change,
+        inputs=[components['checkbox_conv_hue_enable']],
+        outputs=[components['row_conv_chroma_gate']]
+    )
+
     # ========== Image Crop Extension Events (Non-invasive) ==========
     from core.image_preprocessor import ImagePreprocessor
     
@@ -3207,18 +3226,21 @@ def create_converter_tab_content(lang: str, lang_state=None, theme_state=None) -
                                          auto_bg, bg_tol, color_mode,
                                          modeling_mode, quantize_colors, enable_cleanup,
                                          is_dark_theme=False, processed_path=None,
-                                         hue_weight=0.0):
+                                         hue_enable=False, chroma_gate=15):
         # When SVG was uploaded, image_conv_image_label holds a PNG thumbnail while
         # preprocess_processed_path holds the original SVG. Use SVG for the converter.
         if processed_path and isinstance(processed_path, str) and processed_path.lower().endswith('.svg'):
             image_path = processed_path
+        hue_weight = 0.5 if hue_enable else 0.0
+        chroma_gate = float(chroma_gate) if chroma_gate else 15.0
         display, cache, status = generate_preview_cached(
             image_path, lut_path, target_width_mm,
             auto_bg, bg_tol, color_mode,
             modeling_mode, quantize_colors,
             enable_cleanup=enable_cleanup,
             is_dark=is_dark_theme,
-            hue_weight=float(hue_weight) if hue_weight else 0.0
+            hue_weight=hue_weight,
+            chroma_gate=chroma_gate
         )
         # Generate realtime 3D preview GLB
         glb_path = generate_realtime_glb(cache) if cache is not None else None
@@ -3352,7 +3374,8 @@ def create_converter_tab_content(lang: str, lang_state=None, theme_state=None) -
                 components['checkbox_conv_cleanup'],
                 theme_state,
                 preprocess_processed_path,
-                components['slider_conv_hue_weight'],
+                components['checkbox_conv_hue_enable'],
+                components['slider_conv_chroma_gate'],
             ],
             outputs=[conv_preview, conv_preview_cache, components['textbox_conv_status'], conv_3d_preview]
     ).then(
@@ -4271,7 +4294,7 @@ def create_converter_tab_content(lang: str, lang_state=None, theme_state=None) -
                                    free_color_set, enable_coating, coating_height_mm,
                                    radio_height_mode: str,
                                    preview_cache, theme_is_dark, processed_path=None,
-                                   hue_weight: float = 0.0,
+                                   hue_enable=False, chroma_gate=15,
                                    progress=gr.Progress()):
         """Generate 3MF directly; preview is generated internally by convert_image_to_3d.
         
@@ -4287,6 +4310,8 @@ def create_converter_tab_content(lang: str, lang_state=None, theme_state=None) -
             single_image = processed_path
         # Resolve UI radio value to backend height_mode parameter
         height_mode = resolve_height_mode(radio_height_mode)
+        hue_weight = 0.5 if hue_enable else 0.0
+        chroma_gate = float(chroma_gate) if chroma_gate else 15.0
 
         progress(0.0, desc="开始生成... | Starting...")
         return process_batch_generation(
@@ -4300,7 +4325,8 @@ def create_converter_tab_content(lang: str, lang_state=None, theme_state=None) -
             enable_cleanup, enable_outline, outline_width,
             enable_cloisonne, wire_width_mm, wire_height_mm,
             free_color_set, enable_coating, coating_height_mm,
-            hue_weight=float(hue_weight) if hue_weight else 0.0,
+            hue_weight=hue_weight,
+            chroma_gate=chroma_gate,
             progress=progress,
         )
     
@@ -4343,7 +4369,8 @@ def create_converter_tab_content(lang: str, lang_state=None, theme_state=None) -
                 conv_preview_cache,
                 theme_state,
                 preprocess_processed_path,
-                components['slider_conv_hue_weight'],
+                components['checkbox_conv_hue_enable'],
+                components['slider_conv_chroma_gate'],
             ],
             outputs=[
                 components['file_conv_download_file'],
@@ -4439,6 +4466,8 @@ def create_converter_tab_content(lang: str, lang_state=None, theme_state=None) -
         components['slider_conv_coating_height'],
         components['slider_conv_auto_height_max'],
         components['radio_conv_auto_height_mode'],
+        components['checkbox_conv_hue_enable'],
+        components['slider_conv_chroma_gate'],
     ]
 
     for comp in _param_components_change:
@@ -4459,7 +4488,7 @@ def create_converter_tab_content(lang: str, lang_state=None, theme_state=None) -
                             free_color_set, enable_coating, coating_height_mm,
                             radio_height_mode: str,
                             preview_cache, theme_is_dark, processed_path=None,
-                            hue_weight: float = 0.0):
+                            hue_enable=False, chroma_gate=15):
         """Open file in slicer with auto-generation if needed."""
         
         # When SVG was uploaded, image_conv_image_label holds a PNG thumbnail while
@@ -4505,7 +4534,8 @@ def create_converter_tab_content(lang: str, lang_state=None, theme_state=None) -
                     enable_cleanup, enable_outline, outline_width,
                     enable_cloisonne, wire_width_mm, wire_height_mm,
                     free_color_set, enable_coating, coating_height_mm,
-                    hue_weight=float(hue_weight) if hue_weight else 0.0,
+                    hue_weight=0.5 if hue_enable else 0.0,
+                    chroma_gate=float(chroma_gate) if chroma_gate else 15.0,
                 )
                 print(f"[AUTO-SLICER] 3MF generated: {status}")
             except Exception as e:
@@ -4575,7 +4605,8 @@ def create_converter_tab_content(lang: str, lang_state=None, theme_state=None) -
             conv_preview_cache,
             theme_state,
             preprocess_processed_path,
-            components['slider_conv_hue_weight'],
+            components['checkbox_conv_hue_enable'],
+            components['slider_conv_chroma_gate'],
         ],
         outputs=[
             components['file_conv_download_file'],

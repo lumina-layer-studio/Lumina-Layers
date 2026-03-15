@@ -87,6 +87,7 @@ describe("submitBatch API 调用和状态管理", () => {
       quantize_colors: 48,
       enable_cleanup: true,
       hue_weight: 0,
+      chroma_gate: 0,
     });
   });
 

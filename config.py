@@ -63,6 +63,38 @@ class PrinterConfig:
     SHRINK_OFFSET: float = 0.02
 
 
+class WorkerPoolConfig:
+    """Worker pool configuration with env var overrides.
+    工作进程池配置，支持环境变量覆盖。
+
+    Attributes:
+        MAX_WORKERS (int): Max number of worker processes. (最大工作进程数)
+        TASK_TIMEOUT (float): Task timeout in seconds. (任务超时秒数)
+    """
+    MAX_WORKERS: int = min(os.cpu_count() or 2, 4)
+    TASK_TIMEOUT: float = 300.0  # seconds
+
+    @classmethod
+    def from_env(cls) -> "WorkerPoolConfig":
+        """Create config with environment variable overrides.
+        创建配置，支持环境变量覆盖。
+
+        Reads:
+            LUMINA_MAX_WORKERS: Override MAX_WORKERS. (覆盖最大工作进程数)
+            LUMINA_TASK_TIMEOUT: Override TASK_TIMEOUT. (覆盖任务超时秒数)
+
+        Returns:
+            WorkerPoolConfig: Config instance with env overrides applied.
+                              (应用环境变量覆盖后的配置实例)
+        """
+        cfg = cls()
+        if v := os.environ.get("LUMINA_MAX_WORKERS"):
+            cfg.MAX_WORKERS = int(v)
+        if v := os.environ.get("LUMINA_TASK_TIMEOUT"):
+            cfg.TASK_TIMEOUT = float(v)
+        return cfg
+
+
 class SmartConfig:
     """Configuration for the Smart 1296 (36x36) System."""
     GRID_DIM: int = 36

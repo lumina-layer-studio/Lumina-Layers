@@ -20,13 +20,13 @@ const mockCropImage = vi.mocked(cropImage);
 
 // Mock fetch (used by submitCrop to download cropped blob)
 const mockFetch = vi.fn();
-global.fetch = mockFetch;
+globalThis.fetch = mockFetch;
 
 // Mock URL.createObjectURL / revokeObjectURL
 const mockCreateObjectURL = vi.fn(() => 'blob:cropped-preview');
 const mockRevokeObjectURL = vi.fn();
-global.URL.createObjectURL = mockCreateObjectURL;
-global.URL.revokeObjectURL = mockRevokeObjectURL;
+globalThis.URL.createObjectURL = mockCreateObjectURL;
+globalThis.URL.revokeObjectURL = mockRevokeObjectURL;
 
 function resetStore(): void {
   useConverterStore.setState({

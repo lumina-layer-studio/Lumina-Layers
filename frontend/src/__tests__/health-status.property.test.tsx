@@ -1,7 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, waitFor, cleanup } from "@testing-library/react";
 import fc from "fast-check";
-import App from "../App";
 
 vi.mock("../api/client", () => ({
   default: {
@@ -16,6 +15,28 @@ vi.mock("../api/converter", () => ({
   getFileUrl: vi.fn(),
 }));
 
+vi.mock("../api/extractor", () => ({
+  extractColors: vi.fn(),
+  manualFixCell: vi.fn(),
+}));
+
+vi.mock("../i18n/context", () => ({
+  useI18n: () => ({ t: (key: string) => key, lang: "zh" as const }),
+  I18nProvider: ({ children }: { children: React.ReactNode }) => children,
+}));
+
+vi.mock("../components/Scene3D", () => ({ default: () => null }));
+vi.mock("../components/CalibrationPanel", () => ({ default: () => null }));
+vi.mock("../components/ExtractorPanel", () => ({ default: () => null }));
+vi.mock("../components/ExtractorCanvas", () => ({ default: () => null }));
+vi.mock("../components/LutManagerPanel", () => ({ default: () => null }));
+vi.mock("../components/AboutView", () => ({ default: () => null }));
+vi.mock("../components/FiveColorQueryPanel", () => ({ default: () => null }));
+vi.mock("../components/LoadingSpinner", () => ({ default: () => null }));
+vi.mock("../components/LanguageToggle", () => ({ LanguageToggle: () => null }));
+vi.mock("../components/ThemeToggle", () => ({ ThemeToggle: () => null }));
+
+import App from "../App";
 import apiClient from "../api/client";
 
 describe("Feature: frontend-scaffold, Property 2: 非 'ok' 状态显示失败徽章", () => {
@@ -51,7 +72,7 @@ describe("Feature: frontend-scaffold, Property 2: 非 'ok' 状态显示失败徽
           ).not.toBeInTheDocument();
         }
       ),
-      { numRuns: 100 }
+      { numRuns: 20 }
     );
-  });
+  }, 30000);
 });

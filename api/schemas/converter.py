@@ -160,6 +160,7 @@ class ConvertPreviewRequest(BaseModel):
     )
     quantize_colors: int = Field(48, ge=8, le=256, description="K-Means 色彩细节")
     enable_cleanup: bool = Field(True, description="孤立像素清理")
+    hue_weight: float = Field(0.0, ge=0.0, le=1.0, description="色相保护权重 (0=纯色差, 0.5=推荐, 1.0=最强)")
 
 
 class ConvertGenerateRequest(BaseModel):
@@ -251,6 +252,7 @@ class ConvertGenerateRequest(BaseModel):
     )
     quantize_colors: int = Field(48, ge=8, le=256, description="K-Means 色彩细节")
     enable_cleanup: bool = Field(True, description="孤立像素清理")
+    hue_weight: float = Field(0.0, ge=0.0, le=1.0, description="色相保护权重 (0=纯色差, 0.5=推荐, 1.0=最强)")
     separate_backing: bool = Field(False, description="底板作为独立对象")
     add_loop: bool = Field(False, description="启用挂件环")
     loop_width: float = Field(
@@ -266,6 +268,10 @@ class ConvertGenerateRequest(BaseModel):
         None, description="环位置 (x, y)"
     )
     enable_relief: bool = Field(False, description="启用 2.5D 浮雕模式")
+    height_mode: Optional[str] = Field(
+        "color",
+        description="浮雕高度模式: 'color' (按颜色) 或 'heightmap' (按高度图)",
+    )
     color_height_map: Optional[Dict[str, float]] = Field(
         None, description="颜色高度映射 {hex: mm}"
     )

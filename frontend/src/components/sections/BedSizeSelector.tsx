@@ -1,7 +1,9 @@
 import { useConverterStore } from "../../stores/converterStore";
+import { useI18n } from "../../i18n/context";
 import Dropdown from "../ui/Dropdown";
 
 export default function BedSizeSelector() {
+  const { t } = useI18n();
   const { bed_label, bedSizes, bedSizesLoading, setBedLabel } =
     useConverterStore();
 
@@ -12,12 +14,12 @@ export default function BedSizeSelector() {
 
   return (
     <Dropdown
-      label="热床尺寸"
+      label={t("bed_size_label")}
       value={bed_label}
       options={options}
       onChange={setBedLabel}
       disabled={bedSizesLoading}
-      placeholder={bedSizesLoading ? "加载中..." : "选择热床尺寸..."}
+      placeholder={bedSizesLoading ? t("bed_size_loading") : t("bed_size_placeholder")}
     />
   );
 }

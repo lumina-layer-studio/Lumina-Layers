@@ -127,7 +127,7 @@ describe("Feature: extractor-calibration-tab, Property 6: 提取按钮禁用状�
 // ========== Unit Tests ==========
 
 describe("ExtractorPanel 单元测试", () => {
-  it("renders all 4 color mode options in the dropdown", async () => {
+  it("renders all 5 color mode options in the dropdown", async () => {
     const ExtractorPanel = (await import("../components/ExtractorPanel")).default;
 
     render(<ExtractorPanel />);
@@ -140,9 +140,10 @@ describe("ExtractorPanel 单元测试", () => {
 
     expect(optionValues).toContain(ExtractorColorMode.BW);
     expect(optionValues).toContain(ExtractorColorMode.FOUR_COLOR);
+    expect(optionValues).toContain(ExtractorColorMode.FIVE_COLOR_EXT);
     expect(optionValues).toContain(ExtractorColorMode.SIX_COLOR);
     expect(optionValues).toContain(ExtractorColorMode.EIGHT_COLOR);
-    expect(options.length).toBe(4);
+    expect(options.length).toBe(5);
   });
 
   it("shows page-select when color_mode is EIGHT_COLOR", async () => {

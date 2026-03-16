@@ -995,6 +995,7 @@ def process_batch_generation(batch_files, is_batch, single_image, lut_path, targ
                              wire_height_mm=0.4,
                              free_color_set=None,
                              enable_coating=False, coating_height_mm=0.08,
+                             hue_weight: float = 0.0,
                              progress=gr.Progress()):
     """Dispatch to single-image or batch generation; batch writes a ZIP of 3MFs.
 
@@ -1068,6 +1069,7 @@ def process_batch_generation(batch_files, is_batch, single_image, lut_path, targ
             free_color_set=free_color_set,
             enable_coating=enable_coating,
             coating_height_mm=coating_height_mm,
+            hue_weight=float(hue_weight) if hue_weight else 0.0,
         )
         return out_path, glb_path, _preview_update(preview_img), status, color_recipe_path
 
@@ -1092,7 +1094,7 @@ def process_batch_generation(batch_files, is_batch, single_image, lut_path, targ
         logs.append(f"[{i+1}/{total_files}] 正在生成: {filename}")
 
         try:
-            result_3mf, _, _, _ = generate_final_model(path, *args)
+            result_3mf, _, _, _ = generate_final_model(path, *args, hue_weight=float(hue_weight) if hue_weight else 0.0)
 
             if result_3mf and os.path.exists(result_3mf):
                 new_name = os.path.splitext(filename)[0] + ".3mf"
@@ -2273,6 +2275,12 @@ def create_converter_tab_content(lang: str, lang_state=None, theme_state=None) -
                         value=False,
                         info="勾选后，底板将作为独立对象导出到3MF文件"
                     )
+                with gr.Row():
+                    components['slider_conv_hue_weight'] = gr.Slider(
+                        minimum=0.0, maximum=1.0, step=0.1, value=0.0,
+                        label="🎨 色相保护 | Hue Protection",
+                        info="0=纯色差匹配(默认), 0.3=明显保护, 0.5=强保护(推荐), 1.0=最强。避免浅色匹配到错误色系"
+                    )
             
             # Crop interface toggle - outside Accordion for immediate DOM availability
             with gr.Row():
@@ -3198,7 +3206,8 @@ def create_converter_tab_content(lang: str, lang_state=None, theme_state=None) -
     def generate_preview_cached_with_fit(image_path, lut_path, target_width_mm,
                                          auto_bg, bg_tol, color_mode,
                                          modeling_mode, quantize_colors, enable_cleanup,
-                                         is_dark_theme=False, processed_path=None):
+                                         is_dark_theme=False, processed_path=None,
+                                         hue_weight=0.0):
         # When SVG was uploaded, image_conv_image_label holds a PNG thumbnail while
         # preprocess_processed_path holds the original SVG. Use SVG for the converter.
         if processed_path and isinstance(processed_path, str) and processed_path.lower().endswith('.svg'):
@@ -3208,7 +3217,8 @@ def create_converter_tab_content(lang: str, lang_state=None, theme_state=None) -
             auto_bg, bg_tol, color_mode,
             modeling_mode, quantize_colors,
             enable_cleanup=enable_cleanup,
-            is_dark=is_dark_theme
+            is_dark=is_dark_theme,
+            hue_weight=float(hue_weight) if hue_weight else 0.0
         )
         # Generate realtime 3D preview GLB
         glb_path = generate_realtime_glb(cache) if cache is not None else None
@@ -3342,6 +3352,7 @@ def create_converter_tab_content(lang: str, lang_state=None, theme_state=None) -
                 components['checkbox_conv_cleanup'],
                 theme_state,
                 preprocess_processed_path,
+                components['slider_conv_hue_weight'],
             ],
             outputs=[conv_preview, conv_preview_cache, components['textbox_conv_status'], conv_3d_preview]
     ).then(
@@ -4260,6 +4271,7 @@ def create_converter_tab_content(lang: str, lang_state=None, theme_state=None) -
                                    free_color_set, enable_coating, coating_height_mm,
                                    radio_height_mode: str,
                                    preview_cache, theme_is_dark, processed_path=None,
+                                   hue_weight: float = 0.0,
                                    progress=gr.Progress()):
         """Generate 3MF directly; preview is generated internally by convert_image_to_3d.
         
@@ -4288,7 +4300,8 @@ def create_converter_tab_content(lang: str, lang_state=None, theme_state=None) -
             enable_cleanup, enable_outline, outline_width,
             enable_cloisonne, wire_width_mm, wire_height_mm,
             free_color_set, enable_coating, coating_height_mm,
-            progress
+            hue_weight=float(hue_weight) if hue_weight else 0.0,
+            progress=progress,
         )
     
     generate_event = components['btn_conv_generate_btn'].click(
@@ -4330,6 +4343,7 @@ def create_converter_tab_content(lang: str, lang_state=None, theme_state=None) -
                 conv_preview_cache,
                 theme_state,
                 preprocess_processed_path,
+                components['slider_conv_hue_weight'],
             ],
             outputs=[
                 components['file_conv_download_file'],
@@ -4444,7 +4458,8 @@ def create_converter_tab_content(lang: str, lang_state=None, theme_state=None) -
                             enable_cloisonne, wire_width_mm, wire_height_mm,
                             free_color_set, enable_coating, coating_height_mm,
                             radio_height_mode: str,
-                            preview_cache, theme_is_dark, processed_path=None):
+                            preview_cache, theme_is_dark, processed_path=None,
+                            hue_weight: float = 0.0):
         """Open file in slicer with auto-generation if needed."""
         
         # When SVG was uploaded, image_conv_image_label holds a PNG thumbnail while
@@ -4489,7 +4504,8 @@ def create_converter_tab_content(lang: str, lang_state=None, theme_state=None) -
                     heightmap_path, heightmap_max_height,
                     enable_cleanup, enable_outline, outline_width,
                     enable_cloisonne, wire_width_mm, wire_height_mm,
-                    free_color_set, enable_coating, coating_height_mm
+                    free_color_set, enable_coating, coating_height_mm,
+                    hue_weight=float(hue_weight) if hue_weight else 0.0,
                 )
                 print(f"[AUTO-SLICER] 3MF generated: {status}")
             except Exception as e:
@@ -4559,6 +4575,7 @@ def create_converter_tab_content(lang: str, lang_state=None, theme_state=None) -
             conv_preview_cache,
             theme_state,
             preprocess_processed_path,
+            components['slider_conv_hue_weight'],
         ],
         outputs=[
             components['file_conv_download_file'],

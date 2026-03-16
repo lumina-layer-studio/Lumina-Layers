@@ -1,4 +1,5 @@
 import { useCalibrationStore } from "../stores/calibrationStore";
+import { useI18n } from "../i18n/context";
 import { CalibrationColorMode, BackingColor } from "../api/types";
 import Dropdown from "./ui/Dropdown";
 import Slider from "./ui/Slider";
@@ -15,6 +16,7 @@ const backingColorOptions = Object.values(BackingColor).map((v) => ({
 }));
 
 export default function CalibrationPanel() {
+  const { t } = useI18n();
   const {
     color_mode,
     block_size,
@@ -42,17 +44,17 @@ export default function CalibrationPanel() {
   return (
     <aside
       data-testid="calibration-panel"
-      className="w-[350px] h-full overflow-y-auto bg-gray-800 p-4 flex flex-col gap-4"
+      className="w-full max-w-2xl mx-auto h-full overflow-y-auto bg-white dark:bg-gray-800 p-6 flex flex-col gap-4"
     >
       <Dropdown
-        label="颜色模式"
+        label={t("cal_color_mode_label")}
         value={color_mode}
         options={colorModeOptions}
         onChange={(v) => setColorMode(v as CalibrationColorMode)}
       />
 
       <Slider
-        label="色块尺寸"
+        label={t("cal_block_size_label")}
         value={block_size}
         min={3}
         max={10}
@@ -63,7 +65,7 @@ export default function CalibrationPanel() {
       />
 
       <Slider
-        label="色块间距"
+        label={t("cal_gap_label")}
         value={gap}
         min={0.4}
         max={2.0}
@@ -74,7 +76,7 @@ export default function CalibrationPanel() {
       />
 
       <Dropdown
-        label="底板颜色"
+        label={t("cal_backing_label")}
         value={backing}
         options={backingColorOptions}
         onChange={(v) => setBacking(v as BackingColor)}
@@ -82,7 +84,7 @@ export default function CalibrationPanel() {
       />
 
       <Button
-        label="生成校准板"
+        label={t("cal_generate_btn")}
         variant="primary"
         onClick={() => void submitGenerate()}
         disabled={isLoading}
@@ -108,7 +110,7 @@ export default function CalibrationPanel() {
           download
           className="text-sm text-blue-400 underline hover:text-blue-300"
         >
-          下载 3MF 文件
+          {t("cal_download_3mf")}
         </a>
       )}
 
@@ -116,7 +118,7 @@ export default function CalibrationPanel() {
         <img
           data-testid="preview-image"
           src={previewImageUrl}
-          alt="校准板预览"
+          alt={t("cal_preview_alt")}
           className="w-full rounded-md border border-gray-700"
         />
       )}

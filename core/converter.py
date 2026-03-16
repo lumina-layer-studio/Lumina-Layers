@@ -478,6 +478,7 @@ def convert_image_to_3d(image_path, lut_path, target_width_mm, spacer_thick,
                          wire_height_mm=0.4,
                          free_color_set=None,
                          enable_coating=False, coating_height_mm=0.08,
+                         hue_weight: float = 0.0,
                          progress=None):
     """
     Main conversion function: Convert image to 3D model.
@@ -805,7 +806,7 @@ def convert_image_to_3d(image_path, lut_path, target_width_mm, spacer_thick,
     _hifi_t0 = time.perf_counter()
     
     try:
-        processor = LuminaImageProcessor(actual_lut_path, color_mode)
+        processor = LuminaImageProcessor(actual_lut_path, color_mode, hue_weight=hue_weight)
         processor.enable_cleanup = enable_cleanup
         result = processor.process_image(
             image_path=image_path,
@@ -2216,16 +2217,24 @@ def _build_voxel_matrix_faceup(material_matrix, mask_solid, spacer_thick, backin
 
 
 def _create_bed_mesh(bed_w_mm, bed_h_mm, is_dark=True):
-    """Create a realistic print bed mesh with UV-mapped texture.
-    
-    Two themes:
-    - Dark (is_dark=True): PEI heated bed style, dark charcoal with subtle grid
-    - Light (is_dark=False): Marble/ceramic style, white with dark grid lines
-    
-    Returns a trimesh.Trimesh with TextureVisuals, or None on error.
+    """Create a rounded-corner print bed mesh with UV-mapped texture.
+    创建圆角打印热床网格，带 UV 贴图纹理。
+
+    The geometry outline matches the texture's rounded rectangle so that
+    no sharp-corner artifacts remain visible in the 3D preview.
+    几何轮廓与纹理的圆角矩形一致，避免 3D 预览中出现直角残留。
+
+    Args:
+        bed_w_mm (int): Bed width in mm. (热床宽度 mm)
+        bed_h_mm (int): Bed height in mm. (热床高度 mm)
+        is_dark (bool): Use dark PEI theme. (使用深色 PEI 主题)
+
+    Returns:
+        trimesh.Trimesh: Textured bed mesh, or None on error. (带纹理的热床网格)
     """
     try:
         from PIL import Image as PILImage, ImageDraw as PILDraw
+        from mapbox_earcut import triangulate_float64
 
         tex_scale = 4  # pixels per mm
         tex_w = int(bed_w_mm * tex_scale)
@@ -2233,26 +2242,23 @@ def _create_bed_mesh(bed_w_mm, bed_h_mm, is_dark=True):
         corner_r = int(8 * tex_scale)
         margin = max(2, corner_r // 4)
 
+        # Corner radius in world mm (matches texture margin/radius ratio)
+        r_mm = margin / tex_scale + corner_r / tex_scale
+
         if is_dark:
-            edge_color = (38, 38, 44)
             base_color = (58, 58, 66)
             fine_color = (42, 42, 48)
             bold_color = (90, 90, 100)
             border_color = (45, 45, 52)
         else:
-            edge_color = (215, 215, 220)
             base_color = (242, 242, 245)
             fine_color = (225, 225, 230)
             bold_color = (180, 180, 190)
             border_color = (195, 195, 205)
 
-        img = PILImage.new('RGB', (tex_w, tex_h), edge_color)
+        # --- Texture (fill entire image with base_color, no edge_color needed) ---
+        img = PILImage.new('RGB', (tex_w, tex_h), base_color)
         draw = PILDraw.Draw(img)
-
-        draw.rounded_rectangle(
-            [margin, margin, tex_w - margin, tex_h - margin],
-            radius=corner_r, fill=base_color
-        )
 
         step_10 = int(10 * tex_scale)
         for x in range(0, tex_w, step_10):
@@ -2271,22 +2277,51 @@ def _create_bed_mesh(bed_w_mm, bed_h_mm, is_dark=True):
             radius=corner_r, outline=border_color, width=3
         )
 
-        # Textured top quad
-        verts = np.array([
-            [0, 0, 0], [bed_w_mm, 0, 0],
-            [bed_w_mm, bed_h_mm, 0], [0, bed_h_mm, 0],
-        ], dtype=np.float64)
-        faces = np.array([[0, 1, 2], [0, 2, 3]], dtype=np.int64)
-        uv = np.array([[0, 1], [1, 1], [1, 0], [0, 0]], dtype=np.float64)
+        # --- Rounded-rectangle geometry outline (world coords, mm) ---
+        arc_segs = 16
+        angles = np.linspace(0, np.pi / 2, arc_segs + 1)
+        cos_a = np.cos(angles)
+        sin_a = np.sin(angles)
+
+        outline_pts = []
+        # Bottom-left corner (origin side)
+        for i in range(arc_segs + 1):
+            outline_pts.append([r_mm - r_mm * cos_a[i], r_mm - r_mm * sin_a[i]])
+        # Bottom-right corner
+        for i in range(arc_segs + 1):
+            outline_pts.append([bed_w_mm - r_mm + r_mm * sin_a[i], r_mm - r_mm * cos_a[i]])
+        # Top-right corner
+        for i in range(arc_segs + 1):
+            outline_pts.append([bed_w_mm - r_mm + r_mm * cos_a[i], bed_h_mm - r_mm + r_mm * sin_a[i]])
+        # Top-left corner
+        for i in range(arc_segs + 1):
+            outline_pts.append([r_mm - r_mm * sin_a[i], bed_h_mm - r_mm + r_mm * cos_a[i]])
+
+        outline_pts = np.array(outline_pts, dtype=np.float64)
+
+        # Triangulate the rounded-rect polygon via mapbox-earcut
+        rings = np.array([len(outline_pts)], dtype=np.int32)
+        tri_flat = triangulate_float64(outline_pts, rings)
+        tri_indices = np.array(tri_flat, dtype=np.int64).reshape(-1, 3)
+
+        # Build 3D vertices (Z=0) and UV coords
+        n_pts = len(outline_pts)
+        verts_3d = np.zeros((n_pts, 3), dtype=np.float64)
+        verts_3d[:, 0] = outline_pts[:, 0]
+        verts_3d[:, 1] = outline_pts[:, 1]
+
+        uv = np.zeros((n_pts, 2), dtype=np.float64)
+        uv[:, 0] = outline_pts[:, 0] / bed_w_mm
+        uv[:, 1] = 1.0 - outline_pts[:, 1] / bed_h_mm
 
         from trimesh.visual.material import SimpleMaterial
         from trimesh.visual import TextureVisuals
 
-        mesh = trimesh.Trimesh(vertices=verts, faces=faces, process=False)
+        mesh = trimesh.Trimesh(vertices=verts_3d, faces=tri_indices, process=False)
         mesh.visual = TextureVisuals(uv=uv, material=SimpleMaterial(image=img))
 
         theme_name = "dark" if is_dark else "light"
-        print(f"[BED] Created {theme_name} {bed_w_mm}×{bed_h_mm}mm bed")
+        print(f"[BED] Created {theme_name} {bed_w_mm}×{bed_h_mm}mm rounded bed ({n_pts} verts)")
         return mesh
 
     except Exception as e:
@@ -2693,7 +2728,8 @@ def generate_segmented_glb(cache: dict, max_meshes: int = 64) -> Optional[str]:
         scene = trimesh.Scene()
 
         # Physical scale: pixel coords -> mm
-        pixel_scale = target_width_mm / target_w if target_w and target_w > 0 else 0.42
+        # Use current `width` (may be downsampled) instead of original `target_w`
+        pixel_scale = target_width_mm / width if width > 0 else 0.42
         scale_transform = np.eye(4)
         scale_transform[0, 0] = pixel_scale
         scale_transform[1, 1] = pixel_scale
@@ -2729,7 +2765,47 @@ def generate_segmented_glb(cache: dict, max_meshes: int = 64) -> Optional[str]:
             return None
 
         # ------------------------------------------------------------------
-        # 5. Export GLB
+        # 5. Extract 2D contours for each color (for frontend outline rendering)
+        # ------------------------------------------------------------------
+        contours_data: dict[str, list[list[list[float]]]] = {}
+        for color_rgb in unique_colors:
+            r, g, b = int(color_rgb[0]), int(color_rgb[1]), int(color_rgb[2])
+            hex_name = f"{r:02x}{g:02x}{b:02x}"
+
+            color_match = np.all(matched_rgb == color_rgb, axis=2) & mask_solid
+            mask_u8 = color_match.astype(np.uint8) * 255
+
+            cv_contours, _ = cv2.findContours(mask_u8, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            if not cv_contours:
+                continue
+
+            color_contour_list: list[list[list[float]]] = []
+            for cnt in cv_contours:
+                if len(cnt) < 3:
+                    continue
+                # Convert pixel coords to mesh world coords (mm).
+                # OpenCV contour point (x_px, y_px) is at pixel boundary.
+                # Mesh Y uses: world_y = (height - 1 - y_px), box spans [world_y, world_y+1]
+                # So pixel row y_px top edge = height - y_px in mesh pixel space.
+                # Then multiply by pixel_scale to get mm.
+                # X is straightforward: x_mm = x_px * pixel_scale
+                pts = cnt.squeeze(1).astype(float)  # (N, 2)
+                world_pts: list[list[float]] = []
+                for px, py in pts:
+                    x_mm = float(px * pixel_scale)
+                    y_mm = float((height - py) * pixel_scale)
+                    world_pts.append([x_mm, y_mm])
+                color_contour_list.append(world_pts)
+
+            if color_contour_list:
+                contours_data[hex_name] = color_contour_list
+
+        # Store contours in cache for API to return
+        cache['color_contours'] = contours_data
+        print(f"[SEGMENTED_GLB] Extracted contours for {len(contours_data)} colors")
+
+        # ------------------------------------------------------------------
+        # 6. Export GLB
         # ------------------------------------------------------------------
         glb_path = os.path.join(OUTPUT_DIR, "segmented_preview.glb")
         scene.export(glb_path)
@@ -2784,7 +2860,10 @@ def generate_realtime_glb(cache):
             return None
         
         # Scale from pixel/voxel coords to mm
-        pixel_scale = target_width_mm / target_w if target_w > 0 else 0.42
+        # _create_preview_mesh may downsample internally, so we must compute
+        # pixel_scale from the mesh's actual bounding box width, not target_w.
+        mesh_width = preview_mesh.bounds[1][0] - preview_mesh.bounds[0][0]
+        pixel_scale = target_width_mm / mesh_width if mesh_width > 0 else 0.42
         transform = np.eye(4)
         transform[0, 0] = pixel_scale
         transform[1, 1] = pixel_scale
@@ -2812,7 +2891,8 @@ def generate_preview_cached(image_path, lut_path, target_width_mm,
                             quantize_colors: int = 64,
                             backing_color_id: int = 0,
                             enable_cleanup: bool = True,
-                            is_dark: bool = True):
+                            is_dark: bool = True,
+                            hue_weight: float = 0.0):
     """
     Generate preview and cache data
     For 2D preview interface
@@ -2856,13 +2936,14 @@ def generate_preview_cached(image_path, lut_path, target_width_mm,
     color_conf = ColorSystem.get(color_mode)
     
     try:
-        processor = LuminaImageProcessor(actual_lut_path, color_mode)
+        print(f"[Core generate_preview_cached] hue_weight={hue_weight}, color_mode={color_mode}")
+        processor = LuminaImageProcessor(actual_lut_path, color_mode, hue_weight=hue_weight)
         processor.enable_cleanup = enable_cleanup
         result = processor.process_image(
             image_path=image_path,
             target_width_mm=target_width_mm,
             modeling_mode=modeling_mode,
-            quantize_colors=quantize_colors,  # Use user-specified value
+            quantize_colors=quantize_colors,
             auto_bg=auto_bg,
             bg_tol=bg_tol,
             blur_kernel=0,
@@ -3203,6 +3284,7 @@ def generate_final_model(image_path, lut_path, target_width_mm, spacer_thick,
                         wire_height_mm=0.4,
                         free_color_set=None,
                         enable_coating=False, coating_height_mm=0.08,
+                        hue_weight: float = 0.0,
                         progress=None):
     """
     Wrapper function for generating final model.
@@ -3264,6 +3346,7 @@ def generate_final_model(image_path, lut_path, target_width_mm, spacer_thick,
         free_color_set=free_color_set,
         enable_coating=enable_coating,
         coating_height_mm=coating_height_mm,
+        hue_weight=hue_weight,
         progress=progress,
     )
 

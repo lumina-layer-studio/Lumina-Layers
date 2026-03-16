@@ -1,6 +1,6 @@
-import { describe, it, expect } from "vitest";
+import { describe, it } from "vitest";
 import * as fc from "fast-check";
-import { clampScale, computeZoomTranslate } from "../components/ui/ZoomableImage";
+import { clampScale } from "../components/ui/ZoomableImage";
 
 // ========== Generators ==========
 
@@ -80,14 +80,11 @@ describe("Feature: component-completion, Property 9: 拖拽平移增量", () => 
 describe("Feature: component-completion, Property 10: 缩放重置幂等性", () => {
   it("reset produces scale=1.0 and translate=(0,0) from any state", () => {
     fc.assert(
-      fc.property(arbScale, arbPoint, (arbitraryScale, arbitraryTranslate) => {
-        // Simulate arbitrary state
-        let scale = arbitraryScale;
-        let translate = { ...arbitraryTranslate };
-
+      fc.property(arbScale, arbPoint, (_arbitraryScale, _arbitraryTranslate) => {
+        // Simulate arbitrary state then reset
         // Reset (same logic as resetZoom callback in ZoomableImage)
-        scale = 1;
-        translate = { x: 0, y: 0 };
+        const scale = 1;
+        const translate = { x: 0, y: 0 };
 
         return scale === 1.0 && translate.x === 0 && translate.y === 0;
       }),
@@ -97,14 +94,14 @@ describe("Feature: component-completion, Property 10: 缩放重置幂等性", ()
 
   it("calling reset twice produces the same result as calling it once (idempotent)", () => {
     fc.assert(
-      fc.property(arbScale, arbPoint, (arbitraryScale, arbitraryTranslate) => {
+      fc.property(arbScale, arbPoint, (_arbitraryScale, _arbitraryTranslate) => {
         // First reset
-        let scale1 = 1;
-        let translate1 = { x: 0, y: 0 };
+        const scale1 = 1;
+        const translate1 = { x: 0, y: 0 };
 
         // Second reset (from the already-reset state)
-        let scale2 = 1;
-        let translate2 = { x: 0, y: 0 };
+        const scale2 = 1;
+        const translate2 = { x: 0, y: 0 };
 
         return (
           scale1 === scale2 &&

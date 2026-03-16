@@ -22,8 +22,24 @@ from api.session_store import SessionStore
 _test_store: SessionStore = SessionStore(ttl=1800)
 _test_registry: FileRegistry = FileRegistry()
 
-app.dependency_overrides[get_session_store] = lambda: _test_store
-app.dependency_overrides[get_file_registry] = lambda: _test_registry
+def setup_module(module):
+    """Re-apply dependency overrides before this module's tests run.
+    在本模块测试运行前重新设置依赖覆盖，确保跨文件测试隔离。
+    """
+    app.dependency_overrides[get_session_store] = lambda: _test_store
+    app.dependency_overrides[get_file_registry] = lambda: _test_registry
+
+
+def teardown_module(module):
+    """Remove this module's dependency overrides after all tests complete.
+    本模块所有测试完成后移除依赖覆盖。
+    """
+    app.dependency_overrides.pop(get_session_store, None)
+    app.dependency_overrides.pop(get_file_registry, None)
+
+
+# Apply overrides immediately for module-level client creation
+setup_module(None)
 
 client: TestClient = TestClient(app)
 

@@ -31,7 +31,7 @@ export async function extractColors(
   const response = await apiClient.post<ExtractResponse>(
     "/extractor/extract",
     fd,
-    { timeout: 60_000 }
+    { timeout: 600_000 }
   );
   return response.data;
 }
@@ -54,7 +54,7 @@ export async function mergeEightColor(): Promise<ExtractResponse> {
   const response = await apiClient.post<ExtractResponse>(
     "/extractor/merge-8color",
     {},
-    { timeout: 60_000 }
+    { timeout: 600_000 }
   );
   return response.data;
 }
@@ -64,7 +64,7 @@ export async function mergeFiveColorExtended(): Promise<ExtractResponse> {
   const response = await apiClient.post<ExtractResponse>(
     "/extractor/merge-5color-extended",
     {},
-    { timeout: 60_000 }
+    { timeout: 600_000 }
   );
   return response.data;
 }

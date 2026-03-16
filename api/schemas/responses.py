@@ -29,6 +29,7 @@ class PreviewResponse(BaseModel):
     preview_glb_url: Optional[str] = None
     palette: list[dict]
     dimensions: dict
+    contours: Optional[dict[str, list[list[list[float]]]]] = None
 
 
 class ColorReplaceResponse(BaseModel):
@@ -59,6 +60,7 @@ class GenerateResponse(BaseModel):
     message: str
     download_url: str
     preview_3d_url: Optional[str] = None
+    threemf_disk_path: Optional[str] = None
 
 
 class BatchItemResult(BaseModel):
@@ -92,12 +94,20 @@ class LUTListResponse(BaseModel):
     luts: list[LutInfo]
 
 
+class WorkerPoolStatus(BaseModel):
+    """Worker Pool 状态信息。"""
+
+    healthy: bool
+    max_workers: int
+
+
 class HealthResponse(BaseModel):
-    """健康检查响应。"""
+    """健康检查响应（含 Worker Pool 状态）。"""
 
     status: str
     version: str
     uptime_seconds: float
+    worker_pool: WorkerPoolStatus
 
 
 class ExtractResponse(BaseModel):

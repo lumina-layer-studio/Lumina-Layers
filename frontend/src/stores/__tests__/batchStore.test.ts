@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import type { BatchResponse } from "../../api/types";
+import { StructureMode, ColorMode, ModelingMode } from "../../api/types";
 
 // Mock the converter API module
 vi.mock("../../api/converter", () => ({
@@ -34,11 +35,11 @@ function resetStore(): void {
     lut_name: "test-lut",
     target_width_mm: 60,
     spacer_thick: 1.2,
-    structure_mode: "Double-sided",
+    structure_mode: StructureMode.DOUBLE_SIDED,
     auto_bg: false,
     bg_tol: 40,
-    color_mode: "4-Color",
-    modeling_mode: "high-fidelity",
+    color_mode: ColorMode.FOUR_COLOR,
+    modeling_mode: ModelingMode.HIGH_FIDELITY,
     quantize_colors: 48,
     enable_cleanup: true,
   });
@@ -78,11 +79,11 @@ describe("submitBatch API 调用和状态管理", () => {
       lut_name: "test-lut",
       target_width_mm: 60,
       spacer_thick: 1.2,
-      structure_mode: "Double-sided",
+      structure_mode: StructureMode.DOUBLE_SIDED,
       auto_bg: false,
       bg_tol: 40,
-      color_mode: "4-Color",
-      modeling_mode: "high-fidelity",
+      color_mode: ColorMode.FOUR_COLOR,
+      modeling_mode: ModelingMode.HIGH_FIDELITY,
       quantize_colors: 48,
       enable_cleanup: true,
     });

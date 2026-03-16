@@ -13,6 +13,7 @@ export interface SettingsState {
   lastBedLabel: string;
   cropEnabled: boolean;
   lastSlicerId: string;
+  enableBlur: boolean;
 }
 
 // ========== Actions Interface ==========
@@ -26,6 +27,7 @@ export interface SettingsActions {
   setLastBedLabel: (label: string) => void;
   setCropEnabled: (enabled: boolean) => void;
   setLastSlicerId: (id: string) => void;
+  setEnableBlur: (enabled: boolean) => void;
   syncToBackend: () => Promise<void>;
 }
 
@@ -40,6 +42,7 @@ export const DEFAULT_SETTINGS: SettingsState = {
   lastBedLabel: "256×256 mm",
   cropEnabled: true,
   lastSlicerId: "",
+  enableBlur: true,
 };
 
 // ========== Store ==========
@@ -64,6 +67,8 @@ export const useSettingsStore = create<SettingsState & SettingsActions>()(
       setCropEnabled: (enabled: boolean) => set({ cropEnabled: enabled }),
 
       setLastSlicerId: (id: string) => set({ lastSlicerId: id }),
+
+      setEnableBlur: (enabled: boolean) => set({ enableBlur: enabled }),
 
       syncToBackend: async () => {
         const state = get();

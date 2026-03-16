@@ -1,7 +1,9 @@
 import { useAboutStore } from "../stores/aboutStore";
+import { useI18n } from "../i18n/context";
 import Button from "./ui/Button";
 
 export default function AboutView() {
+  const { t } = useI18n();
   const { loading, notification, clearCache, dismissNotification } =
     useAboutStore();
 
@@ -12,13 +14,13 @@ export default function AboutView() {
     >
       <div>
         <h2 className="text-lg font-semibold text-gray-100">
-          Lumina Studio 2.0
+          {t("about_title")}
         </h2>
-        <p className="text-xs text-gray-400 mt-1">More info coming soon</p>
+        <p className="text-xs text-gray-400 mt-1">{t("about_desc")}</p>
       </div>
 
       <Button
-        label={loading ? "清理中..." : "清除系统缓存"}
+        label={loading ? t("about_clear_cache_loading") : t("about_clear_cache")}
         variant="primary"
         onClick={() => void clearCache()}
         disabled={loading}
@@ -44,7 +46,7 @@ export default function AboutView() {
                 ? "text-green-400 hover:text-green-200"
                 : "text-red-400 hover:text-red-200"
             }`}
-            aria-label="关闭通知"
+            aria-label={t("about_close_notification")}
           >
             ×
           </button>

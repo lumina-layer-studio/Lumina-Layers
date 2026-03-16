@@ -1,4 +1,4 @@
-import type { PaletteEntry, ColorReplacementItem } from '../api/types';
+import type { PaletteEntry, ColorReplacementItem, LutColorEntry } from '../api/types';
 
 /**
  * 计算 RGB 颜色的感知亮度 (ITU-R BT.601)。
@@ -72,4 +72,60 @@ export function colorRemapToReplacementRegions(
   }
 
   return result;
+}
+
+/**
+ * Convert a 6-digit hex string to an [R, G, B] tuple.
+ * 将 6 位 hex 字符串转换为 [R, G, B] 数组。
+ *
+ * @param hex - Hex color string, with or without '#' prefix. (带或不带 # 前缀的 hex 颜色字符串)
+ * @returns [R, G, B] tuple with values 0-255. (0-255 范围的 RGB 元组)
+ */
+export function hexToRgb(hex: string): [number, number, number] {
+  const h = hex.startsWith('#') ? hex.slice(1) : hex;
+  return [
+    parseInt(h.slice(0, 2), 16),
+    parseInt(h.slice(2, 4), 16),
+    parseInt(h.slice(4, 6), 16),
+  ];
+}
+
+/**
+ * Compute the Euclidean distance between two RGB colors.
+ * 计算两个 RGB 颜色之间的欧氏距离。
+ *
+ * @param a - First RGB color. (第一个 RGB 颜色)
+ * @param b - Second RGB color. (第二个 RGB 颜色)
+ * @returns Euclidean distance (0 to ~441.67). (欧氏距离)
+ */
+export function rgbEuclideanDistance(
+  a: [number, number, number],
+  b: [number, number, number],
+): number {
+  return Math.sqrt(
+    (a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2 + (a[2] - b[2]) ** 2,
+  );
+}
+
+/**
+ * Sort LUT colors by RGB Euclidean distance to a base color and return the top K.
+ * 按 RGB 欧氏距离对 LUT 颜色排序，返回前 topK 个。
+ *
+ * @param baseRgb - Reference RGB color to measure distance from. (基准 RGB 颜色)
+ * @param colors - Array of LUT color entries. (LUT 颜色条目数组)
+ * @param topK - Number of closest colors to return. (返回最近的颜色数量)
+ * @returns Sorted slice of the closest LutColorEntry items. (按距离排序的最近颜色切片)
+ */
+export function sortByColorDistance(
+  baseRgb: [number, number, number],
+  colors: LutColorEntry[],
+  topK: number,
+): LutColorEntry[] {
+  return [...colors]
+    .sort(
+      (a, b) =>
+        rgbEuclideanDistance(baseRgb, a.rgb) -
+        rgbEuclideanDistance(baseRgb, b.rgb),
+    )
+    .slice(0, topK);
 }

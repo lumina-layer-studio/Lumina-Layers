@@ -1,6 +1,15 @@
 import "@testing-library/jest-dom";
 import { vi } from "vitest";
 
+// Polyfill ResizeObserver for jsdom (used by WidgetWorkspace)
+if (typeof globalThis.ResizeObserver === "undefined") {
+  globalThis.ResizeObserver = class ResizeObserver {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  } as unknown as typeof globalThis.ResizeObserver;
+}
+
 // Mock @react-three/fiber — Canvas renders as a plain div in jsdom
 vi.mock("@react-three/fiber", () => ({
   Canvas: ({ children }: { children?: React.ReactNode }) => children,

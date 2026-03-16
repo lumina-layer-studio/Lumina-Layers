@@ -4,7 +4,9 @@ Converter 领域 API 路由模块。
 
 from __future__ import annotations
 
+import asyncio
 import os
+import pickle
 import tempfile
 import zipfile
 
@@ -14,7 +16,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from PIL import Image
 from pydantic import BaseModel
 
-from api.dependencies import get_file_registry, get_session_store
+from api.dependencies import get_file_registry, get_session_store, get_worker_pool
 from api.file_bridge import ndarray_to_png_bytes, pil_to_png_bytes, upload_to_tempfile
 from api.file_registry import FileRegistry
 from api.schemas.converter import (
@@ -35,10 +37,16 @@ from api.schemas.responses import (
     PreviewResponse,
 )
 from api.session_store import SessionStore
+from api.worker_pool import WorkerPoolManager
+from api.workers.converter_workers import (
+    worker_batch_convert_item,
+    worker_generate_model,
+    worker_generate_preview,
+)
 from core.color_merger import ColorMerger
 from core.image_preprocessor import ImagePreprocessor
 from core.color_replacement import ColorReplacementManager
-from core.converter import convert_image_to_3d, extract_color_palette, generate_empty_bed_glb, generate_final_model, generate_preview_cached, generate_segmented_glb
+from core.converter import convert_image_to_3d, extract_color_palette, generate_empty_bed_glb, generate_segmented_glb
 from config import BedManager, ModelingMode as CoreModelingMode, PrinterConfig
 from core.heightmap_loader import HeightmapLoader
 from utils.lut_manager import LUTManager
@@ -191,38 +199,62 @@ async def convert_preview(
     modeling_mode: str = Form("high-fidelity", description="建模模式"),
     quantize_colors: int = Form(48, description="K-Means 色彩细节"),
     enable_cleanup: bool = Form(True, description="孤立像素清理"),
+    hue_weight: float = Form(0.0, description="色相保护权重"),
+    is_dark: bool = Form(True, description="深色主题"),
     store: SessionStore = Depends(get_session_store),
     registry: FileRegistry = Depends(get_file_registry),
+    pool: WorkerPoolManager = Depends(get_worker_pool),
 ) -> PreviewResponse:
-    """Generate a 2D color-matched preview image.
-    生成 2D 颜色匹配预览图。
+    """Generate a 2D color-matched preview via process pool.
+    通过进程池生成 2D 颜色匹配预览图。
+
+    File upload and session/registry operations run on the main thread.
+    CPU-intensive preview generation is offloaded to the worker pool.
+    文件上传和 session/registry 操作在主线程完成。
+    CPU 密集型预览生成卸载到工作进程池。
     """
     # Resolve LUT path
     lut_path = LUTManager.get_lut_path(lut_name)
     if lut_path is None:
         raise HTTPException(status_code=404, detail=f"LUT not found: {lut_name}")
 
-    # Save uploaded image to temp file
+    # 1. File upload (I/O, main thread)
     temp_path = await upload_to_tempfile(image)
 
-    # Call core preview generation
+    # 2. CPU computation offloaded to process pool (only paths and scalars)
     try:
-        preview_img, cache_data, status_msg = generate_preview_cached(
-            image_path=temp_path,
-            lut_path=lut_path,
-            target_width_mm=target_width_mm,
-            auto_bg=auto_bg,
-            bg_tol=bg_tol,
-            color_mode=color_mode,
-            modeling_mode=modeling_mode,
-            quantize_colors=quantize_colors,
-            enable_cleanup=enable_cleanup,
+        print(f"[API convert_preview] hue_weight={hue_weight}, lut_name={lut_name}, color_mode={color_mode}")
+        result = await pool.submit(
+            worker_generate_preview,
+            temp_path,
+            lut_path,
+            target_width_mm,
+            auto_bg,
+            bg_tol,
+            color_mode,
+            modeling_mode,
+            quantize_colors,
+            enable_cleanup,
+            is_dark,
+            hue_weight,
         )
+    except asyncio.TimeoutError:
+        raise HTTPException(status_code=504, detail="Preview generation timed out")
     except Exception as e:
-        _handle_core_error(e, "Preview generation")
+        raise HTTPException(status_code=500, detail=f"Preview generation failed: {str(e)}")
 
-    if preview_img is None:
-        raise HTTPException(status_code=500, detail=status_msg or "Preview generation failed")
+    # 3. Result processing (I/O + Session, main thread)
+    if result["preview_png_path"] is None:
+        raise HTTPException(status_code=500, detail=result["status_msg"] or "Preview generation failed")
+
+    # Load cache_data from disk (worker serialized to .pkl)
+    with open(result["cache_data_path"], "rb") as f:
+        cache_data = pickle.load(f)
+
+    # Load preview image from disk (worker saved as .png)
+    preview_img = Image.open(result["preview_png_path"])
+
+    status_msg: str = result["status_msg"]
 
     # Create session and store state
     session_id = store.create()
@@ -234,6 +266,9 @@ async def convert_preview(
     store.put(session_id, "replacement_history", [])
     store.put(session_id, "free_color_set", set())
     store.register_temp_file(session_id, temp_path)
+    # Register worker temp files for cleanup
+    store.register_temp_file(session_id, result["preview_png_path"])
+    store.register_temp_file(session_id, result["cache_data_path"])
 
     # Register preview image
     preview_bytes = _image_to_png_bytes(preview_img)
@@ -293,6 +328,11 @@ async def convert_preview(
             "height": cache_data.get("target_h", 0),
         }
 
+    # Extract color contours from cache (generated by generate_segmented_glb)
+    contours_data: dict[str, list[list[list[float]]]] | None = None
+    if cache_data and 'color_contours' in cache_data:
+        contours_data = cache_data['color_contours']
+
     return PreviewResponse(
         session_id=session_id,
         status="ok",
@@ -301,6 +341,7 @@ async def convert_preview(
         preview_glb_url=preview_glb_url,
         palette=palette,
         dimensions=dimensions,
+        contours=contours_data,
     )
 
 
@@ -422,14 +463,21 @@ class _GenerateBody(BaseModel):
 
 
 @router.post("/generate")
-def convert_generate(
+async def convert_generate(
     body: _GenerateBody,
     store: SessionStore = Depends(get_session_store),
     registry: FileRegistry = Depends(get_file_registry),
+    pool: WorkerPoolManager = Depends(get_worker_pool),
 ) -> GenerateResponse:
-    """Generate a printable 3MF model from the input image.
-    从输入图像生成可打印的 3MF 模型。
+    """Generate a printable 3MF model via process pool.
+    通过进程池生成可打印的 3MF 模型。
+
+    Session and FileRegistry operations run on the main thread.
+    CPU-intensive model generation is offloaded to the worker pool.
+    Session 和 FileRegistry 操作在主线程完成。
+    CPU 密集型模型生成卸载到工作进程池。
     """
+    # 1. Session validation (main thread)
     session_data = _require_session(store, body.session_id)
     cache = _require_preview_cache(session_data)
 
@@ -462,44 +510,76 @@ def convert_generate(
     # Convert API ModelingMode enum to core ModelingMode enum
     core_modeling_mode = CoreModelingMode(request.modeling_mode.value)
 
-    try:
-        result = generate_final_model(
-            image_path=image_path,
-            lut_path=lut_path,
-            target_width_mm=request.target_width_mm,
-            spacer_thick=request.spacer_thick,
-            structure_mode=request.structure_mode.value,
-            auto_bg=request.auto_bg,
-            bg_tol=request.bg_tol,
-            color_mode=request.color_mode.value,
-            add_loop=request.add_loop,
-            loop_width=request.loop_width,
-            loop_length=request.loop_length,
-            loop_hole=request.loop_hole,
-            loop_pos=request.loop_pos,
-            modeling_mode=core_modeling_mode,
-            quantize_colors=request.quantize_colors,
-            replacement_regions=replacement_regions,
-            separate_backing=request.separate_backing,
-            enable_relief=request.enable_relief,
-            color_height_map=request.color_height_map,
-            heightmap_max_height=request.heightmap_max_height,
-            enable_cleanup=request.enable_cleanup,
-            enable_outline=request.enable_outline,
-            outline_width=request.outline_width,
-            enable_cloisonne=request.enable_cloisonne,
-            wire_width_mm=request.wire_width_mm,
-            wire_height_mm=request.wire_height_mm,
-            free_color_set=free_color_set,
-            enable_coating=request.enable_coating,
-            coating_height_mm=request.coating_height_mm,
-        )
-    except Exception as e:
-        _handle_core_error(e, "3MF generation")
-        return  # unreachable, keeps type checker happy
+    # Resolve height_mode for relief branching
+    # 解析 height_mode 用于浮雕分支选择
+    height_mode = request.height_mode or "color"
 
-    # Unpack result: (3mf_path, glb_path, preview_img, status_msg, color_recipe_path)
-    threemf_path, glb_path, _preview_img, status_msg, _recipe_path = result
+    # If heightmap mode, save session heightmap to temp file for worker process
+    # 高度图模式时，将 session 中的高度图保存为临时文件供工作进程使用
+    heightmap_path: str | None = None
+    if request.enable_relief and height_mode == "heightmap":
+        heightmap_grayscale = session_data.get("heightmap_grayscale")
+        if heightmap_grayscale is not None:
+            import tempfile
+            import numpy as np
+            from PIL import Image
+            fd, hm_temp_path = tempfile.mkstemp(suffix=".png")
+            os.close(fd)
+            Image.fromarray(heightmap_grayscale).save(hm_temp_path)
+            heightmap_path = hm_temp_path
+            store.register_temp_file(body.session_id, hm_temp_path)
+
+    # 2. Collect scalar parameters into a dict for the worker
+    params: dict = {
+        "target_width_mm": request.target_width_mm,
+        "spacer_thick": request.spacer_thick,
+        "structure_mode": request.structure_mode.value,
+        "auto_bg": request.auto_bg,
+        "bg_tol": request.bg_tol,
+        "color_mode": request.color_mode.value,
+        "add_loop": request.add_loop,
+        "loop_width": request.loop_width,
+        "loop_length": request.loop_length,
+        "loop_hole": request.loop_hole,
+        "loop_pos": request.loop_pos,
+        "modeling_mode": core_modeling_mode,
+        "quantize_colors": request.quantize_colors,
+        "replacement_regions": replacement_regions,
+        "separate_backing": request.separate_backing,
+        "enable_relief": request.enable_relief,
+        "height_mode": height_mode,
+        "heightmap_path": heightmap_path,
+        "color_height_map": request.color_height_map,
+        "heightmap_max_height": request.heightmap_max_height,
+        "enable_cleanup": request.enable_cleanup,
+        "enable_outline": request.enable_outline,
+        "outline_width": request.outline_width,
+        "enable_cloisonne": request.enable_cloisonne,
+        "wire_width_mm": request.wire_width_mm,
+        "wire_height_mm": request.wire_height_mm,
+        "free_color_set": free_color_set,
+        "enable_coating": request.enable_coating,
+        "coating_height_mm": request.coating_height_mm,
+        "hue_weight": request.hue_weight,
+    }
+
+    # 3. CPU computation offloaded to process pool (only paths and scalars)
+    try:
+        result = await pool.submit(
+            worker_generate_model,
+            image_path,
+            lut_path,
+            params,
+        )
+    except asyncio.TimeoutError:
+        raise HTTPException(status_code=504, detail="3MF generation timed out")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"3MF generation failed: {str(e)}")
+
+    # 4. Result processing (I/O + FileRegistry, main thread)
+    threemf_path: str | None = result.get("threemf_path")
+    glb_path: str | None = result.get("glb_path")
+    status_msg: str = result.get("status_msg", "")
 
     if not threemf_path or not os.path.exists(threemf_path):
         raise HTTPException(status_code=500, detail=status_msg or "3MF generation failed")
@@ -518,6 +598,7 @@ def convert_generate(
         message=status_msg or "Model generated",
         download_url=f"/api/files/{download_id}",
         preview_3d_url=preview_3d_url,
+        threemf_disk_path=threemf_path,
     )
 
 
@@ -534,19 +615,27 @@ async def convert_batch(
     modeling_mode: str = Form("high-fidelity", description="建模模式"),
     quantize_colors: int = Form(48, description="K-Means 色彩细节"),
     enable_cleanup: bool = Form(True, description="孤立像素清理"),
+    hue_weight: float = Form(0.0, description="色相保护权重"),
     registry: FileRegistry = Depends(get_file_registry),
+    pool: WorkerPoolManager = Depends(get_worker_pool),
 ) -> BatchResponse:
-    """Batch-convert multiple images with shared parameters.
-    使用共享参数批量转换多张图像。
+    """Batch-convert multiple images via process pool.
+    通过进程池批量转换多张图像。
+
+    File uploads and FileRegistry operations run on the main thread.
+    Each batch item's CPU-intensive conversion is submitted sequentially
+    to the worker pool, one at a time.
+    文件上传和 FileRegistry 操作在主线程完成。
+    每个批量项的 CPU 密集型转换逐个提交到工作进程池。
     """
-    # Resolve LUT path
+    # Resolve LUT path (main thread)
     lut_path = LUTManager.get_lut_path(lut_name)
     if lut_path is None:
         raise HTTPException(status_code=404, detail=f"LUT not found: {lut_name}")
 
-    # Convert modeling_mode string to core enum
+    # Validate modeling_mode string (main thread)
     try:
-        core_modeling_mode = CoreModelingMode(modeling_mode)
+        CoreModelingMode(modeling_mode)
     except ValueError:
         raise HTTPException(
             status_code=422,
@@ -556,28 +645,34 @@ async def convert_batch(
     results: list[BatchItemResult] = []
     successful_paths: list[str] = []
 
+    # Submit each batch item sequentially to the process pool
     for upload_file in images:
         filename = upload_file.filename or "unknown"
         try:
+            # 1. File upload (I/O, main thread)
             temp_path = await upload_to_tempfile(upload_file)
-            threemf_path, _glb_path, _preview_img, status_msg = convert_image_to_3d(
-                image_path=temp_path,
-                lut_path=lut_path,
-                target_width_mm=target_width_mm,
-                spacer_thick=spacer_thick,
-                structure_mode=structure_mode,
-                auto_bg=auto_bg,
-                bg_tol=bg_tol,
-                color_mode=color_mode,
-                add_loop=False,
-                loop_width=4.0,
-                loop_length=8.0,
-                loop_hole=2.5,
-                loop_pos=None,
-                modeling_mode=core_modeling_mode,
-                quantize_colors=quantize_colors,
-                enable_cleanup=enable_cleanup,
+
+            # 2. CPU computation offloaded to process pool (only paths and scalars)
+            result = await pool.submit(
+                worker_batch_convert_item,
+                temp_path,
+                lut_path,
+                target_width_mm,
+                spacer_thick,
+                structure_mode,
+                auto_bg,
+                bg_tol,
+                color_mode,
+                modeling_mode,
+                quantize_colors,
+                enable_cleanup,
+                hue_weight,
             )
+
+            # 3. Result processing (main thread)
+            threemf_path: str | None = result.get("threemf_path")
+            status_msg: str = result.get("status_msg", "")
+
             if threemf_path and os.path.exists(threemf_path):
                 successful_paths.append(threemf_path)
                 results.append(BatchItemResult(
@@ -590,6 +685,12 @@ async def convert_batch(
                     status="failed",
                     error=status_msg or "3MF generation returned no output",
                 ))
+        except asyncio.TimeoutError:
+            results.append(BatchItemResult(
+                filename=filename,
+                status="failed",
+                error="Batch item conversion timed out",
+            ))
         except Exception as e:
             results.append(BatchItemResult(
                 filename=filename,
@@ -597,14 +698,14 @@ async def convert_batch(
                 error=str(e),
             ))
 
-    # Package successful 3MF files into a ZIP
+    # Package successful 3MF files into a ZIP (main thread)
     fd, zip_path = tempfile.mkstemp(suffix=".zip")
     os.close(fd)
     with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
         for path_3mf in successful_paths:
             zf.write(path_3mf, os.path.basename(path_3mf))
 
-    # Register ZIP via FileRegistry
+    # Register ZIP via FileRegistry (main thread)
     session_id = "batch"
     download_id = registry.register_path(session_id, zip_path)
 
@@ -625,8 +726,31 @@ def replace_color(
     store: SessionStore = Depends(get_session_store),
     registry: FileRegistry = Depends(get_file_registry),
 ) -> ColorReplaceResponse:
-    """Replace a single color in the current session preview.
-    替换当前 session 预览中的单个颜色。
+    """Replace a single color in the current session preview (synchronous).
+    替换当前 session 预览中的单个颜色（同步执行）。
+
+    This endpoint is intentionally kept synchronous (no process pool offload)
+    because the computation is lightweight: it operates on the cached
+    matched_rgb array (small preview image) with simple NumPy mask operations
+    over a small number of user-driven color replacements (typically 1-10).
+    The heavy image processing was already completed in the /preview step.
+    此端点有意保持同步执行（不卸载到进程池），因为计算量很小：
+    仅对缓存的 matched_rgb 数组（小尺寸预览图）执行简单的 NumPy 掩码操作，
+    颜色替换数量由用户驱动（通常 1-10 个）。
+    繁重的图像处理已在 /preview 步骤中完成。
+
+    Args:
+        request (ColorReplaceRequest): Color replacement parameters. (颜色替换参数)
+        store (SessionStore): Session store dependency. (会话存储依赖)
+        registry (FileRegistry): File registry dependency. (文件注册表依赖)
+
+    Returns:
+        ColorReplaceResponse: Replacement result with preview URL. (替换结果及预览 URL)
+
+    Raises:
+        HTTPException(404): Session not found. (会话不存在)
+        HTTPException(409): No preview cache available. (无预览缓存)
+        HTTPException(500): Internal processing error. (内部处理错误)
     """
     session_data = _require_session(store, request.session_id)
     cache = _require_preview_cache(session_data)
@@ -684,7 +808,15 @@ def replace_color(
 
 
 def _rgb_to_lab(rgb_array: np.ndarray) -> np.ndarray:
-    """Convert RGB array (N, 3) uint8 to LAB array (N, 3) float."""
+    """Convert RGB array to CIELAB color space via OpenCV.
+    通过 OpenCV 将 RGB 数组转换为 CIELAB 色彩空间。
+
+    Args:
+        rgb_array (np.ndarray): RGB values of shape (N, 3), dtype uint8. (RGB 值，形状 (N, 3))
+
+    Returns:
+        np.ndarray: LAB values of shape (N, 3), dtype float64. (LAB 值，形状 (N, 3))
+    """
     rgb_2d = rgb_array.reshape(1, -1, 3).astype(np.uint8)
     lab_2d = cv2.cvtColor(rgb_2d, cv2.COLOR_RGB2LAB)
     return lab_2d.reshape(-1, 3).astype(np.float64)
@@ -696,8 +828,34 @@ def merge_colors(
     store: SessionStore = Depends(get_session_store),
     registry: FileRegistry = Depends(get_file_registry),
 ) -> MergePreviewResponse:
-    """Preview the effect of merging similar colors.
-    预览合并相似颜色的效果。
+    """Preview the effect of merging similar colors (synchronous).
+    预览合并相似颜色的效果（同步执行）。
+
+    This endpoint is intentionally kept synchronous (no process pool offload)
+    because the computation is lightweight: it operates on the cached palette
+    (typically 3-64 colors) and the cached matched_rgb array from the /preview
+    step. Delta-E calculations involve small NumPy arrays (palette-sized, not
+    image-sized), and pixel replacement uses simple mask operations.
+    The heavy image processing was already completed in the /preview step.
+    此端点有意保持同步执行（不卸载到进程池），因为计算量很小：
+    仅对缓存的调色板（通常 3-64 色）和 /preview 步骤缓存的 matched_rgb 数组操作。
+    Delta-E 计算涉及小型 NumPy 数组（调色板级别，非图像级别），
+    像素替换使用简单的掩码操作。
+    繁重的图像处理已在 /preview 步骤中完成。
+
+    Args:
+        request (ColorMergePreviewRequest): Merge parameters. (合并参数)
+        store (SessionStore): Session store dependency. (会话存储依赖)
+        registry (FileRegistry): File registry dependency. (文件注册表依赖)
+
+    Returns:
+        MergePreviewResponse: Merge result with preview URL and quality metric.
+                              (合并结果及预览 URL 和质量指标)
+
+    Raises:
+        HTTPException(404): Session not found. (会话不存在)
+        HTTPException(409): No preview cache available. (无预览缓存)
+        HTTPException(500): Internal processing error. (内部处理错误)
     """
     session_data = _require_session(store, request.session_id)
     cache = _require_preview_cache(session_data)

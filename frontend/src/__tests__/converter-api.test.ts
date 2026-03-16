@@ -71,7 +71,7 @@ describe("convertPreview", () => {
     expect(fd.get("enable_cleanup")).toBe("true");
 
     // 不应设置 responseType: blob（后端返回 JSON）
-    expect(config).toMatchObject({ timeout: 30_000 });
+    expect(config).toMatchObject({ timeout: 0 });
     // 确认没有手动设置 Content-Type（让 axios 自动处理 FormData boundary）
     expect(config).not.toHaveProperty("headers");
 
@@ -139,7 +139,7 @@ describe("convertGenerate", () => {
       params: generateParams,
     });
 
-    expect(config).toMatchObject({ timeout: 120_000 });
+    expect(config).toMatchObject({ timeout: 0 });
     expect(result).toEqual(fakeResponse);
   });
 

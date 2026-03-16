@@ -1,61 +1,31 @@
 import { useConverterStore } from "../../stores/converterStore";
-import Accordion from "../ui/Accordion";
+import { useI18n } from "../../i18n/context";
 import Slider from "../ui/Slider";
 import Checkbox from "../ui/Checkbox";
 
 export default function AdvancedSettings() {
-  const {
-    quantize_colors,
-    bg_tol,
-    auto_bg,
-    enable_cleanup,
-    separate_backing,
-    setQuantizeColors,
-    setBgTol,
-    setAutoBg,
-    setEnableCleanup,
-    setSeparateBacking,
-  } = useConverterStore();
+  const { t } = useI18n();
+  const quantize_colors = useConverterStore((s) => s.quantize_colors);
+  const bg_tol = useConverterStore((s) => s.bg_tol);
+  const auto_bg = useConverterStore((s) => s.auto_bg);
+  const enable_cleanup = useConverterStore((s) => s.enable_cleanup);
+  const separate_backing = useConverterStore((s) => s.separate_backing);
+  const hue_weight = useConverterStore((s) => s.hue_weight);
+  const setQuantizeColors = useConverterStore((s) => s.setQuantizeColors);
+  const setBgTol = useConverterStore((s) => s.setBgTol);
+  const setAutoBg = useConverterStore((s) => s.setAutoBg);
+  const setEnableCleanup = useConverterStore((s) => s.setEnableCleanup);
+  const setSeparateBacking = useConverterStore((s) => s.setSeparateBacking);
+  const setHueWeight = useConverterStore((s) => s.setHueWeight);
 
   return (
-    <Accordion title="高级设置">
-      <div className="flex flex-col gap-4">
-        <Slider
-          label="量化颜色数"
-          value={quantize_colors}
-          min={8}
-          max={256}
-          step={8}
-          onChange={setQuantizeColors}
-        />
-
-        <Slider
-          label="背景容差"
-          value={bg_tol}
-          min={0}
-          max={150}
-          step={1}
-          onChange={setBgTol}
-        />
-
-        <Checkbox
-          label="自动背景"
-          checked={auto_bg}
-          onChange={setAutoBg}
-        />
-
-        <Checkbox
-          label="启用清理"
-          checked={enable_cleanup}
-          onChange={setEnableCleanup}
-        />
-
-        <Checkbox
-          label="分离底板"
-          checked={separate_backing}
-          onChange={setSeparateBacking}
-        />
-      </div>
-    </Accordion>
+    <div className="flex flex-col gap-4">
+      <Slider label={t("adv_quantize_colors")} value={quantize_colors} min={8} max={256} step={8} onChange={setQuantizeColors} />
+      <Slider label={t("adv_bg_tolerance")} value={bg_tol} min={0} max={150} step={1} onChange={setBgTol} />
+      <Checkbox label={t("adv_auto_bg")} checked={auto_bg} onChange={setAutoBg} />
+      <Checkbox label={t("adv_enable_cleanup")} checked={enable_cleanup} onChange={setEnableCleanup} />
+      <Checkbox label={t("adv_separate_backing")} checked={separate_backing} onChange={setSeparateBacking} />
+      <Slider label={t("adv_hue_protection")} value={hue_weight} min={0} max={1} step={0.05} onChange={setHueWeight} />
+    </div>
   );
 }

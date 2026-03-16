@@ -311,3 +311,79 @@ def test_registry_match_produces_correct_display_name(
         f"Expected display_name={expected_display_name!r}, "
         f"got {matched_display_name!r} for input={display_name!r}"
     )
+
+
+# =========================================================================
+# Feature: slicer-launch-integration
+# Property 1: GenerateResponse 包含 3MF 磁盘路径
+# **Validates: Requirements 1.1, 7.1, 7.2**
+# =========================================================================
+
+from api.schemas.responses import GenerateResponse
+
+
+# Strategy: non-empty strings representing arbitrary 3MF disk paths
+_nonempty_path_strategy = st.text(min_size=1).filter(lambda s: s.strip() != "")
+
+
+@given(path=_nonempty_path_strategy)
+@settings(max_examples=200)
+def test_generate_response_contains_threemf_disk_path(path: str) -> None:
+    """Property 1: For any successful 3MF generation where generate_final_model
+    returns a valid threemf_path, GenerateResponse.threemf_disk_path SHALL equal
+    that path and be a non-empty string.
+
+    Feature: slicer-launch-integration, Property 1: GenerateResponse 包含 3MF 磁盘路径
+    **Validates: Requirements 1.1, 7.1, 7.2**
+    """
+    resp = GenerateResponse(
+        status="ok",
+        message="Model generated",
+        download_url="/api/files/test-id",
+        preview_3d_url="/api/files/preview-id",
+        threemf_disk_path=path,
+    )
+
+    # threemf_disk_path must equal the input path
+    assert resp.threemf_disk_path == path, (
+        f"Expected threemf_disk_path={path!r}, got {resp.threemf_disk_path!r}"
+    )
+    # threemf_disk_path must be a non-empty string
+    assert isinstance(resp.threemf_disk_path, str) and len(resp.threemf_disk_path) > 0, (
+        f"threemf_disk_path should be a non-empty string, got {resp.threemf_disk_path!r}"
+    )
+
+
+def test_generate_response_threemf_disk_path_none_when_omitted() -> None:
+    """When threemf_disk_path is not provided, it should default to None.
+
+    Feature: slicer-launch-integration, Property 1: GenerateResponse 包含 3MF 磁盘路径
+    **Validates: Requirements 1.1, 7.1, 7.2**
+    """
+    resp = GenerateResponse(
+        status="ok",
+        message="Model generated",
+        download_url="/api/files/test-id",
+    )
+    assert resp.threemf_disk_path is None, (
+        f"Expected threemf_disk_path=None when omitted, got {resp.threemf_disk_path!r}"
+    )
+
+
+@given(path=st.none())
+@settings(max_examples=50)
+def test_generate_response_threemf_disk_path_explicit_none(path) -> None:
+    """When threemf_disk_path is explicitly set to None, the field should be None.
+
+    Feature: slicer-launch-integration, Property 1: GenerateResponse 包含 3MF 磁盘路径
+    **Validates: Requirements 1.1, 7.1, 7.2**
+    """
+    resp = GenerateResponse(
+        status="ok",
+        message="Model generated",
+        download_url="/api/files/test-id",
+        threemf_disk_path=path,
+    )
+    assert resp.threemf_disk_path is None, (
+        f"Expected threemf_disk_path=None, got {resp.threemf_disk_path!r}"
+    )

@@ -16,7 +16,8 @@ import type {
 /** 上传图片 + 参数，获取 2D 预览（返回 JSON，含 session_id 和 preview_url） */
 export async function convertPreview(
   image: File,
-  params: ConvertPreviewRequest
+  params: ConvertPreviewRequest,
+  signal?: AbortSignal,
 ): Promise<PreviewResponse> {
   const fd = new FormData();
   fd.append("image", image);
@@ -26,6 +27,7 @@ export async function convertPreview(
 
   const response = await apiClient.post<PreviewResponse>("/convert/preview", fd, {
     timeout: 0,
+    signal,
   });
   return response.data;
 }

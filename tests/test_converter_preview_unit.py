@@ -4,28 +4,56 @@ Validates:
 - LUT name resolution failure returns 404 (Requirement 5.4)
 - Session contains preview_cache after successful preview (Requirement 5.2)
 - Response includes palette and dimensions fields (Requirement 5.3)
+- asyncio.TimeoutError returns HTTP 504 (Requirement 2.3)
+- General exception returns HTTP 500 (Requirement 1.4)
 """
 
 from __future__ import annotations
 
 import io
-from unittest.mock import patch
+import os
+import pickle
+import tempfile
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import numpy as np
 from fastapi.testclient import TestClient
 from PIL import Image
 
 from api.app import app
-from api.dependencies import get_session_store, get_file_registry
+from api.dependencies import get_session_store, get_file_registry, get_worker_pool
 from api.session_store import SessionStore
 from api.file_registry import FileRegistry
+from api.worker_pool import WorkerPoolManager
 
 # Isolated store/registry per test module to avoid cross-test pollution
 _test_store: SessionStore = SessionStore(ttl=1800)
 _test_registry: FileRegistry = FileRegistry()
 
-app.dependency_overrides[get_session_store] = lambda: _test_store
-app.dependency_overrides[get_file_registry] = lambda: _test_registry
+
+# Mock WorkerPoolManager for dependency override
+_mock_pool = MagicMock(spec=WorkerPoolManager)
+
+def setup_module(module):
+    """Re-apply dependency overrides before this module's tests run.
+    在本模块测试运行前重新设置依赖覆盖，确保跨文件测试隔离。
+    """
+    app.dependency_overrides[get_session_store] = lambda: _test_store
+    app.dependency_overrides[get_file_registry] = lambda: _test_registry
+    app.dependency_overrides[get_worker_pool] = lambda: _mock_pool
+
+
+def teardown_module(module):
+    """Remove this module's dependency overrides after all tests complete.
+    本模块所有测试完成后移除依赖覆盖。
+    """
+    app.dependency_overrides.pop(get_session_store, None)
+    app.dependency_overrides.pop(get_file_registry, None)
+    app.dependency_overrides.pop(get_worker_pool, None)
+
+
+# Apply overrides immediately for module-level client creation
+setup_module(None)
 
 client: TestClient = TestClient(app)
 
@@ -52,7 +80,31 @@ _mock_cache: dict = {
     "quantized_image": _mock_quantized_image,
 }
 _mock_preview_img: np.ndarray = np.zeros((80, 120, 3), dtype=np.uint8)
-_mock_return = (_mock_preview_img, _mock_cache, "Preview OK")
+
+
+def _create_worker_result_files() -> dict:
+    """Create temp files simulating worker_generate_preview output.
+    创建模拟 worker_generate_preview 输出的临时文件。
+
+    Returns:
+        dict: Worker result dict with preview_png_path, cache_data_path, status_msg.
+    """
+    # Write preview PNG
+    fd, png_path = tempfile.mkstemp(suffix=".png")
+    os.close(fd)
+    Image.fromarray(_mock_preview_img).save(png_path)
+
+    # Write cache pickle
+    fd, cache_path = tempfile.mkstemp(suffix=".pkl")
+    os.close(fd)
+    with open(cache_path, "wb") as f:
+        pickle.dump(_mock_cache, f)
+
+    return {
+        "status_msg": "Preview OK",
+        "preview_png_path": png_path,
+        "cache_data_path": cache_path,
+    }
 
 
 def _make_test_image_buf() -> io.BytesIO:
@@ -100,17 +152,18 @@ class TestSessionContainsPreviewCache:
     """Verify session stores preview_cache after successful preview."""
 
     def test_preview_stores_cache_in_session(self) -> None:
-        """Mock core call, verify session has preview_cache."""
+        """Mock worker pool submit, verify session has preview_cache."""
         buf = _make_test_image_buf()
+        worker_result = _create_worker_result_files()
+
+        _mock_pool.submit = AsyncMock(return_value=worker_result)
+
         with patch(
             "api.routers.converter.LUTManager.get_lut_path",
             return_value="/tmp/fake.npy",
         ), patch(
             "api.routers.converter.upload_to_tempfile",
             return_value="/tmp/uploaded.png",
-        ), patch(
-            "api.routers.converter.generate_preview_cached",
-            return_value=_mock_return,
         ), patch(
             "api.routers.converter.generate_segmented_glb",
             return_value=None,
@@ -131,7 +184,10 @@ class TestSessionContainsPreviewCache:
         session_data = _test_store.get(session_id)
         assert session_data is not None
         assert "preview_cache" in session_data
-        assert session_data["preview_cache"] is _mock_cache
+        # Verify cache_data was loaded from pickle (values match)
+        loaded_cache = session_data["preview_cache"]
+        assert loaded_cache["target_w"] == 120
+        assert loaded_cache["target_h"] == 80
 
 
 # =========================================================================
@@ -143,17 +199,18 @@ class TestResponseContainsPaletteAndDimensions:
     """Verify response JSON includes palette and dimensions fields."""
 
     def test_preview_response_has_palette_and_dimensions(self) -> None:
-        """Mock core call, verify palette and dimensions in response."""
+        """Mock worker pool submit, verify palette and dimensions in response."""
         buf = _make_test_image_buf()
+        worker_result = _create_worker_result_files()
+
+        _mock_pool.submit = AsyncMock(return_value=worker_result)
+
         with patch(
             "api.routers.converter.LUTManager.get_lut_path",
             return_value="/tmp/fake.npy",
         ), patch(
             "api.routers.converter.upload_to_tempfile",
             return_value="/tmp/uploaded.png",
-        ), patch(
-            "api.routers.converter.generate_preview_cached",
-            return_value=_mock_return,
         ), patch(
             "api.routers.converter.generate_segmented_glb",
             return_value=None,
@@ -190,3 +247,69 @@ class TestResponseContainsPaletteAndDimensions:
         assert "dimensions" in body
         assert body["dimensions"]["width"] == 120
         assert body["dimensions"]["height"] == 80
+
+
+# =========================================================================
+# 4. Timeout returns HTTP 504 - Requirement 2.3
+# =========================================================================
+
+
+class TestTimeoutReturns504:
+    """Verify asyncio.TimeoutError from pool.submit returns HTTP 504."""
+
+    def test_preview_timeout_returns_504(self) -> None:
+        """Simulate pool.submit raising TimeoutError, expect 504."""
+        import asyncio
+
+        buf = _make_test_image_buf()
+        _mock_pool.submit = AsyncMock(side_effect=asyncio.TimeoutError())
+
+        with patch(
+            "api.routers.converter.LUTManager.get_lut_path",
+            return_value="/tmp/fake.npy",
+        ), patch(
+            "api.routers.converter.upload_to_tempfile",
+            return_value="/tmp/uploaded.png",
+        ):
+            response = client.post(
+                "/api/convert/preview",
+                files={"image": ("test.png", buf, "image/png")},
+                data={
+                    "lut_name": "test_lut",
+                    "color_mode": "4-Color",
+                },
+            )
+        assert response.status_code == 504
+        assert "timed out" in response.json()["detail"].lower()
+
+
+# =========================================================================
+# 5. General exception returns HTTP 500 - Requirement 1.4
+# =========================================================================
+
+
+class TestGeneralExceptionReturns500:
+    """Verify general Exception from pool.submit returns HTTP 500."""
+
+    def test_preview_exception_returns_500(self) -> None:
+        """Simulate pool.submit raising RuntimeError, expect 500."""
+        buf = _make_test_image_buf()
+        _mock_pool.submit = AsyncMock(side_effect=RuntimeError("Worker crashed"))
+
+        with patch(
+            "api.routers.converter.LUTManager.get_lut_path",
+            return_value="/tmp/fake.npy",
+        ), patch(
+            "api.routers.converter.upload_to_tempfile",
+            return_value="/tmp/uploaded.png",
+        ):
+            response = client.post(
+                "/api/convert/preview",
+                files={"image": ("test.png", buf, "image/png")},
+                data={
+                    "lut_name": "test_lut",
+                    "color_mode": "4-Color",
+                },
+            )
+        assert response.status_code == 500
+        assert "Worker crashed" in response.json()["detail"]

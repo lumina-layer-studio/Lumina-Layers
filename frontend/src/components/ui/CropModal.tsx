@@ -4,6 +4,7 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { createPortal } from "react-dom";
 import ReactCropper from "react-cropper";
 import type { ReactCropperElement } from "react-cropper";
+import { useI18n } from "../../i18n/context";
 
 // ========== Types ==========
 
@@ -31,7 +32,7 @@ interface AspectRatioPreset {
 }
 
 const ASPECT_RATIO_PRESETS: AspectRatioPreset[] = [
-  { label: "Free", value: NaN },
+  { label: "crop_modal_free", value: NaN },
   { label: "1:1", value: 1 },
   { label: "4:3", value: 4 / 3 },
   { label: "3:2", value: 3 / 2 },
@@ -50,6 +51,7 @@ export function CropModal({
   onClose,
   isLoading = false,
 }: CropModalProps) {
+  const { t } = useI18n();
   const cropperRef = useRef<ReactCropperElement>(null);
   const modalRef = useRef<HTMLDivElement>(null);
   const previousFocusRef = useRef<HTMLElement | null>(null);
@@ -217,20 +219,20 @@ export function CropModal({
         tabIndex={-1}
         role="dialog"
         aria-modal="true"
-        aria-label="Crop image"
+        aria-label={t("crop_modal_title")}
         onClick={(e) => e.stopPropagation()}
         className="relative flex max-h-[90vh] w-full max-w-3xl flex-col rounded-lg bg-white shadow-2xl outline-none dark:bg-gray-800"
       >
         {/* Title bar */}
         <div className="flex items-center justify-between border-b border-gray-200 px-4 py-3 dark:border-gray-700">
           <h2 className="text-base font-semibold text-gray-800 dark:text-gray-100">
-            Crop Image
+            {t("crop_modal_title")}
           </h2>
           <button
             type="button"
             onClick={onClose}
             className="rounded p-1 text-gray-500 hover:bg-gray-100 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-gray-200"
-            aria-label="Close"
+            aria-label={t("crop_modal_close")}
           >
             <svg className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
               <path
@@ -261,10 +263,10 @@ export function CropModal({
         {/* Info bar */}
         <div className="flex flex-wrap items-center gap-4 border-t border-gray-200 px-4 py-2 text-xs text-gray-600 dark:border-gray-700 dark:text-gray-400">
           <span>
-            Original: {naturalWidth} x {naturalHeight} px
+            {t("crop_modal_original")}: {naturalWidth} x {naturalHeight} px
           </span>
           <span>
-            Selection: {cropW} x {cropH} px
+            {t("crop_modal_selection")}: {cropW} x {cropH} px
           </span>
         </div>
 
@@ -285,7 +287,7 @@ export function CropModal({
                     : "bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600"
                 }`}
               >
-                {preset.label}
+                {preset.label === "crop_modal_free" ? t("crop_modal_free") : preset.label}
               </button>
             );
           })}
@@ -297,8 +299,8 @@ export function CropModal({
             [
               { label: "X", value: cropX, field: "x" },
               { label: "Y", value: cropY, field: "y" },
-              { label: "Width", value: cropW, field: "width" },
-              { label: "Height", value: cropH, field: "height" },
+              { label: t("crop_width"), value: cropW, field: "width" },
+              { label: t("crop_height"), value: cropH, field: "height" },
             ] as const
           ).map((item) => (
             <label key={item.label} className="flex items-center gap-1.5 text-xs">
@@ -324,7 +326,7 @@ export function CropModal({
             disabled={isLoading}
             className="rounded-md bg-gray-600 px-4 py-2 text-sm font-medium text-gray-200 transition-colors hover:bg-gray-700 disabled:cursor-not-allowed disabled:opacity-40"
           >
-            Use Original
+            {t("crop_modal_use_original")}
           </button>
           <button
             type="button"
@@ -353,7 +355,7 @@ export function CropModal({
                 />
               </svg>
             )}
-            Confirm Crop
+            {t("crop_modal_confirm")}
           </button>
         </div>
       </div>

@@ -18,7 +18,7 @@ export async function mergeLuts(
   const response = await apiClient.post<MergeResponse>(
     "/lut/merge",
     request,
-    { timeout: 120_000 }
+    { timeout: 600_000 }
   );
   return response.data;
 }

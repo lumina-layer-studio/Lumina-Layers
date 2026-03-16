@@ -89,11 +89,6 @@ const arbExtractorColorMode = fc.constantFrom(
 
 const arbCornerCount = fc.integer({ min: 0, max: 3 });
 
-const arbCornerPoint = fc.tuple(
-  fc.integer({ min: 0, max: 10000 }),
-  fc.integer({ min: 0, max: 10000 })
-) as fc.Arbitrary<[number, number]>;
-
 // ========== Tests ==========
 
 beforeEach(() => {
@@ -236,7 +231,7 @@ describe("ExtractorCanvas 单元测试", () => {
     render(<ExtractorCanvas />);
     const hint = screen.getByTestId("corner-hint");
     expect(hint.textContent).toContain("定位完成");
-    expect(hint).toHaveClass("text-green-400");
+    expect(hint).toHaveClass("text-green-500");
   });
 
   it("renders warp_view and lut_preview images when extraction results exist", async () => {
@@ -286,6 +281,6 @@ describe("ExtractorCanvas 单元测试", () => {
     const hint = screen.getByTestId("corner-hint");
     // 1 corner placed, so hint should show the 2nd corner label
     expect(hint.textContent).toContain("青色 (右上) / Cyan (TR)");
-    expect(hint).toHaveClass("text-yellow-300");
+    expect(hint).toHaveClass("text-yellow-500");
   });
 });

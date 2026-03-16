@@ -99,11 +99,11 @@ function KeychainRing3D({
     return null;
   }
 
-  // Position at model top center (Design S3):
-  // X = centered horizontally, Y = maxZ + offset (top of model), Z = centered in depth
+  // Position at model top center:
+  // X = centered horizontally, Y = top of model + offset, Z = centered in thickness
   const posX = (modelBounds.minX + modelBounds.maxX) / 2;
-  const posY = modelBounds.maxZ + TOP_OFFSET;
-  const posZ = (modelBounds.minY + modelBounds.maxY) / 2;
+  const posY = modelBounds.maxY + TOP_OFFSET;
+  const posZ = 0;
 
   return (
     <mesh geometry={geometry} position={[posX, posY, posZ]}>

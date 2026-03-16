@@ -36,6 +36,8 @@ export interface ConvertPreviewRequest {
   modeling_mode: ModelingMode;
   quantize_colors: number;
   enable_cleanup: boolean;
+  hue_weight: number;
+  is_dark: boolean;
 }
 
 export interface ConvertGenerateRequest extends ConvertPreviewRequest {
@@ -48,6 +50,7 @@ export interface ConvertGenerateRequest extends ConvertPreviewRequest {
   loop_hole: number;
   loop_pos?: [number, number];
   enable_relief: boolean;
+  height_mode?: string;
   color_height_map?: Record<string, number>;
   heightmap_max_height: number;
   enable_outline: boolean;
@@ -71,14 +74,17 @@ export interface ColorReplacementItem {
 
 /** 调色板条目：量化原色、LUT 匹配色、像素统计 */
 export interface PaletteEntry {
-  quantized_hex: string;   // 量化原色
-  matched_hex: string;     // LUT 匹配色
-  pixel_count: number;     // 像素数量
-  percentage: number;      // 占比百分比
+  quantized_hex: string; // 量化原色
+  matched_hex: string; // LUT 匹配色
+  pixel_count: number; // 像素数量
+  percentage: number; // 占比百分比
 }
 
 /** 自动高度分配模式 */
-export type AutoHeightMode = 'darker-higher' | 'lighter-higher' | 'use-heightmap';
+export type AutoHeightMode =
+  | "darker-higher"
+  | "lighter-higher"
+  | "use-heightmap";
 
 /** 高度图上传响应 */
 export interface HeightmapUploadResponse {
@@ -98,9 +104,10 @@ export interface PreviewResponse {
   status: string;
   message: string;
   preview_url: string;
-  preview_glb_url: string | null;  // GLB 3D 预览 URL
+  preview_glb_url: string | null; // GLB 3D 预览 URL
   palette: PaletteEntry[];
   dimensions: { width: number; height: number };
+  contours?: Record<string, number[][][]> | null; // hex -> list of contour polygons (world coords mm)
 }
 
 /** 生成接口响应，包含下载 URL 和可选的 3D 预览 URL */
@@ -109,6 +116,7 @@ export interface GenerateResponse {
   message: string;
   download_url: string;
   preview_3d_url?: string;
+  threemf_disk_path?: string;
 }
 
 export interface LutListResponse {
@@ -304,6 +312,7 @@ export interface BatchConvertParams {
   modeling_mode: string;
   quantize_colors: number;
   enable_cleanup: boolean;
+  hue_weight: number;
 }
 
 // ========== Five-Color Query Models ==========

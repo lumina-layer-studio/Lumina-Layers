@@ -61,21 +61,27 @@ class LuminaImageProcessor:
             return lab.reshape(original_shape)
         return lab
 
-    def __init__(self, lut_path, color_mode):
+    def __init__(self, lut_path, color_mode, hue_weight: float = 0.0):
         """
         Initialize image processor.
         
         Args:
             lut_path: LUT file path (.npy)
             color_mode: Color mode string (CMYW/RYBW/6-Color)
+            hue_weight: 色相感知权重 (0.0-1.0)
+                        0.0 = 纯 CIELAB 距离（默认，兼容原有行为）
+                        0.3-0.5 = 平衡模式（推荐）
+                        1.0 = 最强色相保护
         """
         self.lut_path = lut_path  # Store LUT path for color recipe logging
         self.color_mode = color_mode
+        self.hue_weight = float(hue_weight)
         self.layer_count = ColorSystem.get(color_mode).get('layer_count', PrinterConfig.COLOR_LAYERS)
         self.lut_rgb = None
         self.lut_lab = None  # CIELAB 空间的 LUT 颜色（用于 KDTree 匹配）
         self.ref_stacks = None
         self.kdtree = None
+        self.hue_matcher = None  # 色相感知匹配器（hue_weight > 0 时初始化）
         self.enable_cleanup = True  # 默认开启孤立像素清理
         
         self._load_lut(lut_path)
@@ -232,6 +238,13 @@ class LuminaImageProcessor:
                 self.lut_lab = self._rgb_to_lab(self.lut_rgb)
                 self.kdtree = KDTree(self.lut_lab)
                 print(f"✅ Merged LUT loaded: {len(self.lut_rgb)} colors (.npz format, Lab KDTree)")
+                
+                # 初始化色相感知匹配器（仅当 hue_weight > 0 时）
+                if self.hue_weight > 0:
+                    from core.color_matching_hue_aware import HueAwareColorMatcher
+                    self.hue_matcher = HueAwareColorMatcher(
+                        self.lut_rgb, self.lut_lab, hue_weight=self.hue_weight
+                    )
                 return
             except Exception as e:
                 raise ValueError(f"❌ Merged LUT file corrupted: {e}")
@@ -342,6 +355,15 @@ class LuminaImageProcessor:
                         self.layer_count = int(self.ref_stacks.shape[1])
                         self.lut_rgb = measured_colors
                         print(f"✅ LUT loaded: {len(self.lut_rgb)} colors (5-Color Extended, 6-layer stacks)")
+                        
+                        # Build KD-Tree and hue matcher for early-return path
+                        self.lut_lab = self._rgb_to_lab(self.lut_rgb)
+                        self.kdtree = KDTree(self.lut_lab)
+                        if self.hue_weight > 0:
+                            from core.color_matching_hue_aware import HueAwareColorMatcher
+                            self.hue_matcher = HueAwareColorMatcher(
+                                self.lut_rgb, self.lut_lab, hue_weight=self.hue_weight
+                            )
                         return
                 except Exception as e:
                     print(f"⚠️ Failed to load stacks from .npz: {e}")
@@ -396,6 +418,13 @@ class LuminaImageProcessor:
                     self.lut_lab = self._rgb_to_lab(self.lut_rgb)
                     self.kdtree = KDTree(self.lut_lab)
                     print(f"✅ Merged LUT loaded from companion .npz: {len(self.lut_rgb)} colors (Lab KDTree)")
+                    
+                    # 初始化色相感知匹配器（仅当 hue_weight > 0 时）
+                    if self.hue_weight > 0:
+                        from core.color_matching_hue_aware import HueAwareColorMatcher
+                        self.hue_matcher = HueAwareColorMatcher(
+                            self.lut_rgb, self.lut_lab, hue_weight=self.hue_weight
+                        )
                     return
                 except Exception as e:
                     print(f"⚠️ Failed to load companion .npz: {e}")
@@ -449,6 +478,13 @@ class LuminaImageProcessor:
         # Build KD-Tree in CIELAB space for perceptually accurate color matching
         self.lut_lab = self._rgb_to_lab(self.lut_rgb)
         self.kdtree = KDTree(self.lut_lab)
+        
+        # 初始化色相感知匹配器（仅当 hue_weight > 0 时）
+        if self.hue_weight > 0:
+            from core.color_matching_hue_aware import HueAwareColorMatcher
+            self.hue_matcher = HueAwareColorMatcher(
+                self.lut_rgb, self.lut_lab, hue_weight=self.hue_weight
+            )
     
     def process_image(self, image_path, target_width_mm, modeling_mode,
                      quantize_colors, auto_bg, bg_tol,
@@ -755,8 +791,12 @@ class LuminaImageProcessor:
         # Match to LUT (in CIELAB space for perceptual accuracy)
         t0 = time.time()
         print(f"[IMAGE_PROCESSOR] Matching colors to LUT (CIELAB space)...")
-        unique_lab = self._rgb_to_lab(unique_colors)
-        _, unique_indices = self.kdtree.query(unique_lab)
+        if self.hue_matcher is not None:
+            print(f"[IMAGE_PROCESSOR] 🎨 Hue-aware matching enabled (hue_weight={self.hue_weight})")
+            unique_indices = self.hue_matcher.match_colors_batch(unique_colors, k=32)
+        else:
+            unique_lab = self._rgb_to_lab(unique_colors)
+            _, unique_indices = self.kdtree.query(unique_lab)
         print(f"[IMAGE_PROCESSOR] ⏱️ LUT matching: {time.time() - t0:.2f}s")
         
         # 🚀 优化：构建颜色编码查找表
@@ -794,6 +834,25 @@ class LuminaImageProcessor:
         )
         print(f"[IMAGE_PROCESSOR] ⏱️ Color mapping (optimized): {time.time() - t0:.2f}s")
         
+        # [色相保护后处理] 消除匹配边界的色块跳变
+        # 色相感知匹配可能让相邻的量化色映射到不同 LUT 颜色，
+        # 在边界处形成"块状"。用 medianBlur 平滑后重新匹配到最近 LUT 色。
+        if self.hue_matcher is not None:
+            t_post = time.time()
+            print(f"[IMAGE_PROCESSOR] 🎨 Post-match smoothing for hue-aware mode...")
+            # 两轮平滑：先 5x5 消除大色块，再 3x3 精修边缘
+            smoothed = cv2.medianBlur(matched_rgb, 5)
+            smoothed = cv2.medianBlur(smoothed, 3)
+            # 重新匹配平滑后的颜色到最近的 LUT 颜色
+            flat_smoothed = smoothed.reshape(-1, 3)
+            smooth_lab = self._rgb_to_lab(flat_smoothed)
+            _, smooth_indices = self.kdtree.query(smooth_lab)
+            matched_rgb = self.lut_rgb[smooth_indices].reshape(target_h, target_w, 3)
+            material_matrix = self.ref_stacks[smooth_indices].reshape(
+                target_h, target_w, self.layer_count
+            )
+            print(f"[IMAGE_PROCESSOR] ⏱️ Post-match smoothing: {time.time() - t_post:.2f}s")
+        
         print(f"[IMAGE_PROCESSOR] ✅ Total processing time: {time.time() - total_start:.2f}s")
         
         # Prepare debug data
@@ -818,8 +877,13 @@ class LuminaImageProcessor:
         print(f"[IMAGE_PROCESSOR] Direct pixel-level matching (Pixel Art mode, CIELAB space)...")
         
         flat_rgb = rgb_arr.reshape(-1, 3)
-        flat_lab = self._rgb_to_lab(flat_rgb)
-        _, indices = self.kdtree.query(flat_lab)
+        
+        if self.hue_matcher is not None:
+            print(f"[IMAGE_PROCESSOR] 🎨 Hue-aware matching enabled (hue_weight={self.hue_weight})")
+            indices = self.hue_matcher.match_colors_batch(flat_rgb, k=32)
+        else:
+            flat_lab = self._rgb_to_lab(flat_rgb)
+            _, indices = self.kdtree.query(flat_lab)
         
         matched_rgb = self.lut_rgb[indices].reshape(target_h, target_w, 3)
         material_matrix = self.ref_stacks[indices].reshape(

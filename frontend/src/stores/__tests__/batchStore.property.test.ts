@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import * as fc from "fast-check";
-import { useConverterStore, isValidImageType } from "../converterStore";
+import { useConverterStore } from "../converterStore";
 import type { BatchResponse, BatchItemResult } from "../../api/types";
 
 // ========== Arbitraries ==========

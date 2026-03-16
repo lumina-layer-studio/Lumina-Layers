@@ -18,6 +18,20 @@ vi.mock("../components/InteractiveModelViewer", () => ({
 vi.mock("../components/BedPlatform", () => ({ default: () => null }));
 vi.mock("../components/KeychainRing3D", () => ({ default: () => null }));
 
+// Mock @react-three/drei — Environment renders a queryable DOM element
+// Boolean false is dropped by React DOM, so we explicitly map props to data-* attributes
+vi.mock("@react-three/drei", () => ({
+  OrbitControls: () => null,
+  Environment: (props: Record<string, unknown>) => (
+    <div
+      data-testid="mock-environment"
+      data-files={String(props.files ?? "")}
+      data-background={String(props.background ?? "")}
+      data-environment-intensity={String(props.environmentIntensity ?? "")}
+    />
+  ),
+}));
+
 // Override the global Canvas mock to capture onPointerMissed
 let capturedCanvasProps: Record<string, unknown> = {};
 vi.mock("@react-three/fiber", () => ({
@@ -25,7 +39,12 @@ vi.mock("@react-three/fiber", () => ({
     capturedCanvasProps = props;
     return <div data-testid="mock-canvas">{props.children}</div>;
   },
-  useThree: () => ({ gl: { domElement: document.createElement("canvas") } }),
+  useThree: () => ({
+    gl: {
+      domElement: document.createElement("canvas"),
+      setClearColor: vi.fn(),
+    },
+  }),
 }));
 
 // Must import Scene3D after mocks are set up
@@ -123,6 +142,52 @@ describe("Scene3D", () => {
       });
 
       expect(useConverterStore.getState().selectedColor).toBeNull();
+    });
+  });
+
+  describe("lighting (Environment optimization)", () => {
+    it("does not render hemisphereLight", () => {
+      const { container } = render(<Scene3D />);
+      expect(container.querySelector("hemisphereLight")).toBeNull();
+    });
+
+    it("renders exactly one directionalLight", () => {
+      const { container } = render(<Scene3D />);
+      const lights = container.querySelectorAll("directionalLight");
+      expect(lights.length).toBe(1);
+    });
+
+    it("renders Environment component with correct HDR file and background=false", () => {
+      render(<Scene3D />);
+      const env = screen.getByTestId("mock-environment");
+      expect(env).toBeInTheDocument();
+      expect(env.getAttribute("data-files")).toBe("/hdr/studio_small_09_1k.hdr");
+      expect(env.getAttribute("data-background")).toBe("false");
+    });
+
+    it("key directional light position is right-upper-front", () => {
+      const { container } = render(<Scene3D />);
+      const light = container.querySelector("directionalLight");
+      expect(light).not.toBeNull();
+      // Position [200, 300, 500] — front-upper-right for vertical view
+      const pos = light?.getAttribute("position");
+      expect(pos).toBeTruthy();
+    });
+
+    it("Canvas clearColor uses theme config value", () => {
+      render(<Scene3D />);
+      expect(capturedCanvasProps.onCreated).toBeTypeOf("function");
+      const mockGl = {
+        setClearColor: vi.fn(),
+        domElement: {
+          addEventListener: vi.fn(),
+        },
+      };
+      (capturedCanvasProps.onCreated as (state: { gl: typeof mockGl }) => void)({
+        gl: mockGl,
+      });
+      // Default theme is "light", so canvasClearColor should be "#e8e8ec"
+      expect(mockGl.setClearColor).toHaveBeenCalledWith("#e8e8ec");
     });
   });
 });

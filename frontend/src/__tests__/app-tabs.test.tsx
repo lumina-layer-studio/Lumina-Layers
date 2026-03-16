@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import App from "../App";
+import { useWidgetStore } from "../stores/widgetStore";
 
 // Mock apiClient to prevent real HTTP calls (health check)
 vi.mock("../api/client", () => ({
@@ -22,7 +23,7 @@ vi.mock("../api/calibration", () => ({
   calibrationGenerate: vi.fn(),
 }));
 
-// Mock converter API to prevent LeftPanel's fetchLutList call
+// Mock converter API to prevent fetchLutList call during data init
 vi.mock("../api/converter", () => ({
   fetchLutList: vi.fn().mockResolvedValue({ luts: [] }),
   convertPreview: vi.fn(),
@@ -32,64 +33,71 @@ vi.mock("../api/converter", () => ({
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // Reset widget store to default layout before each test
+  useWidgetStore.getState().resetLayout();
 });
 
-describe("App Tab Navigation", () => {
-  it("defaults to Converter tab active", () => {
+describe("App Widget Toggles", () => {
+  it("renders widget toggle buttons only for current tab (converter by default)", () => {
     render(<App />);
 
-    const converterTab = screen.getByTestId("tab-converter");
-    const calibrationTab = screen.getByTestId("tab-calibration");
-
-    expect(converterTab).toHaveAttribute("aria-selected", "true");
-    expect(calibrationTab).toHaveAttribute("aria-selected", "false");
+    // Converter page widgets (default active tab) should be visible
+    expect(screen.getByTestId("widget-toggle-basic-settings")).toBeInTheDocument();
+    expect(screen.getByTestId("widget-toggle-advanced-settings")).toBeInTheDocument();
+    expect(screen.getByTestId("widget-toggle-action-bar")).toBeInTheDocument();
+    // Other page widgets should NOT be visible on converter tab
+    expect(screen.queryByTestId("widget-toggle-calibration")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("widget-toggle-extractor")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("widget-toggle-lut-manager")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("widget-toggle-five-color")).not.toBeInTheDocument();
   });
 
-  it("renders LeftPanel when Converter tab is active", () => {
+  it("converter tab widgets are visible by default", () => {
     render(<App />);
 
-    expect(screen.getByTestId("left-panel")).toBeInTheDocument();
-    expect(screen.queryByTestId("calibration-panel")).not.toBeInTheDocument();
+    const basicToggle = screen.getByTestId("widget-toggle-basic-settings");
+    const actionBarToggle = screen.getByTestId("widget-toggle-action-bar");
+
+    // Both should have the active style (bg-blue-600)
+    expect(basicToggle.className).toContain("bg-blue-600");
+    expect(actionBarToggle.className).toContain("bg-blue-600");
   });
 
-  it("switches to CalibrationPanel when Calibration tab is clicked", () => {
+  it("toggles widget visibility when toggle button is clicked", () => {
     render(<App />);
 
-    fireEvent.click(screen.getByTestId("tab-calibration"));
+    const basicToggle = screen.getByTestId("widget-toggle-basic-settings");
 
-    expect(screen.getByTestId("calibration-panel")).toBeInTheDocument();
-    expect(screen.queryByTestId("left-panel")).not.toBeInTheDocument();
+    // Initially visible (blue)
+    expect(basicToggle.className).toContain("bg-blue-600");
 
-    const calibrationTab = screen.getByTestId("tab-calibration");
-    expect(calibrationTab).toHaveAttribute("aria-selected", "true");
+    // Click to hide
+    fireEvent.click(basicToggle);
+
+    // Should now be inactive (gray)
+    expect(basicToggle.className).not.toContain("bg-blue-600");
+    expect(basicToggle.className).toContain("bg-gray-200");
   });
 
-  it("switches back to LeftPanel when Converter tab is clicked", () => {
+  it("toggles widget back to visible when clicked again", () => {
     render(<App />);
 
-    // Switch to Calibration first
-    fireEvent.click(screen.getByTestId("tab-calibration"));
-    expect(screen.getByTestId("calibration-panel")).toBeInTheDocument();
+    const basicToggle = screen.getByTestId("widget-toggle-basic-settings");
 
-    // Switch back to Converter
-    fireEvent.click(screen.getByTestId("tab-converter"));
-    expect(screen.getByTestId("left-panel")).toBeInTheDocument();
-    expect(screen.queryByTestId("calibration-panel")).not.toBeInTheDocument();
+    // Click to hide
+    fireEvent.click(basicToggle);
+    expect(basicToggle.className).toContain("bg-gray-200");
 
-    const converterTab = screen.getByTestId("tab-converter");
-    expect(converterTab).toHaveAttribute("aria-selected", "true");
+    // Click to show again
+    fireEvent.click(basicToggle);
+    expect(basicToggle.className).toContain("bg-blue-600");
   });
 
-  it("renders CalibrationPanel when Calibration tab is active", () => {
+  it("renders reset layout button", () => {
     render(<App />);
 
-    fireEvent.click(screen.getByTestId("tab-calibration"));
-
-    const calibrationTab = screen.getByTestId("tab-calibration");
-    const converterTab = screen.getByTestId("tab-converter");
-
-    expect(calibrationTab).toHaveAttribute("aria-selected", "true");
-    expect(converterTab).toHaveAttribute("aria-selected", "false");
-    expect(screen.getByTestId("calibration-panel")).toBeInTheDocument();
+    const resetButton = screen.getByTestId("widget-reset-layout");
+    expect(resetButton).toBeInTheDocument();
+    expect(resetButton.textContent).toBe("↺");
   });
 });

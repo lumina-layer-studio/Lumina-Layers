@@ -1,4 +1,5 @@
 import { useState, useRef, useCallback } from "react";
+import { useI18n } from "../../i18n/context";
 
 interface BatchFileUploaderProps {
   files: File[];
@@ -13,6 +14,7 @@ export default function BatchFileUploader({
   onFileRemove,
   accept,
 }: BatchFileUploaderProps) {
+  const { t } = useI18n();
   const [isDragging, setIsDragging] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -73,7 +75,7 @@ export default function BatchFileUploader({
       <div
         role="button"
         tabIndex={0}
-        aria-label="拖拽图片或点击上传多个文件"
+        aria-label={t("batch_drop_aria")}
         onClick={handleClick}
         onKeyDown={(e) => {
           if (e.key === "Enter" || e.key === " ") handleClick();
@@ -93,20 +95,20 @@ export default function BatchFileUploader({
           aria-hidden="true"
         />
         <span className="text-sm text-gray-400 select-none">
-          拖拽图片或点击上传（支持多选）
+          {t("batch_drop_hint")}
         </span>
       </div>
 
       {/* File count */}
       {files.length > 0 && (
         <p className="text-xs text-gray-400">
-          已选 {files.length} 个文件
+          {t("batch_file_count").replace("{count}", String(files.length))}
         </p>
       )}
 
       {/* File list */}
       {files.length > 0 && (
-        <ul className="flex flex-col gap-1" aria-label="已选文件列表">
+        <ul className="flex flex-col gap-1" aria-label={t("batch_file_list_label")}>
           {files.map((file, index) => (
             <li
               key={`${file.name}-${index}`}
@@ -115,7 +117,7 @@ export default function BatchFileUploader({
               <span className="truncate mr-2">{file.name}</span>
               <button
                 type="button"
-                aria-label={`删除 ${file.name}`}
+                aria-label={t("batch_delete_file").replace("{name}", file.name)}
                 onClick={() => onFileRemove(index)}
                 className="shrink-0 text-gray-400 hover:text-red-400 transition-colors"
               >

@@ -1,42 +1,38 @@
 import { useConverterStore } from "../../stores/converterStore";
+import { useI18n } from "../../i18n/context";
 import { ModelingMode } from "../../api/types";
-import Accordion from "../ui/Accordion";
 import Checkbox from "../ui/Checkbox";
 import Slider from "../ui/Slider";
 
 export default function OutlineSettings() {
-  const {
-    enable_outline,
-    outline_width,
-    modeling_mode,
-    setEnableOutline,
-    setOutlineWidth,
-  } = useConverterStore();
+  const { t } = useI18n();
+  const enable_outline = useConverterStore((s) => s.enable_outline);
+  const outline_width = useConverterStore((s) => s.outline_width);
+  const modeling_mode = useConverterStore((s) => s.modeling_mode);
+  const setEnableOutline = useConverterStore((s) => s.setEnableOutline);
+  const setOutlineWidth = useConverterStore((s) => s.setOutlineWidth);
 
   const isVector = modeling_mode === ModelingMode.VECTOR;
 
   return (
-    <Accordion title="描边设置">
-      <div className="flex flex-col gap-4">
-        <Checkbox
-          label="启用描边"
-          checked={enable_outline}
-          onChange={setEnableOutline}
-          disabled={isVector}
+    <div className="flex flex-col gap-4">
+      <Checkbox
+        label={t("outline_enable")}
+        checked={enable_outline}
+        onChange={setEnableOutline}
+        disabled={isVector}
+      />
+      {enable_outline && (
+        <Slider
+          label={t("outline_width")}
+          value={outline_width}
+          min={0.5}
+          max={10.0}
+          step={0.5}
+          unit="mm"
+          onChange={setOutlineWidth}
         />
-
-        {enable_outline && (
-          <Slider
-            label="描边宽度"
-            value={outline_width}
-            min={0.5}
-            max={10.0}
-            step={0.5}
-            unit="mm"
-            onChange={setOutlineWidth}
-          />
-        )}
-      </div>
-    </Accordion>
+      )}
+    </div>
   );
 }

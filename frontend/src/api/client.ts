@@ -9,8 +9,8 @@ import axios from "axios";
  * - 手动设置默认 Content-Type 会阻止 FormData 的 boundary 自动生成，导致后端 422
  */
 const apiClient = axios.create({
-  baseURL: "http://localhost:8000/api",
-  timeout: 5000,
+  baseURL: import.meta.env.VITE_API_BASE_URL || "/api",
+  timeout: 30_000,
 });
 
 export default apiClient;

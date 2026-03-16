@@ -83,7 +83,10 @@ export const useFiveColorStore = create<FiveColorState & FiveColorActions>(
     reverseSelection: () => {
       const { selectedIndices } = get();
       if (selectedIndices.length === 5) {
-        set({ selectedIndices: [...selectedIndices].reverse() });
+        set({
+          selectedIndices: [...selectedIndices].reverse(),
+          queryResult: null,
+        });
       }
     },
 
@@ -108,5 +111,5 @@ export const useFiveColorStore = create<FiveColorState & FiveColorActions>(
     clearError: () => {
       set({ error: null });
     },
-  })
+  }),
 );

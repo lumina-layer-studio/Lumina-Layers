@@ -38,10 +38,10 @@ export default function FiveColorQueryPanel() {
   );
 
   return (
-    <div className="flex h-full bg-gray-950 text-white">
+    <div className="flex h-full bg-white dark:bg-gray-950 text-gray-900 dark:text-white">
       {/* ===== 左侧：颜色选择网格 ===== */}
-      <div className="w-72 shrink-0 border-r border-gray-800 flex flex-col">
-        <div className="p-4 border-b border-gray-800">
+      <div className="w-72 shrink-0 border-r border-gray-200 dark:border-gray-800 flex flex-col">
+        <div className="p-4 border-b border-gray-200 dark:border-gray-800">
           <Dropdown
             label={t("five_color_lut_label")}
             value={lutName}
@@ -65,7 +65,7 @@ export default function FiveColorQueryPanel() {
                     className={`relative group flex flex-col items-center gap-0.5 rounded-lg p-1.5 transition-all
                       ${isSelected
                         ? "ring-2 ring-blue-500 bg-blue-500/10"
-                        : "hover:bg-gray-800 border border-transparent hover:border-gray-600"}
+                        : "hover:bg-gray-100 dark:hover:bg-gray-800 border border-transparent hover:border-gray-300 dark:hover:border-gray-600"}
                       ${isFull && !isSelected ? "opacity-30 cursor-not-allowed" : "cursor-pointer"}`}
                     aria-label={t("five_color_select_color").replace("{name}", color.name).replace("{hex}", color.hex)}
                   >
@@ -78,7 +78,7 @@ export default function FiveColorQueryPanel() {
                         {selOrder + 1}
                       </span>
                     )}
-                    <span className="text-[10px] text-gray-400 truncate w-full text-center leading-tight">
+                    <span className="text-[10px] text-gray-500 dark:text-gray-400 truncate w-full text-center leading-tight">
                       {color.name}
                     </span>
                   </button>
@@ -94,7 +94,7 @@ export default function FiveColorQueryPanel() {
       </div>
 
       {/* ===== 中间：Canvas 3D 薄片动画 ===== */}
-      <div className="flex-1 flex flex-col items-center justify-center relative bg-gradient-to-b from-gray-900 to-gray-950">
+      <div className="flex-1 flex flex-col items-center justify-center relative bg-gradient-to-b from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-950">
         <div className="w-full h-full max-w-lg max-h-96">
           <FiveColorCanvas
             slices={canvasSlices}
@@ -114,8 +114,8 @@ export default function FiveColorQueryPanel() {
       </div>
 
       {/* ===== 右侧：操作按钮 + 结果 ===== */}
-      <div className="w-56 shrink-0 border-l border-gray-800 flex flex-col p-4 gap-3">
-        <h3 className="text-sm font-medium text-gray-400 uppercase tracking-wider">操作</h3>
+      <div className="w-56 shrink-0 border-l border-gray-200 dark:border-gray-800 flex flex-col p-4 gap-3">
+        <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">操作</h3>
 
         <button
           onClick={() => void submitQuery()}
@@ -130,7 +130,7 @@ export default function FiveColorQueryPanel() {
           onClick={removeLastSelection}
           disabled={!hasSelection}
           className="w-full py-2 rounded-lg text-sm font-medium transition-all
-            bg-gray-800 hover:bg-gray-700 text-gray-300 disabled:opacity-30 disabled:cursor-not-allowed"
+            bg-gray-200 hover:bg-gray-300 dark:bg-gray-800 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 disabled:opacity-30 disabled:cursor-not-allowed"
         >
           {t("five_color_undo")}
         </button>
@@ -139,7 +139,7 @@ export default function FiveColorQueryPanel() {
           onClick={reverseSelection}
           disabled={!isFull}
           className="w-full py-2 rounded-lg text-sm font-medium transition-all
-            bg-gray-800 hover:bg-gray-700 text-gray-300 disabled:opacity-30 disabled:cursor-not-allowed"
+            bg-gray-200 hover:bg-gray-300 dark:bg-gray-800 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 disabled:opacity-30 disabled:cursor-not-allowed"
         >
           {t("five_color_reverse")}
         </button>
@@ -148,35 +148,35 @@ export default function FiveColorQueryPanel() {
           onClick={clearSelection}
           disabled={!hasSelection}
           className="w-full py-2 rounded-lg text-sm font-medium transition-all
-            bg-gray-800 hover:bg-gray-700 text-red-400 disabled:opacity-30 disabled:cursor-not-allowed"
+            bg-gray-200 hover:bg-gray-300 dark:bg-gray-800 dark:hover:bg-gray-700 text-red-500 dark:text-red-400 disabled:opacity-30 disabled:cursor-not-allowed"
         >
           {t("five_color_clear")}
         </button>
 
         {/* 错误 */}
         {error && (
-          <div className="rounded-lg bg-red-900/30 border border-red-800 p-2.5 text-xs text-red-300 flex items-start gap-2">
+          <div className="rounded-lg bg-red-100 dark:bg-red-900/30 border border-red-300 dark:border-red-800 p-2.5 text-xs text-red-700 dark:text-red-300 flex items-start gap-2">
             <span className="flex-1">{error}</span>
-            <button onClick={clearError} className="text-red-400 hover:text-red-200 shrink-0">✕</button>
+            <button onClick={clearError} className="text-red-500 hover:text-red-700 dark:text-red-400 dark:hover:text-red-200 shrink-0">✕</button>
           </div>
         )}
 
         {/* 结果 */}
         {queryResult && queryResult.found && (
-          <div className="mt-auto flex flex-col gap-2 rounded-lg border border-gray-700 bg-gray-800/50 p-3">
+          <div className="mt-auto flex flex-col gap-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-100/50 dark:bg-gray-800/50 p-3">
             <div
               className="w-full h-16 rounded-lg shadow-lg"
               style={{ backgroundColor: queryResult.result_hex ?? undefined }}
             />
-            <p className="text-sm text-gray-200 font-mono">{queryResult.result_hex}</p>
-            <p className="text-xs text-gray-400">
+            <p className="text-sm text-gray-800 dark:text-gray-200 font-mono">{queryResult.result_hex}</p>
+            <p className="text-xs text-gray-500 dark:text-gray-400">
               RGB: {queryResult.result_rgb?.join(", ")}
             </p>
-            <p className="text-xs text-gray-500">
+            <p className="text-xs text-gray-400 dark:text-gray-500">
               {t("five_color_result_row")}: {queryResult.row_index}
             </p>
             {queryResult.source && (
-              <p className="text-xs text-gray-500">
+              <p className="text-xs text-gray-400 dark:text-gray-500">
                 {t("five_color_result_source")}: {queryResult.source}
               </p>
             )}
@@ -184,8 +184,8 @@ export default function FiveColorQueryPanel() {
         )}
 
         {queryResult && !queryResult.found && (
-          <div className="mt-auto rounded-lg border border-yellow-800 bg-yellow-900/20 p-3">
-            <p className="text-sm text-yellow-400">{t("five_color_not_found")}</p>
+          <div className="mt-auto rounded-lg border border-yellow-300 dark:border-yellow-800 bg-yellow-50 dark:bg-yellow-900/20 p-3">
+            <p className="text-sm text-yellow-700 dark:text-yellow-400">{t("five_color_not_found")}</p>
           </div>
         )}
       </div>

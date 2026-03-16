@@ -133,6 +133,12 @@ export default function FiveColorCanvas({ slices, resultHex, isLoading }: FiveCo
 
     ctx.clearRect(0, 0, w, h);
 
+    const isDark = document.documentElement.classList.contains("dark");
+    const textColor = isDark ? "#fff" : "#1f2937";
+    const mutedTextColor = isDark ? "rgba(255,255,255,0.3)" : "rgba(0,0,0,0.25)";
+    const emptySliceColor = isDark ? "#374151" : "#d1d5db";
+    const loadingTextColor = isDark ? "rgba(255,255,255,0.6)" : "rgba(0,0,0,0.5)";
+
     const centerX = w / 2 - SLICE_W / 2 - SLICE_SKEW / 2;
     const totalStackH = 5 * SLICE_H + 4 * SLICE_GAP;
     const startY = h * 0.3 - totalStackH / 2;
@@ -144,9 +150,9 @@ export default function FiveColorCanvas({ slices, resultHex, isLoading }: FiveCo
       // 空状态：绘制 5 个灰色占位薄片
       for (let i = 0; i < 5; i++) {
         const y = startY + i * (SLICE_H + SLICE_GAP);
-        drawSlice(ctx, centerX, y, SLICE_W, SLICE_H, SLICE_SKEW, CORNER_R, "#374151", 0.4, false);
+        drawSlice(ctx, centerX, y, SLICE_W, SLICE_H, SLICE_SKEW, CORNER_R, emptySliceColor, 0.4, false);
         // 序号
-        ctx.fillStyle = "rgba(255,255,255,0.3)";
+        ctx.fillStyle = mutedTextColor;
         ctx.font = "12px sans-serif";
         ctx.textAlign = "center";
         ctx.fillText(String(i + 1), centerX + SLICE_W / 2 + SLICE_SKEW / 2, y + SLICE_H / 2 + 4);
@@ -182,7 +188,7 @@ export default function FiveColorCanvas({ slices, resultHex, isLoading }: FiveCo
           const textAlpha = Math.min((circleProgress - 0.5) / 0.5, 1);
           ctx.save();
           ctx.globalAlpha = textAlpha;
-          ctx.fillStyle = "#fff";
+          ctx.fillStyle = textColor;
           ctx.font = "bold 14px sans-serif";
           ctx.textAlign = "center";
           ctx.fillText(resultHex, w / 2, startY + totalStackH / 2 + 70);
@@ -204,15 +210,15 @@ export default function FiveColorCanvas({ slices, resultHex, isLoading }: FiveCo
           // 颜色名
           ctx.save();
           ctx.globalAlpha = alpha;
-          ctx.fillStyle = "#fff";
+          ctx.fillStyle = textColor;
           ctx.font = "11px sans-serif";
           ctx.textAlign = "left";
           ctx.fillText(slices[i].name, centerX + SLICE_W + SLICE_SKEW + 12, y + SLICE_H / 2 + 4);
           ctx.restore();
         } else {
           // 空位
-          drawSlice(ctx, centerX, y, SLICE_W, SLICE_H, SLICE_SKEW, CORNER_R, "#374151", 0.25, false);
-          ctx.fillStyle = "rgba(255,255,255,0.2)";
+          drawSlice(ctx, centerX, y, SLICE_W, SLICE_H, SLICE_SKEW, CORNER_R, emptySliceColor, 0.25, false);
+          ctx.fillStyle = mutedTextColor;
           ctx.font = "12px sans-serif";
           ctx.textAlign = "center";
           ctx.fillText(String(i + 1), centerX + SLICE_W / 2 + SLICE_SKEW / 2, y + SLICE_H / 2 + 4);
@@ -223,7 +229,7 @@ export default function FiveColorCanvas({ slices, resultHex, isLoading }: FiveCo
     // Loading 指示
     if (isLoading) {
       ctx.save();
-      ctx.fillStyle = "rgba(255,255,255,0.6)";
+      ctx.fillStyle = loadingTextColor;
       ctx.font = "13px sans-serif";
       ctx.textAlign = "center";
       const dots = ".".repeat(Math.floor((Date.now() / 400) % 4));

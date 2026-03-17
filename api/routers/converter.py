@@ -18,7 +18,7 @@ from PIL import Image
 from pydantic import BaseModel
 
 from api.dependencies import get_file_registry, get_session_store, get_worker_pool
-from api.file_bridge import ndarray_to_png_bytes, pil_to_png_bytes, upload_to_tempfile
+from api.file_bridge import ensure_png_tempfile, ndarray_to_png_bytes, pil_to_png_bytes, upload_to_tempfile
 from api.file_registry import FileRegistry
 from api.schemas.converter import (
     BedSizeItem,
@@ -150,7 +150,7 @@ async def auto_detect_colors(
     target_width_mm: float = Form(60.0, description="目标打印宽度（毫米）"),
 ) -> AutoDetectColorsResponse:
     """分析图片，自动推荐最佳量化颜色数。"""
-    temp_path = await upload_to_tempfile(image)
+    temp_path = await ensure_png_tempfile(image)
     try:
         result = ImagePreprocessor.analyze_recommended_colors(temp_path, target_width_mm)
     except Exception as e:
@@ -187,7 +187,7 @@ async def crop_image(
         CropResponse: 包含裁剪后图片 URL 和尺寸
     """
     # 1. Save uploaded file to temp path
-    temp_path = await upload_to_tempfile(image)
+    temp_path = await ensure_png_tempfile(image)
 
     # 2. Validate that the file is a readable image
     try:
@@ -247,7 +247,7 @@ async def convert_preview(
         raise HTTPException(status_code=404, detail=f"LUT not found: {lut_name}")
 
     # 1. File upload (I/O, main thread)
-    temp_path = await upload_to_tempfile(image)
+    temp_path = await ensure_png_tempfile(image)
 
     # 2. CPU computation offloaded to process pool (only paths and scalars)
     try:
@@ -460,7 +460,7 @@ async def upload_heightmap(
     cache = _require_preview_cache(session_data)
 
     # 3. Read uploaded file and save to temp
-    temp_path = await upload_to_tempfile(heightmap)
+    temp_path = await ensure_png_tempfile(heightmap)
     store.register_temp_file(session_id, temp_path)
 
     # 4. Load and validate heightmap using HeightmapLoader
@@ -747,7 +747,7 @@ async def convert_batch(
         filename = upload_file.filename or "unknown"
         try:
             # 1. File upload (I/O, main thread)
-            temp_path = await upload_to_tempfile(upload_file)
+            temp_path = await ensure_png_tempfile(upload_file)
 
             # 2. CPU computation offloaded to process pool (only paths and scalars)
             result = await pool.submit(

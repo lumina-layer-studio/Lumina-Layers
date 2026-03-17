@@ -258,6 +258,13 @@ export function WidgetWorkspace({ children }: WidgetWorkspaceProps) {
       : (rightDockRef.current?.scrollTop ?? 0);
   }, []);
 
+  const lockDockHorizontalScroll = useCallback((edge: 'left' | 'right') => {
+    const dock = edge === 'left' ? leftDockRef.current : rightDockRef.current;
+    if (dock && dock.scrollLeft !== 0) {
+      dock.scrollLeft = 0;
+    }
+  }, []);
+
   const toEdgeContentY = useCallback(
     (globalDropY: number, targetEdge: 'left' | 'right') => {
       const sourceScrollTop = dragSourceRef.current?.scrollTop ?? 0;
@@ -320,12 +327,13 @@ export function WidgetWorkspace({ children }: WidgetWorkspaceProps) {
       const id = event.active.id as WidgetId;
       const widget = useWidgetStore.getState().widgets[id];
       const sourceEdge = widget?.snapEdge === 'right' ? 'right' : 'left';
+      lockDockHorizontalScroll(sourceEdge);
       dragSourceRef.current = { edge: sourceEdge, scrollTop: getDockScrollTop(sourceEdge) };
       setInsertPreview(null);
       isDraggingRef.current = true;
       setDragging(true, id);
     },
-    [setDragging, getDockScrollTop]
+    [setDragging, getDockScrollTop, lockDockHorizontalScroll]
   );
 
   const handleDragMove = useCallback(
@@ -334,6 +342,8 @@ export function WidgetWorkspace({ children }: WidgetWorkspaceProps) {
       const id = active.id as WidgetId;
       const widget = useWidgetStore.getState().widgets[id];
       if (widget) {
+        lockDockHorizontalScroll('left');
+        lockDockHorizontalScroll('right');
         const newX = widget.position.x + delta.x;
         const newY = widget.position.y + delta.y;
         dragPositionRef.current = { x: newX, y: newY };
@@ -364,7 +374,7 @@ export function WidgetWorkspace({ children }: WidgetWorkspaceProps) {
         });
       }
     },
-    [containerWidth, toEdgeContentY, computeInsertion, getDockScrollTop]
+    [containerWidth, toEdgeContentY, computeInsertion, getDockScrollTop, lockDockHorizontalScroll]
   );
 
   const handleDragEnd = useCallback(
@@ -460,7 +470,13 @@ export function WidgetWorkspace({ children }: WidgetWorkspaceProps) {
           <div
             ref={leftDockRef}
             className="dock-scrollbar absolute inset-y-0 left-0 z-30 overflow-y-auto overflow-x-hidden"
-            style={{ width: DOCK_SCROLL_WIDTH, pointerEvents: 'none' }}
+            onScroll={() => lockDockHorizontalScroll('left')}
+            style={{
+              width: DOCK_SCROLL_WIDTH,
+              pointerEvents: 'none',
+              overflowX: 'hidden',
+              overscrollBehaviorX: 'none',
+            }}
           >
             <div className="relative min-h-full" style={{ height: leftStackHeight }}>
               {leftRegistry.map((config) => {
@@ -485,7 +501,13 @@ export function WidgetWorkspace({ children }: WidgetWorkspaceProps) {
           <div
             ref={rightDockRef}
             className="dock-scrollbar absolute inset-y-0 right-0 z-30 overflow-y-auto overflow-x-hidden"
-            style={{ width: DOCK_SCROLL_WIDTH, pointerEvents: 'none' }}
+            onScroll={() => lockDockHorizontalScroll('right')}
+            style={{
+              width: DOCK_SCROLL_WIDTH,
+              pointerEvents: 'none',
+              overflowX: 'hidden',
+              overscrollBehaviorX: 'none',
+            }}
           >
             <div className="relative min-h-full" style={{ height: rightStackHeight }}>
               {rightRegistry.map((config) => {

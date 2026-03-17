@@ -109,7 +109,10 @@ class TestColorModeRouting:
                 },
             )
             assert response.status_code == 200
-            mock_fn.assert_called_once_with()
+            mock_fn.assert_called_once_with(
+                block_size_mm=5.0,
+                gap_mm=0.82,
+            )
 
 
 # =========================================================================

@@ -45,9 +45,12 @@ gap_values = st.floats(min_value=0.4, max_value=2.0, allow_nan=False, allow_infi
 # Mapping from color_mode enum value to the mock target path
 _MODE_TO_MOCK_TARGET: dict[str, str] = {
     "BW (Black & White)": "api.routers.calibration.generate_bw_calibration_board",
-    "4-Color": "api.routers.calibration.generate_calibration_board",
+    "4-Color (CMYW)": "api.routers.calibration.generate_calibration_board",
+    "4-Color (RYBW)": "api.routers.calibration.generate_calibration_board",
     "6-Color (Smart 1296)": "api.routers.calibration.generate_smart_board",
+    "6-Color (RYBW 1296)": "api.routers.calibration.generate_smart_board_rybw",
     "8-Color Max": "api.routers.calibration.generate_8color_batch_zip",
+    "5-Color Extended (1444)": "api.routers.calibration.generate_5color_extended_batch_zip",
 }
 
 

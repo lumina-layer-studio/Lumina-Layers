@@ -290,7 +290,8 @@ def test_multi_format_load_equivalence(data):
 # 所有可测试的颜色模式及其对应的 display_name 和 ColorSystem 配置
 _COLOR_MODE_CONFIGS = [
     ("BW (Black & White)", "/tmp/test_BW.npy", ColorSystem.BW),
-    ("4-Color", "/tmp/test_4-Color.npy", ColorSystem.RYBW),
+    ("4-Color (RYBW)", "/tmp/test_4-Color_RYBW.npy", ColorSystem.RYBW),
+    ("4-Color (CMYW)", "/tmp/test_4-Color_CMYW.npy", ColorSystem.CMYW),
     ("6-Color (Smart 1296)", "/tmp/test_6-Color.npy", ColorSystem.SIX_COLOR),
     ("5-Color Extended", "/tmp/test_5-Color.npy", ColorSystem.FIVE_COLOR_EXTENDED),
     ("8-Color Max", "/tmp/test_8-Color.npy", ColorSystem.EIGHT_COLOR),

@@ -142,8 +142,10 @@ def _make_calibration_client() -> TestClient:
 # Map each CalibrationColorMode to the core function path it invokes.
 _MODE_TO_CORE_FUNC = {
     CalibrationColorMode.BW: "api.routers.calibration.generate_bw_calibration_board",
-    CalibrationColorMode.FOUR_COLOR: "api.routers.calibration.generate_calibration_board",
+    CalibrationColorMode.FOUR_COLOR_CMYW: "api.routers.calibration.generate_calibration_board",
+    CalibrationColorMode.FOUR_COLOR_RYBW: "api.routers.calibration.generate_calibration_board",
     CalibrationColorMode.SIX_COLOR: "api.routers.calibration.generate_smart_board",
+    CalibrationColorMode.SIX_COLOR_RYBW: "api.routers.calibration.generate_smart_board_rybw",
     CalibrationColorMode.EIGHT_COLOR: "api.routers.calibration.generate_8color_batch_zip",
     CalibrationColorMode.FIVE_COLOR_EXT: "api.routers.calibration.generate_5color_extended_batch_zip",
 }

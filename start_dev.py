@@ -3,7 +3,7 @@
 """Lumina Studio 2.0 — 开发环境启动器（重构版）
 
 功能：
-  - 一键启动 Backend (FastAPI :8000) + Frontend (Vite :5173)
+  - 一键启动 Backend (FastAPI :8000) + Frontend (Vite :5174)
   - 支持一键重启（按 r + Enter）
   - 启动前自动清理残留端口占用
   - 彩色日志输出，区分 Backend / Frontend
@@ -25,13 +25,14 @@ import subprocess
 import sys
 import threading
 import time
+import re
 from typing import Optional
 
 ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
 FRONTEND_DIR = os.path.join(ROOT_DIR, "frontend")
 
 BACKEND_PORT = 8000
-FRONTEND_PORT = 5173
+FRONTEND_PORT = 5174
 POLL_INTERVAL = 0.3
 SHUTDOWN_TIMEOUT = 5
 MAX_AUTO_RESTART = 3  # 自动重启上限，防止死循环
@@ -118,11 +119,14 @@ class ServiceProcess:
         self.cmd = cmd
         self.cwd = cwd
         self.port = port
+        self.actual_port = port
+        self.port_detected = threading.Event()
         self.color = color
         self.proc: Optional[subprocess.Popen] = None
         self._reader_thread: Optional[threading.Thread] = None
 
     def start(self) -> None:
+        self.port_detected.clear()
         if is_port_in_use(self.port):
             log_sys(f"端口 {self.port} 被占用，正在清理...")
             kill_port(self.port)
@@ -137,7 +141,8 @@ class ServiceProcess:
             cwd=self.cwd,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
-            text=True,
+            encoding="utf-8",
+            errors="replace",
             bufsize=1,
             start_new_session=(os.name != "nt"),
             shell=(os.name == "nt" and self.name == "Frontend"),
@@ -157,6 +162,13 @@ class ServiceProcess:
                 line = line.rstrip("\n")
                 if line:
                     _log(self.name, self.color, line)
+                    if self.name == "Frontend" and not self.port_detected.is_set():
+                        # 去除 ANSI 转义序列以正确匹配端口
+                        clean_line = re.sub(r'\x1b\[[0-9;]*[a-zA-Z]', '', line)
+                        match = re.search(r"http://(?:localhost|127\.0\.0\.1|\[::1\]):(\d+)", clean_line)
+                        if match:
+                            self.actual_port = int(match.group(1))
+                            self.port_detected.set()
         except (ValueError, OSError):
             pass  # 进程已关闭
 
@@ -325,12 +337,19 @@ def main() -> None:
     # 启动服务
     manager.start_all()
 
+    frontend_svc = next((svc for svc in manager.services if svc.name == "Frontend"), None)
+    actual_frontend_port = FRONTEND_PORT
+    if frontend_svc:
+        # 等待最多 5 秒获取前端实际端口
+        if frontend_svc.port_detected.wait(timeout=5.0):
+            actual_frontend_port = frontend_svc.actual_port
+
     svc_names = " + ".join(svc.name for svc in manager.services)
     log_ok(f"{svc_names} 已启动")
     print(f"""
 {C.DIM}────────────────────────────────────────────{C.RESET}
   Backend:  {C.CYAN}http://localhost:{BACKEND_PORT}{C.RESET}
-  Frontend: {C.BLUE}http://localhost:{FRONTEND_PORT}{C.RESET}
+  Frontend: {C.BLUE}http://localhost:{actual_frontend_port}{C.RESET}
 {C.DIM}────────────────────────────────────────────{C.RESET}
   {C.GREEN}r{C.RESET}=重启  {C.GREEN}s{C.RESET}=状态  {C.GREEN}q{C.RESET}=退出  {C.GREEN}h{C.RESET}=帮助
 {C.DIM}────────────────────────────────────────────{C.RESET}

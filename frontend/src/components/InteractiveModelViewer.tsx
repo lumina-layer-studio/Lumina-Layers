@@ -4,6 +4,7 @@ import { useGLTF } from "@react-three/drei";
 import * as THREE from "three";
 import { useConverterStore } from "../stores/converterStore";
 import OutlineFrame3D from "./OutlineFrame3D";
+import CloisonneWire3D from "./CloisonneWire3D";
 
 // ========== Exported pure utility functions (testable without Three.js) ==========
 
@@ -49,6 +50,9 @@ export interface InteractiveModelViewerProps {
   structureMode?: string;  // "Double-sided" | "Single-sided"
   enableOutline?: boolean;   // 是否启用外轮廓预览，默认 false
   outlineWidth?: number;     // 外轮廓厚度 (mm)，默认 2.0
+  enableCloisonne?: boolean;   // 是否启用景泰蓝预览，默认 false
+  wireWidthMm?: number;        // 金丝宽度 (mm)，默认 0.4
+  wireHeightMm?: number;       // 金丝高度 (mm)，默认 0.1
 }
 
 /** Color layer thickness in mm (5 layers × 0.08mm). */
@@ -68,6 +72,9 @@ function InteractiveModelViewer({
   structureMode = "Double-sided",
   enableOutline = false,
   outlineWidth = 2.0,
+  enableCloisonne = false,
+  wireWidthMm = 0.4,
+  wireHeightMm = 0.1,
 }: InteractiveModelViewerProps) {
   const { scene } = useGLTF(url);
   const groupRef = useRef<THREE.Group>(null);
@@ -608,6 +615,15 @@ function InteractiveModelViewer({
         outlineWidth={outlineWidth}
         backingPlateMesh={backingPlateMesh}
         modelMaxZ={modelBounds?.maxZ ?? 0}
+      />
+      {/* 景泰蓝金色线条预览 */}
+      <CloisonneWire3D
+        enabled={enableCloisonne}
+        wireWidthMm={wireWidthMm}
+        wireHeightMm={wireHeightMm}
+        colorMeshes={colorMeshes}
+        backingPlateMesh={backingPlateMesh}
+        spacerThick={spacerThick}
       />
     </group>
   );

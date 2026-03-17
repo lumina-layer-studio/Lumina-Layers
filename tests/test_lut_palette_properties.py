@@ -475,6 +475,7 @@ def test_npz_metadata_roundtrip(data):
         assert "metadata_json" in npz, ".npz 文件应包含 metadata_json 键"
         assert "rgb" in npz, ".npz 文件应包含 rgb 键"
         assert "stacks" in npz, ".npz 文件应包含 stacks 键"
+        npz.close()
 
         loaded_rgb, loaded_stacks, loaded_metadata = LUTManager.load_lut_with_metadata(path)
 
@@ -517,7 +518,8 @@ def test_palette_length_matches_color_mode():
     # 所有需要测试的颜色模式及其对应的 ColorSystem 配置
     test_modes = [
         ("BW", "BW (Black & White)", "/tmp/test_BW.npy", ColorSystem.BW),
-        ("4-Color", "4-Color", "/tmp/test_4-Color.npy", ColorSystem.RYBW),
+        ("4-Color (RYBW)", "4-Color (RYBW)", "/tmp/test_4-Color_RYBW.npy", ColorSystem.RYBW),
+        ("4-Color (CMYW)", "4-Color (CMYW)", "/tmp/test_4-Color_CMYW.npy", ColorSystem.CMYW),
         ("6-Color", "6-Color (Smart 1296)", "/tmp/test_6-Color.npy", ColorSystem.SIX_COLOR),
         ("5-Color Extended", "5-Color Extended", "/tmp/test_5-Color.npy", ColorSystem.FIVE_COLOR_EXTENDED),
         ("8-Color", "8-Color Max", "/tmp/test_8-Color.npy", ColorSystem.EIGHT_COLOR),

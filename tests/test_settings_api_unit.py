@@ -39,7 +39,7 @@ class TestGetSettings:
         settings = data["settings"]
         assert settings["last_lut"] == ""
         assert settings["last_modeling_mode"] == "high-fidelity"
-        assert settings["last_color_mode"] == "4-Color"
+        assert settings["last_color_mode"] == "4-Color (RYBW)"
         assert settings["last_slicer"] == ""
         assert settings["palette_mode"] == "swatch"
         assert settings["enable_crop_modal"] is True

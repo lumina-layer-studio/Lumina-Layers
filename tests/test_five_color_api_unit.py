@@ -16,8 +16,17 @@ import pytest
 from fastapi.testclient import TestClient
 
 from api.app import create_app
+from api.routers.five_color import _engine_cache
 
 client = TestClient(create_app())
+
+
+@pytest.fixture(autouse=True)
+def _clear_engine_cache():
+    """Clear the five-color engine cache before each test."""
+    _engine_cache.clear()
+    yield
+    _engine_cache.clear()
 
 # ---------------------------------------------------------------------------
 # Synthetic data helpers

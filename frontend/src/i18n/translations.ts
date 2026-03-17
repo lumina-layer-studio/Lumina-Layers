@@ -1695,6 +1695,10 @@ export const translations: Record<string, Record<"zh" | "en", string>> = {
     zh: "金属丝高度",
     en: "Wire Height",
   },
+  cloisonne_wip: {
+    zh: "此功能正在施工中，部分效果可能不完整",
+    en: "This feature is under construction, some effects may be incomplete",
+  },
 
   // ==================== Coating Settings ====================
   coating_enable: {

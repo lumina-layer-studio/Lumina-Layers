@@ -154,7 +154,7 @@ class TestGenerateParameterCompleteness:
                 "structure_mode": "Single-sided",
                 "auto_bg": True,
                 "bg_tol": 60,
-                "color_mode": "4-Color",
+                "color_mode": "4-Color (RYBW)",
                 "modeling_mode": "high-fidelity",
                 "quantize_colors": 64,
                 "enable_cleanup": False,
@@ -218,7 +218,7 @@ class TestGenerateParameterCompleteness:
         assert submitted_params["structure_mode"] == "Single-sided"
         assert submitted_params["auto_bg"] is True
         assert submitted_params["bg_tol"] == 60
-        assert submitted_params["color_mode"] == "4-Color"
+        assert submitted_params["color_mode"] == "4-Color (RYBW)"
         assert submitted_params["quantize_colors"] == 64
         assert submitted_params["enable_cleanup"] is False
         assert submitted_params["separate_backing"] is True

@@ -88,6 +88,9 @@ function Scene3D({ modelUrl }: Scene3DProps) {
   const structureMode = useConverterStore((s) => s.structure_mode);
   const enableOutline = useConverterStore((s) => s.enable_outline);
   const outlineWidth = useConverterStore((s) => s.outline_width);
+  const enableCloisonne = useConverterStore((s) => s.enable_cloisonne);
+  const wireWidthMm = useConverterStore((s) => s.wire_width_mm);
+  const wireHeightMm = useConverterStore((s) => s.wire_height_mm);
 
   // Real-time scale dimensions
   const targetWidth = useConverterStore((s) => s.target_width_mm);
@@ -259,6 +262,9 @@ function Scene3D({ modelUrl }: Scene3DProps) {
               structureMode={structureMode}
               enableOutline={enableOutline}
               outlineWidth={outlineWidth}
+              enableCloisonne={enableCloisonne}
+              wireWidthMm={wireWidthMm}
+              wireHeightMm={wireHeightMm}
             />
           </Suspense>
         ) : null}

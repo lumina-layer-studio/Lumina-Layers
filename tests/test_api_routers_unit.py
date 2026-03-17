@@ -106,11 +106,10 @@ class TestConverterEndpoints:
         assert resp.status_code == 404
 
     def test_post_batch(self, client: TestClient) -> None:
-        """POST /api/convert/batch returns stub response."""
+        """POST /api/convert/batch without required files returns 422."""
         payload = {"params": {"lut_name": "test_lut"}}
         resp = client.post("/api/convert/batch", json=payload)
-        assert resp.status_code == 200
-        assert resp.json() == STUB_RESPONSE
+        assert resp.status_code == 422
 
     def test_post_replace_color(self, client: TestClient) -> None:
         """POST /api/convert/replace-color with unknown session returns 404."""
@@ -135,25 +134,23 @@ class TestExtractorEndpoints:
     """
 
     def test_post_extract(self, client: TestClient) -> None:
-        """POST /api/extractor/extract returns stub response."""
+        """POST /api/extractor/extract without required image returns 422."""
         payload = {
             "color_mode": "4-Color (RYBW)",
             "corner_points": [[0, 0], [100, 0], [100, 100], [0, 100]],
         }
         resp = client.post("/api/extractor/extract", json=payload)
-        assert resp.status_code == 200
-        assert resp.json() == STUB_RESPONSE
+        assert resp.status_code == 422
 
     def test_post_manual_fix(self, client: TestClient) -> None:
-        """POST /api/extractor/manual-fix returns stub response."""
+        """POST /api/extractor/manual-fix with nonexistent LUT returns 500."""
         payload = {
             "lut_path": "/tmp/test.npy",
             "cell_coord": [2, 3],
             "override_color": "#aabbcc",
         }
         resp = client.post("/api/extractor/manual-fix", json=payload)
-        assert resp.status_code == 200
-        assert resp.json() == STUB_RESPONSE
+        assert resp.status_code == 500
 
 
 class TestCalibrationEndpoints:
@@ -312,11 +309,8 @@ def st_calibration_generate_request(draw: st.DrawFn) -> Dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 # Endpoints still returning stub responses (Phase 1)
-STUB_ENDPOINT_TABLE: List[Tuple[str, st.SearchStrategy[Dict[str, Any]]]] = [
-    ("/api/convert/batch", st_convert_batch_request()),
-    ("/api/extractor/extract", st_extractor_extract_request()),
-    ("/api/extractor/manual-fix", st_extractor_manual_fix_request()),
-]
+# Note: All endpoints are now fully implemented, no stubs remain.
+STUB_ENDPOINT_TABLE: List[Tuple[str, st.SearchStrategy[Dict[str, Any]]]] = []
 
 # Integrated endpoints (Phase 2) — kept for reference
 ENDPOINT_TABLE: List[Tuple[str, st.SearchStrategy[Dict[str, Any]]]] = [
@@ -332,6 +326,7 @@ ENDPOINT_TABLE: List[Tuple[str, st.SearchStrategy[Dict[str, Any]]]] = [
 
 
 # **Validates: Requirements 6.7, 7.4, 8.3**
+@pytest.mark.skipif(len(STUB_ENDPOINT_TABLE) == 0, reason="No stub endpoints remain")
 @given(data=st.data())
 @settings(max_examples=100)
 def test_all_endpoints_return_stub_response(data: st.DataObject) -> None:

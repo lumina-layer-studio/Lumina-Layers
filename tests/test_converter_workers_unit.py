@@ -104,9 +104,9 @@ class TestParameterAnnotations:
             )
 
     def test_preview_has_expected_param_count(self) -> None:
-        """worker_generate_preview should have 9 parameters."""
+        """worker_generate_preview should have 12 parameters."""
         sig = inspect.signature(worker_generate_preview)
-        assert len(sig.parameters) == 9
+        assert len(sig.parameters) == 12
 
     def test_model_has_expected_param_count(self) -> None:
         """worker_generate_model should have 3 parameters."""
@@ -119,7 +119,7 @@ class TestParameterAnnotations:
         expected = {
             "image_path", "lut_path", "target_width_mm", "auto_bg",
             "bg_tol", "color_mode", "modeling_mode", "quantize_colors",
-            "enable_cleanup",
+            "enable_cleanup", "is_dark", "hue_weight", "chroma_gate",
         }
         assert set(sig.parameters.keys()) == expected
 

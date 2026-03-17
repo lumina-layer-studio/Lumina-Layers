@@ -270,6 +270,8 @@ async def convert_preview(
     except asyncio.TimeoutError:
         raise HTTPException(status_code=504, detail="Preview generation timed out")
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Preview generation failed: {str(e)}")
 
     # 3. Result processing (I/O + Session, main thread)

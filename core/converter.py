@@ -50,12 +50,15 @@ def extract_lut_available_colors(lut_path: str) -> List[dict]:
     """
     Extract all available colors from a LUT file.
     
-    This function loads a LUT file (.npy) and extracts all unique colors
-    that the printer can produce. These colors can be used as replacement
-    options in the color replacement feature.
+    This function loads a LUT file (.npy/.npz/.json) and extracts all unique
+    colors that the printer can produce. These colors can be used as
+    replacement options in the color replacement feature.
+    
+    Uses LUTManager.load_lut_with_metadata() as the unified loading entry
+    point to support all LUT formats consistently.
     
     Args:
-        lut_path: Path to the LUT file (.npy)
+        lut_path: Path to the LUT file (.npy/.npz/.json)
     
     Returns:
         List of dicts, each containing:
@@ -68,16 +71,17 @@ def extract_lut_available_colors(lut_path: str) -> List[dict]:
         return []
     
     try:
-        # Handle .npz (merged LUT) format
-        if lut_path.endswith('.npz'):
-            data = np.load(lut_path)
+        # 统一通过 LUTManager 加载，支持 .npy/.npz/.json 三种格式
+        if LUTManager is not None:
+            rgb, _stacks, _metadata = LUTManager.load_lut_with_metadata(lut_path)
+            measured_colors = rgb.reshape(-1, 3)
+        elif lut_path.endswith('.npz'):
+            data = np.load(lut_path, allow_pickle=False)
             measured_colors = data['rgb']
-            print(f"[LUT_COLORS] Loading merged LUT (.npz) with {len(measured_colors)} colors")
         else:
-            # Standard .npy format
             lut_grid = np.load(lut_path)
             measured_colors = lut_grid.reshape(-1, 3)
-            print(f"[LUT_COLORS] Loading standard LUT (.npy) with {len(measured_colors)} colors")
+        print(f"[LUT_COLORS] Loading LUT with {len(measured_colors)} colors from {lut_path}")
         
         # Get unique colors
         unique_colors = np.unique(measured_colors, axis=0)
@@ -4225,6 +4229,32 @@ def detect_lut_color_mode(lut_path):
                     print(f"[AUTO_DETECT] Detected 2-Color BW mode from .npz ({total_colors} colors)")
                     return "BW (Black & White)"
             print(f"[AUTO_DETECT] Detected Merged LUT (.npz format)")
+            return "Merged"
+        
+        # .json (Keyed JSON) format
+        if lut_path.endswith('.json'):
+            from utils.lut_manager import LUTManager
+            rgb, stacks, _meta = LUTManager.load_lut_with_metadata(lut_path)
+            total_colors = len(rgb) if rgb is not None else 0
+            layer_count = int(stacks.shape[1]) if isinstance(stacks, np.ndarray) and stacks.ndim == 2 else None
+            max_mat = int(np.max(stacks)) if isinstance(stacks, np.ndarray) and stacks.size > 0 else None
+            print(f"[AUTO_DETECT] JSON LUT: {total_colors} colors, layer_count={layer_count}, max_mat={max_mat}")
+            if total_colors >= 2400 and total_colors < 2600 and layer_count == 6 and (max_mat is None or max_mat <= 4):
+                print(f"[AUTO_DETECT] Detected 5-Color Extended mode from .json ({total_colors} colors)")
+                return "5-Color Extended"
+            if total_colors >= 2600 and total_colors <= 2800:
+                print(f"[AUTO_DETECT] Detected 8-Color mode from .json ({total_colors} colors)")
+                return "8-Color Max"
+            if total_colors >= 1200 and total_colors < 1400:
+                print(f"[AUTO_DETECT] Detected 6-Color mode from .json ({total_colors} colors)")
+                return "6-Color (Smart 1296)"
+            if total_colors >= 900 and total_colors < 1200:
+                print(f"[AUTO_DETECT] Detected 4-Color mode from .json ({total_colors} colors)")
+                return "4-Color"
+            if total_colors >= 30 and total_colors <= 35:
+                print(f"[AUTO_DETECT] Detected 2-Color BW mode from .json ({total_colors} colors)")
+                return "BW (Black & White)"
+            print(f"[AUTO_DETECT] Non-standard JSON LUT size ({total_colors} colors), detected as Merged")
             return "Merged"
         
         # Standard .npy format

@@ -69,20 +69,26 @@ def worker_generate_preview(
     mode_enum = ModelingMode(modeling_mode)
 
     print(f"[Worker preview] hue_weight={hue_weight}, chroma_gate={chroma_gate}, lut_path={lut_path}")
-    preview_img, cache_data, status_msg = generate_preview_cached(
-        image_path=image_path,
-        lut_path=lut_path,
-        target_width_mm=target_width_mm,
-        auto_bg=auto_bg,
-        bg_tol=bg_tol,
-        color_mode=color_mode,
-        modeling_mode=mode_enum,
-        quantize_colors=quantize_colors,
-        enable_cleanup=enable_cleanup,
-        is_dark=is_dark,
-        hue_weight=hue_weight,
-        chroma_gate=chroma_gate,
-    )
+    try:
+        preview_img, cache_data, status_msg = generate_preview_cached(
+            image_path=image_path,
+            lut_path=lut_path,
+            target_width_mm=target_width_mm,
+            auto_bg=auto_bg,
+            bg_tol=bg_tol,
+            color_mode=color_mode,
+            modeling_mode=mode_enum,
+            quantize_colors=quantize_colors,
+            enable_cleanup=enable_cleanup,
+            is_dark=is_dark,
+            hue_weight=hue_weight,
+            chroma_gate=chroma_gate,
+        )
+    except Exception as e:
+        import traceback
+        print(f"[Worker preview] ERROR: {e}")
+        traceback.print_exc()
+        raise
 
     result: dict = {
         "status_msg": status_msg,

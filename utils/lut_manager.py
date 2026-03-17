@@ -111,10 +111,23 @@ class LUTManager:
         lut_files = cls.get_all_lut_files()
         return list(lut_files.keys())
 
+    # JSON LUT 颜色数量 → 模式映射（与 lut_merger._SIZE_TO_MODE 对齐）
+    _JSON_SIZE_TO_MODE: dict[int, str] = {
+        32: "BW (Black & White)",
+        1024: "4-Color (CMYW)",
+        1296: "6-Color (Smart 1296)",
+        2468: "5-Color Extended",
+        2738: "8-Color Max",
+    }
+
     @staticmethod
     def infer_color_mode(display_name: str, file_path: str) -> str:
         """Infer color mode from LUT display name or file path.
         根据 LUT 显示名称或文件路径推断颜色模式。
+
+        - .npz → 直接返回 "Merged"
+        - .json → 轻量读取 JSON，按 entries 数量精确判断模式（自描述，不依赖文件名）
+        - .npy → 按文件名关键词匹配
 
         Args:
             display_name: LUT 显示名称。
@@ -123,13 +136,64 @@ class LUTManager:
         Returns:
             str: 推断出的颜色模式字符串，与前端 ColorMode 枚举对应。
         """
-        combined = (display_name + " " + file_path).upper()
+        ext = os.path.splitext(file_path)[1].lower()
 
         # .npz 文件通常是合并 LUT
-        if file_path.lower().endswith(".npz"):
+        if ext == ".npz":
             return "Merged"
 
-        # 按关键词匹配（优先级从高到低）
+        # .json (Keyed JSON) — 自描述格式，从内容判断模式
+        if ext == ".json":
+            return LUTManager._infer_color_mode_from_json(file_path)
+
+        # .npy — 无元数据，按文件名关键词匹配
+        return LUTManager._infer_color_mode_by_name(display_name, file_path)
+
+    @staticmethod
+    def _infer_color_mode_from_json(file_path: str) -> str:
+        """从 JSON 文件内容推断颜色模式（轻量读取，不做 numpy 运算）。
+
+        支持两种 JSON 格式：
+        - flat-list: 顶层为数组，len(data) 即 entries 数量
+        - keyed: 顶层为对象，len(data["entries"]) 即 entries 数量
+        """
+        try:
+            with open(file_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+        except Exception as e:
+            print(f"[LUT_MANAGER] Failed to read JSON for mode detection: {e}")
+            return "4-Color (CMYW)"
+
+        # 计算 entries 数量
+        if isinstance(data, list):
+            count = len(data)
+        elif isinstance(data, dict):
+            entries = data.get("entries", [])
+            count = len(entries)
+        else:
+            count = 0
+
+        # 精确匹配标准尺寸
+        mode = LUTManager._JSON_SIZE_TO_MODE.get(count)
+        if mode:
+            return mode
+
+        # BW 容差：30-36
+        if 30 <= count <= 36:
+            return "BW (Black & White)"
+
+        # 非标准尺寸 → Merged
+        if count > 0:
+            return "Merged"
+
+        # 空文件回退
+        return "4-Color (CMYW)"
+
+    @staticmethod
+    def _infer_color_mode_by_name(display_name: str, file_path: str) -> str:
+        """按文件名关键词匹配颜色模式（用于 .npy 等无元数据格式）。"""
+        combined = (display_name + " " + file_path).upper()
+
         if "8色" in combined or "8-COLOR" in combined or "8COLOR" in combined:
             return "8-Color Max"
         if "6色" in combined or "6-COLOR" in combined or "6COLOR" in combined:
@@ -146,14 +210,13 @@ class LUTManager:
             return "4-Color (RYBW)"
         if "4色" in combined or "4-COLOR" in combined or "4COLOR" in combined:
             return "4-Color (CMYW)"
-        # BW 单独检测：排除 RYBW/CMYW 已匹配的情况
+        # BW 单独检测
         if "黑白" in combined or "B&W" in combined:
             return "BW (Black & White)"
-        # 仅匹配独立的 "BW"（前后非字母），避免 RYBW 误匹配
         if re.search(r"(?<![A-Z])BW(?![A-Z])", combined):
             return "BW (Black & White)"
 
-        # 默认回退为 4-Color (CMYW)
+        # 默认回退
         return "4-Color (CMYW)"
     
     @classmethod
@@ -377,6 +440,11 @@ class LUTManager:
             metadata = cls.infer_default_metadata(display_name, file_path, 0)
             return rgb, None, metadata
 
+        # ── 兼容顶层为数组的旧格式 ──────────────────────────────────
+        # 格式: [{recipe: [...], rgb: [r,g,b], hex: "#...", source: "..."}, ...]
+        if isinstance(data, list):
+            return cls._load_keyed_json_flat_list(data, display_name, file_path)
+
         # Parse palette — support both object and legacy array format
         palette_raw = data.get("palette", {})
         palette: list[PaletteEntry] = []
@@ -484,6 +552,74 @@ class LUTManager:
         else:
             stacks = None
 
+        return rgb, stacks, metadata
+
+    @classmethod
+    def _load_keyed_json_flat_list(
+        cls,
+        data: list,
+        display_name: str,
+        file_path: str,
+    ) -> tuple[np.ndarray, np.ndarray | None, 'LUTMetadata']:
+        """Load a flat-list JSON LUT: [{recipe, rgb, hex, source}, ...].
+        加载顶层为数组的旧格式 JSON LUT 文件。
+        """
+        # 1. 收集所有出现的颜色名，构建 palette
+        color_names_ordered: list[str] = []
+        color_name_set: set[str] = set()
+        for entry in data:
+            if not isinstance(entry, dict):
+                continue
+            for v in entry.get("recipe", []):
+                if isinstance(v, str) and v != "Air" and v not in color_name_set:
+                    color_names_ordered.append(v)
+                    color_name_set.add(v)
+
+        palette = [
+            PaletteEntry(color=name, material="PLA Basic", hex_color=None)
+            for name in color_names_ordered
+        ]
+        name_to_idx: dict[str, int] = {name: i for i, name in enumerate(color_names_ordered)}
+
+        # 2. 解析 rgb + stacks
+        rgb_list: list[list[int]] = []
+        stacks_list: list[list[int]] = []
+        for entry in data:
+            if not isinstance(entry, dict):
+                continue
+            rgb_val = entry.get("rgb")
+            if rgb_val and len(rgb_val) == 3:
+                rgb_list.append([max(0, min(255, int(v))) for v in rgb_val])
+            else:
+                rgb_list.append([0, 0, 0])
+
+            recipe_raw = entry.get("recipe", [])
+            recipe_indices: list[int] = []
+            for v in recipe_raw:
+                if isinstance(v, str):
+                    if v == "Air":
+                        recipe_indices.append(-1)
+                    elif v in name_to_idx:
+                        recipe_indices.append(name_to_idx[v])
+                    else:
+                        recipe_indices.append(0)
+                else:
+                    recipe_indices.append(int(v))
+            stacks_list.append(recipe_indices)
+
+        rgb = np.array(rgb_list, dtype=np.uint8) if rgb_list else np.zeros((0, 3), dtype=np.uint8)
+        stacks = np.array(stacks_list, dtype=np.int32) if stacks_list else None
+
+        metadata = LUTMetadata(
+            palette=palette,
+            max_color_layers=PrinterConfig.COLOR_LAYERS,
+            layer_height_mm=PrinterConfig.LAYER_HEIGHT,
+            line_width_mm=PrinterConfig.NOZZLE_WIDTH,
+            base_layers=10,
+            base_channel_idx=0,
+            layer_order="Top2Bottom",
+        )
+        print(f"[LUT_MANAGER] Loaded flat-list JSON: {len(rgb_list)} entries, {len(palette)} colors from {file_path}")
         return rgb, stacks, metadata
 
     @classmethod

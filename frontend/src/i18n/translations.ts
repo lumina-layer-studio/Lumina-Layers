@@ -1801,6 +1801,166 @@ export const translations: Record<string, Record<"zh" | "en", string>> = {
     zh: "加载分层...",
     en: "Loading layers...",
   },
+  loading_witty_1: {
+    zh: "正在折叠高维空间...",
+    en: "Folding higher dimensions...",
+  },
+  loading_witty_2: {
+    zh: "正在为打印床预热赛博能量...",
+    en: "Preheating cyber energy for the print bed...",
+  },
+  loading_witty_3: {
+    zh: "正在提炼像素点中的灵魂...",
+    en: "Extracting souls from pixels...",
+  },
+  loading_witty_4: {
+    zh: "正在拼接彩色多边形...",
+    en: "Splicing colorful polygons...",
+  },
+  loading_witty_5: {
+    zh: "正在向打印机注入魔法...",
+    en: "Injecting magic into the printer...",
+  },
+  loading_witty_6: {
+    zh: "正在打磨 3MF 积木块...",
+    en: "Polishing 3MF building blocks...",
+  },
+  loading_witty_7: {
+    zh: "正在从异世界召唤材质...",
+    en: "Summoning textures from another world...",
+  },
+  loading_witty_8: {
+    zh: "正在计算光子跳跃轨道...",
+    en: "Calculating photon jump trajectories...",
+  },
+  loading_witty_9: {
+    zh: "不要走开，马上渲染完毕...",
+    en: "Hold on, rendering almost complete...",
+  },
+  loading_witty_10: {
+    zh: "请给您的喷嘴一点准备时间...",
+    en: "Please give your nozzle some time to prepare...",
+  },
+  loading_witty_11: {
+    zh: "正在校准多发混合挤出机...",
+    en: "Calibrating multi-color mixing extruder...",
+  },
+  loading_witty_12: {
+    zh: "正在清理虚拟构建底板...",
+    en: "Cleaning virtual build plate...",
+  },
+  loading_witty_13: {
+    zh: "正在熔化高精度的数字耗材...",
+    en: "Melting high-precision digital filament...",
+  },
+  loading_witty_14: {
+    zh: "正在挤出完美的底层裙边...",
+    en: "Extruding the perfect base skirt...",
+  },
+  loading_witty_15: {
+    zh: "正在规划 G 代码的最优路径...",
+    en: "Planning optimal G-code paths...",
+  },
+  loading_witty_16: {
+    zh: "正在调教步进电机的脾气...",
+    en: "Tuning the temper of stepper motors...",
+  },
+  loading_witty_17: {
+    zh: "正在精心填充网格内部...",
+    en: "Carefully infilling the mesh interior...",
+  },
+  loading_witty_18: {
+    zh: "预热虚拟喷头至 210°C 中...",
+    en: "Preheating virtual nozzle to 210°C...",
+  },
+  loading_witty_19: {
+    zh: "正在生成仿生有机树状支撑...",
+    en: "Generating bionic organic tree supports...",
+  },
+  loading_witty_20: {
+    zh: "正在抹平第一层讨厌的大象腿...",
+    en: "Smoothing the annoying first layer elephant foot...",
+  },
+  loading_witty_21: {
+    zh: "超级风扇启动，冷却悬垂区域...",
+    en: "Superfan activated, cooling overhangs...",
+  },
+  loading_witty_22: {
+    zh: "正在计算桥接的完美抛物线...",
+    en: "Calculating the perfect parabola for bridging...",
+  },
+  loading_witty_23: {
+    zh: "正在对层叠颜色进行魔法混合...",
+    en: "Magically blending stacked layers of colors...",
+  },
+  loading_witty_24: {
+    zh: "正在宇宙中寻找丢失的 Z 轴原点...",
+    en: "Searching the universe for the lost Z-axis origin...",
+  },
+  loading_witty_25: {
+    zh: "正在安抚打滑的挤出机齿轮...",
+    en: "Pacifying slipping extruder gears...",
+  },
+  loading_witty_26: {
+    zh: "为模型注入强防翘边附着力...",
+    en: "Injecting anti-warping adhesion into the model...",
+  },
+  loading_witty_27: {
+    zh: "正在用微波清理喷嘴上的拉丝...",
+    en: "Microwaving stringing residue off the nozzle...",
+  },
+  loading_witty_28: {
+    zh: "正在将您的灵感切片成一层层...",
+    en: "Slicing your inspiration layer by layer...",
+  },
+  loading_witty_29: {
+    zh: "为调色盘补充一点赛博朋克墨水...",
+    en: "Refilling cyberpunk ink for the palette...",
+  },
+  loading_witty_30: {
+    zh: "正在进行一百万次色彩碰撞测试...",
+    en: "Conducting an intense color collision test...",
+  },
+  loading_witty_31: {
+    zh: "正在把二维像素用力吹成三维...",
+    en: "Blowing 2D pixels vigorously into 3D...",
+  },
+  loading_witty_32: {
+    zh: "构建坚不可摧的 3D 底层网格中...",
+    en: "Building indestructible 3D base grids...",
+  },
+  loading_witty_33: {
+    zh: "熨平顶层，让它像镜面一样反光...",
+    en: "Ironing top layers until they shine like mirrors...",
+  },
+  loading_witty_34: {
+    zh: "正在从虚空深渊中召唤支撑材料...",
+    en: "Summoning support structures from the void abyss...",
+  },
+  loading_witty_35: {
+    zh: "正在解构庞大的彩色三维点云矩阵...",
+    en: "Deconstructing massive colorful 3D matrices...",
+  },
+  loading_witty_36: {
+    zh: "正在为立体模型注入引力波形...",
+    en: "Injecting gravitational waveforms into 3D models...",
+  },
+  loading_witty_37: {
+    zh: "调色中...不，是在重新发明颜色...",
+    en: "Calibrating colors... no, reinventing colors...",
+  },
+  loading_witty_38: {
+    zh: "正在为您一砖一瓦搭建浮雕世界...",
+    en: "Building a relief world for you, brick by brick...",
+  },
+  loading_witty_39: {
+    zh: "正在拿针线缝补模型的破损多边形...",
+    en: "Darning the broken polygons of your model...",
+  },
+  loading_witty_40: {
+    zh: "Lumina 工作室正在为您打印一个好心情...",
+    en: "Lumina Studio is printing a good mood for you...",
+  },
   action_layers_title: {
     zh: "分层预览",
     en: "Layer Preview",

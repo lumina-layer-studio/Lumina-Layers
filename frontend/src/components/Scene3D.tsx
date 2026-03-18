@@ -1,6 +1,6 @@
 import { Suspense, useRef, useState, useEffect, useCallback } from "react";
 import { Canvas, useThree } from "@react-three/fiber";
-import { OrbitControls, Environment } from "@react-three/drei";
+import { OrbitControls, Environment, Html } from "@react-three/drei";
 import { LIGHTING_CONFIG } from "./lightingConfig";
 import * as THREE from "three";
 import ModelViewer from "./ModelViewer";
@@ -11,6 +11,7 @@ import { useConverterStore } from "../stores/converterStore";
 import { computeScaleFactor } from "../utils/scaleUtils";
 import { useI18n } from "../i18n/context";
 import { useThemeConfig } from "../hooks/useThemeConfig";
+import { useWittyMessage } from "../hooks/useWittyMessage";
 
 interface Scene3DProps {
   modelUrl?: string;
@@ -76,13 +77,16 @@ function Scene3D({ modelUrl }: Scene3DProps) {
   const glRef = useRef<THREE.WebGLRenderer | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
 
+  // Witty Loading Messages (Req 1.4 & Enhancements)
+  const isLoading = useConverterStore((s) => s.isLoading);
+  const wittyMsg = useWittyMessage(2000, isLoading);
+
   const previewGlbUrl = useConverterStore((s) => s.previewGlbUrl);
   const colorRemapMap = useConverterStore((s) => s.colorRemapMap);
   const colorHeightMap = useConverterStore((s) => s.color_height_map);
   const selectedColor = useConverterStore((s) => s.selectedColor);
   const baseHeight = useConverterStore((s) => s.spacer_thick);
   const enableRelief = useConverterStore((s) => s.enable_relief);
-  const isLoading = useConverterStore((s) => s.isLoading);
   const setSelectedColor = useConverterStore((s) => s.setSelectedColor);
   const spacerThick = useConverterStore((s) => s.spacer_thick);
   const structureMode = useConverterStore((s) => s.structure_mode);
@@ -188,22 +192,7 @@ function Scene3D({ modelUrl }: Scene3DProps) {
         </button>
       </div>
 
-      {/* Loading indicator overlay (Req 1.4) */}
-      {isLoading && (
-        <div
-          className="absolute inset-0 z-20 flex items-center justify-center bg-black/40 backdrop-blur-sm"
-          data-testid="loading-overlay"
-        >
-          <div className="relative flex items-center justify-center p-4">
-            <div className="absolute h-20 w-20 rounded-full bg-blue-500/20 blur-xl animate-glow-pulse" />
-            <div className="relative flex h-20 w-20 items-center justify-center">
-              <div className="absolute inset-0 rounded-full border border-blue-500/30" />
-              <div className="absolute inset-0 rounded-full border-t-2 border-r-2 border-blue-400 rotate-45 opacity-80 animate-glow-spin" />
-              <div className="h-4 w-4 rounded-full bg-blue-400 shadow-[0_0_15px_rgba(96,165,250,0.8)]" />
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Loading indicator is now 3D-anchored inside Canvas */}
 
       <Canvas
         camera={{ position: [1.3, -129.08, 465.36], fov: 45 }}
@@ -291,6 +280,29 @@ function Scene3D({ modelUrl }: Scene3DProps) {
             positionPreset={loopPositionPreset}
             modelBounds={modelBounds}
           />
+        )}
+
+        {/* 3D-Anchored Loading & Witty Messages (Req 1.4) */}
+        {isLoading && (
+          <Html center position={[0, 0, 80]} zIndexRange={[100, 0]}>
+            <div
+              className="flex flex-col items-center justify-center gap-4 select-none pointer-events-none"
+              data-testid="loading-overlay"
+            >
+              <div className="relative flex items-center justify-center p-4">
+                <div className="absolute h-20 w-20 rgb-loader-glow animate-glow-pulse" />
+                <div className="relative flex h-20 w-20 items-center justify-center">
+                  <div className="absolute inset-0 rgb-loader-ring" />
+                  <div className="h-4 w-4 rounded-full bg-white shadow-[0_0_15px_rgba(255,255,255,0.8)]" />
+                </div>
+              </div>
+              <div className="px-4 py-2 rounded-full bg-gray-900/80 backdrop-blur-md border border-white/10 shadow-2xl">
+                <p className="text-sm font-medium text-white tracking-wide animate-pulse whitespace-nowrap">
+                  {wittyMsg}
+                </p>
+              </div>
+            </div>
+          </Html>
         )}
       </Canvas>
     </div>

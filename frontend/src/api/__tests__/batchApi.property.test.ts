@@ -45,6 +45,8 @@ const arbBatchConvertParams: fc.Arbitrary<BatchConvertParams> = fc.record({
   modeling_mode: fc.constantFrom("high-fidelity", "pixel", "vector"),
   quantize_colors: fc.integer({ min: 2, max: 256 }),
   enable_cleanup: fc.boolean(),
+  hue_weight: fc.double({ min: 0, max: 2 }),
+  chroma_gate: fc.integer({ min: 0, max: 50 }),
 });
 
 // ========== Tests ==========

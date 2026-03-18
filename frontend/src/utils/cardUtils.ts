@@ -3,8 +3,7 @@
  * LUT 颜色网格色卡模式布局工具函数。
  */
 
-/** Standard LUT color totals that support card mode. */
-const STANDARD_TOTALS = [32, 1024, 1296, 2738] as const;
+// (Removed unused STANDARD_TOTALS)
 
 /** 8-color LUT total requiring split display. */
 const EIGHT_COLOR_TOTAL = 2738;

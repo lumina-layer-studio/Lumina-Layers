@@ -18,7 +18,7 @@ vi.mock("../api/calibration", () => ({
 
 beforeEach(() => {
   useCalibrationStore.setState({
-    color_mode: CalibrationColorMode.FOUR_COLOR,
+    color_mode: CalibrationColorMode.FOUR_COLOR_CMYW,
     block_size: 5,
     gap: 0.82,
     backing: BackingColor.WHITE,

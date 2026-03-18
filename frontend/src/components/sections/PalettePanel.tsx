@@ -3,6 +3,7 @@ import type { PaletteEntry } from "../../api/types";
 import Slider from "../ui/Slider";
 import Button from "../ui/Button";
 import { useI18n } from "../../i18n/context";
+import { motion } from "framer-motion";
 
 // ========== PaletteItem ==========
 
@@ -43,7 +44,11 @@ function PaletteItem({
   // Compact block mode (no height slider)
   if (!showHeightSlider) {
     return (
-      <div
+      <motion.div
+        layout
+        whileHover={{ scale: 1.05, zIndex: 10 }}
+        whileTap={{ scale: 0.95 }}
+        transition={{ type: "spring", stiffness: 400, damping: 25 }}
         role="button"
         tabIndex={0}
         aria-label={`${t("lut_grid_color_label").replace("{hex}", entry.matched_hex)}，${entry.percentage.toFixed(1)}%${isRemapped ? `，${t("palette_replaced_label").replace("{hex}", `#${remappedHex}`)}` : ""}`}
@@ -55,10 +60,10 @@ function PaletteItem({
             onSelect();
           }
         }}
-        className={`flex flex-col items-center gap-0.5 rounded px-1 py-1 cursor-pointer transition-colors ${
+        className={`relative flex flex-col items-center gap-0.5 rounded px-1 py-1 cursor-pointer transition-colors border ${
           isSelected
-            ? "ring-2 ring-blue-500 bg-gray-700/60"
-            : "hover:bg-gray-700/40"
+            ? "border-yellow-400 shadow-[0_0_12px_rgba(250,204,21,0.6)] bg-gray-700/60 z-10"
+            : "border-transparent hover:bg-gray-700/40"
         }`}
         style={{ width: 52 }}
       >
@@ -70,13 +75,17 @@ function PaletteItem({
         <span className="text-[9px] text-gray-400 tabular-nums leading-none">
           {entry.percentage.toFixed(1)}%
         </span>
-      </div>
+      </motion.div>
     );
   }
 
   // Vertical compact block with height slider (relief mode, 3-col grid)
   return (
-    <div
+    <motion.div
+      layout
+      whileHover={{ scale: 1.02, zIndex: 10 }}
+      whileTap={{ scale: 0.98 }}
+      transition={{ type: "spring", stiffness: 400, damping: 25 }}
       role="button"
       tabIndex={0}
       aria-label={`${t("lut_grid_color_label").replace("{hex}", entry.matched_hex)}，${entry.percentage.toFixed(1)}%${isRemapped ? `，${t("palette_replaced_label").replace("{hex}", `#${remappedHex}`)}` : ""}`}
@@ -88,10 +97,10 @@ function PaletteItem({
           onSelect();
         }
       }}
-      className={`flex flex-col gap-1 rounded-md px-2 py-1.5 cursor-pointer transition-colors ${
+      className={`relative flex flex-col gap-1 rounded-md px-2 py-1.5 cursor-pointer transition-colors border ${
         isSelected
-          ? "ring-2 ring-blue-500 bg-gray-700/60"
-          : "hover:bg-gray-700/40"
+          ? "border-yellow-400 shadow-[0_0_12px_rgba(250,204,21,0.6)] bg-gray-700/60 z-10"
+          : "border-transparent hover:bg-gray-700/40"
       }`}
     >
       {/* Top row: swatch + percentage */}
@@ -120,7 +129,7 @@ function PaletteItem({
           onChange={onHeightChange}
         />
       </div>
-    </div>
+    </motion.div>
   );
 }
 

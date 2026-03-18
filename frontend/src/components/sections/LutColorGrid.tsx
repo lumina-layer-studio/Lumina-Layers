@@ -128,183 +128,9 @@ function ColorSwatch({
   );
 }
 
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 
-// ========== ColorSection ==========
-
-function ColorSection({
-  title,
-  titleColor,
-  colors,
-  selectedColor,
-  colorRemapMap,
-  favorites,
-  onColorClick,
-  onToggleFav,
-}: {
-  title: string;
-  titleColor: string;
-  colors: LutColorEntry[];
-  selectedColor: string | null;
-  colorRemapMap: Record<string, string>;
-  favorites: Set<string>;
-  onColorClick: (hex: string) => void;
-  onToggleFav: (hex: string) => void;
-}) {
-  if (colors.length === 0) return null;
-  return (
-    <div>
-      <p className="text-[10px] font-semibold mb-0.5" style={{ color: titleColor }}>
-        {title}
-      </p>
-      <motion.div layout className="grid grid-cols-10 gap-0.5">
-        {colors.map((c) => {
-          const hexNoHash = c.hex.replace("#", "");
-          const isTarget = selectedColor
-            ? colorRemapMap[selectedColor] === hexNoHash
-            : false;
-          return (
-            <motion.div
-              layout
-              initial={{ scale: 0.8, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.8, opacity: 0 }}
-              transition={{ type: "spring", bounce: 0, duration: 0.4 }}
-              key={c.hex}
-            >
-              <ColorSwatch
-                entry={c}
-                isTarget={isTarget}
-                isFav={favorites.has(c.hex.toLowerCase())}
-                onClick={() => onColorClick(c.hex)}
-                onDoubleClick={() => onToggleFav(c.hex)}
-              />
-            </motion.div>
-          );
-        })}
-      </motion.div>
-    </div>
-  );
-}
-
-// ========== Card Mode Components ==========
-
-function CardSection({
-  colors,
-  cols,
-  title,
-  selectedColor,
-  colorRemapMap,
-  onColorClick,
-}: {
-  colors: LutColorEntry[];
-  cols: number;
-  title?: string;
-  selectedColor: string | null;
-  colorRemapMap: Record<string, string>;
-  onColorClick: (hex: string) => void;
-}) {
-  return (
-    <div>
-      {title && (
-        <p className="text-[10px] font-semibold mb-1 text-gray-300">{title}</p>
-      )}
-      <div
-        className="border border-gray-600 rounded p-1 overflow-auto"
-        style={{
-          display: "grid",
-          gridTemplateColumns: `repeat(${cols}, 18px)`,
-          gap: "1px",
-        }}
-      >
-        {colors.map((c, i) => {
-          const hexNoHash = c.hex.replace("#", "");
-          const isTarget = selectedColor
-            ? colorRemapMap[selectedColor] === hexNoHash
-            : false;
-          const [r, g, b] = c.rgb;
-          return (
-            <button
-              key={`${c.hex}-${i}`}
-              type="button"
-              title={`${c.hex} · RGB(${r}, ${g}, ${b})`}
-              onClick={() => onColorClick(c.hex)}
-              className={`cursor-pointer border ${
-                isTarget
-                  ? "border-yellow-500 ring-1 ring-yellow-500"
-                  : "border-transparent hover:border-gray-400"
-              }`}
-              style={{
-                width: 18,
-                height: 18,
-                backgroundColor: c.hex,
-              }}
-            />
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-function CardGrid({
-  lutColors,
-  colorMode,
-  selectedColor,
-  colorRemapMap,
-  onColorClick,
-}: {
-  lutColors: LutColorEntry[];
-  colorMode: string;
-  selectedColor: string | null;
-  colorRemapMap: Record<string, string>;
-  onColorClick: (hex: string) => void;
-}) {
-  const { t } = useI18n();
-  const total = lutColors.length;
-  const isEightColor = colorMode === "8-Color Max";
-
-  if (isEightColor && total > 1) {
-    const half = Math.floor(total / 2);
-    const colsA = Math.ceil(Math.sqrt(half));
-    const colsB = Math.ceil(Math.sqrt(total - half));
-    return (
-      <div className="flex gap-3 overflow-auto" style={{ maxHeight: "28vh" }}>
-        <CardSection
-          colors={lutColors.slice(0, half)}
-          cols={colsA}
-          title={t("lut_grid_card_a")}
-          selectedColor={selectedColor}
-          colorRemapMap={colorRemapMap}
-          onColorClick={onColorClick}
-        />
-        <CardSection
-          colors={lutColors.slice(half)}
-          cols={colsB}
-          title={t("lut_grid_card_b")}
-          selectedColor={selectedColor}
-          colorRemapMap={colorRemapMap}
-          onColorClick={onColorClick}
-        />
-      </div>
-    );
-  }
-
-  const cols = Math.ceil(Math.sqrt(total));
-  return (
-    <div className="overflow-auto" style={{ maxHeight: "28vh" }}>
-      <CardSection
-        colors={lutColors}
-        cols={cols}
-        selectedColor={selectedColor}
-        colorRemapMap={colorRemapMap}
-        onColorClick={onColorClick}
-      />
-    </div>
-  );
-}
-
-// ========== Main Component ==========
+// Card mode helpers have been moved inside the main component to access state variables.
 
 export default function LutColorGrid() {
   const { t } = useI18n();
@@ -345,6 +171,121 @@ export default function LutColorGrid() {
     () => isCardModeAvailable(colorMode),
     [colorMode],
   );
+
+  // --- Local Components ---
+  const CardSection = ({
+    colors,
+    cols,
+    title,
+    selectedColor,
+    colorRemapMap,
+    onColorClick,
+  }: {
+    colors: LutColorEntry[];
+    cols: number;
+    title?: string;
+    selectedColor: string | null;
+    colorRemapMap: Record<string, string>;
+    onColorClick: (hex: string) => void;
+  }) => {
+    return (
+      <div>
+        {title && (
+          <p className="text-[10px] font-semibold mb-1 text-gray-300">{title}</p>
+        )}
+        <div
+          className="border border-gray-600 rounded p-1 overflow-auto"
+          style={{
+            display: "grid",
+            gridTemplateColumns: `repeat(${cols}, 18px)`,
+            gap: "1px",
+          }}
+        >
+          {colors.map((c, i) => {
+            const hexNoHash = c.hex.replace("#", "");
+            const isTarget = selectedColor
+              ? colorRemapMap[selectedColor] === hexNoHash
+              : false;
+            const [r, g, b] = c.rgb;
+            return (
+              <button
+                key={`${c.hex}-${i}`}
+                type="button"
+                title={`${c.hex} · RGB(${r}, ${g}, ${b})`}
+                onClick={() => onColorClick(c.hex)}
+                className={`cursor-pointer border ${
+                  isTarget
+                    ? "border-yellow-500 ring-1 ring-yellow-500"
+                    : "border-transparent hover:border-gray-400"
+                }`}
+                style={{
+                  width: 18,
+                  height: 18,
+                  backgroundColor: c.hex,
+                }}
+              />
+            );
+          })}
+        </div>
+      </div>
+    );
+  };
+
+  const CardGrid = ({
+    lutColors,
+    colorMode,
+    selectedColor,
+    colorRemapMap,
+    onColorClick,
+  }: {
+    lutColors: LutColorEntry[];
+    colorMode: string;
+    selectedColor: string | null;
+    colorRemapMap: Record<string, string>;
+    onColorClick: (hex: string) => void;
+  }) => {
+    const total = lutColors.length;
+    const isEightColor = colorMode === "8-Color Max";
+
+    if (isEightColor && total > 1) {
+      const half = Math.floor(total / 2);
+      const colsA = Math.ceil(Math.sqrt(half));
+      const colsB = Math.ceil(Math.sqrt(total - half));
+      return (
+        <div className="flex gap-3 overflow-auto" style={{ maxHeight: "28vh" }}>
+          <CardSection
+            colors={lutColors.slice(0, half)}
+            cols={colsA}
+            title={t("lut_grid_card_a")}
+            selectedColor={selectedColor}
+            colorRemapMap={colorRemapMap}
+            onColorClick={onColorClick}
+          />
+          <CardSection
+            colors={lutColors.slice(half)}
+            cols={colsB}
+            title={t("lut_grid_card_b")}
+            selectedColor={selectedColor}
+            colorRemapMap={colorRemapMap}
+            onColorClick={onColorClick}
+          />
+        </div>
+      );
+    }
+
+    const cols = Math.ceil(Math.sqrt(total));
+    return (
+      <div className="overflow-auto" style={{ maxHeight: "28vh" }}>
+        <CardSection
+          colors={lutColors}
+          cols={cols}
+          selectedColor={selectedColor}
+          colorRemapMap={colorRemapMap}
+          onColorClick={onColorClick}
+        />
+      </div>
+    );
+  };
 
   // Load favorites when LUT changes
   useEffect(() => {
@@ -625,26 +566,76 @@ export default function LutColorGrid() {
                   </motion.div>
                 </div>
               )}
-              <ColorSection
-                title={`${t("lut_grid_used_in_image")} (${usedColors.length})`}
-                titleColor="#4CAF50"
-                colors={usedColors}
-                selectedColor={selectedColor}
-                colorRemapMap={colorRemapMap}
-                favorites={favorites}
-                onColorClick={handleColorClick}
-                onToggleFav={toggleFav}
-              />
-              <ColorSection
-                title={usedColors.length > 0 ? `${t("lut_grid_other_available")} (${otherColors.length})` : `${t("lut_grid_all_available")} (${otherColors.length})`}
-                titleColor="#888"
-                colors={otherColors}
-                selectedColor={selectedColor}
-                colorRemapMap={colorRemapMap}
-                favorites={favorites}
-                onColorClick={handleColorClick}
-                onToggleFav={toggleFav}
-              />
+              {/* Used Colors Section */}
+              {usedColors.length > 0 && (
+                <div>
+                  <p className="text-[10px] font-semibold mb-0.5" style={{ color: "#4CAF50" }}>
+                    {t("lut_grid_used_in_image")} ({usedColors.length})
+                  </p>
+                  <motion.div layout className="grid grid-cols-10 gap-0.5" style={{ position: "relative" }}>
+                    <AnimatePresence>
+                      {usedColors.map((c) => {
+                        const hexNoHash = c.hex.replace("#", "");
+                        const isTarget = selectedColor ? colorRemapMap[selectedColor] === hexNoHash : false;
+                        return (
+                          <motion.div
+                            layout
+                            initial={{ scale: 0.8, opacity: 0 }}
+                            animate={{ scale: 1, opacity: 1 }}
+                            exit={{ scale: 0.8, opacity: 0 }}
+                            transition={{ type: "spring", bounce: 0, duration: 0.4 }}
+                            key={c.hex}
+                          >
+                            <ColorSwatch
+                              entry={c}
+                              isTarget={isTarget}
+                              isFav={favorites.has(c.hex.toLowerCase())}
+                              onClick={() => handleColorClick(c.hex)}
+                              onDoubleClick={() => toggleFav(c.hex)}
+                            />
+                          </motion.div>
+                        );
+                      })}
+                    </AnimatePresence>
+                  </motion.div>
+                </div>
+              )}
+
+              {/* Other/All Colors Section */}
+              {otherColors.length > 0 && (
+                <div>
+                  <p className="text-[10px] font-semibold mb-0.5" style={{ color: "#888" }}>
+                    {usedColors.length > 0 ? `${t("lut_grid_other_available")} (${otherColors.length})` : `${t("lut_grid_all_available")} (${otherColors.length})`}
+                  </p>
+                  <motion.div layout className="grid grid-cols-10 gap-0.5" style={{ position: "relative" }}>
+                    <AnimatePresence>
+                      {otherColors.map((c) => {
+                        const hexNoHash = c.hex.replace("#", "");
+                        const isTarget = selectedColor ? colorRemapMap[selectedColor] === hexNoHash : false;
+                        return (
+                          <motion.div
+                            layout
+                            initial={{ scale: 0.8, opacity: 0 }}
+                            animate={{ scale: 1, opacity: 1 }}
+                            exit={{ scale: 0.8, opacity: 0 }}
+                            transition={{ type: "spring", bounce: 0, duration: 0.4 }}
+                            key={c.hex}
+                          >
+                            <ColorSwatch
+                              entry={c}
+                              isTarget={isTarget}
+                              isFav={favorites.has(c.hex.toLowerCase())}
+                              onClick={() => handleColorClick(c.hex)}
+                              onDoubleClick={() => toggleFav(c.hex)}
+                            />
+                          </motion.div>
+                        );
+                      })}
+                    </AnimatePresence>
+                  </motion.div>
+                </div>
+              )}
+
               {visibleCount === 0 && (
                 <p className="text-xs text-gray-500 py-1">{t("lut_grid_no_match")}</p>
               )}

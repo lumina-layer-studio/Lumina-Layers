@@ -8,6 +8,7 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import { I18nProvider } from '../i18n/context';
 import { WidgetHeader } from '../components/widget/WidgetHeader';
 import { useWidgetStore, DEFAULT_LAYOUT } from '../stores/widgetStore';
+import { computeDockBottomInset } from '../utils/widgetUtils';
 
 /** Render helper that wraps component in I18nProvider. */
 function renderWithI18n(ui: React.ReactElement) {
@@ -167,6 +168,26 @@ describe('Widget Workspace Unit Tests', () => {
       const state = useWidgetStore.getState();
       expect(state.widgets.extractor.position).toEqual(originalExtractorPosition);
       expect(state.widgets['basic-settings'].position).toEqual({ x: 64, y: 96 });
+    });
+  });
+
+  describe('Dock avoidance geometry', () => {
+    it('returns blocker height when workstation horizontally overlaps dock', () => {
+      const inset = computeDockBottomInset(
+        { left: 0, right: 366 },
+        { left: 200, right: 1700, height: 212 }
+      );
+
+      expect(inset).toBe(212);
+    });
+
+    it('returns zero when workstation does not horizontally overlap dock', () => {
+      const inset = computeDockBottomInset(
+        { left: 0, right: 366 },
+        { left: 500, right: 1800, height: 212 }
+      );
+
+      expect(inset).toBe(0);
     });
   });
 });

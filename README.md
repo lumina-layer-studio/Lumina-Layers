@@ -432,10 +432,19 @@ Special thanks to:
 
 ## Contributors
 
-<a href="https://github.com/MOVIBALE/Lumina-Layers/graphs/contributors">
-  <img src="https://contrib.rocks/image?repo=MOVIBALE/Lumina-Layers" />
-</a>
+<p align="center">
+  <a href="https://github.com/MOVIBALE/Lumina-Layers/graphs/contributors">
+    <img
+      src="https://contrib.rocks/image?repo=MOVIBALE/Lumina-Layers"
+      alt="Contributors avatar wall"
+    />
+  </a>
+</p>
 
-Made with ❤️ by all our contributors!
+<p align="center">
+  Made with ❤️ by all our contributors.<br />
+  Avatar wall by <a href="https://contrib.rocks">contrib.rocks</a>.
+</p>
+
 
 ⭐ Star this repo if you find it useful!

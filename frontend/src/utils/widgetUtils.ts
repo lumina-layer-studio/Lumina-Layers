@@ -21,6 +21,28 @@ export const SNAP_THRESHOLD = 48;
 /** Gap between stacked widgets in pixels. (堆叠 Widget 间距，单位像素) */
 export const STACK_GAP = 8;
 
+type HorizontalRect = Pick<DOMRectReadOnly, 'left' | 'right'>;
+type BlockerRect = Pick<DOMRectReadOnly, 'left' | 'right' | 'height'>;
+
+/**
+ * Compute bottom inset for a dock when a bottom-fixed blocker overlaps it horizontally.
+ * 当底部固定面板与侧边 Dock 在水平方向重叠时，计算需要避让的底部高度。
+ *
+ * Args:
+ *   dockRect (HorizontalRect): Horizontal bounds of the dock. (Dock 的水平边界)
+ *   blockerRect (BlockerRect): Horizontal bounds and height of the blocker. (遮挡面板的水平边界与高度)
+ *
+ * Returns:
+ *   number: Bottom inset in pixels. Returns 0 when no overlap exists. (底部避让高度；无重叠时返回 0)
+ */
+export function computeDockBottomInset(
+  dockRect: HorizontalRect,
+  blockerRect: BlockerRect
+): number {
+  const overlapWidth = Math.min(dockRect.right, blockerRect.right) - Math.max(dockRect.left, blockerRect.left);
+  return overlapWidth > 0 ? Math.max(0, Math.ceil(blockerRect.height)) : 0;
+}
+
 /**
  * Clamp widget position within container bounds.
  * 将 Widget 位置约束在容器边界内。

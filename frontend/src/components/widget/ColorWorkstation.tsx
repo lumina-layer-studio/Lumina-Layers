@@ -8,6 +8,7 @@
  * 使用 framer-motion 实现平滑的展开/收起高度过渡动画。
  */
 
+import { forwardRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useWidgetStore } from '../../stores/widgetStore';
 import { useSettingsStore } from '../../stores/settingsStore';
@@ -16,7 +17,8 @@ import PalettePanel from '../sections/PalettePanel';
 import LutColorGrid from '../sections/LutColorGrid';
 
 /** Title bar height in pixels. (标题栏高度) */
-const TITLE_BAR_HEIGHT = 32;
+export const COLOR_WORKSTATION_TITLE_BAR_HEIGHT = 32;
+export const COLOR_WORKSTATION_WIDTH = 1500;
 
 /** ChevronUp SVG icon. (向上箭头图标) */
 function ChevronUp() {
@@ -36,7 +38,7 @@ function ChevronDown() {
   );
 }
 
-export default function ColorWorkstation() {
+const ColorWorkstation = forwardRef<HTMLDivElement>(function ColorWorkstation(_, ref) {
   const activeTab = useWidgetStore((s) => s.activeTab);
   const collapsed = useWidgetStore((s) => s.colorWorkstationCollapsed);
   const toggle = useWidgetStore((s) => s.toggleColorWorkstation);
@@ -48,12 +50,14 @@ export default function ColorWorkstation() {
 
   return (
     <div
+      ref={ref}
+      data-testid="color-workstation"
       style={{
         position: 'fixed',
         bottom: 0,
         left: '50%',
         transform: 'translateX(-50%)',
-        width: 1500,
+        width: COLOR_WORKSTATION_WIDTH,
         zIndex: 35,
       }}
     >
@@ -69,7 +73,7 @@ export default function ColorWorkstation() {
           type="button"
           onClick={toggle}
           className="flex items-center justify-between w-full px-4 cursor-pointer select-none text-gray-700 dark:text-gray-200 hover:bg-white/20 dark:hover:bg-gray-700/30 transition-colors"
-          style={{ height: TITLE_BAR_HEIGHT }}
+          style={{ height: COLOR_WORKSTATION_TITLE_BAR_HEIGHT }}
           aria-expanded={!collapsed}
           aria-label={t('widget.colorWorkstation')}
         >
@@ -107,4 +111,6 @@ export default function ColorWorkstation() {
       </div>
     </div>
   );
-}
+});
+
+export default ColorWorkstation;

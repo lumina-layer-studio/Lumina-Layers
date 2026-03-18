@@ -23,7 +23,7 @@ import type {
 } from '@dnd-kit/core';
 import { useWidgetStore, WIDGET_REGISTRY, TAB_WIDGET_MAP } from '../../stores/widgetStore';
 import { useSettingsStore } from '../../stores/settingsStore';
-import { computeSnap, computeStackPositions, WIDGET_WIDTH, COLLAPSED_HEIGHT, EXPANDED_HEIGHT, STACK_GAP } from '../../utils/widgetUtils';
+import { computeSnap, computeStackPositions, computeDockBottomInset, WIDGET_WIDTH, COLLAPSED_HEIGHT, EXPANDED_HEIGHT, STACK_GAP } from '../../utils/widgetUtils';
 import { WidgetPanel } from './WidgetPanel';
 import { SnapGuides } from './SnapGuides';
 import BasicSettingsWidgetContent from './BasicSettingsWidgetContent';
@@ -100,11 +100,13 @@ export function WidgetWorkspace({ children }: WidgetWorkspaceProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const leftDockRef = useRef<HTMLDivElement>(null);
   const rightDockRef = useRef<HTMLDivElement>(null);
+  const colorWorkstationRef = useRef<HTMLDivElement>(null);
   const dragPositionRef = useRef<{ x: number; y: number } | null>(null);
   const dragSourceRef = useRef<{ edge: 'left' | 'right'; scrollTop: number } | null>(null);
   const insertPreviewRef = useRef<InsertPreviewState | null>(null);
   const isDraggingRef = useRef(false);
   const [containerWidth, setContainerWidth] = useState(0);
+  const [dockBottomInsets, setDockBottomInsets] = useState({ left: 0, right: 0 });
   const activeWidgetMap = useMemo(() => {
     const map = new Map(activeWidgets.map((widget) => [widget.id, widget]));
     return map;
@@ -242,6 +244,49 @@ export function WidgetWorkspace({ children }: WidgetWorkspaceProps) {
     window.addEventListener('resize', updateWidth);
     return () => window.removeEventListener('resize', updateWidth);
   }, []);
+
+  // Only recompute dock avoidance on viewport or workstation size changes.
+  // This keeps the runtime cost low while still responding to real overlap.
+  useEffect(() => {
+    let frameId = 0;
+
+    const updateDockInsets = () => {
+      const workstationRect = colorWorkstationRef.current?.getBoundingClientRect();
+      const leftDockRect = leftDockRef.current?.getBoundingClientRect();
+      const rightDockRect = rightDockRef.current?.getBoundingClientRect();
+
+      const nextInsets = {
+        left: workstationRect && leftDockRect ? computeDockBottomInset(leftDockRect, workstationRect) : 0,
+        right: workstationRect && rightDockRect ? computeDockBottomInset(rightDockRect, workstationRect) : 0,
+      };
+
+      setDockBottomInsets((prev) =>
+        prev.left === nextInsets.left && prev.right === nextInsets.right ? prev : nextInsets
+      );
+    };
+
+    const scheduleDockInsetUpdate = () => {
+      if (frameId) {
+        cancelAnimationFrame(frameId);
+      }
+      frameId = requestAnimationFrame(updateDockInsets);
+    };
+
+    scheduleDockInsetUpdate();
+    window.addEventListener('resize', scheduleDockInsetUpdate);
+
+    const observer = new ResizeObserver(scheduleDockInsetUpdate);
+    if (containerRef.current) observer.observe(containerRef.current);
+    if (colorWorkstationRef.current) observer.observe(colorWorkstationRef.current);
+
+    return () => {
+      if (frameId) {
+        cancelAnimationFrame(frameId);
+      }
+      window.removeEventListener('resize', scheduleDockInsetUpdate);
+      observer.disconnect();
+    };
+  }, [activeTab]);
 
   const leftRegistry = activeRegistry.filter((config) => activeWidgetMap.get(config.id)?.snapEdge !== 'right');
   const rightRegistry = activeRegistry.filter((config) => activeWidgetMap.get(config.id)?.snapEdge === 'right');
@@ -478,8 +523,10 @@ export function WidgetWorkspace({ children }: WidgetWorkspaceProps) {
             ref={leftDockRef}
             className="dock-scrollbar absolute inset-y-0 left-0 z-30 overflow-y-auto overflow-x-hidden"
             onScroll={() => lockDockHorizontalScroll('left')}
+            data-testid="left-dock"
             style={{
               width: DOCK_SCROLL_WIDTH,
+              bottom: dockBottomInsets.left,
               pointerEvents: 'none',
               overflowX: 'hidden',
               overscrollBehaviorX: 'none',
@@ -507,8 +554,10 @@ export function WidgetWorkspace({ children }: WidgetWorkspaceProps) {
             ref={rightDockRef}
             className="dock-scrollbar absolute inset-y-0 right-0 z-30 overflow-y-auto overflow-x-hidden"
             onScroll={() => lockDockHorizontalScroll('right')}
+            data-testid="right-dock"
             style={{
               width: DOCK_SCROLL_WIDTH,
+              bottom: dockBottomInsets.right,
               pointerEvents: 'none',
               overflowX: 'hidden',
               overscrollBehaviorX: 'none',
@@ -547,7 +596,7 @@ export function WidgetWorkspace({ children }: WidgetWorkspaceProps) {
         </div>
       </DndContext>
       {/* ColorWorkstation — fixed bottom center, outside DnD system (z-35) */}
-      <ColorWorkstation />
+      <ColorWorkstation ref={colorWorkstationRef} />
     </>
   );
 }

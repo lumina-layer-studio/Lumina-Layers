@@ -1,3 +1,5 @@
+import { cx } from "./panelPrimitives";
+
 interface DropdownProps {
   label: string;
   value: string;
@@ -16,13 +18,18 @@ export default function Dropdown({
   placeholder,
 }: DropdownProps) {
   return (
-    <div className="flex flex-col gap-1">
-      <label className="text-sm text-gray-700 dark:text-gray-300">{label}</label>
+    <div className="flex flex-col gap-1.5">
+      <label className="text-sm font-medium text-slate-700 dark:text-slate-200">{label}</label>
       <select
         value={value}
         disabled={disabled}
         onChange={(e) => onChange(e.target.value)}
-        className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white/90 dark:bg-gray-800/90 px-3 py-1.5 text-sm text-gray-800 dark:text-gray-200 outline-none transition-all duration-200 hover:shadow-sm hover:border-gray-400 dark:hover:border-gray-500 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/40 disabled:opacity-40 disabled:cursor-not-allowed"
+        className={cx(
+          "min-h-11 w-full rounded-2xl border px-3.5 py-2 text-sm text-slate-800 outline-none transition-all duration-200",
+          "border-slate-200/80 bg-white/82 shadow-[var(--shadow-control)] hover:border-slate-300 hover:shadow-[var(--shadow-control-hover)]",
+          "focus:border-blue-400 focus:ring-4 focus:ring-[var(--focus-ring)] dark:border-slate-700/80 dark:bg-slate-900/72 dark:text-slate-100 dark:hover:border-slate-600",
+          "disabled:cursor-not-allowed disabled:opacity-45"
+        )}
       >
         {placeholder && (
           <option value="" disabled>

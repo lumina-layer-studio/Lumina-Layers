@@ -1197,6 +1197,14 @@ export const translations: Record<string, Record<"zh" | "en", string>> = {
     zh: "系统设置",
     en: "System Settings",
   },
+  "settings.desc": {
+    zh: "管理缓存与运行时偏好设置，保持工作区轻量且稳定。",
+    en: "Manage cache and runtime preferences to keep the workspace light and stable.",
+  },
+  "settings.maintenance": {
+    zh: "维护",
+    en: "Maintenance",
+  },
   "settings.fancy_loading": {
     zh: "粒子特效加载动画",
     en: "Particle Effect Loading",
@@ -1217,6 +1225,10 @@ export const translations: Record<string, Record<"zh" | "en", string>> = {
     zh: "清除后端临时文件和缓存数据",
     en: "Clear backend temporary files and cached data",
   },
+  "settings.cache_summary": {
+    zh: "快速回收后端临时文件，适合在长时间使用后整理空间。",
+    en: "Reclaim backend temporary files after longer sessions to tidy up storage.",
+  },
   "settings.cache_cleared": {
     zh: "缓存已清除",
     en: "Cache cleared",
@@ -1224,6 +1236,10 @@ export const translations: Record<string, Record<"zh" | "en", string>> = {
   "settings.cache_cleared_detail": {
     zh: "已清除 {count} 个临时文件，释放 {size}",
     en: "Cleared {count} temporary files, freed {size}",
+  },
+  "settings.cache_clear_failed": {
+    zh: "清除缓存失败，请稍后重试",
+    en: "Failed to clear cache. Please try again.",
   },
   "loading.generating": {
     zh: "模型生成中...",
@@ -1340,6 +1356,14 @@ export const translations: Record<string, Record<"zh" | "en", string>> = {
   lut_manager_close_error: {
     zh: "关闭错误",
     en: "Close error",
+  },
+  lut_manager_mode_summary: {
+    zh: "模式 {mode} · 共 {count} 色",
+    en: "Mode {mode} · {count} colors",
+  },
+  lut_manager_selected_count: {
+    zh: "已选择 {count} 个副 LUT",
+    en: "{count} secondary LUTs selected",
   },
 
   // ==================== About View ====================
@@ -1462,6 +1486,14 @@ export const translations: Record<string, Record<"zh" | "en", string>> = {
   ext_page_not_extracted: {
     zh: "未提取",
     en: "Not extracted",
+  },
+  ext_page_1_label: {
+    zh: "第 1 页",
+    en: "Page 1",
+  },
+  ext_page_2_label: {
+    zh: "第 2 页",
+    en: "Page 2",
   },
   ext_download_lut: {
     zh: "下载 LUT 文件 (.json)",
@@ -2291,6 +2323,22 @@ export const translations: Record<string, Record<"zh" | "en", string>> = {
     zh: "LUT 选择",
     en: "LUT Selection",
   },
+  five_color_title: {
+    zh: "五色配方查询",
+    en: "Five-Color Recipe Query",
+  },
+  five_color_desc: {
+    zh: "从基础色中选出 5 种颜色并查询叠层后的结果色，适合快速验证色片配方。",
+    en: "Pick five base colors and query the blended result to validate layered color recipes quickly.",
+  },
+  five_color_palette: {
+    zh: "基础色板",
+    en: "Base Palette",
+  },
+  five_color_actions: {
+    zh: "操作",
+    en: "Actions",
+  },
   five_color_lut_placeholder: {
     zh: "请选择 LUT",
     en: "Select LUT",
@@ -2310,6 +2358,10 @@ export const translations: Record<string, Record<"zh" | "en", string>> = {
   five_color_query: {
     zh: "查询",
     en: "Query",
+  },
+  five_color_query_loading: {
+    zh: "查询中...",
+    en: "Querying...",
   },
   five_color_close_error: {
     zh: "关闭错误",
@@ -2335,9 +2387,17 @@ export const translations: Record<string, Record<"zh" | "en", string>> = {
     zh: "结果颜色 {hex}",
     en: "Result color {hex}",
   },
+  five_color_result_panel: {
+    zh: "查询结果",
+    en: "Query Result",
+  },
   five_color_not_found: {
     zh: "未找到匹配",
     en: "No match found",
+  },
+  five_color_selection_progress: {
+    zh: "已选择 {count}/{total} 种颜色，请继续完成配方。",
+    en: "{count}/{total} colors selected. Keep building the recipe.",
   },
   five_color_selected: {
     zh: "已选颜色 {n}: {name}",

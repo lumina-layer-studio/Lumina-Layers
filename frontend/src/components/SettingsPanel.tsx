@@ -8,6 +8,7 @@ import { useState } from "react";
 import { useI18n } from "../i18n/context";
 import { clearCache } from "../api/system";
 import Button from "./ui/Button";
+import { PanelIntro, StatusBanner, centeredPanelClass, sectionCardClass } from "./ui/panelPrimitives";
 
 export default function SettingsPanel() {
   const { t } = useI18n();
@@ -29,7 +30,7 @@ export default function SettingsPanel() {
           .replace("{size}", size)
       );
     } catch {
-      setCacheResult("Error");
+      setCacheResult(t("settings.cache_clear_failed"));
     } finally {
       setClearing(false);
     }
@@ -41,20 +42,27 @@ export default function SettingsPanel() {
       animate={{ opacity: 1, y: 0 }}
       transition={{ type: "spring", damping: 25, stiffness: 300 }}
       data-testid="settings-panel"
-      className="w-full max-w-2xl mx-auto h-full overflow-y-auto bg-white/85 dark:bg-gray-900/85 backdrop-blur-2xl border border-white/40 dark:border-gray-700/50 shadow-2xl rounded-2xl p-6 flex flex-col gap-6"
+      className={`${centeredPanelClass} flex max-w-3xl flex-col gap-5`}
     >
-      <h3 className="text-base font-semibold text-gray-900 dark:text-gray-100">
-        {t("settings.title")}
-      </h3>
+      <PanelIntro
+        eyebrow={t("tab.settings")}
+        title={t("settings.title")}
+        description={t("settings.desc")}
+      />
 
-      {/* Cache Management / 缓存管理 */}
-      <section className="flex flex-col gap-2">
-        <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300">
-          {t("settings.cache")}
-        </h4>
-        <p className="text-xs text-gray-500 dark:text-gray-400">
-          {t("settings.clear_cache_desc")}
+      <section className={`${sectionCardClass} flex flex-col gap-4`}>
+        <div>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-500 dark:text-slate-400">
+            {t("settings.maintenance")}
+          </p>
+          <h4 className="mt-1 text-base font-semibold text-slate-900 dark:text-slate-50">
+            {t("settings.cache")}
+          </h4>
+        </div>
+        <p className="text-sm text-slate-500 dark:text-slate-400">
+          {t("settings.cache_summary")}
         </p>
+        <StatusBanner tone="info">{t("settings.clear_cache_desc")}</StatusBanner>
         <div className="flex items-center gap-3">
           <Button
             label={t("settings.clear_cache")}
@@ -62,12 +70,12 @@ export default function SettingsPanel() {
             loading={clearing}
             variant="secondary"
           />
-          {cacheResult && (
-            <span className="text-sm text-green-600 dark:text-green-400">
-              {cacheResult}
-            </span>
-          )}
         </div>
+        {cacheResult && (
+          <StatusBanner tone={cacheResult === t("settings.cache_clear_failed") ? "error" : "success"}>
+            {cacheResult}
+          </StatusBanner>
+        )}
       </section>
     </motion.aside>
   );

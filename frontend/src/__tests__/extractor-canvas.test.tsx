@@ -233,7 +233,7 @@ describe("ExtractorCanvas 单元测试", () => {
     render(<ExtractorCanvas />);
     const hint = screen.getByTestId("corner-hint");
     expect(hint.textContent).toContain("定位完成");
-    expect(hint).toHaveClass("text-green-500");
+    expect(hint).toHaveClass("text-emerald-600");
   });
 
   it("renders warp_view and lut_preview images when extraction results exist", async () => {
@@ -282,7 +282,7 @@ describe("ExtractorCanvas 单元测试", () => {
     render(<ExtractorCanvas />);
     const hint = screen.getByTestId("corner-hint");
     // 1 corner placed, so hint should show the 2nd corner label
-    expect(hint.textContent).toContain("青色 (右上) / Cyan (TR)");
-    expect(hint).toHaveClass("text-yellow-500");
+    expect(hint.textContent).toContain("右上");
+    expect(hint).toHaveClass("text-amber-600");
   });
 });

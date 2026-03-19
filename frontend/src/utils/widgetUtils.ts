@@ -21,8 +21,7 @@ export const SNAP_THRESHOLD = 48;
 /** Gap between stacked widgets in pixels. (堆叠 Widget 间距，单位像素) */
 export const STACK_GAP = 8;
 
-type HorizontalRect = Pick<DOMRectReadOnly, 'left' | 'right'>;
-type BlockerRect = Pick<DOMRectReadOnly, 'left' | 'right' | 'height'>;
+type RectBounds = Pick<DOMRectReadOnly, 'top' | 'bottom' | 'left' | 'right'>;
 
 /**
  * Compute bottom inset for a dock when a bottom-fixed blocker overlaps it horizontally.
@@ -36,11 +35,28 @@ type BlockerRect = Pick<DOMRectReadOnly, 'left' | 'right' | 'height'>;
  *   number: Bottom inset in pixels. Returns 0 when no overlap exists. (底部避让高度；无重叠时返回 0)
  */
 export function computeDockBottomInset(
-  dockRect: HorizontalRect,
-  blockerRect: BlockerRect
+  dockRect: RectBounds,
+  blockerRect: RectBounds
 ): number {
   const overlapWidth = Math.min(dockRect.right, blockerRect.right) - Math.max(dockRect.left, blockerRect.left);
-  return overlapWidth > 0 ? Math.max(0, Math.ceil(blockerRect.height)) : 0;
+  if (overlapWidth <= 0) return 0;
+
+  const overlapHeight = Math.min(dockRect.bottom, blockerRect.bottom) - Math.max(dockRect.top, blockerRect.top);
+  return overlapHeight > 0 ? Math.max(0, Math.ceil(overlapHeight)) : 0;
+}
+
+/**
+ * Resolve the effective widget height using measured DOM height when available.
+ * 使用可用的真实 DOM 高度解析 Widget 的有效高度。
+ */
+export function resolveWidgetHeight(
+  widget: Pick<WidgetLayoutState, 'id' | 'collapsed' | 'expandedHeight'>,
+  measuredHeights?: Map<WidgetId, number>
+): number {
+  if (widget.collapsed) {
+    return COLLAPSED_HEIGHT;
+  }
+  return measuredHeights?.get(widget.id) ?? widget.expandedHeight ?? EXPANDED_HEIGHT;
 }
 
 /**
@@ -97,6 +113,7 @@ export function computeSnap(
   widgetTop: number,
   _threshold: number = SNAP_THRESHOLD
 ): SnapResult {
+  void _threshold;
   // Always snap: pick the nearest edge based on widget center position
   const widgetCenter = (widgetLeft + widgetRight) / 2;
   const snapToLeft = widgetCenter <= containerWidth / 2;
@@ -142,10 +159,7 @@ export function computeStackPositions(
 
   for (const widget of sorted) {
     positions.set(widget.id, { x, y: currentY });
-    const height = widget.collapsed
-      ? COLLAPSED_HEIGHT
-      : (measuredHeights?.get(widget.id) ?? widget.expandedHeight ?? EXPANDED_HEIGHT);
-    currentY += height + STACK_GAP;
+    currentY += resolveWidgetHeight(widget, measuredHeights) + STACK_GAP;
   }
 
   return positions;

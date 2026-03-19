@@ -23,7 +23,7 @@ import type {
 } from '@dnd-kit/core';
 import { useWidgetStore, WIDGET_REGISTRY, TAB_WIDGET_MAP } from '../../stores/widgetStore';
 import { useSettingsStore } from '../../stores/settingsStore';
-import { computeSnap, computeStackPositions, computeDockBottomInset, WIDGET_WIDTH, COLLAPSED_HEIGHT, EXPANDED_HEIGHT, STACK_GAP } from '../../utils/widgetUtils';
+import { computeSnap, computeStackPositions, computeDockBottomInset, resolveWidgetHeight, WIDGET_WIDTH, COLLAPSED_HEIGHT, STACK_GAP } from '../../utils/widgetUtils';
 import { WidgetPanel } from './WidgetPanel';
 import { SnapGuides } from './SnapGuides';
 import BasicSettingsWidgetContent from './BasicSettingsWidgetContent';
@@ -86,6 +86,7 @@ export function WidgetWorkspace({ children }: WidgetWorkspaceProps) {
   const isDragging = useWidgetStore((s) => s.isDragging);
   const activeWidgetId = useWidgetStore((s) => s.activeWidgetId);
   const activeTab = useWidgetStore((s) => s.activeTab);
+  const colorWorkstationCollapsed = useWidgetStore((s) => s.colorWorkstationCollapsed);
 
   // Always render converter widgets only; other tabs have their own
   // page-level rendering and do not use the widget dock system.
@@ -118,6 +119,21 @@ export function WidgetWorkspace({ children }: WidgetWorkspaceProps) {
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
   );
 
+  const measureWidgetHeights = useCallback(() => {
+    const container = containerRef.current;
+    const measuredHeights = new Map<WidgetId, number>();
+    if (!container) return measuredHeights;
+
+    for (const id of TAB_WIDGET_MAP['converter']) {
+      const el = container.querySelector(`[data-widget-id="${id}"]`) as HTMLElement | null;
+      if (el) {
+        measuredHeights.set(id, el.offsetHeight);
+      }
+    }
+
+    return measuredHeights;
+  }, []);
+
   // Responsive resize handler — clamp free widgets & recalculate stacks
   // Only processes widgets belonging to the current active tab to prevent
   // cross-tab stacking that pushes widgets off-screen.
@@ -139,13 +155,7 @@ export function WidgetWorkspace({ children }: WidgetWorkspaceProps) {
       });
 
     // Measure actual DOM heights for expanded widgets
-    const measuredHeights = new Map<WidgetId, number>();
-    for (const id of currentTabIds) {
-      const el = container.querySelector(`[data-widget-id="${id}"]`) as HTMLElement | null;
-      if (el) {
-        measuredHeights.set(id, el.offsetHeight);
-      }
-    }
+    const measuredHeights = measureWidgetHeights();
 
     // Recalculate stack positions for snapped widgets in current tab only
     // Re-read state after potential snapToEdge calls
@@ -162,7 +172,7 @@ export function WidgetWorkspace({ children }: WidgetWorkspaceProps) {
       }
     }
     setWidgetPositions(batchedPositions);
-  }, [setWidgetPositions]);
+  }, [measureWidgetHeights, setWidgetPositions]);
 
   // ResizeObserver to detect widget content height changes (e.g. checkbox
   // toggling extra options) and recalculate stack positions automatically.
@@ -276,6 +286,8 @@ export function WidgetWorkspace({ children }: WidgetWorkspaceProps) {
 
     scheduleDockInsetUpdate();
     window.addEventListener('resize', scheduleDockInsetUpdate);
+    window.addEventListener('widget-animation-complete', scheduleDockInsetUpdate);
+    window.addEventListener('color-workstation-geometry-change', scheduleDockInsetUpdate);
 
     const observer = new ResizeObserver(scheduleDockInsetUpdate);
     if (containerRef.current) observer.observe(containerRef.current);
@@ -286,9 +298,11 @@ export function WidgetWorkspace({ children }: WidgetWorkspaceProps) {
         cancelAnimationFrame(frameId);
       }
       window.removeEventListener('resize', scheduleDockInsetUpdate);
+      window.removeEventListener('widget-animation-complete', scheduleDockInsetUpdate);
+      window.removeEventListener('color-workstation-geometry-change', scheduleDockInsetUpdate);
       observer.disconnect();
     };
-  }, [activeTab]);
+  }, [activeTab, colorWorkstationCollapsed]);
 
   const leftRegistry = activeRegistry.filter((config) => activeWidgetMap.get(config.id)?.snapEdge !== 'right');
   const rightRegistry = activeRegistry.filter((config) => activeWidgetMap.get(config.id)?.snapEdge === 'right');
@@ -298,8 +312,9 @@ export function WidgetWorkspace({ children }: WidgetWorkspaceProps) {
       .filter((w) => w.visible && (edge === 'left' ? w.snapEdge !== 'right' : w.snapEdge === 'right'))
       .sort((a, b) => a.stackOrder - b.stackOrder);
     if (stackWidgets.length === 0) return 0;
+    const measuredHeights = measureWidgetHeights();
     return stackWidgets.reduce(
-      (sum, w) => sum + (w.collapsed ? COLLAPSED_HEIGHT : (w.expandedHeight ?? EXPANDED_HEIGHT)) + STACK_GAP,
+      (sum, w) => sum + resolveWidgetHeight(w, measuredHeights) + STACK_GAP,
       STACK_GAP
     );
   };
@@ -334,6 +349,7 @@ export function WidgetWorkspace({ children }: WidgetWorkspaceProps) {
     (draggedId: WidgetId, targetEdge: 'left' | 'right', contentDropY: number) => {
       const state = useWidgetStore.getState();
       const currentTabIds = TAB_WIDGET_MAP['converter'];
+      const measuredHeights = measureWidgetHeights();
       const siblings = currentTabIds
         .map((wid) => state.widgets[wid])
         .filter((w) => w.snapEdge === targetEdge && w.visible && w.id !== draggedId)
@@ -348,9 +364,7 @@ export function WidgetWorkspace({ children }: WidgetWorkspaceProps) {
       let accY = STACK_GAP;
 
       for (const sibling of siblings) {
-        const h = sibling.collapsed
-          ? COLLAPSED_HEIGHT
-          : (sibling.expandedHeight ?? EXPANDED_HEIGHT);
+        const h = resolveWidgetHeight(sibling, measuredHeights);
         const midpoint = accY + h / 2;
 
         if (!inserted && contentDropY < midpoint) {
@@ -375,7 +389,7 @@ export function WidgetWorkspace({ children }: WidgetWorkspaceProps) {
 
       return { orderedIds, lineY, upperId, lowerId };
     },
-    []
+    [measureWidgetHeights]
   );
 
   const handleDragStart = useCallback(

@@ -42,10 +42,10 @@ function drawSlice(
   ctx.save();
   ctx.globalAlpha = alpha;
   if (shadow) {
-    ctx.shadowColor = "rgba(0,0,0,0.3)";
-    ctx.shadowBlur = 8;
-    ctx.shadowOffsetX = 2;
-    ctx.shadowOffsetY = 4;
+    ctx.shadowColor = "rgba(0,0,0,0.22)";
+    ctx.shadowBlur = 4;
+    ctx.shadowOffsetX = 1;
+    ctx.shadowOffsetY = 2;
   }
 
   // 平行四边形四个角
@@ -94,7 +94,7 @@ function drawResultCircle(
 
   // 外发光
   ctx.shadowColor = color;
-  ctx.shadowBlur = 20 * progress;
+  ctx.shadowBlur = 10 * progress;
   ctx.beginPath();
   ctx.arc(cx, cy, r, 0, Math.PI * 2);
   ctx.fillStyle = color;

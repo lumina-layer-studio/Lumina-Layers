@@ -3,7 +3,7 @@ import type { PaletteEntry } from "../../api/types";
 import Slider from "../ui/Slider";
 import Button from "../ui/Button";
 import { useI18n } from "../../i18n/context";
-import { motion } from "framer-motion";
+import { cx, mutedSectionCardClass, sectionCardClass } from "../ui/panelPrimitives";
 
 // ========== PaletteItem ==========
 
@@ -44,11 +44,7 @@ function PaletteItem({
   // Compact block mode (no height slider)
   if (!showHeightSlider) {
     return (
-      <motion.div
-        layout
-        whileHover={{ scale: 1.05, zIndex: 10 }}
-        whileTap={{ scale: 0.95 }}
-        transition={{ type: "spring", stiffness: 400, damping: 25 }}
+      <div
         role="button"
         tabIndex={0}
         aria-label={`${t("lut_grid_color_label").replace("{hex}", entry.matched_hex)}，${entry.percentage.toFixed(1)}%${isRemapped ? `，${t("palette_replaced_label").replace("{hex}", `#${remappedHex}`)}` : ""}`}
@@ -60,32 +56,27 @@ function PaletteItem({
             onSelect();
           }
         }}
-        className={`relative flex flex-col items-center gap-0.5 rounded px-1 py-1 cursor-pointer transition-colors border ${
+        className={`relative flex w-[56px] flex-col items-center gap-1 rounded-2xl px-1.5 py-2 cursor-pointer border transition-all duration-150 ${
           isSelected
-            ? "border-yellow-400 shadow-[0_0_12px_rgba(250,204,21,0.6)] bg-gray-700/60 z-10"
-            : "border-transparent hover:bg-gray-700/40"
+            ? "border-amber-400 bg-amber-400/10 ring-2 ring-amber-400/30"
+            : "border-transparent bg-white/35 hover:border-slate-300 hover:bg-white/65 dark:bg-slate-900/35 dark:hover:border-slate-600 dark:hover:bg-slate-900/75"
         }`}
-        style={{ width: 52 }}
       >
         <span
-          className={`inline-block w-6 h-6 rounded ${borderClass}`}
+          className={`inline-block h-7 w-7 rounded-xl ${borderClass}`}
           style={{ backgroundColor: `#${displayHex}` }}
           title={`#${displayHex}`}
         />
-        <span className="text-[9px] text-gray-400 tabular-nums leading-none">
+        <span className="text-[10px] tabular-nums leading-none text-slate-500 dark:text-slate-400">
           {entry.percentage.toFixed(1)}%
         </span>
-      </motion.div>
+      </div>
     );
   }
 
   // Vertical compact block with height slider (relief mode, 3-col grid)
   return (
-    <motion.div
-      layout
-      whileHover={{ scale: 1.02, zIndex: 10 }}
-      whileTap={{ scale: 0.98 }}
-      transition={{ type: "spring", stiffness: 400, damping: 25 }}
+    <div
       role="button"
       tabIndex={0}
       aria-label={`${t("lut_grid_color_label").replace("{hex}", entry.matched_hex)}，${entry.percentage.toFixed(1)}%${isRemapped ? `，${t("palette_replaced_label").replace("{hex}", `#${remappedHex}`)}` : ""}`}
@@ -97,20 +88,20 @@ function PaletteItem({
           onSelect();
         }
       }}
-      className={`relative flex flex-col gap-1 rounded-md px-2 py-1.5 cursor-pointer transition-colors border ${
+      className={`relative flex flex-col gap-2 rounded-[20px] px-2.5 py-2 cursor-pointer border transition-all duration-150 ${
         isSelected
-          ? "border-yellow-400 shadow-[0_0_12px_rgba(250,204,21,0.6)] bg-gray-700/60 z-10"
-          : "border-transparent hover:bg-gray-700/40"
+          ? "border-amber-400 bg-amber-400/10 ring-2 ring-amber-400/30"
+          : "border-transparent bg-white/35 hover:border-slate-300 hover:bg-white/65 dark:bg-slate-900/35 dark:hover:border-slate-600 dark:hover:bg-slate-900/75"
       }`}
     >
       {/* Top row: swatch + percentage */}
       <div className="flex items-center gap-1.5">
         <span
-          className={`inline-block w-5 h-5 rounded shrink-0 ${borderClass}`}
+          className={`inline-block h-6 w-6 shrink-0 rounded-xl ${borderClass}`}
           style={{ backgroundColor: `#${displayHex}` }}
           title={`#${displayHex}`}
         />
-        <span className="text-[10px] text-gray-400 tabular-nums truncate">
+        <span className="truncate text-[10px] tabular-nums text-slate-500 dark:text-slate-400">
           {entry.percentage.toFixed(1)}%
         </span>
       </div>
@@ -129,7 +120,7 @@ function PaletteItem({
           onChange={onHeightChange}
         />
       </div>
-    </motion.div>
+    </div>
   );
 }
 
@@ -143,12 +134,12 @@ interface ColorBlockProps {
 function ColorBlock({ label, hex }: ColorBlockProps) {
   return (
     <div className="flex flex-col items-center gap-1">
-      <span className="text-[10px] text-gray-400">{label}</span>
+      <span className="text-[10px] font-medium text-slate-500 dark:text-slate-400">{label}</span>
       <span
-        className="inline-block w-10 h-10 rounded border border-gray-600"
+        className="inline-block h-11 w-11 rounded-2xl border border-slate-300/80 dark:border-slate-600/80"
         style={{ backgroundColor: `#${hex}` }}
       />
-      <span className="text-[10px] text-gray-300 font-mono">#{hex}</span>
+      <span className="font-mono text-[10px] text-slate-600 dark:text-slate-300">#{hex}</span>
     </div>
   );
 }
@@ -163,7 +154,7 @@ interface SelectedColorDetailProps {
 function SelectedColorDetail({ entry, remappedHex }: SelectedColorDetailProps) {
   const { t } = useI18n();
   return (
-    <div className="flex gap-4 items-start py-2 px-3 bg-gray-800/40 rounded-lg mb-2">
+    <div className={cx(mutedSectionCardClass, "mb-1 flex items-start gap-4 px-4 py-3")}>
       <ColorBlock label={t("palette_quantized")} hex={entry.quantized_hex} />
       <ColorBlock label={t("palette_matched")} hex={entry.matched_hex} />
       {remappedHex && <ColorBlock label={t("palette_replaced_label")} hex={remappedHex} />}
@@ -177,12 +168,12 @@ function FreeColorSummary({ freeColors }: { freeColors: Set<string> }) {
   const { t } = useI18n();
   if (freeColors.size === 0) return null;
   return (
-    <div className="flex items-center gap-1.5 flex-wrap py-1">
-      <span className="text-[10px] text-gray-400">{t("conv_free_color_label")}:</span>
+    <div className={cx(mutedSectionCardClass, "flex flex-wrap items-center gap-2 px-3 py-2.5")}>
+      <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400">{t("conv_free_color_label")}:</span>
       {Array.from(freeColors).sort().map(hex => (
         <span
           key={hex}
-          className="w-5 h-5 rounded border-2 border-dashed border-red-400"
+          className="h-6 w-6 rounded-xl border-2 border-dashed border-red-400"
           style={{ backgroundColor: `#${hex}` }}
           title={`#${hex}`}
         />
@@ -248,13 +239,13 @@ export default function PalettePanel() {
   };
 
   return (
-    <div>
+    <div className={cx(sectionCardClass, "h-full rounded-[26px] px-4 py-4")}>
       {palette.length === 0 ? (
-        <p className="text-xs text-gray-500 py-2">
+        <p className="py-4 text-sm text-slate-500 dark:text-slate-400">
           {t("palette_no_data")}
         </p>
       ) : (
-        <div className="flex flex-col gap-1">
+        <div className="flex h-full flex-col gap-3">
           {/* Selected color detail */}
           {selectedColor && (() => {
             const selectedEntry = palette.find(
@@ -270,7 +261,7 @@ export default function PalettePanel() {
           })()}
 
           {/* Undo / Clear buttons + Mode switching buttons */}
-          <div className="flex gap-2 mb-2">
+          <div className="flex flex-wrap gap-2">
             <Button
               label={t("palette_undo")}
               variant="secondary"
@@ -283,11 +274,6 @@ export default function PalettePanel() {
               onClick={clearAllRemaps}
               disabled={!hasRemaps}
             />
-
-            {/* Separator */}
-            <div className="w-px bg-gray-600 mx-1" />
-
-            {/* Mode switching buttons */}
             <Button
               label={t("palette_mode_select_all")}
               variant={selectionMode === 'select-all' ? 'primary' : 'secondary'}
@@ -311,7 +297,7 @@ export default function PalettePanel() {
           </div>
 
           {/* Free color buttons */}
-          <div className="flex gap-2 mb-2">
+          <div className="flex flex-wrap gap-2">
             <Button
               label={t("conv_free_color_btn")}
               variant="secondary"
@@ -333,15 +319,15 @@ export default function PalettePanel() {
 
           {/* Palette items */}
           <div
-            className="max-h-80 overflow-y-auto dock-scrollbar"
+            className="dock-scrollbar min-h-0 flex-1 overflow-y-auto pr-1"
             role="listbox"
             aria-label={t("palette_list_label")}
           >
             <div
               className={
                 enable_relief
-                  ? "grid grid-cols-3 gap-1"
-                  : "flex flex-wrap gap-1"
+                  ? "grid grid-cols-3 gap-2"
+                  : "flex flex-wrap gap-2"
               }
             >
               {palette.map((entry) => (

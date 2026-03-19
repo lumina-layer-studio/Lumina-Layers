@@ -234,7 +234,7 @@ function AppContent() {
         </div>
       </header>
 
-      <main className="flex-1 overflow-hidden relative">
+      <main className="relative flex-1 overflow-hidden bg-[radial-gradient(circle_at_top,rgba(59,130,246,0.08),transparent_38%),linear-gradient(to_bottom,rgba(255,255,255,0.72),rgba(241,245,249,0.96))] dark:bg-[radial-gradient(circle_at_top,rgba(59,130,246,0.10),transparent_35%),linear-gradient(to_bottom,rgba(2,6,23,0.92),rgba(2,6,23,1))]">
         {/* Converter: WidgetWorkspace + Scene3D */}
         <div className={activeTab !== 'converter' ? 'hidden' : 'h-full'}>
           <WidgetWorkspace>
@@ -252,20 +252,36 @@ function AppContent() {
           </WidgetWorkspace>
         </div>
 
-        {activeTab === 'calibration' && <CalibrationPanel />}
+        {activeTab === 'calibration' && (
+          <div className="h-full overflow-auto p-5 sm:p-6">
+            <CalibrationPanel />
+          </div>
+        )}
 
         {activeTab === 'extractor' && (
-          <div className="flex h-full">
+          <div className="flex h-full gap-4 p-5 sm:p-6">
             <ExtractorPanel />
-            <div className="flex-1 relative">
+            <div className="panel-surface relative flex-1 overflow-hidden rounded-[28px]">
               <ExtractorCanvas />
             </div>
           </div>
         )}
 
-        {activeTab === 'lut-manager' && <LutManagerPanel />}
-        {activeTab === 'five-color' && <FiveColorQueryPanel />}
-        {activeTab === 'settings' && <SettingsPanel />}
+        {activeTab === 'lut-manager' && (
+          <div className="h-full overflow-auto p-5 sm:p-6">
+            <LutManagerPanel />
+          </div>
+        )}
+        {activeTab === 'five-color' && (
+          <div className="h-full overflow-auto p-5 sm:p-6">
+            <FiveColorQueryPanel />
+          </div>
+        )}
+        {activeTab === 'settings' && (
+          <div className="h-full overflow-auto p-5 sm:p-6">
+            <SettingsPanel />
+          </div>
+        )}
       </main>
     </div>
   );

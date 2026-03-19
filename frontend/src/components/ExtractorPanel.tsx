@@ -7,6 +7,7 @@ import Slider from "./ui/Slider";
 import Checkbox from "./ui/Checkbox";
 import Button from "./ui/Button";
 import ImageUpload from "./ui/ImageUpload";
+import { PanelIntro, StatusBanner, panelSurfaceClass, sectionCardClass } from "./ui/panelPrimitives";
 
 const colorModeOptions = Object.values(ExtractorColorMode).map((v) => ({
   label: v,
@@ -87,159 +88,194 @@ export default function ExtractorPanel() {
       animate={{ opacity: 1, x: 0 }}
       transition={{ type: "spring", damping: 25, stiffness: 300 }}
       data-testid="extractor-panel"
-      className="w-[400px] shrink-0 h-full overflow-y-auto bg-white/85 dark:bg-gray-900/85 backdrop-blur-2xl border-r border-white/40 dark:border-gray-700/50 shadow-[12px_0_30px_rgba(0,0,0,0.12)] p-4 flex flex-col gap-4"
+      className={`${panelSurfaceClass} h-full w-[420px] shrink-0 overflow-y-auto`}
     >
-      {/* 颜色模式 */}
-      <div data-testid="color-mode-select">
-        <Dropdown
-          label={t("ext_color_mode_label")}
-          value={color_mode}
-          options={colorModeOptions}
-          onChange={(v) => setColorMode(v as ExtractorColorMode)}
+      <div className="flex flex-col gap-5">
+        <PanelIntro
+          eyebrow={t("tab.extractor")}
+          title={t("ext_title")}
+          description={t("ext_desc")}
         />
-      </div>
 
-      {/* 页码 */}
-      {isMultiPage && (
-        <div data-testid="page-select">
-          <Dropdown
-            label={t("ext_page_label")}
-            value={page}
-            options={pageOptions}
-            onChange={(v) => setPage(v as ExtractorPage)}
-          />
-        </div>
-      )}
+        <section className={`${sectionCardClass} flex flex-col gap-4`}>
+          <div className="grid gap-4">
+            <div data-testid="color-mode-select">
+              <Dropdown
+                label={t("ext_color_mode_label")}
+                value={color_mode}
+                options={colorModeOptions}
+                onChange={(v) => setColorMode(v as ExtractorColorMode)}
+              />
+            </div>
 
-      {/* 图片上传 */}
-      <div data-testid="image-upload">
-        <label className="text-sm text-gray-700 dark:text-gray-300 mb-1 block">{t("ext_upload_label")}</label>
-        <ImageUpload
-          onFileSelect={(file) => setImageFile(file)}
-          accept="image/*"
-          preview={imagePreviewUrl ?? undefined}
-        />
-      </div>
-
-      {/* 参数 Sliders */}
-      <Slider label={t("ext_offset_x_label")} value={offset_x} min={-30} max={30} step={1} onChange={setOffsetX} />
-      <Slider label={t("ext_offset_y_label")} value={offset_y} min={-30} max={30} step={1} onChange={setOffsetY} />
-      <Slider label={t("ext_zoom_label")} value={zoom} min={0.8} max={1.2} step={0.01} onChange={setZoom} />
-      <Slider label={t("ext_distortion_label")} value={distortion} min={-0.2} max={0.2} step={0.01} onChange={setDistortion} />
-
-      {/* 布尔开关 */}
-      <Checkbox label={t("ext_wb_label")} checked={white_balance} onChange={setWhiteBalance} />
-      <Checkbox label={t("ext_vignette_label")} checked={vignette_correction} onChange={setVignetteCorrection} />
-
-      {/* 操作按钮 */}
-      <div data-testid="extract-button">
-        <Button label={t("ext_extract_btn_label")} variant="primary" onClick={() => void submitExtract()} disabled={extractDisabled} loading={isLoading} />
-      </div>
-      <div data-testid="clear-corners-button">
-        <Button label={t("ext_clear_corners")} variant="secondary" onClick={clearCornerPoints} />
-      </div>
-
-      {/* 双页模式：页面提取状态 + 合并按钮 */}
-      {isMultiPage && (
-        <div data-testid="merge-section" className="flex flex-col gap-2 border border-gray-200 dark:border-gray-700 rounded-md p-3">
-          <span className="text-xs text-gray-500 dark:text-gray-400">{mergeTitle}</span>
-          <div className="flex gap-2 text-xs">
-            <span className={p1Done ? "text-green-600 dark:text-green-400" : "text-gray-400 dark:text-gray-500"}>
-              Page 1: {p1Done ? t("ext_page_extracted") : t("ext_page_not_extracted")}
-            </span>
-            <span className={p2Done ? "text-green-600 dark:text-green-400" : "text-gray-400 dark:text-gray-500"}>
-              Page 2: {p2Done ? t("ext_page_extracted") : t("ext_page_not_extracted")}
-            </span>
-          </div>
-          <Button label={mergeLabel} variant="primary" onClick={() => void submitMerge()} disabled={!p1Done || !p2Done || mergeLoading} loading={mergeLoading} />
-          {mergeError && <p className="text-xs text-red-400">{mergeError}</p>}
-        </div>
-      )}
-
-      {/* 错误信息 */}
-      {error && (
-        <p data-testid="error-message" className="text-xs text-red-400">{error}</p>
-      )}
-
-      {/* 调色板确认 */}
-      {defaultPalette.length > 0 && !paletteConfirmed && (
-        <div data-testid="palette-confirm-section" className="flex flex-col gap-2 border border-gray-200 dark:border-gray-700 rounded-md p-3">
-          <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
-            {t("ext_palette_title") ?? "调色板确认"}
-          </span>
-          {/* 统一耗材类型选择 */}
-          <div className="flex items-center gap-2 text-xs">
-            <span className="text-gray-500 dark:text-gray-400 shrink-0">{t("ext_material_type_label")}</span>
-            <select
-              className="flex-1 px-1 py-0.5 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200 text-xs"
-              value={defaultPalette[0]?.material ?? "PLA Basic"}
-              onChange={(e) => {
-                const mat = e.target.value;
-                defaultPalette.forEach((_, i) => updatePaletteEntry(i, { material: mat }));
-              }}
-            >
-              {MATERIAL_OPTIONS.map((mat) => (
-                <option key={mat} value={mat}>{mat}</option>
-              ))}
-            </select>
-          </div>
-          <div className="flex flex-col gap-1">
-            {defaultPalette.map((entry, idx) => (
-              <div key={idx} className="flex items-center gap-2 text-xs">
-                <span
-                  className="w-4 h-4 rounded border border-gray-300 dark:border-gray-600 shrink-0"
-                  style={{ backgroundColor: entry.hex_color || "#ccc" }}
-                />
-                <input
-                  className="flex-1 px-1 py-0.5 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200 text-xs"
-                  value={entry.color}
-                  onChange={(e) => updatePaletteEntry(idx, { color: e.target.value })}
+            {isMultiPage && (
+              <div data-testid="page-select">
+                <Dropdown
+                  label={t("ext_page_label")}
+                  value={page}
+                  options={pageOptions}
+                  onChange={(v) => setPage(v as ExtractorPage)}
                 />
               </div>
-            ))}
+            )}
+
+            <div data-testid="image-upload" className="flex flex-col gap-2">
+              <label className="text-sm font-medium text-slate-700 dark:text-slate-200">{t("ext_upload_label")}</label>
+              <ImageUpload
+                onFileSelect={(file) => setImageFile(file)}
+                accept="image/*"
+                preview={imagePreviewUrl ?? undefined}
+              />
+            </div>
           </div>
-          <Button
-            label={t("ext_confirm_palette_btn") ?? "确认调色板"}
-            variant="primary"
-            onClick={() => void submitConfirmPalette()}
-            loading={paletteConfirmLoading}
-          />
-          {paletteConfirmError && (
-            <p className="text-xs text-red-400">{paletteConfirmError}</p>
-          )}
-        </div>
-      )}
+        </section>
 
-      {/* 调色板已确认提示 */}
-      {paletteConfirmed && (
-        <p data-testid="palette-confirmed" className="text-xs text-green-600 dark:text-green-400">
-          {t("ext_palette_confirmed") ?? "✓ 调色板已确认"}
-        </p>
-      )}
+        <section className={`${sectionCardClass} flex flex-col gap-4`}>
+          <h3 className="text-base font-semibold text-slate-900 dark:text-slate-50">{t("ext_correction_section")}</h3>
+          <Slider label={t("ext_offset_x_label")} value={offset_x} min={-30} max={30} step={1} onChange={setOffsetX} />
+          <Slider label={t("ext_offset_y_label")} value={offset_y} min={-30} max={30} step={1} onChange={setOffsetY} />
+          <Slider label={t("ext_zoom_label")} value={zoom} min={0.8} max={1.2} step={0.01} onChange={setZoom} />
+          <Slider label={t("ext_distortion_label")} value={distortion} min={-0.2} max={0.2} step={0.01} onChange={setDistortion} />
+          <div className="grid gap-3">
+            <Checkbox label={t("ext_wb_label")} checked={white_balance} onChange={setWhiteBalance} />
+            <Checkbox label={t("ext_vignette_label")} checked={vignette_correction} onChange={setVignetteCorrection} />
+          </div>
+        </section>
 
-      {/* LUT 下载链接 */}
-      {lut_download_url && (
-        <a
-          data-testid="lut-download-link"
-          href={lut_download_url}
-          download
-          className="text-sm text-blue-400 underline hover:text-blue-300"
-        >
-          {t("ext_download_lut")}
-        </a>
-      )}
+        <section className={`${sectionCardClass} flex flex-col gap-3`}>
+          <div data-testid="extract-button">
+            <Button
+              label={t("ext_extract_btn_label")}
+              variant="primary"
+              onClick={() => void submitExtract()}
+              disabled={extractDisabled}
+              loading={isLoading}
+              className="w-full"
+            />
+          </div>
+          <div data-testid="clear-corners-button">
+            <Button
+              label={t("ext_clear_corners")}
+              variant="secondary"
+              onClick={clearCornerPoints}
+              className="w-full"
+            />
+          </div>
+        </section>
 
-      {/* 手动修正提示 */}
-      {lut_download_url && (
-        <div data-testid="manual-fix-section" className="text-xs text-gray-500 dark:text-gray-500 border border-gray-200 dark:border-gray-700 rounded-md p-2">
-          {t("ext_manual_fix_hint")}
-        </div>
-      )}
+        {isMultiPage && (
+          <section data-testid="merge-section" className={`${sectionCardClass} flex flex-col gap-3`}>
+            <div>
+              <h3 className="text-base font-semibold text-slate-900 dark:text-slate-50">{mergeTitle}</h3>
+              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{t("ext_page_label")}</p>
+            </div>
+            <div className="grid gap-2 text-sm">
+              <div className="flex items-center justify-between rounded-2xl border border-slate-200/80 bg-white/55 px-3 py-2 dark:border-slate-700/80 dark:bg-slate-900/55">
+                <span className="text-slate-600 dark:text-slate-300">{t("ext_page_1_label")}</span>
+                <span className={p1Done ? "text-emerald-600 dark:text-emerald-400" : "text-slate-400 dark:text-slate-500"}>
+                  {p1Done ? t("ext_page_extracted") : t("ext_page_not_extracted")}
+                </span>
+              </div>
+              <div className="flex items-center justify-between rounded-2xl border border-slate-200/80 bg-white/55 px-3 py-2 dark:border-slate-700/80 dark:bg-slate-900/55">
+                <span className="text-slate-600 dark:text-slate-300">{t("ext_page_2_label")}</span>
+                <span className={p2Done ? "text-emerald-600 dark:text-emerald-400" : "text-slate-400 dark:text-slate-500"}>
+                  {p2Done ? t("ext_page_extracted") : t("ext_page_not_extracted")}
+                </span>
+              </div>
+            </div>
+            <Button
+              label={mergeLabel}
+              variant="primary"
+              onClick={() => void submitMerge()}
+              disabled={!p1Done || !p2Done || mergeLoading}
+              loading={mergeLoading}
+              className="w-full"
+            />
+            {mergeError && <StatusBanner tone="error">{mergeError}</StatusBanner>}
+          </section>
+        )}
 
-      {/* 手动修正错误 */}
-      {manualFixError && (
-        <p data-testid="manual-fix-error" className="text-xs text-red-400">{manualFixError}</p>
-      )}
+        {error && (
+          <StatusBanner data-testid="error-message" tone="error">
+            {error}
+          </StatusBanner>
+        )}
+
+        {defaultPalette.length > 0 && !paletteConfirmed && (
+          <section data-testid="palette-confirm-section" className={`${sectionCardClass} flex flex-col gap-3`}>
+            <div>
+              <h3 className="text-base font-semibold text-slate-900 dark:text-slate-50">{t("ext_palette_title")}</h3>
+              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{t("ext_material_type_label")}</p>
+            </div>
+            <div className="flex items-center gap-2 text-sm">
+              <span className="shrink-0 text-slate-500 dark:text-slate-400">{t("ext_material_type_label")}</span>
+              <select
+                className="min-h-11 flex-1 rounded-2xl border border-slate-200/80 bg-white/82 px-3 py-2 text-sm text-slate-800 outline-none shadow-[var(--shadow-control)] focus:border-blue-400 focus:ring-4 focus:ring-[var(--focus-ring)] dark:border-slate-700/80 dark:bg-slate-900/72 dark:text-slate-100"
+                value={defaultPalette[0]?.material ?? "PLA Basic"}
+                onChange={(e) => {
+                  const mat = e.target.value;
+                  defaultPalette.forEach((_, i) => updatePaletteEntry(i, { material: mat }));
+                }}
+              >
+                {MATERIAL_OPTIONS.map((mat) => (
+                  <option key={mat} value={mat}>{mat}</option>
+                ))}
+              </select>
+            </div>
+            <div className="flex flex-col gap-2">
+              {defaultPalette.map((entry, idx) => (
+                <div key={idx} className="flex items-center gap-3 rounded-2xl border border-slate-200/80 bg-white/55 px-3 py-2 dark:border-slate-700/80 dark:bg-slate-900/55">
+                  <span
+                    className="h-5 w-5 shrink-0 rounded-xl border border-slate-300/80 dark:border-slate-600/80"
+                    style={{ backgroundColor: entry.hex_color || "#ccc" }}
+                  />
+                  <input
+                    className="min-h-10 flex-1 rounded-2xl border border-slate-200/80 bg-white/90 px-3 py-2 text-sm text-slate-800 outline-none shadow-[var(--shadow-control)] focus:border-blue-400 focus:ring-4 focus:ring-[var(--focus-ring)] dark:border-slate-700/80 dark:bg-slate-900 dark:text-slate-100"
+                    value={entry.color}
+                    onChange={(e) => updatePaletteEntry(idx, { color: e.target.value })}
+                  />
+                </div>
+              ))}
+            </div>
+            <Button
+              label={t("ext_confirm_palette_btn")}
+              variant="primary"
+              onClick={() => void submitConfirmPalette()}
+              loading={paletteConfirmLoading}
+              className="w-full"
+            />
+            {paletteConfirmError && <StatusBanner tone="error">{paletteConfirmError}</StatusBanner>}
+          </section>
+        )}
+
+        {paletteConfirmed && (
+          <StatusBanner data-testid="palette-confirmed" tone="success">
+            {t("ext_palette_confirmed")}
+          </StatusBanner>
+        )}
+
+        {lut_download_url && (
+          <section className={`${sectionCardClass} flex flex-col gap-3`}>
+            <a
+              data-testid="lut-download-link"
+              href={lut_download_url}
+              download
+              className="inline-flex min-h-11 items-center justify-center rounded-2xl bg-blue-600 px-4 py-2.5 text-sm font-medium text-white shadow-[0_12px_24px_rgba(37,99,235,0.22)] transition-colors hover:bg-blue-700"
+            >
+              {t("ext_download_lut")}
+            </a>
+            <StatusBanner data-testid="manual-fix-section" tone="info">
+              {t("ext_manual_fix_hint")}
+            </StatusBanner>
+          </section>
+        )}
+
+        {manualFixError && (
+          <StatusBanner data-testid="manual-fix-error" tone="error">
+            {manualFixError}
+          </StatusBanner>
+        )}
+      </div>
     </motion.aside>
   );
 }

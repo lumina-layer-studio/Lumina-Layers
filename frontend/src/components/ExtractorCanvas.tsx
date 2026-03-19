@@ -234,26 +234,26 @@ export default function ExtractorCanvas() {
     return (
       <div
         data-testid="extractor-results"
-        className="flex-1 flex flex-col items-center justify-center gap-4 p-6 overflow-auto"
+        className="flex h-full flex-1 flex-col items-center justify-center gap-4 overflow-auto p-6"
       >
         {/* 色卡 + LUT 预览：左右并排，等宽 */}
         <div className="flex flex-row items-start gap-6 w-full justify-center">
           {warp_view_url && (
-            <div className="flex flex-col items-center gap-2 flex-1 min-w-0">
-              <span className="text-xs text-gray-500 dark:text-gray-400">
+            <div className="flex min-w-0 flex-1 flex-col items-center gap-3 rounded-[24px] border border-slate-200/80 bg-white/45 p-4 shadow-[var(--shadow-control)] dark:border-slate-700/80 dark:bg-slate-900/45">
+              <span className="text-xs font-medium uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
                 {t("ext_canvas_warp_view")}
               </span>
               <img
                 data-testid="warp-view-image"
                 src={warp_view_url}
                 alt="Warp view"
-                className="w-full max-h-[55vh] object-contain rounded border border-gray-300 dark:border-gray-700"
+                className="w-full max-h-[55vh] rounded-[20px] border border-slate-200/80 object-contain dark:border-slate-700/80"
               />
             </div>
           )}
           {lut_preview_url && (
-            <div className="flex flex-col items-center gap-2 flex-1 min-w-0">
-              <span className="text-xs text-gray-500 dark:text-gray-400">
+            <div className="flex min-w-0 flex-1 flex-col items-center gap-3 rounded-[24px] border border-slate-200/80 bg-white/45 p-4 shadow-[var(--shadow-control)] dark:border-slate-700/80 dark:bg-slate-900/45">
+              <span className="text-xs font-medium uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
                 {t("ext_canvas_lut_preview")}
               </span>
               <div className="relative w-full">
@@ -263,7 +263,7 @@ export default function ExtractorCanvas() {
                   src={lut_preview_url}
                   alt="LUT preview"
                   onClick={handleLutPreviewClick}
-                  className="w-full max-h-[55vh] object-contain rounded border border-gray-300 dark:border-gray-700 cursor-crosshair"
+                  className="w-full max-h-[55vh] cursor-crosshair rounded-[20px] border border-slate-200/80 object-contain dark:border-slate-700/80"
                 />
                 <style>{`
                   @keyframes rainbow-border {
@@ -290,7 +290,7 @@ export default function ExtractorCanvas() {
                         height: overlay.height,
                         border: "2px solid",
                         pointerEvents: "none",
-                        boxShadow: "0 0 6px 2px rgba(255, 255, 255, 0.5)",
+                        boxShadow: "0 0 0 2px rgba(255, 255, 255, 0.45)",
                         boxSizing: "border-box",
                         animation: "rainbow-border 3s linear infinite",
                       }}
@@ -305,9 +305,9 @@ export default function ExtractorCanvas() {
         {selectedCell && (
           <div
             data-testid="manual-fix-popup"
-            className="flex items-center gap-3 bg-gray-100 dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg px-4 py-3"
+            className="flex items-center gap-3 rounded-[20px] border border-slate-200/80 bg-white/80 px-4 py-3 shadow-[var(--shadow-control-hover)] dark:border-slate-700/80 dark:bg-slate-900/82"
           >
-            <span className="text-sm text-gray-700 dark:text-gray-300">
+            <span className="text-sm text-slate-700 dark:text-slate-300">
               {t("ext_canvas_row")} {selectedCell[0] + 1} / {t("ext_canvas_col")} {selectedCell[1] + 1}
             </span>
             <input
@@ -315,20 +315,20 @@ export default function ExtractorCanvas() {
               type="color"
               value={fixColor}
               onChange={(e) => setFixColor(e.target.value)}
-              className="w-10 h-8 rounded border border-gray-300 dark:border-gray-500 cursor-pointer bg-transparent"
+              className="h-8 w-10 cursor-pointer rounded-xl border border-slate-300 bg-transparent dark:border-slate-500"
             />
-            <span className="text-xs text-gray-500 dark:text-gray-400 font-mono">{fixColor}</span>
+            <span className="font-mono text-xs text-slate-500 dark:text-slate-400">{fixColor}</span>
             <button
               data-testid="fix-submit-button"
               onClick={handleFixSubmit}
               disabled={manualFixLoading}
-              className="px-3 py-1 text-sm rounded bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed text-white"
+              className="rounded-full bg-blue-600 px-3 py-1.5 text-sm text-white transition-colors hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {manualFixLoading ? t("ext_canvas_fixing") : t("ext_canvas_confirm_fix")}
             </button>
             <button
               onClick={() => setSelectedCell(null)}
-              className="px-2 py-1 text-sm rounded bg-gray-200 hover:bg-gray-300 dark:bg-gray-600 dark:hover:bg-gray-500 text-gray-700 dark:text-gray-300"
+              className="rounded-full border border-slate-200/80 bg-white px-3 py-1.5 text-sm text-slate-700 transition-colors hover:bg-slate-50 dark:border-slate-700/80 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
             >
               {t("ext_canvas_cancel")}
             </button>
@@ -343,7 +343,7 @@ export default function ExtractorCanvas() {
     return (
       <div
         data-testid="extractor-empty-state"
-        className="flex-1 flex flex-col items-center justify-center gap-3 text-gray-400 dark:text-gray-500"
+        className="flex h-full flex-1 flex-col items-center justify-center gap-3 text-slate-400 dark:text-slate-500"
       >
         <svg
           xmlns="http://www.w3.org/2000/svg"
@@ -360,7 +360,7 @@ export default function ExtractorCanvas() {
           />
         </svg>
         <p className="text-sm">{t("ext_canvas_upload_hint")}</p>
-        <p className="text-xs text-gray-500 dark:text-gray-600">
+        <p className="text-xs text-slate-500 dark:text-slate-600">
           {t("ext_canvas_upload_hint_en")}
         </p>
       </div>
@@ -369,12 +369,12 @@ export default function ExtractorCanvas() {
 
   // ===== Canvas mode =====
   return (
-    <div className="flex-1 flex flex-col items-center justify-center gap-3 p-4">
+    <div className="flex h-full flex-1 flex-col items-center justify-center gap-4 p-6">
       {/* Corner hint */}
       <p
         data-testid="corner-hint"
-        className={`text-sm font-medium ${
-          cornerCount >= 4 ? "text-green-500 dark:text-green-400" : "text-yellow-500 dark:text-yellow-300"
+        className={`rounded-full px-3 py-1 text-sm font-medium ${
+          cornerCount >= 4 ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400" : "bg-amber-500/10 text-amber-600 dark:text-amber-300"
         }`}
       >
         {hintText}
@@ -387,7 +387,7 @@ export default function ExtractorCanvas() {
         width={imageNaturalWidth ?? 800}
         height={imageNaturalHeight ?? 600}
         onClick={handleCanvasClick}
-        className="max-w-full max-h-[75vh] rounded border border-gray-300 dark:border-gray-700 cursor-crosshair"
+        className="max-h-[75vh] max-w-full cursor-crosshair rounded-[24px] border border-slate-200/80 shadow-[var(--shadow-control-hover)] dark:border-slate-700/80"
         style={{ objectFit: "contain" }}
       />
     </div>

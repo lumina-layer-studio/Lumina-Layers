@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
+import { cx } from "./panelPrimitives";
 
 interface SliderProps {
   label: string;
@@ -76,13 +77,13 @@ export default function Slider({
   const inputWidth = `${maxChars + 1}ch`;
 
   return (
-    <div className="flex flex-col gap-1">
+    <div className="flex flex-col gap-1.5">
       {label && (
-        <label className="text-sm text-gray-700 dark:text-gray-300">
+        <label className="text-sm font-medium text-slate-700 dark:text-slate-200">
           {label}
         </label>
       )}
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-3 rounded-2xl border border-slate-200/80 bg-white/58 px-3 py-2 shadow-[var(--shadow-control)] dark:border-slate-700/80 dark:bg-slate-900/48">
         <input
           type="range"
           min={min}
@@ -91,7 +92,11 @@ export default function Slider({
           value={value}
           disabled={disabled}
           onChange={(e) => onChange(Number(e.target.value))}
-          className="flex-1 h-1.5 rounded-full appearance-none cursor-pointer bg-gray-300 dark:bg-gray-700 accent-blue-500 transition-all duration-200 hover:accent-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-500/40 disabled:opacity-40 disabled:cursor-not-allowed"
+          className={cx(
+            "slider-track flex-1 appearance-none cursor-pointer rounded-full accent-blue-500 transition-all duration-200",
+            "h-1.5 bg-slate-200 dark:bg-slate-700",
+            "focus:outline-none focus:ring-4 focus:ring-[var(--focus-ring)] disabled:cursor-not-allowed disabled:opacity-45"
+          )}
         />
         <div className="flex items-center gap-0.5 shrink-0">
           <input
@@ -104,11 +109,11 @@ export default function Slider({
             onBlur={handleBlur}
             onKeyDown={handleKeyDown}
             style={{ width: inputWidth }}
-            className="text-xs tabular-nums text-right px-1 py-0.5 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 disabled:opacity-40 disabled:cursor-not-allowed focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+            className="rounded-xl border border-slate-200/80 bg-white/90 px-2 py-1 text-right text-xs tabular-nums text-slate-700 shadow-[var(--shadow-control)] focus:border-blue-400 focus:outline-none focus:ring-4 focus:ring-[var(--focus-ring)] disabled:cursor-not-allowed disabled:opacity-45 dark:border-slate-700/80 dark:bg-slate-900 dark:text-slate-100"
             aria-label={`${label} value`}
           />
           {unit && (
-            <span className="text-[10px] text-gray-400 dark:text-gray-500">
+            <span className="text-[11px] font-medium text-slate-400 dark:text-slate-500">
               {unit}
             </span>
           )}

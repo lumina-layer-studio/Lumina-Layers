@@ -172,19 +172,37 @@ describe('Widget Workspace Unit Tests', () => {
   });
 
   describe('Dock avoidance geometry', () => {
-    it('returns blocker height when workstation horizontally overlaps dock', () => {
+    it('returns overlap height when workstation overlaps dock', () => {
       const inset = computeDockBottomInset(
-        { left: 0, right: 366 },
-        { left: 200, right: 1700, height: 212 }
+        { top: 40, bottom: 640, left: 0, right: 366 },
+        { top: 428, bottom: 640, left: 200, right: 1700 }
       );
 
       expect(inset).toBe(212);
     });
 
+    it('returns visible overlap height when workstation is partially collapsed', () => {
+      const inset = computeDockBottomInset(
+        { top: 40, bottom: 640, left: 0, right: 366 },
+        { top: 592, bottom: 772, left: 120, right: 1700 }
+      );
+
+      expect(inset).toBe(48);
+    });
+
     it('returns zero when workstation does not horizontally overlap dock', () => {
       const inset = computeDockBottomInset(
-        { left: 0, right: 366 },
-        { left: 500, right: 1800, height: 212 }
+        { top: 40, bottom: 640, left: 0, right: 366 },
+        { top: 428, bottom: 640, left: 500, right: 1800 }
+      );
+
+      expect(inset).toBe(0);
+    });
+
+    it('returns zero when workstation only overlaps horizontally but not vertically', () => {
+      const inset = computeDockBottomInset(
+        { top: 40, bottom: 300, left: 0, right: 366 },
+        { top: 420, bottom: 640, left: 200, right: 1700 }
       );
 
       expect(inset).toBe(0);

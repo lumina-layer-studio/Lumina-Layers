@@ -5,6 +5,8 @@ import { useConverterStore } from "../stores/converterStore";
 import Dropdown from "./ui/Dropdown";
 import { useI18n } from "../i18n/context";
 import FiveColorCanvas from "./FiveColorCanvas";
+import Button from "./ui/Button";
+import { PanelIntro, StatusBanner, panelSurfaceClass, sectionCardClass } from "./ui/panelPrimitives";
 
 export default function FiveColorQueryPanel() {
   const { t } = useI18n();
@@ -20,20 +22,22 @@ export default function FiveColorQueryPanel() {
 
   useEffect(() => {
     if (lutList.length === 0) void fetchLutList();
-  }, []);
+  }, [fetchLutList, lutList.length]);
 
   const handleLutChange = (name: string) => {
-    if (name) { clearError(); void loadBaseColors(name); }
+    if (name) {
+      clearError();
+      void loadBaseColors(name);
+    }
   };
 
   const hasSelection = selectedIndices.length > 0;
   const isFull = selectedIndices.length === 5;
 
-  // 为 Canvas 组件准备 slices 数据
   const canvasSlices = useMemo(
     () => selectedIndices.map((idx) => {
       const c = baseColors.find((b) => b.index === idx);
-      return c ? { hex: c.hex, name: c.name } : { hex: "#666", name: "?" };
+      return c ? { hex: c.hex, name: c.name } : { hex: "#666666", name: "?" };
     }),
     [selectedIndices, baseColors],
   );
@@ -43,157 +47,163 @@ export default function FiveColorQueryPanel() {
       initial={{ opacity: 0, y: 30 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ type: "spring", damping: 25, stiffness: 300 }}
-      className="flex h-full w-full max-w-5xl mx-auto rounded-2xl overflow-hidden shadow-2xl border border-white/40 dark:border-gray-800/50 bg-white/85 dark:bg-gray-950/85 backdrop-blur-2xl text-gray-900 dark:text-white"
+      className={`${panelSurfaceClass} mx-auto flex h-full w-full max-w-6xl flex-col gap-5 overflow-hidden text-slate-900 dark:text-white`}
     >
-      {/* ===== 左侧：颜色选择网格 ===== */}
-      <div className="w-72 shrink-0 border-r border-gray-200 dark:border-gray-800 flex flex-col">
-        <div className="p-4 border-b border-gray-200 dark:border-gray-800">
-          <Dropdown
-            label={t("five_color_lut_label")}
-            value={lutName}
-            options={lutList.map((n) => ({ label: n, value: n }))}
-            onChange={handleLutChange}
-            placeholder={t("five_color_lut_placeholder")}
-          />
-        </div>
+      <PanelIntro
+        eyebrow={t("tab.fiveColor")}
+        title={t("five_color_title")}
+        description={t("five_color_desc")}
+      />
 
-        <div className="flex-1 overflow-y-auto p-3">
-          {baseColors.length > 0 ? (
-            <div className="grid grid-cols-3 gap-1.5">
-              {baseColors.map((color) => {
-                const isSelected = selectedIndices.includes(color.index);
-                const selOrder = selectedIndices.indexOf(color.index);
-                return (
-                  <button
-                    key={color.index}
-                    onClick={() => addSelection(color.index)}
-                    disabled={isFull && !isSelected}
-                    className={`relative group flex flex-col items-center gap-0.5 rounded-lg p-1.5 transition-all
-                      ${isSelected
-                        ? "ring-2 ring-blue-500 bg-blue-500/10"
-                        : "hover:bg-gray-100 dark:hover:bg-gray-800 border border-transparent hover:border-gray-300 dark:hover:border-gray-600"}
-                      ${isFull && !isSelected ? "opacity-30 cursor-not-allowed" : "cursor-pointer"}`}
-                    aria-label={t("five_color_select_color").replace("{name}", color.name).replace("{hex}", color.hex)}
-                  >
-                    <div
-                      className="w-10 h-10 rounded-md shadow-md transition-transform group-hover:scale-110"
-                      style={{ backgroundColor: color.hex }}
-                    />
-                    {isSelected && (
-                      <span className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-blue-500 text-white text-xs flex items-center justify-center font-bold">
-                        {selOrder + 1}
-                      </span>
-                    )}
-                    <span className="text-[10px] text-gray-500 dark:text-gray-400 truncate w-full text-center leading-tight">
-                      {color.name}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-          ) : lutName ? (
-            <p className="text-sm text-gray-500 text-center py-8">{t("five_color_no_base_colors")}</p>
-          ) : (
-            <p className="text-sm text-gray-500 text-center py-8">{t("five_color_select_lut_first")}</p>
-          )}
-        </div>
-      </div>
-
-      {/* ===== 中间：Canvas 3D 薄片动画 ===== */}
-      <div className="flex-1 flex flex-col items-center justify-center relative bg-gradient-to-b from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-950">
-        <div className="w-full h-full max-w-lg max-h-96">
-          <FiveColorCanvas
-            slices={canvasSlices}
-            resultHex={queryResult?.found ? queryResult.result_hex : null}
-            isLoading={isLoading}
-          />
-        </div>
-
-        {/* 底部提示 */}
-        {!isFull && baseColors.length > 0 && (
-          <p className="absolute bottom-6 text-sm text-gray-500">
-            {t("five_color_select_lut_first").includes("LUT")
-              ? `已选 ${selectedIndices.length}/5 种颜色，请继续选择`
-              : `${selectedIndices.length}/5 selected`}
-          </p>
-        )}
-      </div>
-
-      {/* ===== 右侧：操作按钮 + 结果 ===== */}
-      <div className="w-56 shrink-0 border-l border-gray-200 dark:border-gray-800 flex flex-col p-4 gap-3">
-        <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">操作</h3>
-
-        <button
-          onClick={() => void submitQuery()}
-          disabled={!isFull || isLoading}
-          className="w-full py-2.5 rounded-lg text-sm font-medium transition-all
-            bg-blue-600 hover:bg-blue-500 text-white disabled:opacity-40 disabled:cursor-not-allowed"
-        >
-          {isLoading ? "查询中..." : t("five_color_query")}
-        </button>
-
-        <button
-          onClick={removeLastSelection}
-          disabled={!hasSelection}
-          className="w-full py-2 rounded-lg text-sm font-medium transition-all
-            bg-gray-200 hover:bg-gray-300 dark:bg-gray-800 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 disabled:opacity-30 disabled:cursor-not-allowed"
-        >
-          {t("five_color_undo")}
-        </button>
-
-        <button
-          onClick={reverseSelection}
-          disabled={!isFull}
-          className="w-full py-2 rounded-lg text-sm font-medium transition-all
-            bg-gray-200 hover:bg-gray-300 dark:bg-gray-800 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 disabled:opacity-30 disabled:cursor-not-allowed"
-        >
-          {t("five_color_reverse")}
-        </button>
-
-        <button
-          onClick={clearSelection}
-          disabled={!hasSelection}
-          className="w-full py-2 rounded-lg text-sm font-medium transition-all
-            bg-gray-200 hover:bg-gray-300 dark:bg-gray-800 dark:hover:bg-gray-700 text-red-500 dark:text-red-400 disabled:opacity-30 disabled:cursor-not-allowed"
-        >
-          {t("five_color_clear")}
-        </button>
-
-        {/* 错误 */}
-        {error && (
-          <div className="rounded-lg bg-red-100 dark:bg-red-900/30 border border-red-300 dark:border-red-800 p-2.5 text-xs text-red-700 dark:text-red-300 flex items-start gap-2">
-            <span className="flex-1">{error}</span>
-            <button onClick={clearError} className="text-red-500 hover:text-red-700 dark:text-red-400 dark:hover:text-red-200 shrink-0">✕</button>
-          </div>
-        )}
-
-        {/* 结果 */}
-        {queryResult && queryResult.found && (
-          <div className="mt-auto flex flex-col gap-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-100/50 dark:bg-gray-800/50 p-3">
-            <div
-              className="w-full h-16 rounded-lg shadow-lg"
-              style={{ backgroundColor: queryResult.result_hex ?? undefined }}
+      <div className="grid min-h-0 flex-1 gap-4 lg:grid-cols-[280px_minmax(0,1fr)_240px]">
+        <section className={`${sectionCardClass} flex min-h-0 flex-col gap-4`}>
+          <div className="flex flex-col gap-3">
+            <h3 className="text-base font-semibold text-slate-900 dark:text-slate-50">{t("five_color_palette")}</h3>
+            <Dropdown
+              label={t("five_color_lut_label")}
+              value={lutName}
+              options={lutList.map((n) => ({ label: n, value: n }))}
+              onChange={handleLutChange}
+              placeholder={t("five_color_lut_placeholder")}
             />
-            <p className="text-sm text-gray-800 dark:text-gray-200 font-mono">{queryResult.result_hex}</p>
-            <p className="text-xs text-gray-500 dark:text-gray-400">
-              RGB: {queryResult.result_rgb?.join(", ")}
-            </p>
-            <p className="text-xs text-gray-400 dark:text-gray-500">
-              {t("five_color_result_row")}: {queryResult.row_index}
-            </p>
-            {queryResult.source && (
-              <p className="text-xs text-gray-400 dark:text-gray-500">
-                {t("five_color_result_source")}: {queryResult.source}
-              </p>
+          </div>
+
+          <div className="min-h-0 flex-1 overflow-y-auto pr-1">
+            {baseColors.length > 0 ? (
+              <div className="grid grid-cols-3 gap-2">
+                {baseColors.map((color) => {
+                  const isSelected = selectedIndices.includes(color.index);
+                  const selOrder = selectedIndices.indexOf(color.index);
+                  return (
+                    <button
+                      key={color.index}
+                      onClick={() => addSelection(color.index)}
+                      disabled={isFull && !isSelected}
+                      className={`group relative flex flex-col items-center gap-1 rounded-[20px] border p-2 transition-all ${
+                        isSelected
+                          ? "border-blue-400 bg-blue-500/10 ring-2 ring-blue-500/20"
+                          : "border-transparent bg-white/45 hover:border-slate-300 hover:bg-white/75 dark:bg-slate-900/45 dark:hover:border-slate-600 dark:hover:bg-slate-900/75"
+                      } ${isFull && !isSelected ? "cursor-not-allowed opacity-30" : "cursor-pointer"}`}
+                      aria-label={t("five_color_select_color").replace("{name}", color.name).replace("{hex}", color.hex)}
+                    >
+                      <div
+                        className="h-11 w-11 rounded-2xl border border-slate-200/80 shadow-[var(--shadow-control)] transition-transform group-hover:scale-105 dark:border-slate-700/80"
+                        style={{ backgroundColor: color.hex }}
+                      />
+                      {isSelected && (
+                        <span className="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full bg-blue-500 text-xs font-bold text-white">
+                          {selOrder + 1}
+                        </span>
+                      )}
+                      <span className="w-full truncate text-center text-[11px] leading-tight text-slate-500 dark:text-slate-400">
+                        {color.name}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            ) : lutName ? (
+              <p className="py-8 text-center text-sm text-slate-500 dark:text-slate-400">{t("five_color_no_base_colors")}</p>
+            ) : (
+              <p className="py-8 text-center text-sm text-slate-500 dark:text-slate-400">{t("five_color_select_lut_first")}</p>
             )}
           </div>
-        )}
+        </section>
 
-        {queryResult && !queryResult.found && (
-          <div className="mt-auto rounded-lg border border-yellow-300 dark:border-yellow-800 bg-yellow-50 dark:bg-yellow-900/20 p-3">
-            <p className="text-sm text-yellow-700 dark:text-yellow-400">{t("five_color_not_found")}</p>
+        <section className={`${sectionCardClass} relative flex min-h-0 flex-col items-center justify-center gap-4 overflow-hidden`}>
+          <div className="absolute inset-x-0 top-0 h-32 bg-gradient-to-b from-blue-500/10 to-transparent" />
+          <div className="relative flex w-full flex-1 items-center justify-center">
+            <div className="h-full max-h-[420px] w-full max-w-xl">
+              <FiveColorCanvas
+                slices={canvasSlices}
+                resultHex={queryResult?.found ? queryResult.result_hex : null}
+                isLoading={isLoading}
+              />
+            </div>
           </div>
-        )}
+          <p className="relative text-sm text-slate-500 dark:text-slate-400">
+            {baseColors.length > 0
+              ? t("five_color_selection_progress").replace("{count}", String(selectedIndices.length)).replace("{total}", "5")
+              : t("five_color_select_lut_first")}
+          </p>
+        </section>
+
+        <section className={`${sectionCardClass} flex min-h-0 flex-col gap-3`}>
+          <h3 className="text-base font-semibold text-slate-900 dark:text-slate-50">{t("five_color_actions")}</h3>
+
+          <Button
+            onClick={() => void submitQuery()}
+            disabled={!isFull || isLoading}
+            label={isLoading ? t("five_color_query_loading") : t("five_color_query")}
+            className="w-full"
+          />
+          <Button
+            onClick={removeLastSelection}
+            disabled={!hasSelection}
+            label={t("five_color_undo")}
+            variant="secondary"
+            className="w-full"
+          />
+          <Button
+            onClick={reverseSelection}
+            disabled={!isFull}
+            label={t("five_color_reverse")}
+            variant="secondary"
+            className="w-full"
+          />
+          <Button
+            onClick={clearSelection}
+            disabled={!hasSelection}
+            label={t("five_color_clear")}
+            variant="secondary"
+            className="w-full"
+          />
+
+          {error && (
+            <StatusBanner
+              tone="error"
+              action={
+                <button
+                  onClick={clearError}
+                  aria-label={t("five_color_close_error")}
+                  className="rounded-full border border-current/20 px-2 py-1 text-xs text-red-600 transition-colors hover:bg-red-500/10 dark:text-red-300"
+                >
+                  ×
+                </button>
+              }
+            >
+              {error}
+            </StatusBanner>
+          )}
+
+          {queryResult && queryResult.found && (
+            <div className="mt-auto flex flex-col gap-3 rounded-[24px] border border-slate-200/80 bg-white/55 p-4 shadow-[var(--shadow-control)] dark:border-slate-700/80 dark:bg-slate-900/55">
+              <p className="text-sm font-semibold text-slate-900 dark:text-slate-50">{t("five_color_result_panel")}</p>
+              <div
+                className="h-20 w-full rounded-[20px] border border-white/60 shadow-[var(--shadow-control)]"
+                style={{ backgroundColor: queryResult.result_hex ?? undefined }}
+              />
+              <p className="font-mono text-sm text-slate-800 dark:text-slate-100">{queryResult.result_hex}</p>
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                {t("five_color_result_rgb")}: {queryResult.result_rgb?.join(", ")}
+              </p>
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                {t("five_color_result_row")}: {queryResult.row_index}
+              </p>
+              {queryResult.source && (
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  {t("five_color_result_source")}: {queryResult.source}
+                </p>
+              )}
+            </div>
+          )}
+
+          {queryResult && !queryResult.found && (
+            <StatusBanner tone="warning" className="mt-auto">
+              {t("five_color_not_found")}
+            </StatusBanner>
+          )}
+        </section>
       </div>
     </motion.div>
   );

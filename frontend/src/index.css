@@ -8,8 +8,105 @@
 
 @custom-variant dark (&:where(.dark, .dark *));
 
+:root {
+  --surface-panel: rgba(255, 255, 255, 0.78);
+  --surface-panel-strong: rgba(255, 255, 255, 0.92);
+  --surface-section: rgba(248, 250, 252, 0.72);
+  --surface-section-muted: rgba(255, 255, 255, 0.54);
+  --surface-border: rgba(255, 255, 255, 0.72);
+  --surface-outline: rgba(148, 163, 184, 0.24);
+  --surface-text-muted: rgb(100, 116, 139);
+  --shadow-panel-soft: 0 16px 40px rgba(15, 23, 42, 0.12);
+  --shadow-panel-elevated: 0 22px 60px rgba(15, 23, 42, 0.14);
+  --shadow-panel-top: 0 -8px 24px rgba(15, 23, 42, 0.12);
+  --shadow-control: 0 1px 2px rgba(15, 23, 42, 0.08);
+  --shadow-control-hover: 0 12px 28px rgba(15, 23, 42, 0.12);
+  --focus-ring: rgba(59, 130, 246, 0.22);
+  --info-soft: rgba(59, 130, 246, 0.12);
+  --info-border: rgba(59, 130, 246, 0.28);
+  --success-soft: rgba(34, 197, 94, 0.12);
+  --success-border: rgba(34, 197, 94, 0.28);
+  --warning-soft: rgba(245, 158, 11, 0.12);
+  --warning-border: rgba(245, 158, 11, 0.28);
+  --error-soft: rgba(239, 68, 68, 0.12);
+  --error-border: rgba(239, 68, 68, 0.28);
+}
+
+.dark {
+  --surface-panel: rgba(2, 6, 23, 0.78);
+  --surface-panel-strong: rgba(2, 6, 23, 0.92);
+  --surface-section: rgba(15, 23, 42, 0.74);
+  --surface-section-muted: rgba(15, 23, 42, 0.52);
+  --surface-border: rgba(255, 255, 255, 0.1);
+  --surface-outline: rgba(148, 163, 184, 0.18);
+  --surface-text-muted: rgb(148, 163, 184);
+  --shadow-panel-soft: 0 18px 44px rgba(0, 0, 0, 0.32);
+  --shadow-panel-elevated: 0 24px 64px rgba(0, 0, 0, 0.38);
+  --shadow-panel-top: 0 -8px 22px rgba(0, 0, 0, 0.3);
+  --shadow-control: 0 1px 2px rgba(0, 0, 0, 0.24);
+  --shadow-control-hover: 0 16px 34px rgba(0, 0, 0, 0.3);
+  --focus-ring: rgba(96, 165, 250, 0.24);
+  --info-soft: rgba(59, 130, 246, 0.16);
+  --info-border: rgba(96, 165, 250, 0.32);
+  --success-soft: rgba(34, 197, 94, 0.14);
+  --success-border: rgba(74, 222, 128, 0.32);
+  --warning-soft: rgba(245, 158, 11, 0.16);
+  --warning-border: rgba(251, 191, 36, 0.32);
+  --error-soft: rgba(239, 68, 68, 0.14);
+  --error-border: rgba(248, 113, 113, 0.32);
+}
+
 body {
   transition: background-color 200ms ease, color 200ms ease;
+}
+
+.panel-surface {
+  background: var(--surface-panel);
+  border: 1px solid var(--surface-border);
+  box-shadow: var(--shadow-panel-elevated);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+}
+
+.panel-section {
+  background: var(--surface-section);
+  border: 1px solid var(--surface-outline);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35);
+}
+
+.panel-section-muted {
+  background: var(--surface-section-muted);
+  border: 1px solid var(--surface-outline);
+}
+
+.surface-divider {
+  background: var(--surface-outline);
+}
+
+.status-banner {
+  border-radius: 1.25rem;
+  border: 1px solid transparent;
+  padding: 0.875rem 1rem;
+}
+
+.status-banner[data-tone="info"] {
+  background: var(--info-soft);
+  border-color: var(--info-border);
+}
+
+.status-banner[data-tone="success"] {
+  background: var(--success-soft);
+  border-color: var(--success-border);
+}
+
+.status-banner[data-tone="warning"] {
+  background: var(--warning-soft);
+  border-color: var(--warning-border);
+}
+
+.status-banner[data-tone="error"] {
+  background: var(--error-soft);
+  border-color: var(--error-border);
 }
 
 .dock-scrollbar {
@@ -107,7 +204,7 @@ body {
     rgba(255, 255, 255, 0.8) 100%
   );
   animation: premium-conic-spin 1.5s cubic-bezier(0.4, 0, 0.2, 1) infinite;
-  filter: blur(15px);
-  opacity: 0.8;
+  filter: blur(8px);
+  opacity: 0.7;
   border-radius: 50%;
 }

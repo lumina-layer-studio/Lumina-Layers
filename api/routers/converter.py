@@ -149,12 +149,23 @@ async def auto_detect_colors(
     image: UploadFile = File(..., description="输入图像"),
     target_width_mm: float = Form(60.0, description="目标打印宽度（毫米）"),
 ) -> AutoDetectColorsResponse:
-    """分析图片，自动推荐最佳量化颜色数。"""
+    """Analyze an image and recommend the optimal quantization color count.
+    分析图片，自动推荐最佳量化颜色数。
+
+    This endpoint is session-less: the uploaded temp file is deleted in a
+    ``finally`` block because no session exists to register it for later
+    cleanup.
+    此端点无会话：上传的临时文件在 finally 块中删除，因为没有会话来注册它
+    以便后续清理。
+    """
     temp_path = await ensure_png_tempfile(image)
     try:
         result = ImagePreprocessor.analyze_recommended_colors(temp_path, target_width_mm)
     except Exception as e:
         raise HTTPException(status_code=422, detail=f"颜色分析失败: {e}")
+    finally:
+        if os.path.exists(temp_path):
+            os.unlink(temp_path)
     return AutoDetectColorsResponse(
         recommended=result.get("recommended", 48),
         max_safe=result.get("max_safe", 64),

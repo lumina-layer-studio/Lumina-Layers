@@ -1,5 +1,11 @@
 @import "tailwindcss";
 
+@theme {
+  --shadow-glow-yellow: 0 0 12px rgba(250, 204, 21, 0.6);
+  --shadow-glow-blue: 0 0 6px rgba(59, 130, 246, 0.6);
+  --shadow-glass-panel: 0 -8px 30px rgba(0, 0, 0, 0.12);
+}
+
 @custom-variant dark (&:where(.dark, .dark *));
 
 body {

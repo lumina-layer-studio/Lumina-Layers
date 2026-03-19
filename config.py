@@ -458,6 +458,7 @@ class LUTMetadata:
 
     Attributes:
         palette (list[PaletteEntry]): Palette entries. (调色板条目列表)
+        color_mode (Optional[str]): Color mode identifier, e.g. "4-Color (RYBW)". (颜色模式标识)
         max_color_layers (int): Max color layers in recipe. (最大颜色层数)
         layer_height_mm (float): Layer height in mm. (层高，毫米)
         line_width_mm (float): Line width in mm. (线宽，毫米)
@@ -466,6 +467,7 @@ class LUTMetadata:
         layer_order (str): Print order, "Top2Bottom" or "Bottom2Top". (打印顺序)
     """
     palette: list[PaletteEntry] = field(default_factory=list)
+    color_mode: Optional[str] = None
     max_color_layers: int = 5
     layer_height_mm: float = 0.08
     line_width_mm: float = 0.42
@@ -487,7 +489,7 @@ class LUTMetadata:
                 entry["hex_color"] = e.hex_color
             palette_obj[e.color] = entry
 
-        return {
+        d = {
             "palette": palette_obj,
             "max_color_layers": self.max_color_layers,
             "layer_height_mm": self.layer_height_mm,
@@ -496,6 +498,9 @@ class LUTMetadata:
             "base_channel_idx": self.base_channel_idx,
             "layer_order": self.layer_order,
         }
+        if self.color_mode is not None:
+            d["color_mode"] = self.color_mode
+        return d
 
     @classmethod
     def from_dict(cls, data: dict) -> "LUTMetadata":
@@ -532,6 +537,7 @@ class LUTMetadata:
 
         return cls(
             palette=palette,
+            color_mode=data.get("color_mode"),
             max_color_layers=int(data.get("max_color_layers", 5)),
             layer_height_mm=float(data.get("layer_height_mm", 0.08)),
             line_width_mm=float(data.get("line_width_mm", 0.42)),

@@ -1,3 +1,4 @@
+import { motion } from "framer-motion";
 import { useExtractorStore } from "../stores/extractorStore";
 import { useI18n } from "../i18n/context";
 import { ExtractorColorMode, ExtractorPage } from "../api/types";
@@ -14,23 +15,8 @@ const colorModeOptions = Object.values(ExtractorColorMode).map((v) => ({
 
 /** 常见 Bambu Lab 耗材类型 */
 const MATERIAL_OPTIONS = [
-  "PLA Basic",
-  "PLA Matte",
-  "PLA Silk",
-  "PLA Metal",
-  "PLA Glow",
-  "PLA Marble",
-  "PLA-CF",
-  "PETG Basic",
-  "PETG HF",
-  "PETG-CF",
-  "ABS",
-  "ASA",
-  "TPU 95A",
-  "PVA",
-  "PA",
-  "PA-CF",
-  "PC",
+  "PLA",
+  "PETG",
 ];
 
 const pageOptions = Object.values(ExtractorPage).map((v) => ({
@@ -96,9 +82,12 @@ export default function ExtractorPanel() {
     imageFile === null || corner_points.length < 4 || isLoading;
 
   return (
-    <aside
+    <motion.aside
+      initial={{ opacity: 0, x: -30 }}
+      animate={{ opacity: 1, x: 0 }}
+      transition={{ type: "spring", damping: 25, stiffness: 300 }}
       data-testid="extractor-panel"
-      className="w-[400px] shrink-0 h-full overflow-y-auto bg-white dark:bg-gray-800 p-4 flex flex-col gap-4"
+      className="w-[400px] shrink-0 h-full overflow-y-auto bg-white/85 dark:bg-gray-900/85 backdrop-blur-2xl border-r border-white/40 dark:border-gray-700/50 shadow-[12px_0_30px_rgba(0,0,0,0.12)] p-4 flex flex-col gap-4"
     >
       {/* 颜色模式 */}
       <div data-testid="color-mode-select">
@@ -180,7 +169,7 @@ export default function ExtractorPanel() {
           </span>
           {/* 统一耗材类型选择 */}
           <div className="flex items-center gap-2 text-xs">
-            <span className="text-gray-500 dark:text-gray-400 shrink-0">耗材类型</span>
+            <span className="text-gray-500 dark:text-gray-400 shrink-0">{t("ext_material_type_label")}</span>
             <select
               className="flex-1 px-1 py-0.5 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200 text-xs"
               value={defaultPalette[0]?.material ?? "PLA Basic"}
@@ -251,6 +240,6 @@ export default function ExtractorPanel() {
       {manualFixError && (
         <p data-testid="manual-fix-error" className="text-xs text-red-400">{manualFixError}</p>
       )}
-    </aside>
+    </motion.aside>
   );
 }

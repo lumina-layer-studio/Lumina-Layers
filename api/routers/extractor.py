@@ -271,7 +271,7 @@ def extractor_merge_5color_extended(
             merged_stacks = np.zeros((len(merged_rgb), 0), dtype=np.int32)
 
         # Use metadata from first page, update for merged result
-        metadata = LUTManager.infer_default_metadata("lumina_lut", LUT_FILE_PATH, len(merged_rgb))
+        metadata = LUTManager.infer_default_metadata("lumina_lut", LUT_FILE_PATH, len(merged_rgb), color_mode="5-Color Extended")
         LUTManager.save_keyed_json(LUT_FILE_PATH, merged_rgb, merged_stacks, metadata)
     except Exception as e:
         _handle_core_error(e, "5-Color Extended merge")
@@ -330,7 +330,7 @@ def extractor_merge_8color(
         else:
             merged_stacks = np.zeros((len(merged_rgb), 0), dtype=np.int32)
 
-        metadata = LUTManager.infer_default_metadata("lumina_lut", LUT_FILE_PATH, len(merged_rgb))
+        metadata = LUTManager.infer_default_metadata("lumina_lut", LUT_FILE_PATH, len(merged_rgb), color_mode="8-Color Max")
         LUTManager.save_keyed_json(LUT_FILE_PATH, merged_rgb, merged_stacks, metadata)
     except Exception as e:
         _handle_core_error(e, "8-Color merge")

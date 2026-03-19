@@ -20,7 +20,7 @@ export default function Checkbox({
         checked={checked}
         disabled={disabled}
         onChange={(e) => onChange(e.target.checked)}
-        className="h-4 w-4 rounded border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-blue-500 accent-blue-500 disabled:cursor-not-allowed"
+        className="h-4 w-4 rounded border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-blue-500 accent-blue-500 transition-all duration-200 hover:scale-110 focus:ring-2 focus:ring-blue-500/40 outline-none disabled:cursor-not-allowed"
       />
       <span className="text-gray-700 dark:text-gray-300">{label}</span>
     </label>

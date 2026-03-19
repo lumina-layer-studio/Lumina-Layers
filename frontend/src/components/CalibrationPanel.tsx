@@ -1,3 +1,4 @@
+import { motion } from "framer-motion";
 import { useCalibrationStore } from "../stores/calibrationStore";
 import { useI18n } from "../i18n/context";
 import { CalibrationColorMode, BackingColor } from "../api/types";
@@ -42,9 +43,12 @@ export default function CalibrationPanel() {
   const backingDisabled = isEightColor || isFiveColorExt || isSixColor;
 
   return (
-    <aside
+    <motion.aside
+      initial={{ opacity: 0, y: 30 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ type: "spring", damping: 25, stiffness: 300 }}
       data-testid="calibration-panel"
-      className="w-full max-w-2xl mx-auto h-full overflow-y-auto bg-white dark:bg-gray-800 p-6 flex flex-col gap-4"
+      className="w-full max-w-2xl mx-auto h-full overflow-y-auto bg-white/85 dark:bg-gray-900/85 backdrop-blur-2xl border border-white/40 dark:border-gray-700/50 shadow-2xl rounded-2xl p-6 flex flex-col gap-4"
     >
       <Dropdown
         label={t("cal_color_mode_label")}
@@ -122,6 +126,6 @@ export default function CalibrationPanel() {
           className="w-full rounded-md border border-gray-300 dark:border-gray-700"
         />
       )}
-    </aside>
+    </motion.aside>
   );
 }

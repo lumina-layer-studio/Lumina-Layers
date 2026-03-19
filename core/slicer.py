@@ -20,11 +20,12 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 KNOWN_SLICERS: dict[str, dict] = {
-    "bambu_studio":  {"match": ["bambu studio"],                          "display_name": "Bambu Studio"},
-    "orca_slicer":   {"match": ["orcaslicer"],                            "display_name": "OrcaSlicer"},
-    "elegoo_slicer": {"match": ["elegooslicer", "elegoo slicer", "elegoo satellit"], "display_name": "ElegooSlicer"},
-    "prusa_slicer":  {"match": ["prusaslicer"],                           "display_name": "PrusaSlicer"},
-    "cura":          {"match": ["ultimaker cura", "ultimaker-cura"],      "display_name": "Ultimaker Cura"},
+    "bambu_studio":    {"match": ["bambu studio"],                          "display_name": "Bambu Studio"},
+    "orca_slicer":     {"match": ["orcaslicer"],                            "display_name": "OrcaSlicer"},
+    "snapmaker_orca":  {"match": ["snapmaker_orca", "snapmaker orca"],      "display_name": "Snapmaker Orca"},
+    "elegoo_slicer":   {"match": ["elegooslicer", "elegoo slicer", "elegoo satellit"], "display_name": "ElegooSlicer"},
+    "prusa_slicer":    {"match": ["prusaslicer"],                           "display_name": "PrusaSlicer"},
+    "cura":            {"match": ["ultimaker cura", "ultimaker-cura"],      "display_name": "Ultimaker Cura"},
 }
 
 
@@ -74,16 +75,34 @@ def _extract_exe_from_icon(icon_value: str) -> str | None:
     return None
 
 
-def _find_exe_in_directory(directory: str) -> str | None:
-    """Find the first non-uninstaller .exe in *directory*."""
+def _find_exe_in_directory(directory: str, hint: str = "") -> str | None:
+    """Find the slicer .exe in *directory*.
+    找到目录中的切片器可执行文件。
+
+    Args:
+        directory (str): Directory to search. (搜索目录)
+        hint (str): Lowercase keyword to prefer in filename. (文件名优先匹配关键词)
+
+    Returns:
+        str | None: Path to exe or None. (可执行文件路径或 None)
+    """
     if not os.path.isdir(directory):
         return None
+    candidates: list[str] = []
     for fname in os.listdir(directory):
-        if fname.lower().endswith(".exe") and "unins" not in fname.lower():
-            candidate = os.path.join(directory, fname)
-            if os.path.isfile(candidate):
-                return candidate
-    return None
+        fl = fname.lower()
+        if fl.endswith(".exe") and "unins" not in fl and "crashpad" not in fl:
+            candidates.append(os.path.join(directory, fname))
+    if not candidates:
+        return None
+    # Prefer exe whose name contains the hint keyword
+    if hint:
+        for c in candidates:
+            # Compare with hyphens/underscores stripped for fuzzy match
+            basename = os.path.basename(c).lower().replace("-", "").replace("_", "")
+            if hint in basename:
+                return c
+    return candidates[0]
 
 
 def scan_registry() -> list[DetectedSlicer]:
@@ -148,7 +167,20 @@ def scan_registry() -> list[DetectedSlicer]:
                 if exe_path is None:
                     try:
                         install_loc: str = winreg.QueryValueEx(subkey, "InstallLocation")[0]
-                        exe_path = _find_exe_in_directory(install_loc)
+                        exe_hint = sid.replace("_", "")  # e.g. "snapmakerorca"
+                        exe_path = _find_exe_in_directory(install_loc, hint=exe_hint)
+                    except OSError:
+                        pass
+
+                # 3) Fallback: derive directory from UninstallString
+                if exe_path is None:
+                    try:
+                        uninst: str = winreg.QueryValueEx(subkey, "UninstallString")[0]
+                        uninst_path = uninst.strip().strip('"')
+                        uninst_dir = os.path.dirname(uninst_path)
+                        if uninst_dir:
+                            exe_hint = sid.replace("_", "")
+                            exe_path = _find_exe_in_directory(uninst_dir, hint=exe_hint)
                     except OSError:
                         pass
 

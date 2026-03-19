@@ -1,3 +1,4 @@
+import { motion } from "framer-motion";
 import { useEffect, useMemo } from "react";
 import { useFiveColorStore } from "../stores/fiveColorStore";
 import { useConverterStore } from "../stores/converterStore";
@@ -38,7 +39,12 @@ export default function FiveColorQueryPanel() {
   );
 
   return (
-    <div className="flex h-full bg-white dark:bg-gray-950 text-gray-900 dark:text-white">
+    <motion.div
+      initial={{ opacity: 0, y: 30 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ type: "spring", damping: 25, stiffness: 300 }}
+      className="flex h-full w-full max-w-5xl mx-auto rounded-2xl overflow-hidden shadow-2xl border border-white/40 dark:border-gray-800/50 bg-white/85 dark:bg-gray-950/85 backdrop-blur-2xl text-gray-900 dark:text-white"
+    >
       {/* ===== 左侧：颜色选择网格 ===== */}
       <div className="w-72 shrink-0 border-r border-gray-200 dark:border-gray-800 flex flex-col">
         <div className="p-4 border-b border-gray-200 dark:border-gray-800">
@@ -189,6 +195,6 @@ export default function FiveColorQueryPanel() {
           </div>
         )}
       </div>
-    </div>
+    </motion.div>
   );
 }

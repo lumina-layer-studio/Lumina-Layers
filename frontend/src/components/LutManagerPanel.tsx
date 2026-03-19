@@ -4,6 +4,7 @@ import { useI18n } from "../i18n/context";
 import Dropdown from "./ui/Dropdown";
 import Slider from "./ui/Slider";
 import Button from "./ui/Button";
+import { motion } from "framer-motion";
 
 export default function LutManagerPanel() {
   const { t } = useI18n();
@@ -59,9 +60,12 @@ export default function LutManagerPanel() {
   };
 
   return (
-    <aside
+    <motion.aside
+      initial={{ opacity: 0, y: 30 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ type: "spring", damping: 25, stiffness: 300 }}
       data-testid="lut-manager-panel"
-      className="w-full max-w-2xl mx-auto h-full overflow-y-auto bg-white dark:bg-gray-800 p-6 flex flex-col gap-4"
+      className="w-full max-w-2xl mx-auto h-full overflow-y-auto bg-white/85 dark:bg-gray-900/85 backdrop-blur-2xl border border-white/40 dark:border-gray-700/50 shadow-2xl rounded-2xl p-6 flex flex-col gap-4"
     >
       <div>
         <h2 className="text-lg font-semibold text-gray-800 dark:text-gray-100">{t("lut_manager_title")}</h2>
@@ -186,6 +190,6 @@ export default function LutManagerPanel() {
           </button>
         </div>
       )}
-    </aside>
+    </motion.aside>
   );
 }

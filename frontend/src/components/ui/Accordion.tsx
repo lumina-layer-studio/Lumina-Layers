@@ -1,4 +1,5 @@
 import { useState, type ReactNode } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 
 interface AccordionProps {
   title: string;
@@ -18,11 +19,13 @@ export default function Accordion({
       <button
         type="button"
         onClick={() => setOpen((prev) => !prev)}
-        className="flex w-full items-center justify-between py-2 text-sm text-gray-300 hover:text-gray-100 transition-colors"
+        className="flex w-full items-center justify-between py-3 text-sm font-medium text-gray-300 hover:text-gray-100 transition-colors"
       >
         <span>{title}</span>
-        <svg
-          className={`h-4 w-4 shrink-0 text-gray-400 transition-transform duration-200 ${open ? "rotate-90" : ""}`}
+        <motion.svg
+          animate={{ rotate: open ? 90 : 0 }}
+          transition={{ type: "spring", stiffness: 300, damping: 20 }}
+          className="h-4 w-4 shrink-0 text-gray-400"
           viewBox="0 0 24 24"
           fill="none"
           stroke="currentColor"
@@ -31,9 +34,21 @@ export default function Accordion({
           strokeLinejoin="round"
         >
           <polyline points="9 18 15 12 9 6" />
-        </svg>
+        </motion.svg>
       </button>
-      {open && <div className="pb-3">{children}</div>}
+      <AnimatePresence initial={false}>
+        {open && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ type: "spring", bounce: 0, duration: 0.4 }}
+            className="overflow-hidden"
+          >
+            <div className="pb-3">{children}</div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

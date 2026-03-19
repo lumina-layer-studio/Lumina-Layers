@@ -1471,6 +1471,10 @@ export const translations: Record<string, Record<"zh" | "en", string>> = {
     zh: "点击右侧 LUT 预览图中的色块可手动修正颜色",
     en: "Click a cell in the LUT preview to manually fix its color",
   },
+  ext_material_type_label: {
+    zh: "耗材类型",
+    en: "Material Type",
+  },
   ext_palette_title: {
     zh: "调色板确认",
     en: "Palette Confirmation",

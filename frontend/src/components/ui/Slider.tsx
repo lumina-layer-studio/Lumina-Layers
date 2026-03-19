@@ -91,7 +91,7 @@ export default function Slider({
           value={value}
           disabled={disabled}
           onChange={(e) => onChange(Number(e.target.value))}
-          className="flex-1 h-1.5 rounded-full appearance-none cursor-pointer bg-gray-300 dark:bg-gray-700 accent-blue-500 disabled:opacity-40 disabled:cursor-not-allowed"
+          className="flex-1 h-1.5 rounded-full appearance-none cursor-pointer bg-gray-300 dark:bg-gray-700 accent-blue-500 transition-all duration-200 hover:accent-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-500/40 disabled:opacity-40 disabled:cursor-not-allowed"
         />
         <div className="flex items-center gap-0.5 shrink-0">
           <input

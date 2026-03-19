@@ -3,6 +3,7 @@
  * 系统设置面板，以全屏弹窗形式展示，包含缓存清理功能。
  */
 
+import { motion } from "framer-motion";
 import { useState } from "react";
 import { useI18n } from "../i18n/context";
 import { clearCache } from "../api/system";
@@ -35,9 +36,12 @@ export default function SettingsPanel() {
   };
 
   return (
-    <aside
+    <motion.aside
+      initial={{ opacity: 0, y: 30 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ type: "spring", damping: 25, stiffness: 300 }}
       data-testid="settings-panel"
-      className="w-full max-w-2xl mx-auto h-full overflow-y-auto bg-white dark:bg-gray-800 p-6 flex flex-col gap-6"
+      className="w-full max-w-2xl mx-auto h-full overflow-y-auto bg-white/85 dark:bg-gray-900/85 backdrop-blur-2xl border border-white/40 dark:border-gray-700/50 shadow-2xl rounded-2xl p-6 flex flex-col gap-6"
     >
       <h3 className="text-base font-semibold text-gray-900 dark:text-gray-100">
         {t("settings.title")}
@@ -65,6 +69,6 @@ export default function SettingsPanel() {
           )}
         </div>
       </section>
-    </aside>
+    </motion.aside>
   );
 }

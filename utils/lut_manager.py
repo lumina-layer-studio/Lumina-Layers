@@ -112,13 +112,61 @@ class LUTManager:
         return list(lut_files.keys())
 
     # JSON LUT 颜色数量 → 模式映射（与 lut_merger._SIZE_TO_MODE 对齐）
+    # 1024 和 1296 已移除：多个变体共享相同数量（CMYW/RYBW 均为 1024，
+    # 6-Color CMYW/RYBW 均为 1296），通过 _detect_variant_from_palette 处理
     _JSON_SIZE_TO_MODE: dict[int, str] = {
         32: "BW (Black & White)",
-        1024: "4-Color (CMYW)",
-        1296: "6-Color (Smart 1296)",
         2468: "5-Color Extended",
         2738: "8-Color Max",
     }
+
+    @staticmethod
+    def _detect_variant_from_palette(data: dict, base_mode: str) -> str:
+        """Detect RYBW/CMYW variant from palette color names.
+        从 palette 颜色名称推断 RYBW/CMYW 变体。
+
+        For ambiguous entry counts (1024 for 4-Color, 1296 for 6-Color),
+        inspect palette keys/color fields to distinguish RYBW from CMYW.
+        对于有歧义的 entries 数量（4-Color 的 1024、6-Color 的 1296），
+        通过检查 palette 的键名或 color 字段区分 RYBW 和 CMYW 变体。
+
+        Args:
+            data (dict): Parsed JSON data containing a "palette" field.
+                         (包含 "palette" 字段的已解析 JSON 数据)
+            base_mode (str): Base color mode without variant, e.g. "4-Color" or "6-Color".
+                             (不含变体的基础颜色模式，如 "4-Color" 或 "6-Color")
+
+        Returns:
+            str: Full color mode string with variant, e.g. "4-Color (RYBW)".
+                 (含变体的完整颜色模式字符串)
+        """
+        palette_raw = data.get("palette", {})
+        color_names: set[str] = set()
+        if isinstance(palette_raw, dict):
+            color_names = {k.lower() for k in palette_raw.keys()}
+        elif isinstance(palette_raw, list):
+            color_names = {
+                item.get("color", "").lower()
+                for item in palette_raw
+                if isinstance(item, dict)
+            }
+
+        rybw_indicators = {"red", "blue"}
+        cmyw_indicators = {"cyan", "magenta"}
+
+        if base_mode == "4-Color":
+            if rybw_indicators & color_names:
+                return "4-Color (RYBW)"
+            if cmyw_indicators & color_names:
+                return "4-Color (CMYW)"
+            return "4-Color (CMYW)"  # default fallback
+
+        if base_mode == "6-Color":
+            if rybw_indicators & color_names:
+                return "6-Color (RYBW 1296)"
+            return "6-Color (Smart 1296)"  # default fallback
+
+        return f"{base_mode}"
 
     @staticmethod
     def infer_color_mode(display_name: str, file_path: str) -> str:
@@ -151,7 +199,11 @@ class LUTManager:
 
     @staticmethod
     def _infer_color_mode_from_json(file_path: str) -> str:
-        """从 JSON 文件内容推断颜色模式（轻量读取，不做 numpy 运算）。
+        """Infer color mode from JSON file content (lightweight read, no numpy).
+        从 JSON 文件内容推断颜色模式（轻量读取，不做 numpy 运算）。
+
+        Priority: stored color_mode > palette-based variant detection > size mapping.
+        优先级：存储的 color_mode > 基于 palette 的变体检测 > 数量映射。
 
         支持两种 JSON 格式：
         - flat-list: 顶层为数组，len(data) 即 entries 数量
@@ -168,12 +220,22 @@ class LUTManager:
         if isinstance(data, list):
             count = len(data)
         elif isinstance(data, dict):
+            # 优先使用存储的 color_mode
+            stored_mode = data.get("color_mode")
+            if stored_mode and isinstance(stored_mode, str):
+                return stored_mode
             entries = data.get("entries", [])
             count = len(entries)
         else:
             count = 0
 
-        # 精确匹配标准尺寸
+        # 对于有歧义的数量，通过 palette 名称区分变体
+        if count == 1024 and isinstance(data, dict):
+            return LUTManager._detect_variant_from_palette(data, "4-Color")
+        if count == 1296 and isinstance(data, dict):
+            return LUTManager._detect_variant_from_palette(data, "6-Color")
+
+        # 无歧义的数量直接映射
         mode = LUTManager._JSON_SIZE_TO_MODE.get(count)
         if mode:
             return mode
@@ -352,7 +414,8 @@ class LUTManager:
 
     @classmethod
     def infer_default_metadata(cls, display_name: str, file_path: str,
-                               color_count: int) -> LUTMetadata:
+                               color_count: int,
+                               color_mode: str | None = None) -> LUTMetadata:
         """Infer default LUTMetadata from filename and color count.
         根据文件名和颜色数量推断默认元数据。
 
@@ -360,11 +423,13 @@ class LUTManager:
             display_name (str): LUT display name. (LUT 显示名称)
             file_path (str): LUT file path. (LUT 文件路径)
             color_count (int): Number of colors in the LUT. (LUT 中的颜色数量)
+            color_mode (str | None): Optional color mode override; when provided,
+                takes priority over inference. (可选颜色模式覆盖；传入时优先使用)
 
         Returns:
             LUTMetadata: Inferred default metadata. (推断的默认元数据)
         """
-        mode = cls.infer_color_mode(display_name, file_path)
+        mode = color_mode or cls.infer_color_mode(display_name, file_path)
         color_conf = ColorSystem.get(mode)
         slots = color_conf.get("slots", [])
 
@@ -375,6 +440,7 @@ class LUTManager:
 
         return LUTMetadata(
             palette=palette,
+            color_mode=mode,
             max_color_layers=PrinterConfig.COLOR_LAYERS,
             layer_height_mm=PrinterConfig.LAYER_HEIGHT,
             line_width_mm=PrinterConfig.NOZZLE_WIDTH,
@@ -473,6 +539,7 @@ class LUTManager:
         # Build metadata
         metadata = LUTMetadata(
             palette=palette,
+            color_mode=data.get("color_mode"),
             max_color_layers=int(data.get("max_color_layers", PrinterConfig.COLOR_LAYERS)),
             layer_height_mm=float(data.get("layer_height_mm", PrinterConfig.LAYER_HEIGHT)),
             line_width_mm=float(data.get("line_width_mm", PrinterConfig.NOZZLE_WIDTH)),

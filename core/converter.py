@@ -747,3 +747,350 @@ def on_preview_click_select_color(cache, evt: gr.SelectData, bed_label=None):
         return gr.update(), display_text, q_hex, status_msg
 
     return display_img, display_text, q_hex, status_msg
+
+
+def generate_lut_grid_html(lut_path, lang: str = "zh"):
+    """
+    生成 LUT 可用颜色的 HTML 网格 (with hue filter + smart search)
+    """
+    from core.i18n import I18n
+    import colorsys
+    colors = extract_lut_available_colors(lut_path)
+
+    if not colors:
+        return f"<div style='color:orange'>LUT 文件无效或为空</div>"
+
+    count = len(colors)
+
+    def _classify_hue(r, g, b):
+        rf, gf, bf = r / 255.0, g / 255.0, b / 255.0
+        h, s, v = colorsys.rgb_to_hsv(rf, gf, bf)
+        h360 = h * 360
+        if s < 0.15 or v < 0.10:
+            return 'neutral'
+        if h360 < 15 or h360 >= 345:
+            return 'red'
+        elif h360 < 40:
+            return 'orange'
+        elif h360 < 70:
+            return 'yellow'
+        elif h360 < 160:
+            return 'green'
+        elif h360 < 195:
+            return 'cyan'
+        elif h360 < 260:
+            return 'blue'
+        elif h360 < 345:
+            return 'purple'
+        return 'neutral'
+
+    from ui.palette_extension import build_search_bar_html, build_hue_filter_bar_html
+
+    # Derive LUT key for favorites persistence
+    _lut_key = os.path.splitext(os.path.basename(lut_path))[0] if lut_path else ''
+
+    html = f"""
+    <div class="lut-grid-container">
+        <div style="margin-bottom: 8px; font-size: 12px; color: #666;">
+            {I18n.get('lut_grid_count', lang).format(count=count)}: <span id="lut-color-visible-count">{count}</span>
+        </div>
+        {build_search_bar_html(lang)}
+        {build_hue_filter_bar_html(lang)}
+        <div id="lut-color-grid-container" data-lut-key="{_lut_key}" style="
+            display: flex;
+            flex-wrap: wrap;
+            gap: 4px;
+            max-height: 300px;
+            overflow-y: auto;
+            padding: 5px;
+            border: 1px solid #eee;
+            border-radius: 8px;
+            background: #f9f9f9;">
+    """
+
+    for entry in colors:
+        hex_val = entry['hex']
+        r, g, b = entry['color']
+        rgb_val = f"R:{r} G:{g} B:{b}"
+        hue_cat = _classify_hue(r, g, b)
+
+        html += f"""
+        <div class="lut-color-swatch-container" data-hue="{hue_cat}" style="display:flex;">
+        <div class="lut-swatch lut-color-swatch"
+             data-color="{hex_val}"
+             style="background-color: {hex_val}; width:24px; height:24px; cursor:pointer; border:1px solid #ddd; border-radius:3px;"
+             title="{hex_val} ({rgb_val})">
+        </div>
+        </div>
+        """
+
+    html += "</div></div>"
+    return html
+
+
+def generate_lut_card_grid_html(lut_path, lang: str = "zh"):
+    """
+    Generate a calibration-card-style (色卡) HTML grid for the LUT.
+
+    Colors are displayed in their original LUT order arranged in a square grid,
+    matching the physical calibration board layout.  For 8-color LUTs the two
+    halves are shown side-by-side horizontally.
+
+    Includes search bar (highlight-in-place, no hiding) and hue filter
+    (dims non-matching swatches instead of hiding to preserve grid layout).
+
+    Each swatch is clickable (same data-color / class as the swatch grid) so
+    the existing event-delegation click handler picks it up automatically.
+    """
+    if not lut_path:
+        return "<div style='color:orange'>LUT 文件无效或为空</div>"
+
+    try:
+        lut_grid = np.load(lut_path)
+        measured_colors = lut_grid.reshape(-1, 3)
+    except Exception as e:
+        return f"<div style='color:orange'>LUT 加载失败: {e}</div>"
+
+    total = len(measured_colors)
+
+    from core.i18n import I18n
+    import colorsys
+
+    def _classify_hue(r, g, b):
+        rf, gf, bf = r / 255.0, g / 255.0, b / 255.0
+        h, s, v = colorsys.rgb_to_hsv(rf, gf, bf)
+        h360 = h * 360
+        if s < 0.15 or v < 0.10:
+            return 'neutral'
+        if h360 < 15 or h360 >= 345:
+            return 'red'
+        elif h360 < 40:
+            return 'orange'
+        elif h360 < 70:
+            return 'yellow'
+        elif h360 < 160:
+            return 'green'
+        elif h360 < 195:
+            return 'cyan'
+        elif h360 < 260:
+            return 'blue'
+        elif h360 < 345:
+            return 'purple'
+        return 'neutral'
+
+    import math
+    if total == 2738:
+        half = total // 2
+        remainder = total - half
+        dim1 = int(math.ceil(math.sqrt(half)))
+        dim2 = int(math.ceil(math.sqrt(remainder)))
+        grids = [
+            (measured_colors[:half], dim1, "色卡 A" if lang == "zh" else "Card A"),
+            (measured_colors[half:], dim2, "色卡 B" if lang == "zh" else "Card B"),
+        ]
+    else:
+        dim = int(math.ceil(math.sqrt(total)))
+        label = f"{total} 色色卡" if lang == "zh" else f"{total}-color Card"
+        grids = [(measured_colors, dim, label)]
+
+    cell = 18
+    gap = 1
+
+    from ui.palette_extension import build_search_bar_html, build_hue_filter_bar_html
+
+    html_parts = [
+        f'<div style="margin-bottom:8px; font-size:12px; color:#666;">{I18n.get("lut_grid_count", lang).format(count=total)}: <span id="lut-color-visible-count">{total}</span></div>',
+        build_search_bar_html(lang),
+        build_hue_filter_bar_html(lang),
+    ]
+
+    # Derive LUT key for favorites persistence
+    _lut_key = os.path.splitext(os.path.basename(lut_path))[0] if lut_path else ''
+
+    # Grid
+    html_parts.append(
+        f"<div id='lut-color-grid-container' data-lut-key='{_lut_key}' style='display:flex; gap:12px; align-items:flex-start; "
+        "overflow-x:auto; padding:4px;'>"
+    )
+
+    for colors_arr, dim, title in grids:
+        html_parts.append(
+            f"<div style='flex-shrink:0;'>"
+            f"<div style='font-size:11px; color:#666; margin-bottom:4px;'>{title} ({len(colors_arr)})</div>"
+            f"<div style='display:grid; grid-template-columns:repeat({dim}, {cell}px); gap:{gap}px; "
+            f"border:1px solid #eee; border-radius:6px; padding:4px; background:#f9f9f9;'>"
+        )
+        for c in colors_arr:
+            r, g, b = int(c[0]), int(c[1]), int(c[2])
+            hex_val = f"#{r:02x}{g:02x}{b:02x}"
+            hue_cat = _classify_hue(r, g, b)
+            html_parts.append(
+                f"<div class='lut-swatch lut-color-swatch' data-color='{hex_val}' data-hue='{hue_cat}' "
+                f"style='width:{cell}px;height:{cell}px;background:{hex_val};"
+                f"cursor:pointer;border-radius:2px;' "
+                f"title='{hex_val} (R:{r} G:{g} B:{b})'></div>"
+            )
+        html_parts.append("</div></div>")
+
+    html_parts.append("</div>")
+    return "".join(html_parts)
+
+
+# ========== Auto-detection Functions ==========
+
+def detect_lut_color_mode(lut_path):
+    """
+    自动检测LUT文件的颜色模式
+    
+    Args:
+        lut_path: LUT文件路径
+    
+    Returns:
+        str: 颜色模式 ("BW (Black & White)", "Merged", "6-Color (Smart 1296)", "8-Color Max", etc.)
+    """
+    if not lut_path or not os.path.exists(lut_path):
+        return None
+    
+    try:
+        if lut_path.endswith('.npz'):
+            data = np.load(lut_path)
+            if 'rgb' in data:
+                rgb = data['rgb']
+                total_colors = int(rgb.reshape(-1, 3).shape[0])
+                stacks = data['stacks'] if 'stacks' in data else None
+                layer_count = int(stacks.shape[1]) if isinstance(stacks, np.ndarray) and stacks.ndim == 2 else None
+                max_mat = int(np.max(stacks)) if isinstance(stacks, np.ndarray) and stacks.size > 0 else None
+                if total_colors >= 2400 and total_colors < 2600 and layer_count == 6 and (max_mat is None or max_mat <= 4):
+                    print(f"[AUTO_DETECT] Detected 5-Color Extended mode from .npz ({total_colors} colors)")
+                    return "5-Color Extended"
+                if total_colors >= 2600 and total_colors <= 2800:
+                    print(f"[AUTO_DETECT] Detected 8-Color mode from .npz ({total_colors} colors)")
+                    return "8-Color Max"
+                if total_colors >= 1200 and total_colors < 1400:
+                    print(f"[AUTO_DETECT] Detected 6-Color mode from .npz ({total_colors} colors)")
+                    return "6-Color (Smart 1296)"
+                if total_colors >= 900 and total_colors < 1200:
+                    print(f"[AUTO_DETECT] Detected 4-Color mode from .npz ({total_colors} colors)")
+                    return "4-Color"
+                if total_colors >= 30 and total_colors <= 35:
+                    print(f"[AUTO_DETECT] Detected 2-Color BW mode from .npz ({total_colors} colors)")
+                    return "BW (Black & White)"
+            print(f"[AUTO_DETECT] Detected Merged LUT (.npz format)")
+            return "Merged"
+        
+        # .json (Keyed JSON) format
+        if lut_path.endswith('.json'):
+            from utils.lut_manager import LUTManager
+            rgb, stacks, _meta = LUTManager.load_lut_with_metadata(lut_path)
+            # 优先使用存储的 color_mode
+            if _meta and _meta.color_mode:
+                print(f"[AUTO_DETECT] Using stored color_mode from metadata: {_meta.color_mode}")
+                return _meta.color_mode
+            # 回退到基于数量的推断
+            total_colors = len(rgb) if rgb is not None else 0
+            layer_count = int(stacks.shape[1]) if isinstance(stacks, np.ndarray) and stacks.ndim == 2 else None
+            max_mat = int(np.max(stacks)) if isinstance(stacks, np.ndarray) and stacks.size > 0 else None
+            print(f"[AUTO_DETECT] JSON LUT: {total_colors} colors, layer_count={layer_count}, max_mat={max_mat}")
+            if total_colors >= 2400 and total_colors < 2600 and layer_count == 6 and (max_mat is None or max_mat <= 4):
+                print(f"[AUTO_DETECT] Detected 5-Color Extended mode from .json ({total_colors} colors)")
+                return "5-Color Extended"
+            if total_colors >= 2600 and total_colors <= 2800:
+                print(f"[AUTO_DETECT] Detected 8-Color mode from .json ({total_colors} colors)")
+                return "8-Color Max"
+            if total_colors >= 1200 and total_colors < 1400:
+                print(f"[AUTO_DETECT] Detected 6-Color mode from .json ({total_colors} colors)")
+                return "6-Color (Smart 1296)"
+            if total_colors >= 900 and total_colors < 1200:
+                print(f"[AUTO_DETECT] Detected 4-Color mode from .json ({total_colors} colors)")
+                return "4-Color"
+            if total_colors >= 30 and total_colors <= 35:
+                print(f"[AUTO_DETECT] Detected 2-Color BW mode from .json ({total_colors} colors)")
+                return "BW (Black & White)"
+            print(f"[AUTO_DETECT] Non-standard JSON LUT size ({total_colors} colors), detected as Merged")
+            return "Merged"
+        
+        # Standard .npy format
+        lut_data = np.load(lut_path)
+        
+        # 确保是2D数组
+        if lut_data.ndim == 1:
+            # 如果是1D数组，假设是 (N*3,) 格式，重塑为 (N, 3)
+            if len(lut_data) % 3 == 0:
+                lut_data = lut_data.reshape(-1, 3)
+            else:
+                print(f"[AUTO_DETECT] Invalid LUT format: cannot reshape to (N, 3)")
+                return None
+        
+        # 计算颜色数量
+        if lut_data.ndim == 2:
+            total_colors = lut_data.shape[0]
+        else:
+            total_colors = lut_data.shape[0] * lut_data.shape[1]
+        
+        print(f"[AUTO_DETECT] LUT shape: {lut_data.shape}, total colors: {total_colors}")
+        
+        # 2色模式：32色 (2^5 = 32)
+        if total_colors >= 30 and total_colors <= 35:
+            print(f"[AUTO_DETECT] Detected 2-Color BW mode (32 colors)")
+            return "BW (Black & White)"
+        
+        # 5-Color Extended模式：~2468色 (1024 base + 1444 extended)
+        elif total_colors >= 2400 and total_colors < 2600:
+            print(f"[AUTO_DETECT] Detected 5-Color Extended mode ({total_colors} colors)")
+            return "5-Color Extended"
+        
+        # 8色模式：2600-2800色
+        elif total_colors >= 2600 and total_colors <= 2800:
+            print(f"[AUTO_DETECT] Detected 8-Color mode ({total_colors} colors)")
+            return "8-Color Max"
+        
+        # 6色模式：1200-1400色
+        elif total_colors >= 1200 and total_colors < 1400:
+            print(f"[AUTO_DETECT] Detected 6-Color mode ({total_colors} colors)")
+            return "6-Color (Smart 1296)"
+        
+        # 4色模式：900-1200色
+        elif total_colors >= 900 and total_colors < 1200:
+            print(f"[AUTO_DETECT] Detected 4-Color mode ({total_colors} colors)")
+            return "4-Color"
+        
+        else:
+            # 非标准尺寸：识别为合并色卡
+            print(f"[AUTO_DETECT] Non-standard LUT size ({total_colors} colors), detected as Merged")
+            return "Merged"
+            
+    except Exception as e:
+        print(f"[AUTO_DETECT] Error detecting LUT mode: {e}")
+        import traceback
+        traceback.print_exc()
+        return None
+
+
+def detect_image_type(image_path):
+    """
+    Detect image type and return recommended modeling mode.
+    自动检测图像类型并返回推荐的建模模式。
+
+    Args:
+        image_path (str): Image file path. (图像文件路径)
+
+    Returns:
+        gr.update: Gradio update object with new mode, or no-op update. (Gradio 更新对象)
+    """
+    import gradio as gr
+    if not image_path:
+        return gr.update()
+    
+    try:
+        ext = os.path.splitext(image_path)[1].lower()
+        
+        if ext == '.svg':
+            print(f"[AUTO_DETECT] SVG file detected, recommending SVG Mode")
+            return gr.update(value=ModelingMode.VECTOR)
+        else:
+            print(f"[AUTO_DETECT] Raster image detected ({ext}), keeping current mode")
+            return gr.update()  # 不改变当前选择
+            
+    except Exception as e:
+        print(f"[AUTO_DETECT] Error detecting image type: {e}")
+        return None

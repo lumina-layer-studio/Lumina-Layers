@@ -372,7 +372,7 @@ def run_extraction(img, points, offset_x, offset_y, zoom, barrel, wb, bright, co
 
     # 保存为 Keyed JSON 格式
     rgb_flat = extracted.reshape(-1, 3)[:total_cells]
-    metadata = LUTManager.infer_default_metadata("lumina_lut", LUT_FILE_PATH, len(rgb_flat))
+    metadata = LUTManager.infer_default_metadata("lumina_lut", LUT_FILE_PATH, len(rgb_flat), color_mode=color_mode)
     # 根据颜色模式生成配方
     stacks = _generate_recipes(color_mode, total_cells, page_choice)
     LUTManager.save_keyed_json(LUT_FILE_PATH, rgb_flat, stacks, metadata)

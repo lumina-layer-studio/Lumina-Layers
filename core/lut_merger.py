@@ -98,53 +98,83 @@ _REMAP_TO_8COLOR = {
 }
 
 
-def _detect_4color_subtype(lut_path):
-    """Detect 4-Color subtype (RYBW or CMYW) from filename.
+def _detect_4color_subtype(lut_path, metadata=None):
+    """Detect 4-Color subtype (RYBW or CMYW) from metadata or filename.
+    从 metadata 或文件名检测 4 色子类型（RYBW 或 CMYW）。
 
-    Naming convention: filename containing 'RYBW' → RYBW, 'CMYW' → CMYW.
-    Default: RYBW (most common).
+    Priority: metadata.color_mode > filename keyword.
+    优先级：metadata.color_mode > 文件名关键词。
+
+    Args:
+        lut_path (str): LUT file path. (LUT 文件路径)
+        metadata (LUTMetadata | None): Optional metadata with color_mode. (可选的含 color_mode 的元数据)
+
+    Returns:
+        str: "4-Color-RYBW" or "4-Color-CMYW". (4 色子类型字符串)
     """
+    if metadata and metadata.color_mode:
+        if "RYBW" in metadata.color_mode:
+            return "4-Color-RYBW"
+        if "CMYW" in metadata.color_mode:
+            return "4-Color-CMYW"
+    # 回退到文件名检测
     basename = os.path.basename(lut_path).upper()
     if "CMYW" in basename:
         return "4-Color-CMYW"
     return "4-Color-RYBW"
 
 
-def _detect_6color_subtype(lut_path):
-    """Detect 6-Color subtype (CMYWGK or RYBWGK) from filename.
+def _detect_6color_subtype(lut_path, metadata=None):
+    """Detect 6-Color subtype (CMYWGK or RYBWGK) from metadata or filename.
+    从 metadata 或文件名检测 6 色子类型（CMYWGK 或 RYBWGK）。
 
-    Naming convention: filename containing 'RYBW' → RYBWGK, 'CMYW' → CMYWGK.
-    Default: CMYWGK (most common for 6-color).
+    Priority: metadata.color_mode > filename keyword.
+    优先级：metadata.color_mode > 文件名关键词。
+
+    Args:
+        lut_path (str): LUT file path. (LUT 文件路径)
+        metadata (LUTMetadata | None): Optional metadata with color_mode. (可选的含 color_mode 的元数据)
+
+    Returns:
+        str: "6-Color-RYBWGK" or "6-Color-CMYWGK". (6 色子类型字符串)
     """
+    if metadata and metadata.color_mode:
+        if "RYBW" in metadata.color_mode:
+            return "6-Color-RYBWGK"
+    # 回退到文件名检测
     basename = os.path.basename(lut_path).upper()
     if "RYBW" in basename:
         return "6-Color-RYBWGK"
     return "6-Color-CMYWGK"
 
 
-def _remap_stacks(stacks, color_mode, lut_path=None):
+def _remap_stacks(stacks, color_mode, lut_path=None, metadata=None):
     """Remap material IDs in stacks from source mode to 8-Color space.
+    将堆叠中的材料 ID 从源模式重映射到 8-Color 空间。
 
     When merging LUTs from different color modes, each mode uses its own
     material ID numbering. This function translates them all into the
     unified 8-Color numbering so the merged LUT produces correct meshes.
 
     Args:
-        stacks: numpy array (N, 5) of material IDs
-        color_mode: source color mode string
-        lut_path: optional file path, used to detect 4-Color/6-Color subtype
+        stacks: numpy array (N, 5) of material IDs. (材料 ID 数组)
+        color_mode: source color mode string. (源颜色模式字符串)
+        lut_path: optional file path, used to detect 4-Color/6-Color subtype.
+            (可选文件路径，用于检测子类型)
+        metadata (LUTMetadata | None): optional metadata with color_mode for
+            subtype detection priority. (可选元数据，用于子类型检测优先级)
 
     Returns:
-        numpy array (N, 5) with remapped material IDs
+        numpy array (N, 5) with remapped material IDs. (重映射后的材料 ID 数组)
     """
     if color_mode == "8-Color" or color_mode == "Merged":
         return stacks  # Already in 8-Color space
 
     remap_key = color_mode
     if color_mode == "4-Color" and lut_path:
-        remap_key = _detect_4color_subtype(lut_path)
+        remap_key = _detect_4color_subtype(lut_path, metadata=metadata)
     elif color_mode == "6-Color" and lut_path:
-        remap_key = _detect_6color_subtype(lut_path)
+        remap_key = _detect_6color_subtype(lut_path, metadata=metadata)
 
     remap = _REMAP_TO_8COLOR.get(remap_key)
     if remap is None:
@@ -263,7 +293,7 @@ class LUTMerger:
                 return (rgb, stacks)
             # 回退到索引重建：stacks 为 None 或 shape[1]==0
             count = len(rgb)
-            return LUTMerger._rebuild_stacks_from_index(rgb, count, color_mode, lut_path)
+            return LUTMerger._rebuild_stacks_from_index(rgb, count, color_mode, lut_path, metadata=metadata)
 
         # .npy 格式：加载 RGB，根据模式重建堆叠
         lut_data = np.load(lut_path)
@@ -273,17 +303,20 @@ class LUTMerger:
         return LUTMerger._rebuild_stacks_from_index(rgb, count, color_mode, lut_path)
 
     @staticmethod
-    def _rebuild_stacks_from_index(rgb, count, color_mode, lut_path):
+    def _rebuild_stacks_from_index(rgb, count, color_mode, lut_path, metadata=None):
         """根据索引重建堆叠数组（从 .npy 或 .json 无 stacks 时回退使用）
+        Rebuild stacks array from index when loading .npy or .json without stacks.
 
         Args:
-            rgb: RGB 数组 [N, 3]
-            count: 颜色数量
-            color_mode: 色彩模式字符串
-            lut_path: LUT 文件路径（用于检测子类型）
+            rgb: RGB 数组 [N, 3]. (RGB array)
+            count: 颜色数量. (color count)
+            color_mode: 色彩模式字符串. (color mode string)
+            lut_path: LUT 文件路径（用于检测子类型）. (LUT file path for subtype detection)
+            metadata (LUTMetadata | None): 可选元数据，用于子类型检测优先级.
+                (optional metadata for subtype detection priority)
 
         Returns:
-            (rgb_array[N,3], stacks_array[N,L])
+            (rgb_array[N,3], stacks_array[N,L]). (RGB 和堆叠数组)
         """
         if color_mode == "BW":
             stacks = []
@@ -295,7 +328,7 @@ class LUTMerger:
                     temp //= 2
                 stacks.append(tuple(reversed(digits)))
             stacks_arr = np.array(stacks)
-            return (rgb, _remap_stacks(stacks_arr, color_mode, lut_path))
+            return (rgb, _remap_stacks(stacks_arr, color_mode, lut_path, metadata=metadata))
 
         elif color_mode == "4-Color":
             stacks = []
@@ -307,10 +340,10 @@ class LUTMerger:
                     temp //= 4
                 stacks.append(tuple(reversed(digits)))
             stacks_arr = np.array(stacks)
-            return (rgb, _remap_stacks(stacks_arr, color_mode, lut_path))
+            return (rgb, _remap_stacks(stacks_arr, color_mode, lut_path, metadata=metadata))
 
         elif color_mode == "6-Color":
-            subtype = _detect_6color_subtype(lut_path) if lut_path else "6-Color"
+            subtype = _detect_6color_subtype(lut_path, metadata=metadata) if lut_path else "6-Color"
             if "RYBW" in subtype:
                 from core.calibration import get_top_1296_colors_rybw
                 raw_stacks = get_top_1296_colors_rybw()
@@ -320,7 +353,7 @@ class LUTMerger:
             stacks = [tuple(reversed(s)) for s in raw_stacks]
             min_len = min(len(stacks), count)
             stacks_arr = np.array(stacks[:min_len])
-            return (rgb[:min_len], _remap_stacks(stacks_arr, color_mode, lut_path))
+            return (rgb[:min_len], _remap_stacks(stacks_arr, color_mode, lut_path, metadata=metadata))
 
         elif color_mode == "8-Color":
             from config import get_asset_path
@@ -334,7 +367,7 @@ class LUTMerger:
             if lut_path.endswith('.npz'):
                 data = np.load(lut_path)
                 stacks = data['stacks']
-                return (rgb, _remap_stacks(stacks, color_mode, lut_path))
+                return (rgb, _remap_stacks(stacks, color_mode, lut_path, metadata=metadata))
 
             base_stacks = []
             for i in range(1024):
@@ -368,7 +401,7 @@ class LUTMerger:
             stacks = padded_base + ext_stacks
 
             stacks_arr = np.array(stacks[:count])
-            return (rgb, _remap_stacks(stacks_arr, color_mode, lut_path))
+            return (rgb, _remap_stacks(stacks_arr, color_mode, lut_path, metadata=metadata))
 
         else:
             layer_count = 5

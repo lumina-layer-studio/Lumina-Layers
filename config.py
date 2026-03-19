@@ -430,10 +430,187 @@ def get_tray_runtime_policy():
     return False, f"Disabled on unsupported platform: {sys.platform}"
 
 
-# ========== LUT Palette & Metadata ==========
+# ========== Printer Profile Registry ==========
 
 from dataclasses import dataclass, field
 from typing import Optional
+
+
+@dataclass
+class PrinterProfile:
+    """Printer hardware profile for 3MF export template selection.
+    打印机硬件配置，用于 3MF 导出模板选择。
+
+    Attributes:
+        id (str): Unique printer identifier, e.g. "bambu-h2d". (唯一打印机标识)
+        display_name (str): Human-readable name, e.g. "Bambu Lab H2D". (显示名称)
+        brand (str): Manufacturer brand, e.g. "Bambu Lab". (品牌)
+        bed_width (int): Print bed width in mm. (打印床宽度，毫米)
+        bed_depth (int): Print bed depth in mm. (打印床深度，毫米)
+        bed_height (int): Max print height in mm. (最大打印高度，毫米)
+        nozzle_count (int): Number of nozzles, 1=single, 2=dual. (喷头数量)
+        is_dual_head (bool): Whether the printer has dual print heads. (是否双头)
+        template_file (str): Default (BambuStudio) config template filename. (默认模板文件名)
+        slicer_templates (dict[str, str]): Slicer-specific template filenames. (切片器专属模板)
+        thumbnail (str): Thumbnail image filename, reserved for future use. (缩略图文件名，预留)
+    """
+    id: str
+    display_name: str
+    brand: str
+    bed_width: int
+    bed_depth: int
+    bed_height: int
+    nozzle_count: int
+    is_dual_head: bool
+    template_file: str
+    slicer_templates: dict = field(default_factory=dict)
+    thumbnail: str = ""
+
+    def get_template_file(self, slicer: str = "BambuStudio") -> str:
+        """Return template filename for the given slicer.
+        返回指定切片器的模板文件名。
+
+        Args:
+            slicer (str): Slicer identifier, e.g. "BambuStudio" or "OrcaSlicer". (切片器标识)
+
+        Returns:
+            str: Template filename. Falls back to default template_file. (模板文件名，回退到默认)
+        """
+        return self.slicer_templates.get(slicer, self.template_file)
+
+
+# Supported slicer software list
+SUPPORTED_SLICERS: list[dict[str, str]] = [
+    {"id": "BambuStudio", "display_name": "BambuStudio"},
+    {"id": "OrcaSlicer", "display_name": "OrcaSlicer"},
+    {"id": "SnapmakerOrca", "display_name": "Snapmaker Orca"},
+    {"id": "ElegooSlicer", "display_name": "ElegooSlicer"},
+]
+
+DEFAULT_SLICER_ID: str = "BambuStudio"
+
+
+PRINTER_PROFILES: dict[str, PrinterProfile] = {
+    "bambu-a1-mini": PrinterProfile(
+        id="bambu-a1-mini", display_name="Bambu Lab A1 mini", brand="Bambu Lab",
+        bed_width=180, bed_depth=180, bed_height=180,
+        nozzle_count=1, is_dual_head=False,
+        template_file="bambu_a1_mini.json",
+        slicer_templates={"OrcaSlicer": "orca_a1_mini.json"},
+    ),
+    "bambu-a1": PrinterProfile(
+        id="bambu-a1", display_name="Bambu Lab A1", brand="Bambu Lab",
+        bed_width=256, bed_depth=256, bed_height=256,
+        nozzle_count=1, is_dual_head=False,
+        template_file="bambu_a1.json",
+        slicer_templates={"OrcaSlicer": "orca_a1.json"},
+    ),
+    "bambu-p1p": PrinterProfile(
+        id="bambu-p1p", display_name="Bambu Lab P1P", brand="Bambu Lab",
+        bed_width=256, bed_depth=256, bed_height=256,
+        nozzle_count=1, is_dual_head=False,
+        template_file="bambu_p1p.json",
+        slicer_templates={"OrcaSlicer": "orca_p1p.json"},
+    ),
+    "bambu-p1s": PrinterProfile(
+        id="bambu-p1s", display_name="Bambu Lab P1S", brand="Bambu Lab",
+        bed_width=256, bed_depth=256, bed_height=250,
+        nozzle_count=1, is_dual_head=False,
+        template_file="bambu_p1s.json",
+        slicer_templates={"OrcaSlicer": "orca_p1s.json"},
+    ),
+    "bambu-x1c": PrinterProfile(
+        id="bambu-x1c", display_name="Bambu Lab X1 Carbon", brand="Bambu Lab",
+        bed_width=256, bed_depth=256, bed_height=256,
+        nozzle_count=1, is_dual_head=False,
+        template_file="bambu_x1c.json",
+        slicer_templates={"OrcaSlicer": "orca_x1c.json"},
+    ),
+    "bambu-x1e": PrinterProfile(
+        id="bambu-x1e", display_name="Bambu Lab X1E", brand="Bambu Lab",
+        bed_width=256, bed_depth=256, bed_height=256,
+        nozzle_count=1, is_dual_head=False,
+        template_file="bambu_x1e.json",
+        slicer_templates={"OrcaSlicer": "orca_x1e.json"},
+    ),
+    "bambu-h2d": PrinterProfile(
+        id="bambu-h2d", display_name="Bambu Lab H2D", brand="Bambu Lab",
+        bed_width=350, bed_depth=320, bed_height=325,
+        nozzle_count=2, is_dual_head=True,
+        template_file="bambu_h2d.json",
+        slicer_templates={"OrcaSlicer": "orca_h2d.json"},
+    ),
+    "bambu-h2d-pro": PrinterProfile(
+        id="bambu-h2d-pro", display_name="Bambu Lab H2D Pro", brand="Bambu Lab",
+        bed_width=350, bed_depth=320, bed_height=325,
+        nozzle_count=2, is_dual_head=True,
+        template_file="bambu_h2d_pro.json",
+        slicer_templates={"OrcaSlicer": "orca_h2d_pro.json"},
+    ),
+    "bambu-h2s": PrinterProfile(
+        id="bambu-h2s", display_name="Bambu Lab H2S", brand="Bambu Lab",
+        bed_width=350, bed_depth=320, bed_height=325,
+        nozzle_count=2, is_dual_head=True,
+        template_file="bambu_h2s.json",
+        slicer_templates={"OrcaSlicer": "orca_h2s.json"},
+    ),
+    "bambu-p2s": PrinterProfile(
+        id="bambu-p2s", display_name="Bambu Lab P2S", brand="Bambu Lab",
+        bed_width=256, bed_depth=256, bed_height=250,
+        nozzle_count=1, is_dual_head=False,
+        template_file="bambu_p2s.json",
+        slicer_templates={"OrcaSlicer": "orca_p2s.json"},
+    ),
+    "bambu-h2c": PrinterProfile(
+        id="bambu-h2c", display_name="Bambu Lab H2C", brand="Bambu Lab",
+        bed_width=350, bed_depth=320, bed_height=325,
+        nozzle_count=2, is_dual_head=True,
+        template_file="bambu_h2c.json",
+        slicer_templates={"OrcaSlicer": "orca_h2c.json"},
+    ),
+    "snapmaker-u1": PrinterProfile(
+        id="snapmaker-u1", display_name="Snapmaker U1", brand="Snapmaker",
+        bed_width=270, bed_depth=270, bed_height=270,
+        nozzle_count=4, is_dual_head=False,
+        template_file="snapmaker_u1.json",
+        slicer_templates={"SnapmakerOrca": "snapmaker_u1.json"},
+    ),
+    "elegoo-cc2": PrinterProfile(
+        id="elegoo-cc2", display_name="Elegoo Centauri Carbon 2", brand="Elegoo",
+        bed_width=256, bed_depth=256, bed_height=256,
+        nozzle_count=1, is_dual_head=False,
+        template_file="elegoo_cc2.json",
+        slicer_templates={"ElegooSlicer": "elegoo_cc2.json"},
+    ),
+}
+
+DEFAULT_PRINTER_ID: str = "bambu-h2d"
+
+
+def get_printer_profile(printer_id: str) -> PrinterProfile:
+    """Get printer profile by ID, falling back to default (H2D) for unknown IDs.
+    根据 ID 获取打印机配置，未知 ID 回退到默认机型 H2D。
+
+    Args:
+        printer_id (str): Printer identifier, e.g. "bambu-h2d". (打印机标识)
+
+    Returns:
+        PrinterProfile: Matching profile or default H2D profile. (匹配的配置或默认 H2D 配置)
+    """
+    return PRINTER_PROFILES.get(printer_id, PRINTER_PROFILES[DEFAULT_PRINTER_ID])
+
+
+def list_printer_profiles() -> list[PrinterProfile]:
+    """Return all supported printer profiles as a list.
+    返回所有支持的打印机配置列表。
+
+    Returns:
+        list[PrinterProfile]: All registered printer profiles. (所有已注册的打印机配置)
+    """
+    return list(PRINTER_PROFILES.values())
+
+
+# ========== LUT Palette & Metadata ==========
 
 
 @dataclass

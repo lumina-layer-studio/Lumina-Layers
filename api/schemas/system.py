@@ -10,6 +10,31 @@ from dataclasses import dataclass
 from pydantic import BaseModel
 
 
+class PrinterInfo(BaseModel):
+    """Printer hardware metadata exposed to the frontend.
+    暴露给前端的打印机硬件元数据。
+    """
+
+    id: str
+    display_name: str
+    brand: str
+    bed_width: int
+    bed_depth: int
+    bed_height: int
+    nozzle_count: int
+    is_dual_head: bool
+    supported_slicers: list[str] = []
+
+
+class PrinterListResponse(BaseModel):
+    """Response for GET /api/system/printers.
+    GET /api/system/printers 响应。
+    """
+
+    status: str
+    printers: list[PrinterInfo]
+
+
 class CacheCleanupDetails(BaseModel):
     """缓存清理详情。"""
 
@@ -47,6 +72,8 @@ class UserSettings(BaseModel):
     last_slicer: str = ""
     palette_mode: str = "swatch"
     enable_crop_modal: bool = True
+    printer_model: str = "bambu-h2d"
+    slicer_software: str = "BambuStudio"
 
 
 class UserSettingsResponse(BaseModel):
@@ -69,3 +96,17 @@ class StatsResponse(BaseModel):
     calibrations: int = 0
     extractions: int = 0
     conversions: int = 0
+
+
+class SlicerInfo(BaseModel):
+    """切片器软件信息。"""
+
+    id: str
+    display_name: str
+
+
+class SlicerListResponse(BaseModel):
+    """GET /api/system/slicers 响应。"""
+
+    status: str
+    slicers: list[SlicerInfo]

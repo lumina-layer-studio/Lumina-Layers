@@ -5,6 +5,10 @@ import type {
   UserSettingsResponse,
   SaveSettingsResponse,
   StatsResponse,
+  PrinterInfo,
+  PrinterListResponse,
+  SlicerOption,
+  SlicerListResponse,
 } from "./types";
 
 /** 调用后端清除系统缓存，返回清理统计信息 */
@@ -34,4 +38,16 @@ export async function saveSettings(settings: UserSettings): Promise<SaveSettings
 export async function getStats(): Promise<StatsResponse> {
   const response = await apiClient.get<StatsResponse>("/system/stats");
   return response.data;
+}
+
+/** 获取所有支持的打印机型号列表 */
+export async function getPrinters(): Promise<PrinterInfo[]> {
+  const response = await apiClient.get<PrinterListResponse>("/system/printers");
+  return response.data.printers;
+}
+
+/** 获取所有支持的切片器软件列表 */
+export async function getSlicers(): Promise<SlicerOption[]> {
+  const response = await apiClient.get<SlicerListResponse>("/system/slicers");
+  return response.data.slicers;
 }

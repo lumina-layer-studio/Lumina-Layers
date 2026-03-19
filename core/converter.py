@@ -132,6 +132,8 @@ def convert_image_to_3d(image_path, lut_path, target_width_mm, spacer_thick,
                          loop_offset_x: float = 0.0,
                          loop_offset_y: float = 0.0,
                          loop_position_preset: Optional[str] = "top-center",
+                         printer_id: str = 'bambu-h2d',
+                         slicer: str = 'BambuStudio',
                          progress=None):
     """Main conversion function: Convert image to 3D model.
     主转换函数：将图像转换为 3D 模型。薄包装层，委托给 coordinator。
@@ -279,6 +281,8 @@ def generate_final_model(image_path, lut_path, target_width_mm, spacer_thick,
                         loop_offset_x: float = 0.0,
                         loop_offset_y: float = 0.0,
                         loop_position_preset: Optional[str] = "top-center",
+                        printer_id: str = 'bambu-h2d',
+                        slicer: str = 'BambuStudio',
                         progress=None):
     """Wrapper function for generating final model.
     生成最终模型的包装函数。
@@ -338,6 +342,8 @@ def generate_final_model(image_path, lut_path, target_width_mm, spacer_thick,
         loop_offset_x=loop_offset_x,
         loop_offset_y=loop_offset_y,
         loop_position_preset=loop_position_preset,
+        printer_id=printer_id,
+        slicer=slicer,
         progress=progress,
     )
 

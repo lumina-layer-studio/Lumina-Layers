@@ -16,6 +16,8 @@ export interface SettingsState {
   enableBlur: boolean;
   enableFancyLoading: boolean;
   paletteMode: "swatch" | "card";
+  printerModel: string;
+  slicerSoftware: string;
 }
 
 // ========== Actions Interface ==========
@@ -32,6 +34,8 @@ export interface SettingsActions {
   setEnableBlur: (enabled: boolean) => void;
   setEnableFancyLoading: (enabled: boolean) => void;
   setPaletteMode: (mode: "swatch" | "card") => void;
+  setPrinterModel: (id: string) => void;
+  setSlicerSoftware: (id: string) => void;
   syncToBackend: () => Promise<void>;
 }
 
@@ -49,6 +53,8 @@ export const DEFAULT_SETTINGS: SettingsState = {
   enableBlur: true,
   enableFancyLoading: true,
   paletteMode: "swatch",
+  printerModel: "bambu-h2d",
+  slicerSoftware: "BambuStudio",
 };
 
 // ========== Store ==========
@@ -80,6 +86,10 @@ export const useSettingsStore = create<SettingsState & SettingsActions>()(
 
       setPaletteMode: (mode: "swatch" | "card") => set({ paletteMode: mode }),
 
+      setPrinterModel: (id: string) => set({ printerModel: id }),
+
+      setSlicerSoftware: (id: string) => set({ slicerSoftware: id }),
+
       syncToBackend: async () => {
         const state = get();
         try {
@@ -90,6 +100,8 @@ export const useSettingsStore = create<SettingsState & SettingsActions>()(
             last_slicer: state.lastSlicerId,
             palette_mode: state.paletteMode,
             enable_crop_modal: state.cropEnabled,
+            printer_model: state.printerModel,
+            slicer_software: state.slicerSoftware,
           });
         } catch {
           // best-effort sync — settings are already persisted in localStorage

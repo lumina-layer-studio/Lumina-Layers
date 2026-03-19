@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useSlicerStore } from "../../stores/slicerStore";
 import { useConverterStore } from "../../stores/converterStore";
 import { useI18n } from "../../i18n/context";
@@ -91,8 +92,20 @@ export default function SlicerSelector({
 
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [isAutoGenerating, setIsAutoGenerating] = useState(false);
+  const triggerRef = useRef<HTMLDivElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const [dropdownPos, setDropdownPos] = useState<{ top: number; left: number; width: number } | null>(null);
   const { t } = useI18n();
+
+  /**
+   * Compute dropdown position above the trigger button via getBoundingClientRect.
+   * 通过 getBoundingClientRect 计算下拉菜单在触发按钮上方的位置。
+   */
+  const updateDropdownPos = useCallback(() => {
+    if (!triggerRef.current) return;
+    const rect = triggerRef.current.getBoundingClientRect();
+    setDropdownPos({ top: rect.top, left: rect.left, width: rect.width });
+  }, []);
 
   // Auto-detect slicers on mount
   useEffect(() => {
@@ -106,16 +119,32 @@ export default function SlicerSelector({
     return () => clearTimeout(timer);
   }, [launchMessage, error, clearMessage]);
 
-  // Close dropdown when clicking outside
+  // Close dropdown when clicking outside (check both trigger and portal)
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+      const target = e.target as Node;
+      if (
+        triggerRef.current && !triggerRef.current.contains(target) &&
+        dropdownRef.current && !dropdownRef.current.contains(target)
+      ) {
         setIsDropdownOpen(false);
       }
     };
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
+
+  // Recalculate position on scroll/resize while open
+  useEffect(() => {
+    if (!isDropdownOpen) return;
+    updateDropdownPos();
+    window.addEventListener("scroll", updateDropdownPos, true);
+    window.addEventListener("resize", updateDropdownPos);
+    return () => {
+      window.removeEventListener("scroll", updateDropdownPos, true);
+      window.removeEventListener("resize", updateDropdownPos);
+    };
+  }, [isDropdownOpen, updateDropdownPos]);
 
   const hasSlicers = slicers.length > 0;
   const selectedSlicer = slicers.find((s) => s.id === selectedSlicerId);
@@ -208,7 +237,7 @@ export default function SlicerSelector({
   return (
     <div className="flex flex-col gap-2">
       {hasSlicers ? (
-        <div className="relative" ref={dropdownRef}>
+        <div className="relative" ref={triggerRef}>
           {/* Split Button */}
           <div className="flex">
             {/* Main button with brand color */}
@@ -243,9 +272,19 @@ export default function SlicerSelector({
             </button>
           </div>
 
-          {/* Dropdown menu */}
-          {isDropdownOpen && (
-            <div className="absolute bottom-[calc(100%+4px)] right-0 z-50 w-full min-w-[200px] rounded-md border border-gray-200 bg-white dark:border-gray-600 dark:bg-gray-800 py-1 shadow-lg" role="listbox">
+          {/* Dropdown menu — rendered via Portal to escape overflow clipping */}
+          {isDropdownOpen && dropdownPos && createPortal(
+            <div
+              ref={dropdownRef}
+              style={{
+                position: "fixed",
+                bottom: `${window.innerHeight - dropdownPos.top + 4}px`,
+                left: `${dropdownPos.left}px`,
+                width: `${Math.max(dropdownPos.width, 200)}px`,
+              }}
+              className="z-[9999] rounded-md border border-gray-200 bg-white dark:border-gray-600 dark:bg-gray-800 py-1 shadow-lg"
+              role="listbox"
+            >
               {slicers.map((slicer) => {
                 const style = getSlicerBrandStyle(slicer.id);
                 const isSelected = slicer.id === selectedSlicerId;
@@ -279,7 +318,8 @@ export default function SlicerSelector({
                 </svg>
                 {t("slicer_download_3mf")}
               </button>
-            </div>
+            </div>,
+            document.body,
           )}
         </div>
       ) : (

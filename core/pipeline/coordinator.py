@@ -312,6 +312,8 @@ def _run_vector_branch(ctx: dict) -> dict:
             preview_colors=vec_preview_colors,
             settings=vec_print_settings,
             color_mode=vec_color_mode,
+            printer_id=ctx.get('printer_id', 'bambu-h2d'),
+            slicer=ctx.get('slicer', 'BambuStudio'),
         )
         print(f"[COORDINATOR] Vector 3MF exported with Bambu metadata: {out_path}")
         vector_timing["export_3mf_s"] = time.perf_counter() - export_t0

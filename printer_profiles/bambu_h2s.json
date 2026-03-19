@@ -137,14 +137,14 @@
         ""
     ],
     "default_filament_profile": [
-        "Bambu PLA Basic @BBL H2D"
+        "Bambu PLA Basic @BBL H2S"
     ],
     "default_jerk": "0",
     "default_nozzle_volume_type": [
         "Standard",
         "Standard"
     ],
-    "default_print_profile": "0.20mm Standard @BBL H2D",
+    "default_print_profile": "0.20mm Standard @BBL H2S",
     "deretraction_speed": [
         "30",
         "30",
@@ -809,10 +809,10 @@
         "4"
     ],
     "filament_settings_id": [
-        "Bambu PLA Basic @BBL H2D",
-        "Bambu PLA Basic @BBL H2D",
-        "Bambu PLA Basic @BBL H2D",
-        "Bambu PLA Basic @BBL H2D"
+        "Bambu PLA Basic @BBL H2S",
+        "Bambu PLA Basic @BBL H2S",
+        "Bambu PLA Basic @BBL H2S",
+        "Bambu PLA Basic @BBL H2S"
     ],
     "filament_shrink": [
         "100%",
@@ -1088,7 +1088,7 @@
     "infill_shift_step": "0.4",
     "infill_wall_overlap": "15%",
     "inherits_group": [
-        "0.08mm Extra Fine @BBL H2D",
+        "0.08mm Extra Fine @BBL H2S",
         "",
         "",
         "",
@@ -1591,7 +1591,7 @@
     "prime_tower_width": "230",
     "prime_volume_mode": "Default",
     "print_compatible_printers": [
-        "Bambu Lab H2D 0.4 nozzle"
+        "Bambu Lab H2S 0.4 nozzle"
     ],
     "print_extruder_id": [
         "1",
@@ -1631,9 +1631,9 @@
         "Direct Drive High Flow",
         "Direct Drive TPU High Flow"
     ],
-    "printer_model": "Bambu Lab H2D",
+    "printer_model": "Bambu Lab H2S",
     "printer_notes": "",
-    "printer_settings_id": "Bambu Lab H2D 0.4 nozzle",
+    "printer_settings_id": "Bambu Lab H2S 0.4 nozzle",
     "printer_structure": "corexy",
     "printer_technology": "FFF",
     "printer_variant": "0.4",

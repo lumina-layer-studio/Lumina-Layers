@@ -270,6 +270,9 @@ lut-npyԤ��/Custom/*.npy
 LD_ColorLayering-main/
 ChromaStack-main/
 
+# 3MF metadata analysis files (local testing only)
+元数据分析/
+
 # Frontend
 node_modules/
 frontend/node_modules/

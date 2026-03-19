@@ -402,6 +402,25 @@ export interface RegionReplaceResponse {
   message: string;
 }
 
+// ========== Printer Models ==========
+
+export interface PrinterInfo {
+  id: string;
+  display_name: string;
+  brand: string;
+  bed_width: number;
+  bed_depth: number;
+  bed_height: number;
+  nozzle_count: number;
+  is_dual_head: boolean;
+  supported_slicers: string[];
+}
+
+export interface PrinterListResponse {
+  status: string;
+  printers: PrinterInfo[];
+}
+
 // ========== Settings Models ==========
 
 export interface UserSettings {
@@ -411,6 +430,8 @@ export interface UserSettings {
   last_slicer: string;
   palette_mode: string;
   enable_crop_modal: boolean;
+  printer_model: string;
+  slicer_software: string;
 }
 
 export interface UserSettingsResponse {
@@ -427,4 +448,16 @@ export interface StatsResponse {
   calibrations: number;
   extractions: number;
   conversions: number;
+}
+
+// ========== Slicer Template Models ==========
+
+export interface SlicerOption {
+  id: string;
+  display_name: string;
+}
+
+export interface SlicerListResponse {
+  status: string;
+  slicers: SlicerOption[];
 }

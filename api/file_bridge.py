@@ -160,4 +160,5 @@ def _guess_media_type(path: str) -> str:
         ".jpg": "image/jpeg",
         ".heic": "image/heic",
         ".heif": "image/heif",
+        ".svg": "image/svg+xml",
     }.get(ext, "application/octet-stream")

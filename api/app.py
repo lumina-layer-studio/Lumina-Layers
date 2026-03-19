@@ -34,6 +34,7 @@ from api.routers import (
     lut_router,
     slicer_router,
     system_router,
+    vectorizer_router,
 )
 
 
@@ -103,6 +104,7 @@ def create_app() -> FastAPI:
     app.include_router(lut_router)
     app.include_router(slicer_router)
     app.include_router(system_router)
+    app.include_router(vectorizer_router)
 
     @app.get("/api/files/{file_id}")
     def serve_file(file_id: str):

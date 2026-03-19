@@ -17,6 +17,7 @@ import ExtractorPanel from "./components/ExtractorPanel";
 import LutManagerPanel from "./components/LutManagerPanel";
 import FiveColorQueryPanel from "./components/FiveColorQueryPanel";
 import SettingsPanel from "./components/SettingsPanel";
+import VectorizerPanel from "./components/VectorizerPanel";
 import { useShallow } from "zustand/react/shallow";
 
 /* ---------- Error Boundary ---------- */
@@ -265,6 +266,7 @@ function AppContent() {
 
         {activeTab === 'lut-manager' && <LutManagerPanel />}
         {activeTab === 'five-color' && <FiveColorQueryPanel />}
+        {activeTab === 'vectorizer' && <VectorizerPanel />}
         {activeTab === 'settings' && <SettingsPanel />}
       </main>
     </div>

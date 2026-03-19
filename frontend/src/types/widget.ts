@@ -4,7 +4,7 @@
  */
 
 // ===== TAB ID =====
-export type TabId = 'converter' | 'calibration' | 'extractor' | 'lut-manager' | 'five-color' | 'settings';
+export type TabId = 'converter' | 'calibration' | 'extractor' | 'lut-manager' | 'five-color' | 'vectorizer' | 'settings';
 
 // ===== Widget ID =====
 export type WidgetId =

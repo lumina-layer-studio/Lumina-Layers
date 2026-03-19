@@ -23,11 +23,12 @@ Lumina Studio is a physics-based multi-material FDM full-color 3D printing syste
 - **Thread Separation**: Worker functions accept only file paths and scalar params (pickle-safe), write large results to temp files
 - **Centralized Config**: All constants in `config.py` (PrinterConfig, ColorSystem, ModelingMode, BedManager, etc.)
 
-### Three Core Modules
+### Four Core Modules
 
 1. **Calibration Generator** — Generates precision calibration boards for physical testing
 2. **Color Extractor** — Digitizes photographed calibration boards into LUT files
 3. **Image Converter** — Converts images to 3D models using calibration data
+4. **Image Vectorizer** — Converts raster images to SVG vector graphics via neroued_vectorizer
 
 ## Build & Development Commands
 
@@ -76,6 +77,7 @@ cd frontend && tsc -b && vite build
 - **Color Matching**: SciPy KDTree (nearest-neighbor search)
 - **Image I/O**: Pillow, pillow-heif (HEIC/HEIF support)
 - **Vector Engine**: svgelements, Shapely, mapbox-earcut
+- **Vectorizer**: neroued-vectorizer (C++ core, raster→SVG conversion)
 - **3MF Export**: Trimesh + lxml + custom BambuStudio metadata writer
 
 ### Frontend (TypeScript)

@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
+import WikiTooltip from "./WikiTooltip";
 
 interface SliderProps {
   label: string;
@@ -9,6 +10,7 @@ interface SliderProps {
   onChange: (value: number) => void;
   disabled?: boolean;
   unit?: string;
+  tooltip?: string;
 }
 
 export default function Slider({
@@ -20,6 +22,7 @@ export default function Slider({
   onChange,
   disabled = false,
   unit,
+  tooltip,
 }: SliderProps) {
   // 输入框的本地文本状态，编辑时不立即同步外部 value
   const [inputText, setInputText] = useState(() => formatValue(value, step));
@@ -78,9 +81,17 @@ export default function Slider({
   return (
     <div className="flex flex-col gap-1">
       {label && (
-        <label className="text-sm text-gray-700 dark:text-gray-300">
-          {label}
-        </label>
+        tooltip ? (
+          <WikiTooltip title={label} description={tooltip} placement="top" delay={400}>
+            <label className="text-sm text-gray-700 dark:text-gray-300 cursor-help border-b border-dashed border-gray-400 dark:border-gray-500">
+              {label}
+            </label>
+          </WikiTooltip>
+        ) : (
+          <label className="text-sm text-gray-700 dark:text-gray-300">
+            {label}
+          </label>
+        )
       )}
       <div className="flex items-center gap-2">
         <input

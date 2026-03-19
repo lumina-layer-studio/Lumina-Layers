@@ -16,7 +16,7 @@ import { useWidgetStore, DEFAULT_LAYOUT } from '../stores/widgetStore';
 import type { WidgetId, WidgetLayoutState, TabId } from '../types/widget';
 
 // All valid TabIds
-const ALL_TAB_IDS: TabId[] = ['converter', 'calibration', 'extractor', 'lut-manager', 'five-color', 'settings'];
+const ALL_TAB_IDS: TabId[] = ['converter', 'calibration', 'extractor', 'lut-manager', 'five-color', 'vectorizer', 'settings'];
 
 // All valid WidgetIds
 const ALL_WIDGET_IDS: WidgetId[] = [

@@ -1187,6 +1187,10 @@ export const translations: Record<string, Record<"zh" | "en", string>> = {
     zh: "配方查询",
     en: "Five-Color",
   },
+  "tab.vectorizer": {
+    zh: "图像转矢量",
+    en: "Vectorizer",
+  },
   "tab.settings": {
     zh: "设置",
     en: "Settings",
@@ -2412,5 +2416,301 @@ export const translations: Record<string, Record<"zh" | "en", string>> = {
   wiki_tooltip_link: {
     zh: "查看 Wiki 详情 ↗",
     en: "View Wiki Details ↗",
+  },
+
+  // ==================== Vectorizer Panel ====================
+  "vec.title": {
+    zh: "图像转矢量",
+    en: "Image Vectorizer",
+  },
+  "vec.upload_hint": {
+    zh: "拖放或点击上传图片进行矢量化",
+    en: "Drag & drop or click to upload an image for vectorization",
+  },
+  "vec.basic_params": {
+    zh: "基础参数",
+    en: "Basic Parameters",
+  },
+  "vec.advanced_params": {
+    zh: "高级参数",
+    en: "Advanced Parameters",
+  },
+  "vec.output_enhance": {
+    zh: "输出增强",
+    en: "Output Enhancement",
+  },
+
+  // Core params
+  "vec.num_colors": {
+    zh: "颜色数量",
+    en: "Number of Colors",
+  },
+  "vec.num_colors_auto": {
+    zh: "自动",
+    en: "Auto",
+  },
+  "vec.num_colors_manual": {
+    zh: "手动",
+    en: "Manual",
+  },
+  "vec.detail_level": {
+    zh: "细节等级",
+    en: "Detail Level",
+  },
+  "vec.detail_level_enable": {
+    zh: "启用统一细节控制",
+    en: "Enable Unified Detail Control",
+  },
+  "vec.detail_level_on": {
+    zh: "启用",
+    en: "On",
+  },
+  "vec.detail_level_off": {
+    zh: "禁用",
+    en: "Off",
+  },
+  "vec.smoothness": {
+    zh: "平滑度",
+    en: "Smoothness",
+  },
+
+  // Output enhancement
+  "vec.svg_enable_stroke": {
+    zh: "启用描边",
+    en: "Enable Stroke",
+  },
+  "vec.svg_stroke_width": {
+    zh: "描边宽度",
+    en: "Stroke Width",
+  },
+  "vec.thin_line_max_radius": {
+    zh: "薄线检测半径",
+    en: "Thin Line Max Radius",
+  },
+  "vec.enable_coverage_fix": {
+    zh: "启用覆盖修复",
+    en: "Enable Coverage Fix",
+  },
+  "vec.min_coverage_ratio": {
+    zh: "最小覆盖率",
+    en: "Min Coverage Ratio",
+  },
+
+  // Advanced - Preprocessing
+  "vec.adv_preprocess": {
+    zh: "预处理",
+    en: "Preprocessing",
+  },
+  "vec.smoothing_spatial": {
+    zh: "空间平滑半径",
+    en: "Spatial Smoothing",
+  },
+  "vec.smoothing_color": {
+    zh: "颜色平滑半径",
+    en: "Color Smoothing",
+  },
+  "vec.max_working_pixels": {
+    zh: "最大工作像素数",
+    en: "Max Working Pixels",
+  },
+
+  // Advanced - Segmentation
+  "vec.adv_segmentation": {
+    zh: "超像素分割",
+    en: "Superpixel Segmentation",
+  },
+  "vec.slic_region_size": {
+    zh: "超像素区域大小",
+    en: "SLIC Region Size",
+  },
+  "vec.edge_sensitivity": {
+    zh: "边缘敏感度",
+    en: "Edge Sensitivity",
+  },
+  "vec.refine_passes": {
+    zh: "边界细化次数",
+    en: "Refine Passes",
+  },
+  "vec.enable_antialias_detect": {
+    zh: "启用抗锯齿检测",
+    en: "Antialiasing Detection",
+  },
+  "vec.aa_tolerance": {
+    zh: "抗锯齿容差",
+    en: "AA Tolerance",
+  },
+
+  // Advanced - Curve fitting
+  "vec.adv_curve_fitting": {
+    zh: "曲线拟合",
+    en: "Curve Fitting",
+  },
+  "vec.curve_fit_error": {
+    zh: "曲线拟合误差",
+    en: "Curve Fit Error",
+  },
+  "vec.contour_simplify": {
+    zh: "轮廓简化强度",
+    en: "Contour Simplification",
+  },
+  "vec.merge_segment_tolerance": {
+    zh: "线段合并容差",
+    en: "Merge Segment Tolerance",
+  },
+
+  // Advanced - Filtering
+  "vec.adv_filtering": {
+    zh: "区域过滤",
+    en: "Region Filtering",
+  },
+  "vec.min_region_area": {
+    zh: "最小区域面积",
+    en: "Min Region Area",
+  },
+  "vec.max_merge_color_dist": {
+    zh: "最大合并色差",
+    en: "Max Merge Color Dist",
+  },
+  "vec.min_contour_area": {
+    zh: "最小轮廓面积",
+    en: "Min Contour Area",
+  },
+  "vec.min_hole_area": {
+    zh: "最小孔洞面积",
+    en: "Min Hole Area",
+  },
+  "vec.submit": {
+    zh: "开始矢量化",
+    en: "Start Vectorization",
+  },
+  "vec.processing": {
+    zh: "正在矢量化...",
+    en: "Vectorizing...",
+  },
+  "vec.result_title": {
+    zh: "矢量化结果",
+    en: "Vectorization Result",
+  },
+  "vec.original": {
+    zh: "原始图片",
+    en: "Original",
+  },
+  "vec.svg_preview": {
+    zh: "SVG 预览",
+    en: "SVG Preview",
+  },
+  "vec.shapes": {
+    zh: "形状数",
+    en: "Shapes",
+  },
+  "vec.colors": {
+    zh: "颜色数",
+    en: "Colors",
+  },
+  "vec.download_svg": {
+    zh: "下载 SVG",
+    en: "Download SVG",
+  },
+  "vec.error": {
+    zh: "矢量化失败",
+    en: "Vectorization Failed",
+  },
+  "vec.no_image": {
+    zh: "请先上传图片",
+    en: "Please upload an image first",
+  },
+
+  // ===== Vectorizer Parameter Hints =====
+  "vec.hint_num_colors": {
+    zh: "自动模式会检测图像的最优颜色数量。切换到手动模式可指定固定值（2-256）。",
+    en: "Auto mode detects the optimal color count. Switch to Manual to specify a fixed value (2-256).",
+  },
+  "vec.hint_smoothness": {
+    zh: "整体轮廓平滑度。0 = 保留所有细节；1 = 最大平滑。控制抽稀精度和平滑迭代。",
+    en: "Overall contour smoothness. 0 = preserve all details; 1 = maximum smoothing. Controls decimation precision and smoothing iterations.",
+  },
+  "vec.hint_detail_level": {
+    zh: "统一细节控制。启用后用一个滑块同时调整多个细节参数；禁用时使用各项独立参数。",
+    en: "Unified detail control. When enabled, a single slider adjusts multiple detail parameters; when disabled, individual parameters are used.",
+  },
+  "vec.hint_svg_enable_stroke": {
+    zh: "为 SVG 路径添加描边。可以减少色块之间的接缝（白线）。",
+    en: "Add stroke to SVG paths. Helps reduce visible seams (white gaps) between color regions.",
+  },
+  "vec.hint_svg_stroke_width": {
+    zh: "描边线条的宽度。增大可更好覆盖接缝，但可能导致细节丢失。",
+    en: "Width of the stroke lines. Larger values cover seams better but may blur fine details.",
+  },
+  "vec.hint_thin_line_max_radius": {
+    zh: "薄线检测的最大半径。用于检测并保留图像中的细线结构。",
+    en: "Max radius for thin line detection. Used to detect and preserve thin structures in the image.",
+  },
+  "vec.hint_enable_coverage_fix": {
+    zh: "启用后会扩展区域边界以确保完整覆盖画布，消除微小间隙。",
+    en: "Expands region boundaries to ensure full canvas coverage, eliminating tiny gaps.",
+  },
+  "vec.hint_min_coverage_ratio": {
+    zh: "画布最小覆盖率阈值。低于此值时会触发覆盖修复。通常保持接近 1.0。",
+    en: "Minimum canvas coverage ratio threshold. Coverage fix is triggered below this value. Keep close to 1.0.",
+  },
+  "vec.hint_smoothing_spatial": {
+    zh: "Mean Shift 空间半径。增大可降噪，但可能模糊细小结构。",
+    en: "Mean Shift spatial radius. Larger values reduce noise but may blur fine structures.",
+  },
+  "vec.hint_smoothing_color": {
+    zh: "Mean Shift 颜色半径。增大可合并相近颜色，减少颜色碎片。",
+    en: "Mean Shift color radius. Larger values merge similar colors, reducing color fragmentation.",
+  },
+  "vec.hint_max_working_pixels": {
+    zh: "内部处理的最大像素数。大图会被缩小到此限制以提升速度。增大可保留更多细节但更慢。",
+    en: "Max pixels for internal processing. Large images are downscaled to this limit for speed. Increase to preserve more detail at the cost of speed.",
+  },
+  "vec.hint_slic_region_size": {
+    zh: "超像素初始区域大小。小值产生更多超像素，保留更多细节但更慢。",
+    en: "Initial superpixel region size. Smaller values create more superpixels with more detail but slower processing.",
+  },
+  "vec.hint_edge_sensitivity": {
+    zh: "边缘检测敏感度。高值更积极地保留边缘，低值产生更平滑的分割。",
+    en: "Edge detection sensitivity. Higher values preserve edges more aggressively; lower values produce smoother segmentation.",
+  },
+  "vec.hint_refine_passes": {
+    zh: "边界细化迭代次数。更多次迭代产生更精确的区域边界，但增加处理时间。",
+    en: "Boundary refinement iterations. More passes produce more precise region boundaries at the cost of processing time.",
+  },
+  "vec.hint_enable_antialias_detect": {
+    zh: "检测并处理抗锯齿像素。对带有平滑边缘的图像效果好，但可能影响像素画风格图像。",
+    en: "Detect and handle antialiased pixels. Works well for images with smooth edges but may affect pixel art style images.",
+  },
+  "vec.hint_aa_tolerance": {
+    zh: "抗锯齿检测的颜色容差（LAB ΔE）。增大可检测更多抗锯齿像素。",
+    en: "Color tolerance for antialiasing detection (LAB ΔE). Increase to detect more antialiased pixels.",
+  },
+  "vec.hint_curve_fit_error": {
+    zh: "贝塞尔曲线拟合的最大误差（像素）。小值更精确但产生更多锚点；大值更平滑但可能丢失细节。",
+    en: "Max error for Bezier curve fitting (pixels). Smaller values are more precise with more anchor points; larger values are smoother but may lose detail.",
+  },
+  "vec.hint_contour_simplify": {
+    zh: "轮廓简化强度。增大可减少轮廓点数，使路径更简洁。",
+    en: "Contour simplification strength. Increase to reduce contour points for cleaner paths.",
+  },
+  "vec.hint_merge_segment_tolerance": {
+    zh: "共线线段合并容差。增大可合并更多近似共线的线段。",
+    en: "Tolerance for merging collinear segments. Increase to merge more nearly-collinear segments.",
+  },
+  "vec.hint_min_region_area": {
+    zh: "面积小于此值的区域会被合并到相邻区域。增大可减少小碎片。",
+    en: "Regions smaller than this area are merged into neighbors. Increase to reduce small fragments.",
+  },
+  "vec.hint_max_merge_color_dist": {
+    zh: "区域合并时允许的最大色差（LAB ΔE²）。增大可合并颜色差异更大的相邻区域。",
+    en: "Max color distance for region merging (LAB ΔE²). Increase to merge neighbors with larger color differences.",
+  },
+  "vec.hint_min_contour_area": {
+    zh: "面积小于此值的轮廓会被过滤掉。用于去除微小噪点形状。",
+    en: "Contours smaller than this area are filtered out. Used to remove tiny noise shapes.",
+  },
+  "vec.hint_min_hole_area": {
+    zh: "面积小于此值的孔洞会被填充。用于去除区域内的微小空洞。",
+    en: "Holes smaller than this area are filled in. Used to remove tiny voids inside regions.",
   },
 };

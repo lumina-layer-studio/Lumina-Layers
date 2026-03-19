@@ -15,17 +15,17 @@ export default function Accordion({
   const [open, setOpen] = useState(defaultOpen);
 
   return (
-    <div className="border-b border-gray-700">
+    <div className="border-b border-gray-200 dark:border-gray-700">
       <button
         type="button"
         onClick={() => setOpen((prev) => !prev)}
-        className="flex w-full items-center justify-between py-3 text-sm font-medium text-gray-300 hover:text-gray-100 transition-colors"
+        className="flex w-full items-center justify-between py-3 text-sm font-medium text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-gray-100 transition-colors"
       >
         <span>{title}</span>
         <motion.svg
           animate={{ rotate: open ? 90 : 0 }}
           transition={{ type: "spring", stiffness: 300, damping: 20 }}
-          className="h-4 w-4 shrink-0 text-gray-400"
+          className="h-4 w-4 shrink-0 text-gray-500 dark:text-gray-400"
           viewBox="0 0 24 24"
           fill="none"
           stroke="currentColor"

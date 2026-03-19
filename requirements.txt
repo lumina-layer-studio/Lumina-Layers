@@ -22,3 +22,5 @@ fastapi
 uvicorn
 httpx
 numba
+# Image vectorizer
+neroued-vectorizer>=0.1.1

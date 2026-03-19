@@ -461,3 +461,52 @@ export interface SlicerListResponse {
   status: string;
   slicers: SlicerOption[];
 }
+
+// ========== Vectorizer Models ==========
+
+export interface VectorizeParams {
+  // Core
+  num_colors: number;
+  smoothness: number;
+  detail_level: number;
+  // Output enhancement
+  svg_enable_stroke: boolean;
+  svg_stroke_width: number;
+  thin_line_max_radius: number;
+  enable_coverage_fix: boolean;
+  min_coverage_ratio: number;
+  // Preprocessing
+  smoothing_spatial: number;
+  smoothing_color: number;
+  max_working_pixels: number;
+  // Segmentation
+  slic_region_size: number;
+  edge_sensitivity: number;
+  refine_passes: number;
+  enable_antialias_detect: boolean;
+  aa_tolerance: number;
+  // Curve fitting
+  curve_fit_error: number;
+  contour_simplify: number;
+  merge_segment_tolerance: number;
+  // Filtering
+  min_region_area: number;
+  max_merge_color_dist: number;
+  min_contour_area: number;
+  min_hole_area: number;
+}
+
+export interface VectorizeResponse {
+  status: string;
+  message: string;
+  svg_url: string;
+  width: number;
+  height: number;
+  num_shapes: number;
+  num_colors: number;
+  palette: string[];
+}
+
+export interface VectorizeDefaultsResponse {
+  defaults: VectorizeParams;
+}

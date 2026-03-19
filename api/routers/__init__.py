@@ -16,6 +16,7 @@ from api.routers.health import router as health_router
 from api.routers.lut import router as lut_router
 from api.routers.slicer import router as slicer_router
 from api.routers.system import router as system_router
+from api.routers.vectorizer import router as vectorizer_router
 
 __all__ = [
     "converter_router",
@@ -26,4 +27,5 @@ __all__ = [
     "lut_router",
     "slicer_router",
     "system_router",
+    "vectorizer_router",
 ]

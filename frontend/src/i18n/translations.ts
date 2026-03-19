@@ -2611,6 +2611,10 @@ export const translations: Record<string, Record<"zh" | "en", string>> = {
     zh: "下载 SVG",
     en: "Download SVG",
   },
+  "vec.send_to_converter": {
+    zh: "发送到图像转换",
+    en: "Send to Image Converter",
+  },
   "vec.error": {
     zh: "矢量化失败",
     en: "Vectorization Failed",

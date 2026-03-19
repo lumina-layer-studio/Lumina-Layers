@@ -1,8 +1,10 @@
-import { useCallback } from "react";
+import { useCallback, useState } from "react";
 import { motion } from "framer-motion";
 import { useShallow } from "zustand/react/shallow";
 import { useI18n } from "../i18n/context";
 import { useVectorizerStore } from "../stores/vectorizerStore";
+import { useConverterStore } from "../stores/converterStore";
+import { useWidgetStore } from "../stores/widgetStore";
 import { usePanZoom } from "../hooks/usePanZoom";
 import ImageUpload from "./ui/ImageUpload";
 import Slider from "./ui/Slider";
@@ -61,6 +63,21 @@ export default function VectorizerPanel() {
     a.href = svgUrl;
     a.download = "vectorized.svg";
     a.click();
+  }, [svgUrl]);
+
+  const [isSending, setIsSending] = useState(false);
+  const handleSendToConverter = useCallback(async () => {
+    if (!svgUrl) return;
+    setIsSending(true);
+    try {
+      const res = await fetch(svgUrl);
+      const blob = await res.blob();
+      const file = new File([blob], "vectorized.svg", { type: "image/svg+xml" });
+      useConverterStore.getState().setImageFile(file);
+      useWidgetStore.getState().setActiveTab("converter");
+    } finally {
+      setIsSending(false);
+    }
   }, [svgUrl]);
 
   const isDetailEnabled = params.detail_level >= 0;
@@ -472,11 +489,18 @@ export default function VectorizerPanel() {
               )}
             </div>
 
-            <Button
-              label={t("vec.download_svg")}
-              onClick={handleDownload}
-              variant="secondary"
-            />
+            <div className="flex gap-3">
+              <Button
+                label={t("vec.send_to_converter")}
+                onClick={handleSendToConverter}
+                loading={isSending}
+              />
+              <Button
+                label={t("vec.download_svg")}
+                onClick={handleDownload}
+                variant="secondary"
+              />
+            </div>
           </motion.div>
         )}
       </div>

@@ -33,7 +33,7 @@ function resetExtractorStore(): void {
     imagePreviewUrl: null,
     imageNaturalWidth: null,
     imageNaturalHeight: null,
-    color_mode: ExtractorColorMode.FOUR_COLOR_RYBW,
+    color_mode: ExtractorColorMode.FOUR_COLOR,
     page: ExtractorPage.PAGE_1,
     corner_points: [],
     offset_x: 0,
@@ -67,7 +67,7 @@ const arbFourCorners = fc.array(arbCornerPoint, {
 
 const arbExtractorColorMode = fc.constantFrom(
   ExtractorColorMode.BW,
-  ExtractorColorMode.FOUR_COLOR_RYBW,
+  ExtractorColorMode.FOUR_COLOR,
   ExtractorColorMode.SIX_COLOR,
   ExtractorColorMode.EIGHT_COLOR
 );

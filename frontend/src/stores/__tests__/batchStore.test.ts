@@ -38,7 +38,7 @@ function resetStore(): void {
     structure_mode: StructureMode.DOUBLE_SIDED,
     auto_bg: false,
     bg_tol: 40,
-    color_mode: ColorMode.FOUR_COLOR_RYBW,
+    color_mode: ColorMode.FOUR_COLOR,
     modeling_mode: ModelingMode.HIGH_FIDELITY,
     quantize_colors: 48,
     enable_cleanup: true,
@@ -82,12 +82,10 @@ describe("submitBatch API 调用和状态管理", () => {
       structure_mode: StructureMode.DOUBLE_SIDED,
       auto_bg: false,
       bg_tol: 40,
-      color_mode: ColorMode.FOUR_COLOR_RYBW,
+      color_mode: ColorMode.FOUR_COLOR,
       modeling_mode: ModelingMode.HIGH_FIDELITY,
       quantize_colors: 48,
       enable_cleanup: true,
-      hue_weight: 0,
-      chroma_gate: 0,
     });
   });
 

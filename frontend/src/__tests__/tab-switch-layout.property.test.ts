@@ -16,14 +16,14 @@ import { useWidgetStore, DEFAULT_LAYOUT } from '../stores/widgetStore';
 import type { WidgetId, WidgetLayoutState, TabId } from '../types/widget';
 
 // All valid TabIds
-const ALL_TAB_IDS: TabId[] = ['converter', 'calibration', 'extractor', 'lut-manager', 'five-color', 'vectorizer', 'settings'];
+const ALL_TAB_IDS: TabId[] = ['converter', 'calibration', 'extractor', 'lut-manager', 'five-color'];
 
 // All valid WidgetIds
 const ALL_WIDGET_IDS: WidgetId[] = [
   'basic-settings', 'advanced-settings', 'relief-settings',
-  'outline-settings', 'cloisonne-settings', 'coating-settings',
-  'keychain-loop', 'action-bar', 'calibration', 'extractor',
-  'lut-manager', 'five-color',
+  'palette-panel', 'lut-color-grid', 'outline-settings',
+  'cloisonne-settings', 'coating-settings', 'keychain-loop', 'action-bar',
+  'calibration', 'extractor', 'lut-manager', 'five-color',
 ];
 
 // Arbitrary for a single WidgetLayoutState with randomized layout fields
@@ -38,7 +38,6 @@ const widgetLayoutArb = (id: WidgetId): fc.Arbitrary<WidgetLayoutState> =>
     visible: fc.boolean(),
     snapEdge: fc.constantFrom('left' as const, 'right' as const, null),
     stackOrder: fc.integer({ min: -1, max: 20 }),
-    expandedHeight: fc.integer({ min: 50, max: 800 }),
   });
 
 // Arbitrary for a full widgets record with randomized layout for all 14 widgets

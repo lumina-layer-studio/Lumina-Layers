@@ -3,7 +3,6 @@ import type { PaletteEntry } from "../../api/types";
 import Slider from "../ui/Slider";
 import Button from "../ui/Button";
 import { useI18n } from "../../i18n/context";
-import { cx, workstationInsetCardClass, workstationPanelCardClass } from "../ui/panelPrimitives";
 
 // ========== PaletteItem ==========
 
@@ -14,7 +13,6 @@ interface PaletteItemProps {
   heightMm: number | undefined;
   showHeightSlider: boolean;
   maxHeight: number;
-  isFreeColor?: boolean;
   onSelect: () => void;
   onHeightChange: (h: number) => void;
 }
@@ -26,7 +24,6 @@ function PaletteItem({
   heightMm,
   showHeightSlider,
   maxHeight,
-  isFreeColor = false,
   onSelect,
   onHeightChange,
 }: PaletteItemProps) {
@@ -34,20 +31,13 @@ function PaletteItem({
   const displayHex = remappedHex ?? entry.matched_hex;
   const isRemapped = !!remappedHex;
 
-  // Border priority: isFreeColor > isRemapped > default
-  const borderClass = isFreeColor
-    ? "border-2 border-dashed border-red-400"
-    : isRemapped
-      ? "border border-yellow-500"
-      : "border border-gray-600";
-
   // Compact block mode (no height slider)
   if (!showHeightSlider) {
     return (
       <div
         role="button"
         tabIndex={0}
-        aria-label={`${t("lut_grid_color_label").replace("{hex}", entry.matched_hex)}，${entry.percentage.toFixed(1)}%${isRemapped ? `，${t("palette_replaced_label").replace("{hex}", `#${remappedHex}`)}` : ""}`}
+        aria-label={`${t("lut_grid_color_label").replace("{hex}", entry.matched_hex)}，${entry.percentage.toFixed(1)}%${isRemapped ? `，${t("palette_replaced").replace("{hex}", `#${remappedHex}`)}` : ""}`}
         aria-pressed={isSelected}
         onClick={onSelect}
         onKeyDown={(e) => {
@@ -56,18 +46,19 @@ function PaletteItem({
             onSelect();
           }
         }}
-        className={`relative flex w-full min-w-0 flex-col items-center gap-1 rounded-2xl px-1.5 py-2 cursor-pointer border transition-all duration-150 ${
+        className={`flex flex-col items-center gap-0.5 rounded px-1 py-1 cursor-pointer transition-colors ${
           isSelected
-            ? "border-amber-400 bg-amber-400/10 ring-2 ring-amber-400/30"
-            : "border-transparent bg-white/35 hover:border-slate-300 hover:bg-white/65 dark:bg-slate-900/35 dark:hover:border-slate-600 dark:hover:bg-slate-900/75"
+            ? "ring-2 ring-blue-500 bg-gray-700/60"
+            : "hover:bg-gray-700/40"
         }`}
+        style={{ width: 52 }}
       >
         <span
-          className={`inline-block h-[clamp(1.4rem,2vw,1.75rem)] w-[clamp(1.4rem,2vw,1.75rem)] rounded-xl ${borderClass}`}
+          className={`inline-block w-6 h-6 rounded border ${isRemapped ? "border-yellow-500" : "border-gray-600"}`}
           style={{ backgroundColor: `#${displayHex}` }}
           title={`#${displayHex}`}
         />
-        <span className="text-[clamp(0.55rem,0.75vw,0.625rem)] tabular-nums leading-none text-slate-500 dark:text-slate-400">
+        <span className="text-[9px] text-gray-400 tabular-nums leading-none">
           {entry.percentage.toFixed(1)}%
         </span>
       </div>
@@ -79,7 +70,7 @@ function PaletteItem({
     <div
       role="button"
       tabIndex={0}
-      aria-label={`${t("lut_grid_color_label").replace("{hex}", entry.matched_hex)}，${entry.percentage.toFixed(1)}%${isRemapped ? `，${t("palette_replaced_label").replace("{hex}", `#${remappedHex}`)}` : ""}`}
+      aria-label={`${t("lut_grid_color_label").replace("{hex}", entry.matched_hex)}，${entry.percentage.toFixed(1)}%${isRemapped ? `，${t("palette_replaced").replace("{hex}", `#${remappedHex}`)}` : ""}`}
       aria-pressed={isSelected}
       onClick={onSelect}
       onKeyDown={(e) => {
@@ -88,20 +79,20 @@ function PaletteItem({
           onSelect();
         }
       }}
-      className={`relative flex h-full min-h-0 flex-col gap-2 rounded-[20px] px-2.5 py-2 cursor-pointer border transition-all duration-150 ${
+      className={`flex flex-col gap-1 rounded-md px-2 py-1.5 cursor-pointer transition-colors ${
         isSelected
-          ? "border-amber-400 bg-amber-400/10 ring-2 ring-amber-400/30"
-          : "border-transparent bg-white/35 hover:border-slate-300 hover:bg-white/65 dark:bg-slate-900/35 dark:hover:border-slate-600 dark:hover:bg-slate-900/75"
+          ? "ring-2 ring-blue-500 bg-gray-700/60"
+          : "hover:bg-gray-700/40"
       }`}
     >
       {/* Top row: swatch + percentage */}
       <div className="flex items-center gap-1.5">
         <span
-          className={`inline-block h-[clamp(1.25rem,1.7vw,1.5rem)] w-[clamp(1.25rem,1.7vw,1.5rem)] shrink-0 rounded-xl ${borderClass}`}
+          className={`inline-block w-5 h-5 rounded border shrink-0 ${isRemapped ? "border-yellow-500" : "border-gray-600"}`}
           style={{ backgroundColor: `#${displayHex}` }}
           title={`#${displayHex}`}
         />
-        <span className="truncate text-[clamp(0.55rem,0.75vw,0.625rem)] tabular-nums text-slate-500 dark:text-slate-400">
+        <span className="text-[10px] text-gray-400 tabular-nums truncate">
           {entry.percentage.toFixed(1)}%
         </span>
       </div>
@@ -134,12 +125,12 @@ interface ColorBlockProps {
 function ColorBlock({ label, hex }: ColorBlockProps) {
   return (
     <div className="flex flex-col items-center gap-1">
-      <span className="text-[clamp(0.55rem,0.75vw,0.625rem)] font-medium text-slate-500 dark:text-slate-400">{label}</span>
+      <span className="text-[10px] text-gray-400">{label}</span>
       <span
-        className="inline-block h-[clamp(2rem,3vw,2.75rem)] w-[clamp(2rem,3vw,2.75rem)] rounded-2xl border border-slate-300/80 dark:border-slate-600/80"
+        className="inline-block w-10 h-10 rounded border border-gray-600"
         style={{ backgroundColor: `#${hex}` }}
       />
-      <span className="font-mono text-[clamp(0.55rem,0.75vw,0.625rem)] text-slate-600 dark:text-slate-300">#{hex}</span>
+      <span className="text-[10px] text-gray-300 font-mono">#{hex}</span>
     </div>
   );
 }
@@ -154,30 +145,10 @@ interface SelectedColorDetailProps {
 function SelectedColorDetail({ entry, remappedHex }: SelectedColorDetailProps) {
   const { t } = useI18n();
   return (
-    <div className={cx(workstationInsetCardClass, "mb-1 flex items-start gap-4")}>
+    <div className="flex gap-4 items-start py-2 px-3 bg-gray-800/40 rounded-lg mb-2">
       <ColorBlock label={t("palette_quantized")} hex={entry.quantized_hex} />
       <ColorBlock label={t("palette_matched")} hex={entry.matched_hex} />
-      {remappedHex && <ColorBlock label={t("palette_replaced_label")} hex={remappedHex} />}
-    </div>
-  );
-}
-
-// ========== FreeColorSummary ==========
-
-function FreeColorSummary({ freeColors }: { freeColors: Set<string> }) {
-  const { t } = useI18n();
-  if (freeColors.size === 0) return null;
-  return (
-    <div className={cx(workstationInsetCardClass, "flex flex-wrap items-center gap-2 px-3 py-2.5")}>
-      <span className="text-[clamp(0.65rem,0.8vw,0.7rem)] font-medium text-slate-500 dark:text-slate-400">{t("conv_free_color_label")}:</span>
-      {Array.from(freeColors).sort().map(hex => (
-        <span
-          key={hex}
-          className="h-6 w-6 rounded-xl border-2 border-dashed border-red-400"
-          style={{ backgroundColor: `#${hex}` }}
-          title={`#${hex}`}
-        />
-      ))}
+      {remappedHex && <ColorBlock label={t("palette_replaced")} hex={remappedHex} />}
     </div>
   );
 }
@@ -197,55 +168,22 @@ export default function PalettePanel() {
   const undoColorRemap = useConverterStore((s) => s.undoColorRemap);
   const clearAllRemaps = useConverterStore((s) => s.clearAllRemaps);
   const heightmap_max_height = useConverterStore((s) => s.heightmap_max_height);
-  const selectionMode = useConverterStore((s) => s.selectionMode);
-  const setSelectionMode = useConverterStore((s) => s.setSelectionMode);
-  const selectedColors = useConverterStore((s) => s.selectedColors);
-  const toggleColorInSelection = useConverterStore((s) => s.toggleColorInSelection);
-  const free_color_set = useConverterStore((s) => s.free_color_set);
-  const toggleFreeColor = useConverterStore((s) => s.toggleFreeColor);
-  const clearFreeColors = useConverterStore((s) => s.clearFreeColors);
-  const regionReplacementCount = useConverterStore((s) => s.regionReplacementCount);
 
-  const hasRemaps = Object.keys(colorRemapMap).length > 0 || regionReplacementCount > 0;
+  const hasRemaps = Object.keys(colorRemapMap).length > 0;
   const hasHistory = remapHistory.length > 0;
 
   const handleSelect = (hex: string) => {
-    switch (selectionMode) {
-      case 'current':
-        // 当前模式 = 单区域替换，调色板点击不响应（由 3D 预览处理）
-        break;
-      case 'select-all':
-        // 全选模式 = 全局单色替换，点击调色板选中一个颜色
-        setSelectedColor(selectedColor === hex ? null : hex);
-        break;
-      case 'multi-select':
-        // 多选模式 = 可复选，点击切换选中状态
-        // 同时设置 selectedColor 以触发 RGB 光带高亮
-        setSelectedColor(selectedColor === hex ? null : hex);
-        toggleColorInSelection(hex);
-        break;
-      case 'region':
-        // 局部区域模式，调色板点击不响应（由 3D 预览处理）
-        break;
-    }
-  };
-
-  const getIsSelected = (hex: string): boolean => {
-    if (selectionMode === 'multi-select') {
-      return selectedColors.has(hex);
-    }
-    // 所有其他模式统一使用 selectedColor 高亮（RGB 光带效果一致）
-    return selectedColor === hex;
+    setSelectedColor(selectedColor === hex ? null : hex);
   };
 
   return (
-    <div className={workstationPanelCardClass}>
+    <div>
       {palette.length === 0 ? (
-        <p className="py-4 text-sm text-slate-500 dark:text-slate-400">
+        <p className="text-xs text-gray-500 py-2">
           {t("palette_no_data")}
         </p>
       ) : (
-        <div className="flex h-full flex-col gap-3">
+        <div className="flex flex-col gap-1">
           {/* Selected color detail */}
           {selectedColor && (() => {
             const selectedEntry = palette.find(
@@ -260,8 +198,8 @@ export default function PalettePanel() {
             );
           })()}
 
-          {/* Undo / Clear buttons + Mode switching buttons */}
-          <div className="flex flex-wrap gap-2">
+          {/* Undo / Clear buttons */}
+          <div className="flex gap-2 mb-2">
             <Button
               label={t("palette_undo")}
               variant="secondary"
@@ -274,72 +212,30 @@ export default function PalettePanel() {
               onClick={clearAllRemaps}
               disabled={!hasRemaps}
             />
-            <Button
-              label={t("palette_mode_select_all")}
-              variant={selectionMode === 'select-all' ? 'primary' : 'secondary'}
-              onClick={() => setSelectionMode('select-all')}
-            />
-            <Button
-              label={t("palette_mode_current")}
-              variant={selectionMode === 'current' ? 'primary' : 'secondary'}
-              onClick={() => setSelectionMode('current')}
-            />
-            <Button
-              label={t("palette_mode_multi_select")}
-              variant={selectionMode === 'multi-select' ? 'primary' : 'secondary'}
-              onClick={() => setSelectionMode('multi-select')}
-            />
-            <Button
-              label={t("palette_mode_region")}
-              variant={selectionMode === 'region' ? 'primary' : 'secondary'}
-              onClick={() => setSelectionMode('region')}
-            />
           </div>
-
-          {/* Free color buttons */}
-          <div className="flex flex-wrap gap-2">
-            <Button
-              label={t("conv_free_color_btn")}
-              variant="secondary"
-              onClick={() => {
-                if (selectedColor) toggleFreeColor(selectedColor);
-              }}
-              disabled={selectedColor === null}
-            />
-            <Button
-              label={t("conv_free_color_clear_btn")}
-              variant="secondary"
-              onClick={clearFreeColors}
-              disabled={free_color_set.size === 0}
-            />
-          </div>
-
-          {/* Free color summary */}
-          <FreeColorSummary freeColors={free_color_set} />
 
           {/* Palette items */}
           <div
-            className="dock-scrollbar min-h-0 flex-1 overflow-y-auto pr-1"
+            className="max-h-80 overflow-y-auto"
             role="listbox"
             aria-label={t("palette_list_label")}
           >
             <div
               className={
                 enable_relief
-                  ? "grid grid-cols-[repeat(auto-fit,minmax(7rem,1fr))] gap-2"
-                  : "grid grid-cols-[repeat(auto-fit,minmax(3.4rem,1fr))] gap-2"
+                  ? "grid grid-cols-3 gap-1"
+                  : "flex flex-wrap gap-1"
               }
             >
               {palette.map((entry) => (
                 <PaletteItem
                   key={entry.matched_hex}
                   entry={entry}
-                  isSelected={getIsSelected(entry.matched_hex)}
+                  isSelected={selectedColor === entry.matched_hex}
                   remappedHex={colorRemapMap[entry.matched_hex]}
                   heightMm={color_height_map[entry.matched_hex]}
                   showHeightSlider={enable_relief}
                   maxHeight={heightmap_max_height}
-                  isFreeColor={free_color_set.has(entry.matched_hex)}
                   onSelect={() => handleSelect(entry.matched_hex)}
                   onHeightChange={(h) => updateColorHeight(entry.matched_hex, h)}
                 />

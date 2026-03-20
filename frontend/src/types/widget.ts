@@ -4,7 +4,7 @@
  */
 
 // ===== TAB ID =====
-export type TabId = 'converter' | 'calibration' | 'extractor' | 'lut-manager' | 'five-color' | 'vectorizer' | 'settings';
+export type TabId = 'converter' | 'calibration' | 'extractor' | 'lut-manager' | 'five-color';
 
 // ===== Widget ID =====
 export type WidgetId =
@@ -44,7 +44,6 @@ export interface WidgetStore {
 
   // 布局操作
   moveWidget: (id: WidgetId, position: { x: number; y: number }) => void;
-  setWidgetPositions: (positions: Partial<Record<WidgetId, { x: number; y: number }>>) => void;
   toggleCollapse: (id: WidgetId) => void;
   toggleVisible: (id: WidgetId) => void;
   snapToEdge: (id: WidgetId, edge: 'left' | 'right') => void;
@@ -56,7 +55,6 @@ export interface WidgetStore {
 
   // 堆叠管理
   reorderStack: (edge: 'left' | 'right', orderedIds: WidgetId[]) => void;
-  snapAndReorder: (id: WidgetId, edge: 'left' | 'right', orderedIds: WidgetId[]) => void;
 
   // ColorWorkstation 展开/收起
   colorWorkstationCollapsed: boolean;

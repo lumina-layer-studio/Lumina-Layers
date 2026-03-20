@@ -294,8 +294,7 @@ class TestBatchWorkerPoolSubmit:
             "api.routers.converter.LUTManager.get_lut_path",
             return_value="/tmp/fake.npy",
         ), patch(
-            "api.routers.converter.ensure_png_tempfile",
-            new_callable=AsyncMock,
+            "api.routers.converter.upload_to_tempfile",
             return_value="/tmp/uploaded.png",
         ):
             response = client.post(

@@ -38,13 +38,13 @@ describe("LutManagerPanel", () => {
     render(<LutManagerPanel />);
 
     expect(screen.getByTestId("lut-manager-panel")).toBeInTheDocument();
-    expect(screen.getByText("LUT 合并工具")).toBeInTheDocument();
-    expect(screen.getByText("主 LUT")).toBeInTheDocument();
+    expect(screen.getByText("LUT Merge Tool")).toBeInTheDocument();
+    expect(screen.getByText("Primary LUT")).toBeInTheDocument();
     expect(screen.getByTestId("primary-dropdown")).toBeInTheDocument();
     expect(screen.getByTestId("secondary-list")).toBeInTheDocument();
-    expect(screen.getByText("副 LUT")).toBeInTheDocument();
-    expect(screen.getByText("去重阈值")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "合并并保存" })).toBeInTheDocument();
+    expect(screen.getByText("Secondary LUTs")).toBeInTheDocument();
+    expect(screen.getByText("Dedup Threshold")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Merge & Save" })).toBeInTheDocument();
   });
 
   it("shows loading indicator when primaryLoading is true", () => {
@@ -105,7 +105,7 @@ describe("LutManagerPanel", () => {
     useLutManagerStore.setState({ primaryName: "", secondaryNames: ["LUT B"] });
     render(<LutManagerPanel />);
 
-    expect(screen.getByRole("button", { name: "合并并保存" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Merge & Save" })).toBeDisabled();
   });
 
   it("disables merge button when secondaryNames is empty", () => {
@@ -116,6 +116,6 @@ describe("LutManagerPanel", () => {
     });
     render(<LutManagerPanel />);
 
-    expect(screen.getByRole("button", { name: "合并并保存" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Merge & Save" })).toBeDisabled();
   });
 });

@@ -6,22 +6,17 @@ Provides endpoints for LUT preset listing, information queries, and merge operat
 """
 
 import os
-import shutil
-import tempfile
 import time
-from pathlib import Path
 
-from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi import APIRouter, HTTPException
 
 from api.schemas.lut import (
     LutInfoResponse,
     MergeRequest,
     MergeResponse,
     MergeStats,
-    PaletteEntrySchema,
 )
 from api.schemas.responses import LUTListResponse, LutInfo, LutColorsResponse, LutColorEntry
-from config import LUTMetadata
 from core.lut_merger import LUTMerger
 from utils.lut_manager import LUTManager
 
@@ -45,80 +40,6 @@ def list_luts() -> LUTListResponse:
         for display_name, file_path in lut_dict.items()
     ]
     return LUTListResponse(luts=lut_list)
-
-
-_ALLOWED_LUT_EXTENSIONS = {".npy", ".json", ".npz"}
-
-
-@router.post("/upload")
-async def upload_lut(file: UploadFile = File(..., description="LUT 文件 (.npy/.json/.npz)")) -> dict:
-    """Upload a LUT file to the Custom preset directory.
-    上传 LUT 文件到 Custom 预设目录。
-    """
-    filename = file.filename or "unknown"
-    ext = Path(filename).suffix.lower()
-    if ext not in _ALLOWED_LUT_EXTENSIONS:
-        raise HTTPException(
-            status_code=422,
-            detail=f"不支持的文件类型: {ext}，仅支持 .npy/.json/.npz",
-        )
-
-    # Save to temp file first (chunked read with size limit)
-    MAX_LUT_SIZE = 50 * 1024 * 1024  # 50 MB
-    total_read = 0
-    with tempfile.NamedTemporaryFile(delete=False, suffix=ext) as tmp:
-        while True:
-            chunk = await file.read(1024 * 1024)  # 1 MB chunks
-            if not chunk:
-                break
-            total_read += len(chunk)
-            if total_read > MAX_LUT_SIZE:
-                tmp_path = tmp.name
-                os.unlink(tmp_path)
-                raise HTTPException(
-                    status_code=413,
-                    detail=f"文件过大，最大允许 {MAX_LUT_SIZE // (1024*1024)} MB",
-                )
-            tmp.write(chunk)
-        tmp_path = tmp.name
-
-    try:
-        import numpy as np
-
-        stem = Path(filename).stem
-        custom_dir = os.path.join(LUTManager.LUT_PRESET_DIR, "Custom")
-        os.makedirs(custom_dir, exist_ok=True)
-
-        # Auto-convert .npy to Keyed JSON
-        if ext == ".npy":
-            dest_ext = ".json"
-            rgb = np.load(tmp_path)
-            if rgb.ndim == 3:
-                rgb = rgb.reshape(-1, 3)
-            elif rgb.ndim == 1:
-                rgb = rgb.reshape(-1, 3)
-            metadata = LUTManager.infer_default_metadata(stem, tmp_path, len(rgb))
-            stacks = np.zeros((len(rgb), 0), dtype=np.int32)
-            dest_path = os.path.join(custom_dir, f"{stem}{dest_ext}")
-            counter = 1
-            while os.path.exists(dest_path):
-                dest_path = os.path.join(custom_dir, f"{stem}_{counter}{dest_ext}")
-                counter += 1
-            LUTManager.save_keyed_json(dest_path, rgb, stacks, metadata)
-        else:
-            dest_path = os.path.join(custom_dir, filename)
-            counter = 1
-            while os.path.exists(dest_path):
-                dest_path = os.path.join(custom_dir, f"{stem}_{counter}{ext}")
-                counter += 1
-            shutil.copy2(tmp_path, dest_path)
-
-        display_name = f"Custom - {Path(dest_path).stem}"
-        return {"status": "ok", "message": f"LUT 已保存: {display_name}", "name": display_name}
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"上传失败: {exc}") from exc
-    finally:
-        os.unlink(tmp_path)
 
 
 @router.post("/merge")
@@ -162,8 +83,6 @@ def merge_luts_endpoint(request: MergeRequest) -> MergeResponse:
         )
         entries = [(primary_rgb, primary_stacks, primary_mode)]
         all_modes: list[str] = [primary_mode]
-        all_paths: list[str] = [primary_path]  # 记录所有输入路径，用于判断输出格式
-        all_names: list[str] = [request.primary_name]  # 记录来源 LUT 显示名称
 
         # 5. Load each secondary, skip Merged / 加载辅助 LUT，跳过 Merged
         for sec_name in request.secondary_names:
@@ -178,8 +97,6 @@ def merge_luts_endpoint(request: MergeRequest) -> MergeResponse:
             )
             entries.append((sec_rgb, sec_stacks, sec_mode))
             all_modes.append(sec_mode)
-            all_paths.append(sec_path)
-            all_names.append(sec_name)
 
         # 6. Need at least 2 entries / 至少需要 2 个有效条目
         if len(entries) < 2:
@@ -193,49 +110,22 @@ def merge_luts_endpoint(request: MergeRequest) -> MergeResponse:
         if not valid:
             raise HTTPException(status_code=400, detail=err_msg)
 
-        # 判断输出格式：所有输入都是 .json 时输出 JSON，否则输出 .npz
-        all_json = all(p.lower().endswith(".json") for p in all_paths)
-
         # 8. Merge / 执行合并
-        # 如果输出 JSON，加载 metadata 以便保存完整的 Keyed JSON
-        metadata_list: list[LUTMetadata] | None = None
-        if all_json:
-            metadata_list = []
-            for p in all_paths:
-                _, _, meta = LUTManager.load_lut_with_metadata(p)
-                metadata_list.append(meta)
-
         merged_rgb, merged_stacks, stats = LUTMerger.merge_luts(
-            entries, dedup_threshold=request.dedup_threshold,
-            metadata_list=metadata_list,
-            source_names=all_names,
+            entries, dedup_threshold=request.dedup_threshold
         )
 
         # 9. Save to Custom dir / 保存到 Custom 目录
         timestamp: str = time.strftime("%Y%m%d_%H%M%S")
         mode_str: str = "+".join(all_modes)
-        output_ext: str = ".json" if all_json else ".npz"
-        output_name: str = f"Merged_{mode_str}_{timestamp}{output_ext}"
+        output_name: str = f"Merged_{mode_str}_{timestamp}.npz"
         custom_dir: str = os.path.join(LUTManager.LUT_PRESET_DIR, "Custom")
         os.makedirs(custom_dir, exist_ok=True)
         output_path: str = os.path.join(custom_dir, output_name)
 
-        if all_json:
-            # 输出 Keyed JSON 格式，保留 palette 和打印参数
-            merged_metadata = stats.get("merged_metadata")
-            if merged_metadata is None:
-                # 回退：使用主 LUT 的 metadata
-                _, _, merged_metadata = LUTManager.load_lut_with_metadata(primary_path)
-            entry_sources = stats.get("entry_sources")
-            LUTManager.save_keyed_json(
-                output_path, merged_rgb, merged_stacks, merged_metadata,
-                sources=entry_sources,
-            )
-        else:
-            LUTMerger.save_merged_lut(merged_rgb, merged_stacks, output_path)
+        LUTMerger.save_merged_lut(merged_rgb, merged_stacks, output_path)
 
         # 10. Return response / 返回响应
-        # 注意：validate_print_params() 和 merge_palettes() 尚未实现（任务 6），暂时使用空列表
         return MergeResponse(
             status="success",
             message=f"Merged {stats['total_before']} colors → {stats['total_after']} colors",
@@ -246,8 +136,6 @@ def merge_luts_endpoint(request: MergeRequest) -> MergeResponse:
                 exact_dupes=stats["exact_dupes"],
                 similar_removed=stats["similar_removed"],
             ),
-            palette=[],
-            warnings=[],
         )
 
     except HTTPException:
@@ -287,31 +175,4 @@ def get_lut_info(lut_name: str) -> LutInfoResponse:
         raise HTTPException(status_code=404, detail=f"LUT not found: {lut_name}")
 
     color_mode, color_count = LUTMerger.detect_color_mode(path)
-
-    # 加载元数据（如果 load_lut_with_metadata 可用）
-    metadata = LUTMetadata()
-    try:
-        _rgb, _stacks, metadata = LUTManager.load_lut_with_metadata(path)
-    except (AttributeError, NotImplementedError, Exception):
-        # load_lut_with_metadata() 尚未实现（任务 4.2），回退使用默认空元数据
-        pass
-
-    palette_schema = [
-        PaletteEntrySchema(
-            color=e.color, material=e.material, hex_color=e.hex_color
-        )
-        for e in metadata.palette
-    ]
-
-    return LutInfoResponse(
-        name=lut_name,
-        color_mode=color_mode,
-        color_count=color_count,
-        palette=palette_schema,
-        max_color_layers=metadata.max_color_layers,
-        layer_height_mm=metadata.layer_height_mm,
-        line_width_mm=metadata.line_width_mm,
-        base_layers=metadata.base_layers,
-        base_channel_idx=metadata.base_channel_idx,
-        layer_order=metadata.layer_order,
-    )
+    return LutInfoResponse(name=lut_name, color_mode=color_mode, color_count=color_count)

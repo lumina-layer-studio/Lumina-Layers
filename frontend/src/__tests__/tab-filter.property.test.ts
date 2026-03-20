@@ -16,7 +16,7 @@ import { WIDGET_REGISTRY, TAB_WIDGET_MAP } from '../stores/widgetStore';
 import type { TabId } from '../types/widget';
 
 // All valid TabIds
-const ALL_TAB_IDS: TabId[] = ['converter', 'calibration', 'extractor', 'lut-manager', 'five-color', 'vectorizer', 'settings'];
+const ALL_TAB_IDS: TabId[] = ['converter', 'calibration', 'extractor', 'lut-manager', 'five-color'];
 
 describe('Granular Floating Widgets — Property-Based Tests', () => {
   // Feature: granular-floating-widgets, Property 1: TAB 页面过滤正确性

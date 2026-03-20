@@ -198,10 +198,11 @@ describe('PalettePanel 双色显示', () => {
     render(<PalettePanel />);
 
     // The detail area uses text-[10px] font-mono class for hex codes
-    // quantized_hex='ff0000' appears in detail area ColorBlock
+    // quantized_hex='ff0000' only appears once (in detail area), matched_hex='ee0000' appears in both detail and list
     expect(screen.getByText('#ff0000')).toBeInTheDocument();
-    // matched_hex='ee0000' appears in detail area ColorBlock
-    expect(screen.getByText('#ee0000')).toBeInTheDocument();
+    // matched_hex appears in both SelectedColorDetail and PaletteItem, so use getAllByText
+    const matchedHexElements = screen.getAllByText('#ee0000');
+    expect(matchedHexElements.length).toBeGreaterThanOrEqual(2); // detail area + palette list
   });
 
   it('颜色已被替换时额外显示替换色色块 (Req 4.3)', async () => {
@@ -220,8 +221,9 @@ describe('PalettePanel 双色显示', () => {
     render(<PalettePanel />);
 
     expect(screen.getByText('替换色')).toBeInTheDocument();
-    // replacement hex '00ee00' appears in detail area ColorBlock
-    expect(screen.getByText('#00ee00')).toBeInTheDocument();
+    // replacement hex '00ee00' appears in detail area, palette list item, and also as matched_hex of second palette entry
+    const replacementHexElements = screen.getAllByText('#00ee00');
+    expect(replacementHexElements.length).toBeGreaterThanOrEqual(2);
   });
 
   it('颜色未被替换时不显示替换色色块', async () => {
@@ -261,13 +263,12 @@ describe('PalettePanel 双色显示', () => {
     expect(screen.queryByText('匹配色')).not.toBeInTheDocument();
   });
 
-  it('点击调色板颜色可切换选中状态（全选模式）', async () => {
+  it('点击调色板颜色可切换选中状态', async () => {
     const PalettePanel = await importPalettePanel();
 
     useConverterStore.setState({
       palette: PALETTE,
       selectedColor: null,
-      selectionMode: 'select-all',
       colorRemapMap: {},
       remapHistory: [],
       enable_relief: false,
@@ -277,32 +278,10 @@ describe('PalettePanel 双色显示', () => {
 
     render(<PalettePanel />);
 
-    const firstItem = screen.getByRole('button', { name: /颜色 ee0000/ });
+    const firstItem = screen.getByRole('button', { name: /颜色 #ee0000/ });
     fireEvent.click(firstItem);
 
     expect(useConverterStore.getState().selectedColor).toBe('ee0000');
-  });
-
-  it('当前模式下点击调色板不响应', async () => {
-    const PalettePanel = await importPalettePanel();
-
-    useConverterStore.setState({
-      palette: PALETTE,
-      selectedColor: null,
-      selectionMode: 'current',
-      colorRemapMap: {},
-      remapHistory: [],
-      enable_relief: false,
-      color_height_map: {},
-      heightmap_max_height: 5.0,
-    });
-
-    render(<PalettePanel />);
-
-    const firstItem = screen.getByRole('button', { name: /颜色 ee0000/ });
-    fireEvent.click(firstItem);
-
-    expect(useConverterStore.getState().selectedColor).toBeNull();
   });
 
   it('palette 为空时显示提示文本', async () => {

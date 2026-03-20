@@ -8,7 +8,7 @@
 
 import { describe, it, expect } from 'vitest';
 import * as fc from 'fast-check';
-import { clampPosition, computeSnap, computeStackPositions, resolveWidgetHeight, WIDGET_WIDTH, COLLAPSED_HEIGHT, EXPANDED_HEIGHT, STACK_GAP } from '../utils/widgetUtils';
+import { clampPosition, computeSnap, computeStackPositions, WIDGET_WIDTH, COLLAPSED_HEIGHT, EXPANDED_HEIGHT, STACK_GAP } from '../utils/widgetUtils';
 import { useWidgetStore, DEFAULT_LAYOUT } from '../stores/widgetStore';
 import type { WidgetLayoutState, WidgetId } from '../types/widget';
 
@@ -162,7 +162,6 @@ describe('Widget Workspace Property-Based Tests', () => {
               visible: true,
               snapEdge: edge,
               stackOrder: i,
-              expandedHeight: EXPANDED_HEIGHT,
             }));
 
             const positions = computeStackPositions(widgets, edge, containerWidth);
@@ -187,53 +186,6 @@ describe('Widget Workspace Property-Based Tests', () => {
     });
   });
 
-  describe('Property 4.1: Measured Height Precedence', () => {
-    const WIDGET_IDS: WidgetId[] = [
-      'basic-settings', 'advanced-settings', 'relief-settings',
-      'outline-settings', 'cloisonne-settings', 'coating-settings',
-      'keychain-loop', 'action-bar',
-      'calibration', 'extractor', 'lut-manager', 'five-color',
-    ];
-
-    it('uses measured heights for expanded widgets when available', () => {
-      fc.assert(
-        fc.property(
-          fc.integer({ min: 1, max: 8 }),
-          fc.integer({ min: 500, max: 2000 }),
-          fc.array(fc.integer({ min: COLLAPSED_HEIGHT + 20, max: 700 }), { minLength: 8, maxLength: 8 }),
-          fc.array(fc.integer({ min: COLLAPSED_HEIGHT + 40, max: 820 }), { minLength: 8, maxLength: 8 }),
-          (count, containerWidth, storedHeights, measuredHeightsRaw) => {
-            const widgets: WidgetLayoutState[] = WIDGET_IDS.slice(0, count).map((id, i) => ({
-              id,
-              position: { x: 0, y: 0 },
-              collapsed: false,
-              visible: true,
-              snapEdge: 'left',
-              stackOrder: i,
-              expandedHeight: storedHeights[i],
-            }));
-
-            const measuredHeights = new Map<WidgetId, number>();
-            widgets.forEach((widget, i) => {
-              measuredHeights.set(widget.id, measuredHeightsRaw[i]);
-            });
-
-            const positions = computeStackPositions(widgets, 'left', containerWidth, measuredHeights);
-            const entries = [...positions.entries()];
-
-            for (let i = 1; i < entries.length; i++) {
-              const prevWidget = widgets.find((w) => w.id === entries[i - 1][0])!;
-              const expectedGap = resolveWidgetHeight(prevWidget, measuredHeights) + STACK_GAP;
-              const actualGap = entries[i][1].y - entries[i - 1][1].y;
-              expect(actualGap).toBe(expectedGap);
-            }
-          }
-        ),
-        { numRuns: 100 }
-      );
-    });
-  });
-
   // Feature: floating-widget-workspace, Property 5: 布局状态序列化 Round-Trip
   describe('Property 5: Serialization Round-Trip', () => {
     const widgetStateArb = fc.record({
@@ -245,7 +197,6 @@ describe('Widget Workspace Property-Based Tests', () => {
       visible: fc.boolean(),
       snapEdge: fc.constantFrom('left' as const, 'right' as const, null),
       stackOrder: fc.integer({ min: -1, max: 10 }),
-      expandedHeight: fc.integer({ min: COLLAPSED_HEIGHT + 10, max: 800 }),
     });
 
     it('JSON round-trip preserves widget layout state', () => {

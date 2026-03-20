@@ -24,11 +24,11 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy the rest of the application code
 COPY . /app/
 
-# Expose the port FastAPI runs on
-EXPOSE 8000
+# Expose the port Gradio runs on
+EXPOSE 7860
 
 # Define environment variable to ensure output is flushed
 ENV PYTHONUNBUFFERED=1
 
 # Run the application
-CMD ["python", "api_server.py"]
+CMD ["python", "main.py"]

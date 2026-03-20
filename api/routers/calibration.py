@@ -17,7 +17,6 @@ from core.calibration import (
     generate_bw_calibration_board,
     generate_calibration_board,
     generate_smart_board,
-    generate_smart_board_rybw,
 )
 
 router = APIRouter(prefix="/api/calibration", tags=["Calibration"])
@@ -45,16 +44,9 @@ def calibration_generate(
                 gap_mm=request.gap,
                 backing_color=request.backing.value,
             )
-        elif mode == "4-Color (RYBW)":
+        elif mode == "4-Color":
             path, preview_img, status = generate_calibration_board(
                 color_mode="RYBW",
-                block_size_mm=float(request.block_size),
-                gap_mm=request.gap,
-                backing_color=request.backing.value,
-            )
-        elif mode == "4-Color (CMYW)":
-            path, preview_img, status = generate_calibration_board(
-                color_mode="CMYW",
                 block_size_mm=float(request.block_size),
                 gap_mm=request.gap,
                 backing_color=request.backing.value,
@@ -64,21 +56,10 @@ def calibration_generate(
                 block_size_mm=float(request.block_size),
                 gap_mm=request.gap,
             )
-        elif mode == "6-Color (RYBW 1296)":
-            path, preview_img, status = generate_smart_board_rybw(
-                block_size_mm=float(request.block_size),
-                gap_mm=request.gap,
-            )
         elif mode == "8-Color Max":
-            path, preview_img, status = generate_8color_batch_zip(
-                block_size_mm=float(request.block_size),
-                gap_mm=request.gap,
-            )
+            path, preview_img, status = generate_8color_batch_zip()
         elif mode == "5-Color Extended (1444)":
-            path, preview_img, status = generate_5color_extended_batch_zip(
-                block_size_mm=float(request.block_size),
-                gap_mm=request.gap,
-            )
+            path, preview_img, status = generate_5color_extended_batch_zip()
         else:
             raise HTTPException(
                 status_code=422, detail=f"Unsupported color mode: {mode}"

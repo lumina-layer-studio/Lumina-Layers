@@ -16,61 +16,6 @@ import trimesh
 import numpy as np
 
 _CONFIG_TEMPLATE_CACHE = None
-_PRINTER_TEMPLATE_CACHE: dict[str, dict] = {}
-
-
-def load_printer_template(printer_id: str, slicer: str = "BambuStudio") -> dict:
-    """Load printer config template JSON for the given printer ID and slicer.
-    加载指定机型和切片器的配置模板 JSON。
-
-    Priority: printer_profiles/ directory first (matched via PrinterProfile.get_template_file),
-    falls back to bambu_config_template.json for backward compatibility.
-    优先从 printer_profiles/ 目录加载，找不到时回退到 bambu_config_template.json。
-
-    Args:
-        printer_id (str): Printer identifier, e.g. "bambu-h2d". (打印机标识)
-        slicer (str): Slicer software identifier, e.g. "BambuStudio" or "OrcaSlicer". (切片器标识)
-
-    Returns:
-        dict: Parsed JSON configuration template. (解析后的 JSON 配置模板)
-    """
-    global _PRINTER_TEMPLATE_CACHE
-
-    cache_key = f"{printer_id}:{slicer}"
-    if cache_key in _PRINTER_TEMPLATE_CACHE:
-        return copy.deepcopy(_PRINTER_TEMPLATE_CACHE[cache_key])
-
-    from config import get_printer_profile
-
-    profile = get_printer_profile(printer_id)
-    template_file = profile.get_template_file(slicer)
-
-    # Resolve printer_profiles/ directory
-    if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
-        base_dir = sys._MEIPASS
-    else:
-        base_dir = os.path.join(os.path.dirname(__file__), '..')
-
-    profile_path = os.path.join(base_dir, 'printer_profiles', template_file)
-
-    if os.path.exists(profile_path):
-        with open(profile_path, 'r', encoding='utf-8') as f:
-            template = json.load(f)
-        _PRINTER_TEMPLATE_CACHE[cache_key] = template
-        print(f"[BAMBU_3MF] Loaded printer template: {profile_path} (slicer={slicer})")
-        return copy.deepcopy(template)
-
-    # Fallback to legacy bambu_config_template.json
-    fallback_path = os.path.join(base_dir, 'bambu_config_template.json')
-    if os.path.exists(fallback_path):
-        with open(fallback_path, 'r', encoding='utf-8') as f:
-            template = json.load(f)
-        _PRINTER_TEMPLATE_CACHE[cache_key] = template
-        print(f"[BAMBU_3MF] Printer template not found for '{printer_id}' (slicer={slicer}), using fallback: {fallback_path}")
-        return copy.deepcopy(template)
-
-    print(f"[WARNING] No printer template found for '{printer_id}', returning empty dict")
-    return {}
 
 
 class BambuStudio3MFWriter:
@@ -103,26 +48,20 @@ class BambuStudio3MFWriter:
         'brim_type': 'auto_brim',
     }
     
-    def __init__(self, output_path: str, settings: Optional[Dict] = None,
-                 color_mode: str = '4-Color', printer_id: str = 'bambu-h2d',
-                 slicer: str = 'BambuStudio'):
-        """Initialize 3MF writer with printer-specific template support.
-        初始化 3MF 写入器，支持机型和切片器专属配置模板。
-
+    def __init__(self, output_path: str, settings: Optional[Dict] = None, color_mode: str = '4-Color'):
+        """
+        Initialize 3MF writer.
+        
         Args:
-            output_path (str): Output .3mf file path. (输出 .3mf 文件路径)
-            settings (Optional[Dict]): Custom print settings overrides. (自定义打印设置覆盖)
-            color_mode (str): Color mode ('4-Color', '6-Color', '8-Color', 'BW'). (颜色模式)
-            printer_id (str): Printer identifier for template selection, default 'bambu-h2d'. (打印机标识)
-            slicer (str): Slicer software identifier, default 'BambuStudio'. (切片器标识)
+            output_path: Output .3mf file path
+            settings: Optional custom print settings (overrides defaults)
+            color_mode: Color mode ('4-Color', '6-Color', '8-Color', 'BW')
         """
         self.output_path = output_path
         self.settings = {**self.DEFAULT_SETTINGS, **(settings or {})}
         self.objects = []  # List of (mesh, name, color_rgb) tuples
         self.object_id_counter = 1
         self.color_mode = color_mode
-        self.printer_id = printer_id
-        self.slicer = slicer
         
     def add_mesh(self, mesh: trimesh.Trimesh, name: str, color_rgb: tuple):
         """
@@ -221,20 +160,10 @@ class BambuStudio3MFWriter:
         """Write 3D/3dmodel.model - matching LD format exactly (no UUIDs)"""
         assembly_id = len(self.objects) + 1
         
-        # Use slicer-appropriate version string to avoid compatibility warnings
-        if self.slicer == 'SnapmakerOrca':
-            app_version_str = 'BambuStudio-2.2.4'
-        elif self.slicer == 'ElegooSlicer':
-            app_version_str = 'ElegooSlicer-1.3.2.9'
-        elif self.slicer == 'OrcaSlicer':
-            app_version_str = 'BambuStudio-2.3.2-rc2'
-        else:
-            app_version_str = 'BambuStudio-02.02.01.04'
-
         xml_lines = [
             '<?xml version="1.0" encoding="UTF-8"?>',
             '<model unit="millimeter" xml:lang="en-US" requiredextensions="p" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02" xmlns:BambuStudio="http://schemas.bambulab.com/package/2021" xmlns:p="http://schemas.microsoft.com/3dmanufacturing/production/2015/06">',
-            f' <metadata name="Application">{app_version_str}</metadata>',
+            f' <metadata name="Application">BambuStudio-02.04.00.70</metadata>',
             ' <metadata name="BambuStudio:3mfVersion">1</metadata>',
             f' <metadata name="CreationDate">{datetime.now().strftime("%Y-%m-%d")}</metadata>',
             ' <resources>',
@@ -507,21 +436,14 @@ class BambuStudio3MFWriter:
             tree.write(f, encoding='utf-8', xml_declaration=False)
     
     def _get_base_config_template(self):
-        """Get complete BambuStudio configuration template for the selected printer.
-        获取所选机型的完整 BambuStudio 配置模板。
-
-        Uses load_printer_template() to load printer-specific templates from
-        printer_profiles/ directory, falling back to bambu_config_template.json.
-
-        Returns:
-            dict: Complete configuration template. (完整配置模板)
         """
-        # Use printer-specific template via load_printer_template
-        template = load_printer_template(self.printer_id, slicer=self.slicer)
-        if template:
-            return template
-
-        # Final fallback: load legacy template directly
+        Get complete BambuStudio configuration template with all 538+ keys.
+        
+        Returns:
+            dict: Complete configuration template
+        """
+        # Load the reference configuration template
+        # In frozen mode (PyInstaller), use sys._MEIPASS as base directory
         if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
             template_path = os.path.join(sys._MEIPASS, 'bambu_config_template.json')
         else:
@@ -534,6 +456,7 @@ class BambuStudio3MFWriter:
                     _CONFIG_TEMPLATE_CACHE = json.load(f)
             return copy.deepcopy(_CONFIG_TEMPLATE_CACHE)
         else:
+            # Fallback: return minimal config if template not found
             print("[WARNING] bambu_config_template.json not found, using minimal config")
             return self._get_minimal_config_template()
     
@@ -573,14 +496,7 @@ class BambuStudio3MFWriter:
             arrays['filament_colour'].append(hex_color)
         
         # ALL filament arrays MUST have length = num_colors (not 8!)
-        # Read default filament_settings_id from printer template
-        template = load_printer_template(self.printer_id, slicer=self.slicer)
-        tmpl_fsi = template.get('filament_settings_id', 'Bambu PLA Basic @BBL H2D')
-        if isinstance(tmpl_fsi, list):
-            default_fsi = tmpl_fsi[0] if tmpl_fsi else 'Bambu PLA Basic @BBL H2D'
-        else:
-            default_fsi = tmpl_fsi
-        arrays['filament_settings_id'] = [default_fsi] * num_colors
+        arrays['filament_settings_id'] = ['Bambu PLA Basic @BBL H2D'] * num_colors
         arrays['filament_type'] = ['PLA'] * num_colors
         arrays['filament_vendor'] = ['Bambu Lab'] * num_colors
         arrays['filament_ids'] = ['GFA00'] * num_colors
@@ -755,23 +671,20 @@ class BambuStudio3MFWriter:
 
 def export_scene_with_bambu_metadata(scene: trimesh.Scene, output_path: str,
                                      slot_names: List[str], preview_colors: Dict,
-                                     settings: Optional[Dict] = None, color_mode: str = '4-Color',
-                                     printer_id: str = 'bambu-h2d', slicer: str = 'BambuStudio'):
-    """Export a Trimesh scene to BambuStudio/OrcaSlicer-compatible 3MF with metadata.
-    将 Trimesh 场景导出为 BambuStudio/OrcaSlicer 兼容的 3MF 文件（含元数据）。
-
+                                     settings: Optional[Dict] = None, color_mode: str = '4-Color'):
+    """
+    Export a Trimesh scene to BambuStudio-compatible 3MF with metadata.
+    
     Args:
-        scene (trimesh.Scene): Trimesh Scene containing all meshes. (包含所有网格的场景)
-        output_path (str): Output .3mf file path. (输出 .3mf 文件路径)
-        slot_names (List[str]): Actually used material names. (实际使用的材料名称列表)
-        preview_colors (Dict): Material ID to RGBA color mapping. (材料 ID 到 RGBA 颜色映射)
-        settings (Optional[Dict]): Custom print settings. (自定义打印设置)
-        color_mode (str): Color mode ('4-Color', '6-Color', '8-Color', 'BW'). (颜色模式)
-        printer_id (str): Printer identifier for template selection, default 'bambu-h2d'. (打印机标识)
-        slicer (str): Slicer software identifier, default 'BambuStudio'. (切片器标识)
-
+        scene: Trimesh Scene object containing all meshes
+        output_path: Output .3mf file path
+        slot_names: List of ACTUALLY USED material names (e.g., ['White', 'Cyan', 'Magenta', 'Yellow'])
+        preview_colors: Dict mapping material IDs to RGBA colors (full color system)
+        settings: Optional custom print settings
+        color_mode: Color mode ('4-Color', '6-Color', '8-Color', 'BW')
+    
     Returns:
-        str: Path to the exported 3MF file. (导出的 3MF 文件路径)
+        str: Path to the exported 3MF file
     """
     if scene is None:
         raise ValueError("[BAMBU_3MF] Scene is None")
@@ -794,7 +707,7 @@ def export_scene_with_bambu_metadata(scene: trimesh.Scene, output_path: str,
     
     print(f"[BAMBU_3MF] LUT color_mode: {color_mode}, Actual colors used: {num_used_colors} → 3MF mode: {actual_color_mode}")
     
-    writer = BambuStudio3MFWriter(output_path, settings, actual_color_mode, printer_id=printer_id, slicer=slicer)
+    writer = BambuStudio3MFWriter(output_path, settings, actual_color_mode)
     
     # Build a mapping from slot_name to preview_color
     # We need to find the original material ID for each slot_name

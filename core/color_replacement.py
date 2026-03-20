@@ -180,7 +180,7 @@ class ColorReplacementManager:
         """
         hex_str = hex_str.strip()
         
-        # Handle rgb() or rgba() format from frontend color picker
+        # Handle rgb() or rgba() format from Gradio ColorPicker
         if hex_str.startswith('rgb'):
             import re
             # Extract numbers from rgb(r, g, b) or rgba(r, g, b, a)

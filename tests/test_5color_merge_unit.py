@@ -35,7 +35,7 @@ def _make_join_redirector(assets_dir: str):
     """Create an os.path.join side_effect that redirects temp_5c files to assets_dir."""
     def _join(*args: Any) -> str:
         last = args[-1] if args else ""
-        if isinstance(last, str) and ("temp_5c" in last or "lumina_lut" in last):
+        if isinstance(last, str) and "temp_5c" in last:
             return _real_path_join(assets_dir, last)
         return _real_path_join(*args)
     return _join
@@ -52,27 +52,13 @@ class TestMerge5ColorExtendedSuccess:
 
     def test_merge_success_returns_200_with_extract_response(self) -> None:
         """Both temp files exist → merge produces correct result and returns 200."""
-        from utils.lut_manager import LUTManager
-        from config import LUTMetadata, PaletteEntry
-
         lut1 = np.random.randint(0, 256, (100, 3), dtype=np.uint8)
         lut2 = np.random.randint(0, 256, (80, 3), dtype=np.uint8)
-        metadata = LUTMetadata(palette=[
-            PaletteEntry(color="White", material="PLA Basic"),
-            PaletteEntry(color="Cyan", material="PLA Basic"),
-            PaletteEntry(color="Magenta", material="PLA Basic"),
-            PaletteEntry(color="Yellow", material="PLA Basic"),
-            PaletteEntry(color="Black", material="PLA Basic"),
-        ])
 
         with tempfile.TemporaryDirectory() as tmpdir:
-            LUTManager.save_keyed_json(
-                _real_path_join(tmpdir, "temp_5c_ext_page_1.json"),
-                lut1, np.zeros((100, 5), dtype=np.int32), metadata)
-            LUTManager.save_keyed_json(
-                _real_path_join(tmpdir, "temp_5c_ext_page_2.json"),
-                lut2, np.zeros((80, 5), dtype=np.int32), metadata)
-            merged_path = _real_path_join(tmpdir, "lumina_lut.json")
+            np.save(_real_path_join(tmpdir, "temp_5c_ext_page_1.npy"), lut1)
+            np.save(_real_path_join(tmpdir, "temp_5c_ext_page_2.npy"), lut2)
+            merged_path = _real_path_join(tmpdir, "lumina_lut.npy")
 
             with (
                 patch("api.routers.extractor.os.path.join", side_effect=_make_join_redirector(tmpdir)),
@@ -89,27 +75,13 @@ class TestMerge5ColorExtendedSuccess:
 
     def test_merge_produces_correct_shape(self) -> None:
         """Merged LUT shape should be (N+M, 3) after reshape + vstack."""
-        from utils.lut_manager import LUTManager
-        from config import LUTMetadata, PaletteEntry
-
         lut1 = np.random.randint(0, 256, (50, 3), dtype=np.uint8)
         lut2 = np.random.randint(0, 256, (70, 3), dtype=np.uint8)
-        metadata = LUTMetadata(palette=[
-            PaletteEntry(color="White", material="PLA Basic"),
-            PaletteEntry(color="Cyan", material="PLA Basic"),
-            PaletteEntry(color="Magenta", material="PLA Basic"),
-            PaletteEntry(color="Yellow", material="PLA Basic"),
-            PaletteEntry(color="Black", material="PLA Basic"),
-        ])
 
         with tempfile.TemporaryDirectory() as tmpdir:
-            LUTManager.save_keyed_json(
-                _real_path_join(tmpdir, "temp_5c_ext_page_1.json"),
-                lut1, np.zeros((50, 5), dtype=np.int32), metadata)
-            LUTManager.save_keyed_json(
-                _real_path_join(tmpdir, "temp_5c_ext_page_2.json"),
-                lut2, np.zeros((70, 5), dtype=np.int32), metadata)
-            merged_path = _real_path_join(tmpdir, "lumina_lut.json")
+            np.save(_real_path_join(tmpdir, "temp_5c_ext_page_1.npy"), lut1)
+            np.save(_real_path_join(tmpdir, "temp_5c_ext_page_2.npy"), lut2)
+            merged_path = _real_path_join(tmpdir, "lumina_lut.npy")
 
             with (
                 patch("api.routers.extractor.os.path.join", side_effect=_make_join_redirector(tmpdir)),
@@ -118,10 +90,10 @@ class TestMerge5ColorExtendedSuccess:
                 response = client.post("/api/extractor/merge-5color-extended")
 
             assert response.status_code == 200
-            merged_rgb, _, _ = LUTManager.load_lut_with_metadata(merged_path)
-            assert merged_rgb.shape == (120, 3)
-            np.testing.assert_array_equal(merged_rgb[:50], lut1)
-            np.testing.assert_array_equal(merged_rgb[50:], lut2)
+            merged = np.load(merged_path)
+            assert merged.shape == (120, 3)
+            np.testing.assert_array_equal(merged[:50], lut1)
+            np.testing.assert_array_equal(merged[50:], lut2)
 
 
 # =========================================================================
@@ -204,7 +176,7 @@ class TestCalibration5ColorExtended:
                 },
             )
             assert response.status_code == 200
-            mock_fn.assert_called_once_with(block_size_mm=5.0, gap_mm=0.82)
+            mock_fn.assert_called_once_with()
 
     def test_5color_extended_response_contains_download_and_preview_urls(self) -> None:
         """Response should contain download_url and preview_url."""

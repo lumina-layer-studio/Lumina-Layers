@@ -4,28 +4,10 @@
  */
 
 import type { WidgetId, WidgetLayoutState, SnapResult } from '../types/widget';
-import type { WorkspaceMode } from '../types/workspace';
 
 // ===== 常量 =====
 /** Default widget width in pixels. (默认 Widget 宽度，单位像素) */
 export const WIDGET_WIDTH = 350;
-export const MIN_WIDGET_WIDTH = 280;
-
-export function resolveResponsiveWidgetWidth(
-  containerWidth: number,
-  mode: WorkspaceMode = 'standard'
-): number {
-  if (containerWidth <= 0) return WIDGET_WIDTH;
-
-  const modeMaxWidth = mode === 'compact' ? 320 : mode === 'wide' ? 360 : WIDGET_WIDTH;
-  const modeMinWidth = mode === 'compact' ? 248 : MIN_WIDGET_WIDTH;
-  const safeWidth = Math.max(240, containerWidth - 32);
-  const proportionalWidth = Math.round(containerWidth * (mode === 'compact' ? 0.23 : 0.26));
-  return Math.min(modeMaxWidth, safeWidth, Math.max(modeMinWidth, proportionalWidth));
-}
-
-/** Shared widget corner radius in pixels. (Widget 统一圆角，单位像素) */
-export const WIDGET_PANEL_RADIUS = 8;
 
 /** Collapsed widget height — header only. (折叠状态高度，仅标题栏) */
 export const COLLAPSED_HEIGHT = 40;
@@ -38,44 +20,6 @@ export const SNAP_THRESHOLD = 48;
 
 /** Gap between stacked widgets in pixels. (堆叠 Widget 间距，单位像素) */
 export const STACK_GAP = 8;
-
-type RectBounds = Pick<DOMRectReadOnly, 'top' | 'bottom' | 'left' | 'right'>;
-
-/**
- * Compute bottom inset for a dock when a bottom-fixed blocker overlaps it horizontally.
- * 当底部固定面板与侧边 Dock 在水平方向重叠时，计算需要避让的底部高度。
- *
- * Args:
- *   dockRect (HorizontalRect): Horizontal bounds of the dock. (Dock 的水平边界)
- *   blockerRect (BlockerRect): Horizontal bounds and height of the blocker. (遮挡面板的水平边界与高度)
- *
- * Returns:
- *   number: Bottom inset in pixels. Returns 0 when no overlap exists. (底部避让高度；无重叠时返回 0)
- */
-export function computeDockBottomInset(
-  dockRect: RectBounds,
-  blockerRect: RectBounds
-): number {
-  const overlapWidth = Math.min(dockRect.right, blockerRect.right) - Math.max(dockRect.left, blockerRect.left);
-  if (overlapWidth <= 0) return 0;
-
-  const overlapHeight = Math.min(dockRect.bottom, blockerRect.bottom) - Math.max(dockRect.top, blockerRect.top);
-  return overlapHeight > 0 ? Math.max(0, Math.ceil(overlapHeight)) : 0;
-}
-
-/**
- * Resolve the effective widget height using measured DOM height when available.
- * 使用可用的真实 DOM 高度解析 Widget 的有效高度。
- */
-export function resolveWidgetHeight(
-  widget: Pick<WidgetLayoutState, 'id' | 'collapsed' | 'expandedHeight'>,
-  measuredHeights?: Map<WidgetId, number>
-): number {
-  if (widget.collapsed) {
-    return COLLAPSED_HEIGHT;
-  }
-  return measuredHeights?.get(widget.id) ?? widget.expandedHeight ?? EXPANDED_HEIGHT;
-}
 
 /**
  * Clamp widget position within container bounds.
@@ -129,10 +73,8 @@ export function computeSnap(
   widgetRight: number,
   containerWidth: number,
   widgetTop: number,
-  _threshold: number = SNAP_THRESHOLD,
-  widgetWidth: number = WIDGET_WIDTH
+  _threshold: number = SNAP_THRESHOLD
 ): SnapResult {
-  void _threshold;
   // Always snap: pick the nearest edge based on widget center position
   const widgetCenter = (widgetLeft + widgetRight) / 2;
   const snapToLeft = widgetCenter <= containerWidth / 2;
@@ -141,7 +83,7 @@ export function computeSnap(
     shouldSnap: true,
     edge: snapToLeft ? 'left' : 'right',
     snappedPosition: {
-      x: snapToLeft ? 0 : containerWidth - widgetWidth,
+      x: snapToLeft ? 0 : containerWidth - WIDGET_WIDTH,
       y: widgetTop,
     },
   };
@@ -169,17 +111,19 @@ export function computeStackPositions(
   stackWidgets: WidgetLayoutState[],
   edge: 'left' | 'right',
   containerWidth: number,
-  measuredHeights?: Map<WidgetId, number>,
-  widgetWidth: number = WIDGET_WIDTH
+  measuredHeights?: Map<WidgetId, number>
 ): Map<WidgetId, { x: number; y: number }> {
   const sorted = [...stackWidgets].sort((a, b) => a.stackOrder - b.stackOrder);
   const positions = new Map<WidgetId, { x: number; y: number }>();
-  const x = edge === 'left' ? 0 : containerWidth - widgetWidth;
+  const x = edge === 'left' ? 0 : containerWidth - WIDGET_WIDTH;
   let currentY = STACK_GAP; // top padding
 
   for (const widget of sorted) {
     positions.set(widget.id, { x, y: currentY });
-    currentY += resolveWidgetHeight(widget, measuredHeights) + STACK_GAP;
+    const height = widget.collapsed
+      ? COLLAPSED_HEIGHT
+      : (measuredHeights?.get(widget.id) ?? widget.expandedHeight ?? EXPANDED_HEIGHT);
+    currentY += height + STACK_GAP;
   }
 
   return positions;

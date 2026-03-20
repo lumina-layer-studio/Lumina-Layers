@@ -8,7 +8,6 @@ import asyncio
 import os
 import pickle
 import tempfile
-import uuid
 import zipfile
 
 import cv2
@@ -18,7 +17,7 @@ from PIL import Image
 from pydantic import BaseModel
 
 from api.dependencies import get_file_registry, get_session_store, get_worker_pool
-from api.file_bridge import ensure_png_tempfile, ndarray_to_png_bytes, pil_to_png_bytes, upload_to_tempfile
+from api.file_bridge import ndarray_to_png_bytes, pil_to_png_bytes, upload_to_tempfile
 from api.file_registry import FileRegistry
 from api.schemas.converter import (
     BedSizeItem,
@@ -26,14 +25,8 @@ from api.schemas.converter import (
     ColorMergePreviewRequest,
     ColorReplaceRequest,
     ConvertGenerateRequest,
-    RegionDetectRequest,
-    RegionDetectResponse,
-    RegionReplaceRequest,
-    RegionReplaceResponse,
-    ResetReplacementsRequest,
 )
 from api.schemas.responses import (
-    AutoDetectColorsResponse,
     BatchItemResult,
     BatchResponse,
     ColorReplaceResponse,
@@ -42,7 +35,6 @@ from api.schemas.responses import (
     HeightmapUploadResponse,
     MergePreviewResponse,
     PreviewResponse,
-    ResetReplacementsResponse,
 )
 from api.session_store import SessionStore
 from api.worker_pool import WorkerPoolManager
@@ -54,7 +46,7 @@ from api.workers.converter_workers import (
 from core.color_merger import ColorMerger
 from core.image_preprocessor import ImagePreprocessor
 from core.color_replacement import ColorReplacementManager
-from core.converter import convert_image_to_3d, extract_color_palette, generate_empty_bed_glb, generate_segmented_glb, _compute_connected_region_mask_4n
+from core.converter import convert_image_to_3d, extract_color_palette, generate_empty_bed_glb, generate_segmented_glb
 from config import BedManager, ModelingMode as CoreModelingMode, PrinterConfig
 from core.heightmap_loader import HeightmapLoader
 from utils.lut_manager import LUTManager
@@ -144,36 +136,6 @@ def get_bed_preview(
     return {"preview_3d_url": f"/api/files/{glb_id}"}
 
 
-@router.post("/auto-detect-colors", response_model=AutoDetectColorsResponse)
-async def auto_detect_colors(
-    image: UploadFile = File(..., description="输入图像"),
-    target_width_mm: float = Form(60.0, description="目标打印宽度（毫米）"),
-) -> AutoDetectColorsResponse:
-    """Analyze an image and recommend the optimal quantization color count.
-    分析图片，自动推荐最佳量化颜色数。
-
-    This endpoint is session-less: the uploaded temp file is deleted in a
-    ``finally`` block because no session exists to register it for later
-    cleanup.
-    此端点无会话：上传的临时文件在 finally 块中删除，因为没有会话来注册它
-    以便后续清理。
-    """
-    temp_path = await ensure_png_tempfile(image)
-    try:
-        result = ImagePreprocessor.analyze_recommended_colors(temp_path, target_width_mm)
-    except Exception as e:
-        raise HTTPException(status_code=422, detail=f"颜色分析失败: {e}")
-    finally:
-        if os.path.exists(temp_path):
-            os.unlink(temp_path)
-    return AutoDetectColorsResponse(
-        recommended=result.get("recommended", 48),
-        max_safe=result.get("max_safe", 64),
-        unique_colors=result.get("unique_colors", 0),
-        complexity_score=result.get("complexity_score", 0),
-    )
-
-
 @router.post("/crop", response_model=CropResponse)
 async def crop_image(
     image: UploadFile = File(..., description="输入图像"),
@@ -198,7 +160,7 @@ async def crop_image(
         CropResponse: 包含裁剪后图片 URL 和尺寸
     """
     # 1. Save uploaded file to temp path
-    temp_path = await ensure_png_tempfile(image)
+    temp_path = await upload_to_tempfile(image)
 
     # 2. Validate that the file is a readable image
     try:
@@ -233,12 +195,11 @@ async def convert_preview(
     target_width_mm: float = Form(60.0, description="目标宽度 (mm)"),
     auto_bg: bool = Form(False, description="自动去背景"),
     bg_tol: int = Form(40, description="背景容差"),
-    color_mode: str = Form("4-Color (RYBW)", description="颜色模式"),
+    color_mode: str = Form("4-Color", description="颜色模式"),
     modeling_mode: str = Form("high-fidelity", description="建模模式"),
     quantize_colors: int = Form(48, description="K-Means 色彩细节"),
     enable_cleanup: bool = Form(True, description="孤立像素清理"),
     hue_weight: float = Form(0.0, description="色相保护权重"),
-    chroma_gate: float = Form(15.0, description="暗色彩度门槛"),
     is_dark: bool = Form(True, description="深色主题"),
     store: SessionStore = Depends(get_session_store),
     registry: FileRegistry = Depends(get_file_registry),
@@ -258,7 +219,7 @@ async def convert_preview(
         raise HTTPException(status_code=404, detail=f"LUT not found: {lut_name}")
 
     # 1. File upload (I/O, main thread)
-    temp_path = await ensure_png_tempfile(image)
+    temp_path = await upload_to_tempfile(image)
 
     # 2. CPU computation offloaded to process pool (only paths and scalars)
     try:
@@ -276,13 +237,10 @@ async def convert_preview(
             enable_cleanup,
             is_dark,
             hue_weight,
-            chroma_gate,
         )
     except asyncio.TimeoutError:
         raise HTTPException(status_code=504, detail="Preview generation timed out")
     except Exception as e:
-        import traceback
-        traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Preview generation failed: {str(e)}")
 
     # 3. Result processing (I/O + Session, main thread)
@@ -307,9 +265,6 @@ async def convert_preview(
     store.put(session_id, "replacement_regions", [])
     store.put(session_id, "replacement_history", [])
     store.put(session_id, "free_color_set", set())
-    # Save a pristine copy of matched_rgb for reset-replacements
-    if cache_data and "matched_rgb" in cache_data:
-        store.put(session_id, "original_matched_rgb", cache_data["matched_rgb"].copy())
     store.register_temp_file(session_id, temp_path)
     # Register worker temp files for cleanup
     store.register_temp_file(session_id, result["preview_png_path"])
@@ -390,59 +345,6 @@ async def convert_preview(
     )
 
 
-@router.get("/layer-images/{session_id}")
-def get_layer_images(
-    session_id: str,
-    store: SessionStore = Depends(get_session_store),
-    registry: FileRegistry = Depends(get_file_registry),
-):
-    """Generate per-layer material preview images from cached preview data.
-    从缓存的预览数据生成每层材料预览图。
-
-    Returns a list of layer image URLs with material names.
-    返回每层图片 URL 和材料名称列表。
-    """
-    session_data = _require_session(store, session_id)
-    cache = _require_preview_cache(session_data)
-
-    material_matrix = cache.get("material_matrix")
-    mask_solid = cache.get("mask_solid")
-    color_conf = cache.get("color_conf")
-    if material_matrix is None or mask_solid is None or color_conf is None:
-        raise HTTPException(status_code=400, detail="Preview cache missing required data")
-
-    h, w = material_matrix.shape[:2]
-    n_layers = material_matrix.shape[2]
-    preview_colors = color_conf.get("preview", {})
-    slots = color_conf.get("slots", [])
-
-    layers = []
-    for layer_idx in range(n_layers):
-        layer = material_matrix[:, :, layer_idx]
-        # 浅灰背景
-        layer_img = np.ones((h, w, 3), dtype=np.uint8) * 220
-
-        for mat_id, rgba in preview_colors.items():
-            mat_mask = (layer == mat_id) & mask_solid
-            if np.any(mat_mask):
-                layer_img[mat_mask] = rgba[:3]
-
-        # 非实体区域用更浅的灰
-        layer_img[~mask_solid] = [240, 240, 240]
-
-        png_bytes = _image_to_png_bytes(Image.fromarray(layer_img))
-        file_id = registry.register_bytes(session_id, png_bytes, f"layer_{layer_idx}.png")
-
-        slot_name = slots[layer_idx] if layer_idx < len(slots) else f"Layer {layer_idx}"
-        layers.append({
-            "layer_index": layer_idx,
-            "name": slot_name,
-            "url": f"/api/files/{file_id}",
-        })
-
-    return {"session_id": session_id, "layers": layers}
-
-
 @router.post("/upload-heightmap")
 async def upload_heightmap(
     heightmap: UploadFile = File(..., description="高度图文件"),
@@ -473,7 +375,7 @@ async def upload_heightmap(
     cache = _require_preview_cache(session_data)
 
     # 3. Read uploaded file and save to temp
-    temp_path = await ensure_png_tempfile(heightmap)
+    temp_path = await upload_to_tempfile(heightmap)
     store.register_temp_file(session_id, temp_path)
 
     # 4. Load and validate heightmap using HeightmapLoader
@@ -618,25 +520,16 @@ async def convert_generate(
     if request.enable_relief and height_mode == "heightmap":
         heightmap_grayscale = session_data.get("heightmap_grayscale")
         if heightmap_grayscale is not None:
+            import tempfile
+            import numpy as np
+            from PIL import Image
             fd, hm_temp_path = tempfile.mkstemp(suffix=".png")
             os.close(fd)
             Image.fromarray(heightmap_grayscale).save(hm_temp_path)
             heightmap_path = hm_temp_path
             store.register_temp_file(body.session_id, hm_temp_path)
 
-    # 2a. Serialize cached matched_rgb to temp file if requested
-    # 当存在区域替换时，将缓存的 matched_rgb 序列化为临时文件供 Worker 使用
-    matched_rgb_path: str | None = None
-    if request.use_cached_matched_rgb:
-        cached_matched_rgb = cache.get("matched_rgb")
-        if cached_matched_rgb is not None:
-            fd, mr_temp_path = tempfile.mkstemp(suffix=".npy")
-            os.close(fd)
-            np.save(mr_temp_path, cached_matched_rgb)
-            matched_rgb_path = mr_temp_path
-            store.register_temp_file(body.session_id, mr_temp_path)
-
-    # 2b. Collect scalar parameters into a dict for the worker
+    # 2. Collect scalar parameters into a dict for the worker
     params: dict = {
         "target_width_mm": request.target_width_mm,
         "spacer_thick": request.spacer_thick,
@@ -649,10 +542,6 @@ async def convert_generate(
         "loop_length": request.loop_length,
         "loop_hole": request.loop_hole,
         "loop_pos": request.loop_pos,
-        "loop_angle": request.loop_angle,
-        "loop_offset_x": request.loop_offset_x,
-        "loop_offset_y": request.loop_offset_y,
-        "loop_position_preset": request.loop_position_preset,
         "modeling_mode": core_modeling_mode,
         "quantize_colors": request.quantize_colors,
         "replacement_regions": replacement_regions,
@@ -672,10 +561,6 @@ async def convert_generate(
         "enable_coating": request.enable_coating,
         "coating_height_mm": request.coating_height_mm,
         "hue_weight": request.hue_weight,
-        "chroma_gate": request.chroma_gate,
-        "matched_rgb_path": matched_rgb_path,
-        "printer_id": request.printer_id,
-        "slicer": request.slicer,
     }
 
     # 3. CPU computation offloaded to process pool (only paths and scalars)
@@ -726,12 +611,11 @@ async def convert_batch(
     structure_mode: str = Form("Double-sided", description="打印结构模式"),
     auto_bg: bool = Form(False, description="自动去背景"),
     bg_tol: int = Form(40, description="背景容差"),
-    color_mode: str = Form("4-Color (RYBW)", description="颜色模式"),
+    color_mode: str = Form("4-Color", description="颜色模式"),
     modeling_mode: str = Form("high-fidelity", description="建模模式"),
     quantize_colors: int = Form(48, description="K-Means 色彩细节"),
     enable_cleanup: bool = Form(True, description="孤立像素清理"),
     hue_weight: float = Form(0.0, description="色相保护权重"),
-    chroma_gate: float = Form(15.0, description="暗色彩度门槛"),
     registry: FileRegistry = Depends(get_file_registry),
     pool: WorkerPoolManager = Depends(get_worker_pool),
 ) -> BatchResponse:
@@ -766,7 +650,7 @@ async def convert_batch(
         filename = upload_file.filename or "unknown"
         try:
             # 1. File upload (I/O, main thread)
-            temp_path = await ensure_png_tempfile(upload_file)
+            temp_path = await upload_to_tempfile(upload_file)
 
             # 2. CPU computation offloaded to process pool (only paths and scalars)
             result = await pool.submit(
@@ -783,7 +667,6 @@ async def convert_batch(
                 quantize_colors,
                 enable_cleanup,
                 hue_weight,
-                chroma_gate,
             )
 
             # 3. Result processing (main thread)
@@ -921,305 +804,6 @@ def replace_color(
         message="Color replaced successfully",
         preview_url=f"/api/files/{preview_id}",
         replacement_count=len(current_regions),
-    )
-
-
-@router.post("/reset-replacements", response_model=ResetReplacementsResponse)
-def reset_replacements(
-    request: ResetReplacementsRequest,
-    store: SessionStore = Depends(get_session_store),
-    registry: FileRegistry = Depends(get_file_registry),
-) -> ResetReplacementsResponse:
-    """Reset all color replacements and restore original preview.
-    重置所有颜色替换并恢复原始预览。
-
-    Clears replacement_regions and replacement_history from the session,
-    then regenerates the preview from the original matched_rgb cache.
-    清空 session 中的 replacement_regions 和 replacement_history，
-    然后从原始 matched_rgb 缓存重新生成预览。
-
-    Args:
-        request (ResetReplacementsRequest): Reset request with session_id. (重置请求)
-        store (SessionStore): Session store dependency. (会话存储依赖)
-        registry (FileRegistry): File registry dependency. (文件注册表依赖)
-
-    Returns:
-        ResetReplacementsResponse: Reset result with original preview URL. (重置结果及原始预览 URL)
-
-    Raises:
-        HTTPException(404): Session not found. (会话不存在)
-        HTTPException(409): No preview cache available. (无预览缓存)
-        HTTPException(500): Internal processing error. (内部处理错误)
-    """
-    session_data = _require_session(store, request.session_id)
-    cache = _require_preview_cache(session_data)
-
-    try:
-        # Clear replacement state
-        store.put(request.session_id, "replacement_regions", [])
-        store.put(request.session_id, "replacement_history", [])
-
-        # Restore matched_rgb from the pristine original saved at preview time.
-        # region-replace mutates cache["matched_rgb"] in-place, so we must
-        # use the untouched copy to truly reset.
-        original_rgb: np.ndarray | None = session_data.get("original_matched_rgb")
-        if original_rgb is not None:
-            # Restore cache to original state
-            cache["matched_rgb"] = original_rgb.copy()
-            store.put(request.session_id, "preview_cache", cache)
-            source_rgb = original_rgb
-        else:
-            # Fallback: no original saved (legacy session), use current cache
-            source_rgb = cache["matched_rgb"]
-
-        # Regenerate preview from original matched_rgb (no replacements applied)
-        preview_bytes = _image_to_png_bytes(source_rgb)
-        preview_id = registry.register_bytes(
-            request.session_id, preview_bytes, "preview_reset.png"
-        )
-
-        # Regenerate segmented GLB from restored matched_rgb
-        glb_url: str | None = None
-        try:
-            glb_path = generate_segmented_glb(cache)
-            if glb_path and os.path.exists(glb_path):
-                glb_id = registry.register_path(request.session_id, glb_path)
-                glb_url = f"/api/files/{glb_id}"
-        except Exception as glb_err:
-            print(f"[API] Reset-replacements GLB regeneration failed (non-fatal): {glb_err}")
-    except HTTPException:
-        raise
-    except Exception as e:
-        _handle_core_error(e, "Reset replacements")
-
-    return ResetReplacementsResponse(
-        status="ok",
-        message="All replacements cleared",
-        preview_url=f"/api/files/{preview_id}",
-        preview_glb_url=glb_url,
-    )
-
-
-@router.post("/region-detect", response_model=RegionDetectResponse)
-def region_detect(
-    request: RegionDetectRequest,
-    store: SessionStore = Depends(get_session_store),
-    registry: FileRegistry = Depends(get_file_registry),
-) -> RegionDetectResponse:
-    """Detect a connected region of same-colored pixels at the click position.
-    检测点击位置处同色像素的连通区域。
-
-    This endpoint is synchronous because the BFS flood-fill on a small
-    quantized preview image is lightweight. The heavy image processing
-    was already completed in the /preview step.
-    此端点同步执行，因为在小尺寸量化预览图上的 BFS 洪水填充计算量很小。
-    繁重的图像处理已在 /preview 步骤中完成。
-
-    Args:
-        request (RegionDetectRequest): Region detection parameters. (区域检测参数)
-        store (SessionStore): Session store dependency. (会话存储依赖)
-        registry (FileRegistry): File registry dependency. (文件注册表依赖)
-
-    Returns:
-        RegionDetectResponse: Detected region metadata with preview URL. (检测到的区域元数据及预览 URL)
-
-    Raises:
-        HTTPException(404): Session not found. (会话不存在)
-        HTTPException(409): No preview cache available. (无预览缓存)
-        HTTPException(400): Click coordinates out of bounds or on background. (点击坐标越界或在背景上)
-        HTTPException(500): Internal processing error. (内部处理错误)
-    """
-    session_data = _require_session(store, request.session_id)
-    cache = _require_preview_cache(session_data)
-
-    try:
-        quantized_image: np.ndarray | None = cache.get("quantized_image")
-        mask_solid: np.ndarray | None = cache.get("mask_solid")
-        matched_rgb: np.ndarray | None = cache.get("matched_rgb")
-
-        if quantized_image is None or mask_solid is None or matched_rgb is None:
-            raise HTTPException(
-                status_code=409,
-                detail="Preview cache missing quantized_image, mask_solid, or matched_rgb.",
-            )
-
-        h, w = quantized_image.shape[:2]
-        x, y = request.x, request.y
-
-        if not (0 <= x < w and 0 <= y < h):
-            raise HTTPException(
-                status_code=400,
-                detail=f"Coordinates ({x}, {y}) out of bounds for image {w}x{h}.",
-            )
-
-        if not mask_solid[y, x]:
-            raise HTTPException(
-                status_code=400,
-                detail="Clicked on background area.",
-            )
-
-        # Compute connected region mask via 4-neighbor BFS
-        region_mask: np.ndarray = _compute_connected_region_mask_4n(
-            quantized_image, mask_solid, x, y
-        )
-
-        pixel_count: int = int(np.count_nonzero(region_mask))
-        if pixel_count == 0:
-            raise HTTPException(
-                status_code=400,
-                detail="No connected region found at the click position.",
-            )
-
-        # Extract region color from matched_rgb at click position
-        r, g, b = int(matched_rgb[y, x, 0]), int(matched_rgb[y, x, 1]), int(matched_rgb[y, x, 2])
-        color_hex: str = f"#{r:02x}{g:02x}{b:02x}"
-
-        # Store region_mask in session for subsequent region-replace
-        region_id: str = str(uuid.uuid4())
-        store.put(request.session_id, "selected_region_mask", region_mask)
-        store.put(request.session_id, "selected_region_id", region_id)
-
-        # Generate highlighted preview: overlay region with semi-transparent highlight
-        highlight_color = np.array([0, 200, 255], dtype=np.uint8)  # cyan highlight
-        alpha = 0.45
-        preview_img: np.ndarray = matched_rgb.copy()
-        preview_img[region_mask] = (
-            preview_img[region_mask].astype(np.float32) * (1 - alpha)
-            + highlight_color.astype(np.float32) * alpha
-        ).astype(np.uint8)
-
-        preview_bytes: bytes = _image_to_png_bytes(preview_img)
-        preview_id: str = registry.register_bytes(
-            request.session_id, preview_bytes, "region_highlight.png"
-        )
-
-        # Extract 2D contours from region_mask for frontend RGB outline rendering
-        region_contours: list[list[list[float]]] | None = None
-        target_w = cache.get("target_w")
-        target_width_mm = cache.get("target_width_mm")
-        if target_w and target_width_mm and target_w > 0:
-            pixel_scale = target_width_mm / target_w
-            mask_u8 = region_mask.astype(np.uint8) * 255
-            cv_contours, _ = cv2.findContours(
-                mask_u8, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
-            )
-            region_contours = []
-            for cnt in cv_contours:
-                if len(cnt) < 3:
-                    continue
-                pts = cnt.squeeze(1).astype(float)
-                world_pts: list[list[float]] = []
-                for px, py in pts:
-                    x_mm = float(px * pixel_scale)
-                    y_mm = float((h - py) * pixel_scale)
-                    world_pts.append([x_mm, y_mm])
-                region_contours.append(world_pts)
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        _handle_core_error(e, "Region detection")
-
-    return RegionDetectResponse(
-        region_id=region_id,
-        color_hex=color_hex,
-        pixel_count=pixel_count,
-        preview_url=f"/api/files/{preview_id}",
-        contours=region_contours,
-    )
-
-
-@router.post("/region-replace", response_model=RegionReplaceResponse)
-def region_replace(
-    request: RegionReplaceRequest,
-    store: SessionStore = Depends(get_session_store),
-    registry: FileRegistry = Depends(get_file_registry),
-) -> RegionReplaceResponse:
-    """Replace color only within the previously detected connected region.
-    仅替换先前检测到的连通区域内的颜色。
-
-    This endpoint is synchronous because it performs a simple masked
-    pixel assignment on the cached matched_rgb array (small preview image).
-    此端点同步执行，因为仅对缓存的 matched_rgb 数组执行简单的掩码像素赋值。
-
-    Args:
-        request (RegionReplaceRequest): Region replacement parameters. (区域替换参数)
-        store (SessionStore): Session store dependency. (会话存储依赖)
-        registry (FileRegistry): File registry dependency. (文件注册表依赖)
-
-    Returns:
-        RegionReplaceResponse: Replacement result with preview URL. (替换结果及预览 URL)
-
-    Raises:
-        HTTPException(404): Session not found. (会话不存在)
-        HTTPException(409): No preview cache or no region selected. (无预览缓存或未选中区域)
-        HTTPException(500): Internal processing error. (内部处理错误)
-    """
-    session_data = _require_session(store, request.session_id)
-    cache = _require_preview_cache(session_data)
-
-    try:
-        matched_rgb: np.ndarray | None = cache.get("matched_rgb")
-        if matched_rgb is None:
-            raise HTTPException(
-                status_code=409,
-                detail="Preview cache missing matched_rgb.",
-            )
-
-        region_mask: np.ndarray | None = session_data.get("selected_region_mask")
-        if region_mask is None:
-            raise HTTPException(
-                status_code=409,
-                detail="No region selected. Call POST /api/convert/region-detect first.",
-            )
-
-        # Parse replacement hex to RGB tuple
-        replacement_rgb = np.array(
-            ColorReplacementManager._hex_to_color(request.replacement_color),
-            dtype=np.uint8,
-        )
-
-        # Apply region replacement: only modify pixels within the mask
-        replaced_rgb: np.ndarray = matched_rgb.copy()
-        replaced_rgb[region_mask] = replacement_rgb
-
-        # Update matched_rgb in session cache
-        cache["matched_rgb"] = replaced_rgb
-        store.put(request.session_id, "preview_cache", cache)
-
-        # Generate preview PNG
-        preview_bytes: bytes = _image_to_png_bytes(replaced_rgb)
-        preview_id: str = registry.register_bytes(
-            request.session_id, preview_bytes, "preview_region_replaced.png"
-        )
-
-        # Regenerate segmented GLB from updated matched_rgb
-        glb_url: str | None = None
-        try:
-            glb_path = generate_segmented_glb(cache)
-            if glb_path and os.path.exists(glb_path):
-                glb_id = registry.register_path(request.session_id, glb_path)
-                glb_url = f"/api/files/{glb_id}"
-        except Exception as glb_err:
-            print(f"[API] Region-replace GLB regeneration failed (non-fatal): {glb_err}")
-
-        # Extract updated color_contours from cache
-        contours_data: dict | None = cache.get("color_contours")
-
-        # Clear region mask after replacement
-        store.put(request.session_id, "selected_region_mask", None)
-        store.put(request.session_id, "selected_region_id", None)
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        _handle_core_error(e, "Region replacement")
-
-    return RegionReplaceResponse(
-        preview_url=f"/api/files/{preview_id}",
-        preview_glb_url=glb_url,
-        color_contours=contours_data,
-        message="Region color replaced successfully",
     )
 
 

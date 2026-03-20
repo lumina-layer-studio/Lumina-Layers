@@ -11,7 +11,7 @@ import os
 block_cipher = None
 
 a = Analysis(
-    ['api_server.py'],
+    ['main.py'],
     pathex=[],
     binaries=[],
     datas=[

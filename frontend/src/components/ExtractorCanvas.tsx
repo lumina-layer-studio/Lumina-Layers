@@ -1,9 +1,7 @@
-/* eslint-disable react-refresh/only-export-components */
 import { useRef, useEffect, useCallback, useState } from "react";
 import { useExtractorStore } from "../stores/extractorStore";
 import { ExtractorColorMode } from "../api/types";
 import { useI18n } from "../i18n/context";
-import { getObjectFitRect, lutClickToCell, getCellOverlayStyle, type RenderedImageRect } from "../utils/lutCoordUtils";
 
 // ========== Corner Labels Mapping (exported for testing) ==========
 
@@ -14,28 +12,16 @@ export const CORNER_LABELS: Record<string, string[]> = {
     "黑色 (右下) / Black (BR)",
     "黑色 (左下) / Black (BL)",
   ],
-  "4-Color (CMYW)": [
+  "4-Color": [
     "白色 (左上) / White (TL)",
     "青色 (右上) / Cyan (TR)",
     "品红 (右下) / Magenta (BR)",
     "黄色 (左下) / Yellow (BL)",
-  ],
-  "4-Color (RYBW)": [
-    "左上 / TL",
-    "右上 / TR",
-    "右下 / BR",
-    "左下 / BL",
   ],
   "6-Color (Smart 1296)": [
     "白色 (左上) / White (TL)",
     "青色 (右上) / Cyan (TR)",
     "品红 (右下) / Magenta (BR)",
-    "黄色 (左下) / Yellow (BL)",
-  ],
-  "6-Color (RYBW 1296)": [
-    "白色 (左上) / White (TL)",
-    "红色 (右上) / Red (TR)",
-    "蓝色 (右下) / Blue (BR)",
     "黄色 (左下) / Yellow (BL)",
   ],
   "8-Color Max": ["TL", "TR", "BR", "BL"],
@@ -110,16 +96,11 @@ function drawCanvas(
 
 export const LUT_GRID_SIZE: Record<string, number> = {
   [ExtractorColorMode.BW]: 6,
-  [ExtractorColorMode.FOUR_COLOR_CMYW]: 32,
-  [ExtractorColorMode.FOUR_COLOR_RYBW]: 32,
+  [ExtractorColorMode.FOUR_COLOR]: 32,
   [ExtractorColorMode.SIX_COLOR]: 36,
-  [ExtractorColorMode.SIX_COLOR_RYBW]: 36,
   [ExtractorColorMode.EIGHT_COLOR]: 37,
   [ExtractorColorMode.FIVE_COLOR_EXT]: 38,
 };
-
-const EXTRACTOR_RESULT_MEDIA_MAX_HEIGHT = "clamp(16rem, 48vh, 56rem)";
-const EXTRACTOR_CANVAS_MAX_HEIGHT = "min(78vh, calc(100dvh - 12rem))";
 
 // ========== Component ==========
 
@@ -143,7 +124,6 @@ export default function ExtractorCanvas() {
   // ---------- Manual fix state: selected cell + color picker ----------
   const [selectedCell, setSelectedCell] = useState<[number, number] | null>(null);
   const [fixColor, setFixColor] = useState("#000000");
-  const [renderedRect, setRenderedRect] = useState<RenderedImageRect | null>(null);
   const lutPreviewRef = useRef<HTMLImageElement>(null);
 
   // ---------- Load image into off-screen Image object ----------
@@ -194,7 +174,7 @@ export default function ExtractorCanvas() {
 
   // ---------- Derive hint text ----------
   const cornerCount = corner_points.length;
-  const labels = CORNER_LABELS[color_mode] ?? CORNER_LABELS["4-Color (RYBW)"];
+  const labels = CORNER_LABELS[color_mode] ?? CORNER_LABELS["4-Color"];
   const hintText =
     cornerCount >= 4
       ? t("ext_canvas_positioning_done")
@@ -207,22 +187,11 @@ export default function ExtractorCanvas() {
       if (!img) return;
       const rect = img.getBoundingClientRect();
       const gridSize = LUT_GRID_SIZE[color_mode] ?? 32;
-
-      const rendered = getObjectFitRect(
-        img.naturalWidth, img.naturalHeight,
-        rect.width, rect.height
-      );
-      const cell = lutClickToCell(
-        e.clientX - rect.left,
-        e.clientY - rect.top,
-        rendered,
-        gridSize
-      );
-      if (cell) {
-        setSelectedCell(cell);
-        setRenderedRect(rendered);
-      }
-      // 留白区域点击被忽略
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+      const col = Math.min(Math.floor((x / rect.width) * gridSize), gridSize - 1);
+      const row = Math.min(Math.floor((y / rect.height) * gridSize), gridSize - 1);
+      setSelectedCell([row, col]);
     },
     [color_mode]
   );
@@ -238,70 +207,43 @@ export default function ExtractorCanvas() {
     return (
       <div
         data-testid="extractor-results"
-        className="flex h-full min-h-0 flex-1 flex-col gap-5 overflow-auto px-3 py-3 sm:px-5 sm:py-4 xl:px-7"
+        className="flex-1 flex flex-col items-center justify-center gap-6 p-6 overflow-auto"
       >
-        {/* 色卡 + LUT 预览：左右并排，等宽 */}
-        <div className="flex h-full min-h-0 w-full flex-col gap-6 2xl:flex-row">
-          {warp_view_url && (
-            <div className="flex min-w-0 flex-1 flex-col gap-2">
-              <span className="text-xs font-medium uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
-                {t("ext_canvas_warp_view")}
-              </span>
-              <img
-                data-testid="warp-view-image"
-                src={warp_view_url}
-                alt="Warp view"
-                className="h-auto w-full object-contain"
-                style={{ maxHeight: EXTRACTOR_RESULT_MEDIA_MAX_HEIGHT }}
-              />
-            </div>
-          )}
-          {lut_preview_url && (
-            <div className="flex min-w-0 flex-1 flex-col gap-2">
-              <span className="text-xs font-medium uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
-                {t("ext_canvas_lut_preview")}
-              </span>
-              <div className="relative w-full">
-                <img
-                  ref={lutPreviewRef}
-                  data-testid="lut-preview-image"
-                  src={lut_preview_url}
-                  alt="LUT preview"
-                  onClick={handleLutPreviewClick}
-                  className="h-auto w-full cursor-crosshair object-contain"
-                  style={{ maxHeight: EXTRACTOR_RESULT_MEDIA_MAX_HEIGHT }}
-                />
-                {selectedCell && renderedRect && (() => {
-                  const gridSize = LUT_GRID_SIZE[color_mode] ?? 32;
-                  const overlay = getCellOverlayStyle(selectedCell[0], selectedCell[1], renderedRect, gridSize);
-                  return (
-                    <div
-                      data-testid="cell-highlight-overlay"
-                      style={{
-                        position: "absolute",
-                        left: overlay.left,
-                        top: overlay.top,
-                        width: overlay.width,
-                        height: overlay.height,
-                        border: "2px solid rgba(96, 165, 250, 0.92)",
-                        pointerEvents: "none",
-                        boxShadow: "0 0 0 1px rgba(255, 255, 255, 0.55)",
-                        boxSizing: "border-box",
-                      }}
-                    />
-                  );
-                })()}
-              </div>
-            </div>
-          )}
-        </div>
+        {warp_view_url && (
+          <div className="flex flex-col items-center gap-2">
+            <span className="text-xs text-gray-500 dark:text-gray-400">
+              {t("ext_canvas_warp_view")}
+            </span>
+            <img
+              data-testid="warp-view-image"
+              src={warp_view_url}
+              alt="Warp view"
+              className="max-w-full max-h-[40vh] rounded border border-gray-300 dark:border-gray-700"
+            />
+          </div>
+        )}
+        {lut_preview_url && (
+          <div className="flex flex-col items-center gap-2">
+            <span className="text-xs text-gray-500 dark:text-gray-400">
+              {t("ext_canvas_lut_preview")}
+            </span>
+            <img
+              ref={lutPreviewRef}
+              data-testid="lut-preview-image"
+              src={lut_preview_url}
+              alt="LUT preview"
+              onClick={handleLutPreviewClick}
+              className="max-w-full max-h-[40vh] rounded border border-gray-300 dark:border-gray-700 cursor-crosshair"
+            />
+          </div>
+        )}
         {/* 手动修正浮层：选中色块后显示 */}
         {selectedCell && (
           <div
             data-testid="manual-fix-popup"
-            className="flex items-center gap-3 rounded-2xl border border-slate-200/80 bg-slate-50/96 px-4 py-3 dark:border-slate-700/80 dark:bg-slate-900/96"
+            className="flex items-center gap-3 bg-gray-100 dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg px-4 py-3"
           >
-            <span className="text-sm text-slate-700 dark:text-slate-300">
+            <span className="text-sm text-gray-700 dark:text-gray-300">
               {t("ext_canvas_row")} {selectedCell[0] + 1} / {t("ext_canvas_col")} {selectedCell[1] + 1}
             </span>
             <input
@@ -309,20 +251,20 @@ export default function ExtractorCanvas() {
               type="color"
               value={fixColor}
               onChange={(e) => setFixColor(e.target.value)}
-              className="h-8 w-10 cursor-pointer rounded-xl border border-slate-300 bg-transparent dark:border-slate-500"
+              className="w-10 h-8 rounded border border-gray-300 dark:border-gray-500 cursor-pointer bg-transparent"
             />
-            <span className="font-mono text-xs text-slate-500 dark:text-slate-400">{fixColor}</span>
+            <span className="text-xs text-gray-500 dark:text-gray-400 font-mono">{fixColor}</span>
             <button
               data-testid="fix-submit-button"
               onClick={handleFixSubmit}
               disabled={manualFixLoading}
-              className="rounded-full bg-blue-600 px-3 py-1.5 text-sm text-white transition-colors hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
+              className="px-3 py-1 text-sm rounded bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed text-white"
             >
               {manualFixLoading ? t("ext_canvas_fixing") : t("ext_canvas_confirm_fix")}
             </button>
             <button
               onClick={() => setSelectedCell(null)}
-              className="rounded-full border border-slate-200/80 bg-white px-3 py-1.5 text-sm text-slate-700 transition-colors hover:bg-slate-50 dark:border-slate-700/80 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
+              className="px-2 py-1 text-sm rounded bg-gray-200 hover:bg-gray-300 dark:bg-gray-600 dark:hover:bg-gray-500 text-gray-700 dark:text-gray-300"
             >
               {t("ext_canvas_cancel")}
             </button>
@@ -337,7 +279,7 @@ export default function ExtractorCanvas() {
     return (
       <div
         data-testid="extractor-empty-state"
-        className="flex h-full flex-1 flex-col items-center justify-center gap-3 text-slate-400 dark:text-slate-500"
+        className="flex-1 flex flex-col items-center justify-center gap-3 text-gray-400 dark:text-gray-500"
       >
         <svg
           xmlns="http://www.w3.org/2000/svg"
@@ -354,7 +296,7 @@ export default function ExtractorCanvas() {
           />
         </svg>
         <p className="text-sm">{t("ext_canvas_upload_hint")}</p>
-        <p className="text-xs text-slate-500 dark:text-slate-600">
+        <p className="text-xs text-gray-500 dark:text-gray-600">
           {t("ext_canvas_upload_hint_en")}
         </p>
       </div>
@@ -363,12 +305,12 @@ export default function ExtractorCanvas() {
 
   // ===== Canvas mode =====
   return (
-    <div className="flex h-full min-h-0 flex-1 flex-col items-center justify-center gap-4 px-3 py-3 sm:px-5 sm:py-4 xl:px-7 xl:py-5">
+    <div className="flex-1 flex flex-col items-center justify-center gap-3 p-4">
       {/* Corner hint */}
       <p
         data-testid="corner-hint"
-        className={`rounded-full px-3 py-1 text-sm font-medium ${
-          cornerCount >= 4 ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400" : "bg-amber-500/10 text-amber-600 dark:text-amber-300"
+        className={`text-sm font-medium ${
+          cornerCount >= 4 ? "text-green-500 dark:text-green-400" : "text-yellow-500 dark:text-yellow-300"
         }`}
       >
         {hintText}
@@ -381,8 +323,8 @@ export default function ExtractorCanvas() {
         width={imageNaturalWidth ?? 800}
         height={imageNaturalHeight ?? 600}
         onClick={handleCanvasClick}
-        className="max-w-full cursor-crosshair object-contain"
-        style={{ objectFit: "contain", maxHeight: EXTRACTOR_CANVAS_MAX_HEIGHT }}
+        className="max-w-full max-h-[75vh] rounded border border-gray-300 dark:border-gray-700 cursor-crosshair"
+        style={{ objectFit: "contain" }}
       />
     </div>
   );

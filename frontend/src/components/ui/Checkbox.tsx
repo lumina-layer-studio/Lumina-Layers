@@ -1,16 +1,8 @@
-import {
-  cx,
-  workstationChoiceRowActiveClass,
-  workstationChoiceRowClass,
-  workstationChoiceRowDisabledClass,
-} from "./panelPrimitives";
-
 interface CheckboxProps {
   label: string;
   checked: boolean;
   onChange: (checked: boolean) => void;
   disabled?: boolean;
-  tooltip?: string;
 }
 
 export default function Checkbox({
@@ -18,39 +10,19 @@ export default function Checkbox({
   checked,
   onChange,
   disabled = false,
-  tooltip,
 }: CheckboxProps) {
   return (
     <label
-      title={tooltip}
-      className={cx(
-        "flex items-center gap-3 text-sm",
-        workstationChoiceRowClass,
-        checked && workstationChoiceRowActiveClass,
-        disabled
-          ? workstationChoiceRowDisabledClass
-          : "cursor-pointer hover:border-slate-300 hover:bg-white/75 dark:hover:border-slate-600 dark:hover:bg-slate-900/75"
-      )}
+      className={`flex items-center gap-2 text-sm ${disabled ? "opacity-40 cursor-not-allowed" : "cursor-pointer"}`}
     >
       <input
         type="checkbox"
         checked={checked}
         disabled={disabled}
         onChange={(e) => onChange(e.target.checked)}
-        className="sr-only"
+        className="h-4 w-4 rounded border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-blue-500 accent-blue-500 disabled:cursor-not-allowed"
       />
-      <span
-        aria-hidden="true"
-        className={cx(
-          "flex h-5 w-5 shrink-0 items-center justify-center rounded-xl border transition-all duration-200",
-          checked
-            ? "border-blue-500 bg-blue-500"
-            : "border-slate-300/80 bg-white dark:border-slate-600/80 dark:bg-slate-800"
-        )}
-      >
-        <span className={cx("h-2.5 w-2.5 rounded-sm", checked ? "bg-white" : "bg-transparent")} />
-      </span>
-      <span className="font-medium text-slate-700 dark:text-slate-200">{label}</span>
+      <span className="text-gray-700 dark:text-gray-300">{label}</span>
     </label>
   );
 }

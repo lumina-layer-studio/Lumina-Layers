@@ -131,7 +131,7 @@ function snapshotConverterState() {
 
 const arbCalibrationColorMode = fc.constantFrom(
   CalibrationColorMode.BW,
-  CalibrationColorMode.FOUR_COLOR_RYBW,
+  CalibrationColorMode.FOUR_COLOR,
   CalibrationColorMode.SIX_COLOR,
   CalibrationColorMode.EIGHT_COLOR
 );
@@ -189,7 +189,7 @@ describe("Feature: calibration-tab-integration, Property 1: 双向状态隔离",
 
         // Reset CalibrationStore to defaults
         useCalibrationStore.setState({
-          color_mode: CalibrationColorMode.FOUR_COLOR_RYBW,
+          color_mode: CalibrationColorMode.FOUR_COLOR,
           block_size: 5,
           gap: 0.82,
           backing: BackingColor.WHITE,
@@ -275,7 +275,7 @@ describe("Feature: calibration-tab-integration, Property 6: API 请求载荷与 
     vi.clearAllMocks();
     // Reset store to defaults before each test
     useCalibrationStore.setState({
-      color_mode: CalibrationColorMode.FOUR_COLOR_RYBW,
+      color_mode: CalibrationColorMode.FOUR_COLOR,
       block_size: 5,
       gap: 0.82,
       backing: BackingColor.WHITE,

@@ -7,106 +7,17 @@ Extracts color data from printed calibration boards.
 import os
 import numpy as np
 import cv2
+import gradio as gr
+
 from config import (
     ColorSystem,
     PHYSICAL_GRID_SIZE,
     DATA_GRID_SIZE,
     DST_SIZE,
     CELL_SIZE,
-    LUT_FILE_PATH,
-    get_asset_path,
+    LUT_FILE_PATH
 )
 from utils import Stats
-from utils.lut_manager import LUTManager
-
-
-def _generate_recipes(color_mode: str, total_cells: int, page_choice: str = "Page 1") -> np.ndarray:
-    """Generate recipe (stacking) arrays for each cell based on color mode.
-    根据颜色模式为每个色块生成配方（堆叠）数组。
-
-    Args:
-        color_mode (str): Color system mode. (颜色模式)
-        total_cells (int): Number of color cells. (色块数量)
-        page_choice (str): Page selection for dual-page modes. (双页模式的页面选择)
-
-    Returns:
-        np.ndarray: Stacks array (N, L) int32. (堆叠配方数组)
-    """
-    if color_mode == "BW (Black & White)" or color_mode == "BW":
-        # 2^5 = 32 combinations, 5 layers
-        stacks = []
-        for i in range(total_cells):
-            digits = []
-            temp = i
-            for _ in range(5):
-                digits.append(temp % 2)
-                temp //= 2
-            stacks.append(digits[::-1])
-        return np.array(stacks, dtype=np.int32)
-
-    if "8-Color" in color_mode:
-        # Load from pre-computed asset, reverse to top-to-bottom convention
-        try:
-            path = get_asset_path("smart_8color_stacks.npy")
-            all_stacks = np.load(path)
-            all_stacks = np.array([s[::-1] for s in all_stacks])
-            per_page = 1369
-            page_idx = 1 if "2" in str(page_choice) else 0
-            start = page_idx * per_page
-            stacks = all_stacks[start:start + per_page]
-            return stacks[:total_cells].astype(np.int32)
-        except Exception as e:
-            print(f"[EXTRACTOR] Failed to load 8-color stacks: {e}")
-            return np.zeros((total_cells, 5), dtype=np.int32)
-
-    if "6-Color" in color_mode:
-        # Use get_top_1296_colors() from calibration module
-        try:
-            if "RYBW" in color_mode:
-                from core.calibration import get_top_1296_colors_rybw
-                top_stacks = get_top_1296_colors_rybw()
-            else:
-                from core.calibration import get_top_1296_colors
-                top_stacks = get_top_1296_colors()
-            stacks = [list(s) for s in top_stacks[:total_cells]]
-            return np.array(stacks, dtype=np.int32)
-        except Exception as e:
-            print(f"[EXTRACTOR] Failed to generate 6-color stacks: {e}")
-            return np.zeros((total_cells, 5), dtype=np.int32)
-
-    if "5-Color Extended" in color_mode:
-        if "2" in str(page_choice):
-            # Page 2: 1444 colors from get_top_1444_colors()
-            try:
-                from core.calibration import get_top_1444_colors
-                top_stacks = get_top_1444_colors()
-                stacks = [list(s) for s in top_stacks[:total_cells]]
-                return np.array(stacks, dtype=np.int32)
-            except Exception as e:
-                print(f"[EXTRACTOR] Failed to generate 5-color ext stacks: {e}")
-                return np.zeros((total_cells, 6), dtype=np.int32)
-        else:
-            # Page 1: 4^5 = 1024 combinations (same as 4-color)
-            stacks = []
-            for i in range(total_cells):
-                digits = []
-                temp = i
-                for _ in range(5):
-                    digits.append(temp % 4)
-                    temp //= 4
-                stacks.append(digits[::-1])
-            return np.array(stacks, dtype=np.int32)
-
-    # Default: 4-Color (RYBW/CMYW) — 4^5 = 1024 combinations, 5 layers
-    stacks = []
-    for i in range(total_cells):
-        digits = []
-        temp = i
-        for _ in range(5):
-            digits.append(temp % 4)
-            temp //= 4
-        stacks.append(digits[::-1])
-    return np.array(stacks, dtype=np.int32)
 
 
 def generate_simulated_reference():
@@ -368,12 +279,7 @@ def run_extraction(img, points, offset_x, offset_y, zoom, barrel, wb, bright, co
         if extracted_count >= cells_to_extract:
             break
 
-    # 保存为 Keyed JSON 格式
-    rgb_flat = extracted.reshape(-1, 3)[:total_cells]
-    metadata = LUTManager.infer_default_metadata("lumina_lut", LUT_FILE_PATH, len(rgb_flat), color_mode=color_mode)
-    # 根据颜色模式生成配方
-    stacks = _generate_recipes(color_mode, total_cells, page_choice)
-    LUTManager.save_keyed_json(LUT_FILE_PATH, rgb_flat, stacks, metadata)
+    np.save(LUT_FILE_PATH, extracted)
     prev = cv2.resize(extracted, (512, 512), interpolation=cv2.INTER_NEAREST)
 
     Stats.increment("extractions")
@@ -381,22 +287,8 @@ def run_extraction(img, points, offset_x, offset_y, zoom, barrel, wb, bright, co
     return vis, prev, LUT_FILE_PATH, f"[OK] 提取完成！({grid_size}x{grid_size}, {total_cells}色) LUT已保存"
 
 
-def probe_lut_cell(
-    lut_path: str | None,
-    click_coords: tuple[int, int],
-) -> tuple[str, str | None, tuple[int, int] | None]:
-    """Probe a specific cell in the LUT for manual inspection.
-    探测 LUT 中指定单元格的颜色信息，用于手动检查。
-
-    Args:
-        lut_path (str | None): Path to the LUT file. (LUT 文件路径)
-        click_coords (tuple[int, int]): (x, y) pixel coordinates of the click. (点击的像素坐标)
-
-    Returns:
-        tuple[str, str | None, tuple[int, int] | None]:
-            HTML info string, hex color string, and (row, col) grid coordinates.
-            (HTML 信息字符串、十六进制颜色字符串、网格坐标)
-    """
+def probe_lut_cell(lut_path, evt: gr.SelectData):
+    """Probe a specific cell in the LUT for manual inspection."""
     actual_path = LUT_FILE_PATH
     if isinstance(lut_path, str) and lut_path:
         actual_path = lut_path
@@ -406,34 +298,20 @@ def probe_lut_cell(
     if not actual_path or not os.path.exists(actual_path):
         return "[WARNING] 无数据", None, None
     try:
-        rgb, _stacks, _metadata = LUTManager.load_lut_with_metadata(actual_path)
+        lut = np.load(actual_path)
     except Exception:
         return "[WARNING] 数据损坏", None, None
 
-    if len(rgb) == 0:
-        return "[WARNING] 无数据", None, None
-
-    # 从 1D rgb 数组推断 2D 网格尺寸
-    n = len(rgb)
-    side = int(np.sqrt(n))
-    if side * side != n:
-        # 非正方形，尝试最接近的正方形
-        side = int(np.ceil(np.sqrt(n)))
-    lut_width = side
-    lut_height = side
-
-    x, y = click_coords
+    # 动态获取LUT的实际大小
+    lut_height, lut_width = lut.shape[:2]
+    
+    x, y = evt.index
     scale = 512 / lut_width  # 使用实际宽度计算缩放比例
     c = min(max(int(x / scale), 0), lut_width - 1)
     r = min(max(int(y / scale), 0), lut_height - 1)
 
-    # 将 2D 坐标映射回 1D 索引
-    idx = r * lut_width + c
-    if idx >= n:
-        return "[WARNING] 索引超出范围", None, None
-
-    cell_rgb = rgb[idx]
-    hex_c = '#{:02x}{:02x}{:02x}'.format(*cell_rgb)
+    rgb = lut[r, c]
+    hex_c = '#{:02x}{:02x}{:02x}'.format(*rgb)
 
     html = f"""
     <div style='background:#1a1a2e; padding:10px; border-radius:8px; color:white;'>
@@ -460,22 +338,10 @@ def manual_fix_cell(coord, color_input, lut_path=None):
 
     try:
         print(f"[MANUAL_FIX] Loading LUT from: {actual_path}")
-        rgb, stacks, metadata = LUTManager.load_lut_with_metadata(actual_path)
-        print(f"[MANUAL_FIX] RGB shape: {rgb.shape}")
+        lut = np.load(actual_path)
+        print(f"[MANUAL_FIX] LUT shape: {lut.shape}")
         r, c = coord
-
-        # 从 1D rgb 数组推断 2D 网格尺寸
-        n = len(rgb)
-        side = int(np.sqrt(n))
-        if side * side != n:
-            side = int(np.ceil(np.sqrt(n)))
-
-        # 将 2D 坐标映射为 1D 索引
-        idx = r * side + c
-        if idx >= n:
-            return None, "[WARNING] 索引超出范围"
-
-        print(f"[MANUAL_FIX] Fixing cell ({r}, {c}), idx={idx}")
+        print(f"[MANUAL_FIX] Fixing cell ({r}, {c})")
         new_color = [0, 0, 0]
 
         color_str = str(color_input)
@@ -490,38 +356,37 @@ def manual_fix_cell(coord, color_input, lut_path=None):
         else:
             new_color = [int(color_str[i:i+2], 16) for i in (0, 2, 4)]
 
-        print(f"[MANUAL_FIX] Old color: {rgb[idx]}, New color: {new_color}")
-        rgb[idx] = new_color
-
-        # 通过 save_keyed_json 保存修改后的 LUT
-        if stacks is None:
-            stacks = np.zeros((n, 0), dtype=np.int32)
-        LUTManager.save_keyed_json(actual_path, rgb, stacks, metadata)
+        print(f"[MANUAL_FIX] Old color: {lut[r, c]}, New color: {new_color}")
+        lut[r, c] = new_color
+        
+        # Save to the actual path
+        np.save(actual_path, lut)
         print(f"[MANUAL_FIX] Saved to: {actual_path}")
-
+        
         # For 8-color mode: also ensure we save to the correct assets path
         # Check if the path is a temp_8c_page file
         if "temp_8c_page_" in actual_path:
+            # Extract page number and ensure it's saved to assets/
             import re
-            import sys as _sys
-            match = re.search(r'temp_8c_page_(\d+)\.(npy|json)', actual_path)
+            import sys
+            match = re.search(r'temp_8c_page_(\d+)\.npy', actual_path)
             if match:
                 page_num = match.group(1)
-                if getattr(_sys, 'frozen', False):
+                # Handle both dev and frozen modes
+                if getattr(sys, 'frozen', False):
                     assets_dir = os.path.join(os.getcwd(), "assets")
                 else:
                     assets_dir = "assets"
-
+                
                 os.makedirs(assets_dir, exist_ok=True)
-                assets_path = os.path.join(assets_dir, f"temp_8c_page_{page_num}.json")
-
+                assets_path = os.path.join(assets_dir, f"temp_8c_page_{page_num}.npy")
+                
                 if os.path.abspath(actual_path) != os.path.abspath(assets_path):
-                    LUTManager.save_keyed_json(assets_path, rgb, stacks, metadata)
+                    # If the actual_path is not the assets path, save to assets too
+                    np.save(assets_path, lut)
                     print(f"[MANUAL_FIX] Also saved to assets: {assets_path}")
-
-        # 将 1D rgb reshape 回 2D grid 用于预览
-        lut_2d = rgb[:side*side].reshape(side, side, 3) if n >= side * side else rgb.reshape(-1, 1, 3)
-        preview = cv2.resize(lut_2d, (512, 512), interpolation=cv2.INTER_NEAREST)
+        
+        preview = cv2.resize(lut, (512, 512), interpolation=cv2.INTER_NEAREST)
         print(f"[MANUAL_FIX] Preview shape: {preview.shape}")
         return preview, "[OK] 已修正"
     except Exception as e:

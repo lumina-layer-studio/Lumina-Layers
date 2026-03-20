@@ -16,7 +16,7 @@ const arbSettings = fc.record({
   language: fc.constantFrom("zh" as const, "en" as const),
   theme: fc.constantFrom("light" as const, "dark" as const),
   lastLutName: fc.string({ maxLength: 100 }),
-  lastColorMode: fc.constantFrom("4-Color (CMYW)", "4-Color (RYBW)", "6-Color (Smart 1296)", "6-Color (RYBW 1296)", "8-Color Max"),
+  lastColorMode: fc.constantFrom("4-Color", "6-Color", "8-Color Max"),
   lastModelingMode: fc.constantFrom("high-fidelity", "pixel", "vector"),
   lastBedLabel: fc.string({ maxLength: 50 }),
   cropEnabled: fc.boolean(),
@@ -155,9 +155,10 @@ describe("Feature: global-settings, Property 2: Translation lookup 正确性", (
           const entry = translations[key];
           // Build t() inline (same logic as I18nProvider)
           const result = entry[lang] ?? entry["zh"] ?? key;
-          // Must be a string matching the dictionary (empty strings are valid for intentional omissions)
+          // Must be a non-empty string matching the dictionary
           return (
             typeof result === "string" &&
+            result.length > 0 &&
             result === translations[key][lang]
           );
         }

@@ -80,8 +80,8 @@ class I18n:
             'en': '#### 📁 Input'
         },
         'conv_lut_title': {
-            'zh': '**校准数据**',
-            'en': '**Calibration Data**'
+            'zh': '**校准数据 (.npy)**',
+            'en': '**Calibration Data (.npy)**'
         },
         'conv_lut_dropdown': {
             'zh': '选择预设',
@@ -92,8 +92,8 @@ class I18n:
             'en': 'Select from library'
         },
         'conv_lut_status_default': {
-            'zh': '💡 拖放 .npy / .json / .npz 文件自动添加',
-            'en': '💡 Drop .npy / .json / .npz to add'
+            'zh': '💡 拖放.npy文件自动添加',
+            'en': '💡 Drop .npy to add'
         },
         'conv_lut_status_selected': {
             'zh': '✅ 已选择',

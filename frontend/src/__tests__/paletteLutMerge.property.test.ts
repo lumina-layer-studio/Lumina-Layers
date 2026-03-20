@@ -121,7 +121,7 @@ describe('Palette-LUT Merge Property-Based Tests', () => {
       // ColorWorkstation should not render (shouldRender=false).
       fc.assert(
         fc.property(
-          fc.constantFrom<TabId>('converter', 'calibration', 'extractor', 'lut-manager', 'five-color', 'vectorizer', 'settings'),
+          fc.constantFrom<TabId>('converter', 'calibration', 'extractor', 'lut-manager', 'five-color'),
           (tab: TabId) => {
             useWidgetStore.setState({ activeTab: tab });
 

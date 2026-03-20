@@ -15,7 +15,7 @@ import { motion } from 'framer-motion';
 import { WidgetHeader } from './WidgetHeader';
 import { useWidgetStore } from '../../stores/widgetStore';
 import { useSettingsStore } from '../../stores/settingsStore';
-import { COLLAPSED_HEIGHT, WIDGET_PANEL_RADIUS, WIDGET_WIDTH } from '../../utils/widgetUtils';
+import { COLLAPSED_HEIGHT, WIDGET_WIDTH } from '../../utils/widgetUtils';
 import type { WidgetId } from '../../types/widget';
 import { useI18n } from '../../i18n/context';
 
@@ -68,8 +68,6 @@ interface WidgetPanelProps {
   widgetId: WidgetId;
   titleKey: string;
   children: ReactNode;
-  dockOffsetX?: number;
-  width?: number;
 }
 
 /**
@@ -89,13 +87,11 @@ export const WidgetPanel = React.memo(function WidgetPanel({
   widgetId,
   titleKey,
   children,
-  dockOffsetX = 0,
-  width = WIDGET_WIDTH,
 }: WidgetPanelProps) {
   const widget = useWidgetStore((s) => s.widgets[widgetId]);
   const toggleCollapse = useWidgetStore((s) => s.toggleCollapse);
   const setExpandedHeight = useWidgetStore((s) => s.setExpandedHeight);
-  const isActiveDragWidget = useWidgetStore((s) => s.activeWidgetId === widgetId);
+  const activeWidgetId = useWidgetStore((s) => s.activeWidgetId);
   const enableBlur = useSettingsStore((s) => s.enableBlur);
 
   // Content area ref — used by ResizeObserver to measure expanded height
@@ -133,11 +129,8 @@ export const WidgetPanel = React.memo(function WidgetPanel({
 
   if (!widget.visible) return null;
 
-  const isBeingDragged = isActiveDragWidget && !!transform;
-  const targetHeight = isBeingDragged
-    ? COLLAPSED_HEIGHT
-    : (widget.collapsed ? COLLAPSED_HEIGHT : widget.expandedHeight);
-  const localLeft = widget.position.x - dockOffsetX;
+  const isBeingDragged = activeWidgetId === widgetId && !!transform;
+  const targetHeight = widget.collapsed ? COLLAPSED_HEIGHT : widget.expandedHeight;
 
   // Always set left/top in style so framer-motion has a stable base.
   // During drag: dnd-kit transform is layered on top via CSS transform.
@@ -150,24 +143,26 @@ export const WidgetPanel = React.memo(function WidgetPanel({
   // interpolates smoothly from the drop point instead of jumping from 0.
   const style: React.CSSProperties = {
     position: 'absolute',
-    width,
-    borderRadius: WIDGET_PANEL_RADIUS,
-    pointerEvents: isBeingDragged ? 'none' : 'auto',
+    width: WIDGET_WIDTH,
+    pointerEvents: 'auto',
     zIndex: isBeingDragged ? 50 : 30,
-    ...(isBeingDragged ? { opacity: 0 } : {}),
+    ...(isBeingDragged
+      ? { transform: `translate(${transform.x}px, ${transform.y}px)` }
+      : {}),
   };
 
-  // During drag, include dnd transform in animate target so framer-motion
-  // tracks the *visual* position (even while hidden). This avoids stale
-  // motion values that can cause drop animation to start from dock top.
+  // During drag: animate to the base position (visual offset handled by
+  // CSS transform above) with duration 0 so framer-motion tracks the value
+  // without visible animation. After drag: animate to the store position
+  // with the normal transition, producing a smooth snap effect.
   const animateTarget = isBeingDragged
     ? {
-        left: localLeft + (transform?.x ?? 0),
-        top: widget.position.y + (transform?.y ?? 0),
+        left: widget.position.x,
+        top: widget.position.y,
         height: targetHeight,
       }
     : {
-        left: localLeft,
+        left: widget.position.x,
         top: widget.position.y,
         height: targetHeight,
       };
@@ -185,16 +180,15 @@ export const WidgetPanel = React.memo(function WidgetPanel({
   return (
       <motion.div
         ref={setNodeRef}
-        initial={false}
         style={style}
         data-widget-id={widgetId}
         animate={animateTarget}
         transition={transition}
         onAnimationComplete={handleAnimationComplete}
-        className={`border border-slate-200/80 shadow-[var(--shadow-control)] will-change-transform ${
+        className={`rounded-xl shadow-lg border border-white/20 dark:border-gray-700/50 overflow-hidden will-change-transform ${
           enableBlur
-            ? 'bg-slate-50/92 backdrop-blur-[2px] dark:bg-slate-950/92'
-            : 'bg-slate-50/98 dark:bg-slate-950/98'
+            ? 'backdrop-blur-xl bg-white/70 dark:bg-gray-900/70'
+            : 'bg-gray-100/95 dark:bg-gray-900/95'
         }`}
       >
         <WidgetHeader
@@ -207,11 +201,12 @@ export const WidgetPanel = React.memo(function WidgetPanel({
         />
         <div
           ref={contentRef}
+          className="overflow-hidden"
           onPointerDown={(e) => e.stopPropagation()}
           style={{
-            height: widget.collapsed || isBeingDragged ? 0 : 'auto',
-            overflow: widget.collapsed || isBeingDragged ? 'hidden' : 'visible',
-            visibility: widget.collapsed || isBeingDragged ? 'hidden' : 'visible',
+            height: widget.collapsed ? 0 : 'auto',
+            overflow: 'hidden',
+            visibility: widget.collapsed ? 'hidden' : 'visible',
           }}
         >
           <WidgetErrorBoundary widgetId={widgetId}>

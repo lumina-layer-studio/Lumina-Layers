@@ -14,8 +14,6 @@ from typing import List, Tuple
 
 from pydantic import BaseModel, Field
 
-from api.schemas.lut import PaletteEntrySchema
-
 
 # ========== Enums ==========
 
@@ -27,10 +25,8 @@ class CalibrationColorMode(str, Enum):
     Attributes:
         BW: Black & White grayscale mode (32 levels).
             黑白灰度模式 (32 级)。
-        FOUR_COLOR_CMYW: 4-Color CMYW mode (1024 colors).
-            4 色 CMYW 模式 (1024 色)。
-        FOUR_COLOR_RYBW: 4-Color RYBW mode (1024 colors).
-            4 色 RYBW 模式 (1024 色)。
+        FOUR_COLOR: 4-Color CMYW/RYBW mode (1024 colors).
+            4 色 CMYW/RYBW 模式 (1024 色)。
         FIVE_COLOR_EXT: 5-Color Extended mode (1444 colors).
             5 色扩展模式 (1444 色)。
         SIX_COLOR: 6-Color extended smart mode (1296 colors).
@@ -40,11 +36,9 @@ class CalibrationColorMode(str, Enum):
     """
 
     BW = "BW (Black & White)"
-    FOUR_COLOR_CMYW = "4-Color (CMYW)"
-    FOUR_COLOR_RYBW = "4-Color (RYBW)"
+    FOUR_COLOR = "4-Color"
     FIVE_COLOR_EXT = "5-Color Extended (1444)"
     SIX_COLOR = "6-Color (Smart 1296)"
-    SIX_COLOR_RYBW = "6-Color (RYBW 1296)"
     EIGHT_COLOR = "8-Color Max"
 
 
@@ -96,7 +90,7 @@ class ExtractorExtractRequest(BaseModel):
     """
 
     color_mode: CalibrationColorMode = Field(
-        CalibrationColorMode.FOUR_COLOR_RYBW, description="校准颜色模式"
+        CalibrationColorMode.FOUR_COLOR, description="校准颜色模式"
     )
     corner_points: List[Tuple[int, int]] = Field(
         ..., min_length=4, max_length=4, description="4 个角点坐标 [(x,y), ...]"
@@ -133,22 +127,3 @@ class ExtractorManualFixRequest(BaseModel):
     session_id: str = Field("", description="Session ID (用于查找 LUT 路径)")
     cell_coord: Tuple[int, int] = Field(..., description="单元格坐标 (row, col)")
     override_color: str = Field(..., description="覆盖颜色 (hex)")
-
-
-class ConfirmPaletteRequest(BaseModel):
-    """Request model for confirming user palette after extraction.
-    调色板确认请求模型。
-
-    Used by ``POST /api/extractor/confirm-palette`` to submit the
-    user-confirmed palette data to the session.
-    用于 ``POST /api/extractor/confirm-palette``，提交用户确认的调色板数据。
-
-    Attributes:
-        session_id: Extraction session ID. (提取会话 ID)
-        palette: User-confirmed palette entries. (用户确认的调色板数组)
-    """
-
-    session_id: str = Field(..., description="提取会话 ID")
-    palette: list[PaletteEntrySchema] = Field(
-        ..., min_length=1, description="用户确认的调色板数组"
-    )

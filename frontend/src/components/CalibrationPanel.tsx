@@ -1,21 +1,9 @@
-import { motion } from "framer-motion";
 import { useCalibrationStore } from "../stores/calibrationStore";
 import { useI18n } from "../i18n/context";
 import { CalibrationColorMode, BackingColor } from "../api/types";
 import Dropdown from "./ui/Dropdown";
 import Slider from "./ui/Slider";
 import Button from "./ui/Button";
-import { useWorkspaceMode } from "../hooks/useWorkspaceMode";
-import {
-  PanelIntro,
-  StatusBanner,
-  mutedSectionCardClass,
-  desktopPrimaryColumnClass,
-  desktopSecondaryColumnClass,
-  resolveDesktopSplitLayoutClass,
-  resolvePanelSurfaceClass,
-  resolveSectionCardClass,
-} from "./ui/panelPrimitives";
 
 const colorModeOptions = Object.values(CalibrationColorMode).map((v) => ({
   label: v,
@@ -29,7 +17,6 @@ const backingColorOptions = Object.values(BackingColor).map((v) => ({
 
 export default function CalibrationPanel() {
   const { t } = useI18n();
-  const workspace = useWorkspaceMode();
   const {
     color_mode,
     block_size,
@@ -49,135 +36,92 @@ export default function CalibrationPanel() {
 
   const isEightColor = color_mode === CalibrationColorMode.EIGHT_COLOR;
   const isFiveColorExt = color_mode === CalibrationColorMode.FIVE_COLOR_EXT;
-  const isSixColor = color_mode === CalibrationColorMode.SIX_COLOR || color_mode === CalibrationColorMode.SIX_COLOR_RYBW;
+  const isSixColor = color_mode === CalibrationColorMode.SIX_COLOR;
   const blockSizeDisabled = isEightColor || isFiveColorExt;
   const gapDisabled = isEightColor || isFiveColorExt;
   const backingDisabled = isEightColor || isFiveColorExt || isSixColor;
 
   return (
-    <motion.aside
-      initial={{ opacity: 0, y: 30 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ type: "spring", damping: 25, stiffness: 300 }}
+    <aside
       data-testid="calibration-panel"
-      className={`${resolvePanelSurfaceClass(workspace.mode)} flex flex-col gap-5`}
-      >
-      <PanelIntro
-        eyebrow={t("tab.calibration")}
-        title={t("cal_title")}
-        description={t("cal_desc")}
+      className="w-full max-w-2xl mx-auto h-full overflow-y-auto bg-white dark:bg-gray-800 p-6 flex flex-col gap-4"
+    >
+      <Dropdown
+        label={t("cal_color_mode_label")}
+        value={color_mode}
+        options={colorModeOptions}
+        onChange={(v) => setColorMode(v as CalibrationColorMode)}
       />
 
-      <div className={resolveDesktopSplitLayoutClass(workspace.mode)}>
-          <div className={desktopPrimaryColumnClass}>
-           <section className={`${resolveSectionCardClass(workspace.mode)} flex flex-col gap-4`}>
-            <div>
-              <h3 className="text-base font-semibold text-slate-900 dark:text-slate-50">{t("cal_params")}</h3>
-              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{t("cal_generate_btn")}</p>
-            </div>
-            <Dropdown
-              label={t("cal_color_mode_label")}
-              value={color_mode}
-              options={colorModeOptions}
-              onChange={(v) => setColorMode(v as CalibrationColorMode)}
-            />
+      <Slider
+        label={t("cal_block_size_label")}
+        value={block_size}
+        min={3}
+        max={10}
+        step={0.5}
+        unit="mm"
+        onChange={setBlockSize}
+        disabled={blockSizeDisabled}
+      />
 
-            <Slider
-              label={t("cal_block_size_label")}
-              value={block_size}
-              min={3}
-              max={10}
-              step={0.5}
-              displayDecimals={2}
-              minInputWidthCh={8}
-              unit="mm"
-              onChange={setBlockSize}
-              disabled={blockSizeDisabled}
-            />
+      <Slider
+        label={t("cal_gap_label")}
+        value={gap}
+        min={0.4}
+        max={2.0}
+        step={0.01}
+        unit="mm"
+        onChange={setGap}
+        disabled={gapDisabled}
+      />
 
-            <Slider
-              label={t("cal_gap_label")}
-              value={gap}
-              min={0.4}
-              max={2.0}
-              step={0.01}
-              displayDecimals={2}
-              minInputWidthCh={8}
-              unit="mm"
-              onChange={setGap}
-              disabled={gapDisabled}
-            />
+      <Dropdown
+        label={t("cal_backing_label")}
+        value={backing}
+        options={backingColorOptions}
+        onChange={(v) => setBacking(v as BackingColor)}
+        disabled={backingDisabled}
+      />
 
-            <Dropdown
-              label={t("cal_backing_label")}
-              value={backing}
-              options={backingColorOptions}
-              onChange={(v) => setBacking(v as BackingColor)}
-              disabled={backingDisabled}
-            />
+      <Button
+        label={t("cal_generate_btn")}
+        variant="primary"
+        onClick={() => void submitGenerate()}
+        disabled={isLoading}
+        loading={isLoading}
+      />
 
-            <Button
-              label={t("cal_generate_btn_panel")}
-              variant="primary"
-              onClick={() => void submitGenerate()}
-              disabled={isLoading}
-              loading={isLoading}
-              className="w-full"
-            />
-          </section>
-        </div>
+      {statusMessage && (
+        <p data-testid="status-message" className="text-xs text-green-400">
+          {statusMessage}
+        </p>
+      )}
 
-        <div className={desktopSecondaryColumnClass}>
-          {statusMessage && (
-            <StatusBanner data-testid="status-message" tone="success">
-              {statusMessage}
-            </StatusBanner>
-          )}
+      {error && (
+        <p data-testid="error-message" className="text-xs text-red-400">
+          {error}
+        </p>
+      )}
 
-          {error && (
-            <StatusBanner data-testid="error-message" tone="error">
-              {error}
-            </StatusBanner>
-          )}
+      {downloadUrl && (
+        <a
+          data-testid="download-link"
+          href={downloadUrl}
+          download
+          className="text-sm text-blue-400 underline hover:text-blue-300"
+        >
+          {t("cal_download_3mf")}
+        </a>
+      )}
 
-          {downloadUrl && (
-             <section className={`${resolveSectionCardClass(workspace.mode)} flex items-center justify-between gap-3`}>
-              <div>
-                <h3 className="text-base font-semibold text-slate-900 dark:text-slate-50">{t("cal_download")}</h3>
-                <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{t("cal_status")}</p>
-              </div>
-              <a
-                data-testid="download-link"
-                href={downloadUrl}
-                download
-                className="inline-flex min-h-11 items-center justify-center rounded-2xl bg-blue-600 px-4 py-2.5 text-sm font-medium text-white shadow-[0_12px_24px_rgba(37,99,235,0.22)] transition-colors hover:bg-blue-700"
-              >
-                {t("cal_download_3mf")}
-              </a>
-            </section>
-          )}
-
-           <section className={`${resolveSectionCardClass(workspace.mode)} flex flex-col gap-4`}>
-            <div>
-              <h3 className="text-base font-semibold text-slate-900 dark:text-slate-50">{t("cal_preview")}</h3>
-              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{t("cal_preview_alt")}</p>
-            </div>
-            {previewImageUrl ? (
-              <img
-                data-testid="preview-image"
-                src={previewImageUrl}
-                alt={t("cal_preview_alt")}
-                className="w-full rounded-[24px] border border-slate-200/80 object-cover shadow-[var(--shadow-control)] dark:border-slate-700/80"
-              />
-            ) : (
-              <div className={`${mutedSectionCardClass} flex min-h-[280px] flex-col justify-center gap-3`}>
-                <p className="text-sm font-medium text-slate-700 dark:text-slate-200">{t("cal_status")}</p>
-                <p className="text-sm leading-6 text-slate-500 dark:text-slate-400">{t("cal_desc")}</p>
-              </div>
-            )}
-          </section>
-        </div>
-      </div>
-    </motion.aside>
+      {previewImageUrl && (
+        <img
+          data-testid="preview-image"
+          src={previewImageUrl}
+          alt={t("cal_preview_alt")}
+          className="w-full rounded-md border border-gray-700"
+        />
+      )}
+    </aside>
   );
 }

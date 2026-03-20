@@ -7,7 +7,7 @@ import ExtractorPanel from '../ExtractorPanel';
 
 export default function ExtractorWidgetContent() {
   return (
-    <div>
+    <div className="overflow-y-auto max-h-[60vh]">
       <ExtractorPanel />
     </div>
   );

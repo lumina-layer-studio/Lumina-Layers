@@ -1,20 +1,12 @@
 import { describe, it, expect, vi } from "vitest";
 import { render } from "@testing-library/react";
-import {
-  createKeychainRingGeometry,
-  computeLoopPosition,
-} from "../components/KeychainRing3D";
+import { createKeychainRingGeometry } from "../components/KeychainRing3D";
 
 // Mock R3F — Canvas renders as plain div in jsdom
 vi.mock("@react-three/fiber", () => ({
   Canvas: ({ children }: { children?: React.ReactNode }) => (
     <div data-testid="mock-canvas">{children}</div>
   ),
-  useThree: () => ({
-    controls: { enabled: true },
-    camera: { updateMatrixWorld: vi.fn() },
-    gl: { domElement: document.createElement("canvas") },
-  }),
 }));
 
 // Must import after mocks
@@ -37,28 +29,7 @@ describe("KeychainRing3D", () => {
           width={4}
           length={8}
           hole={2}
-          angle={0}
-          offsetX={0}
-          offsetY={0}
-          positionPreset="top-center"
           modelBounds={defaultBounds}
-        />,
-      );
-      expect(container.innerHTML).toBe("");
-    });
-
-    it("returns null when modelBounds is null (Req 6.2)", () => {
-      const { container } = render(
-        <KeychainRing3D
-          enabled={true}
-          width={4}
-          length={8}
-          hole={2}
-          angle={0}
-          offsetX={0}
-          offsetY={0}
-          positionPreset="top-center"
-          modelBounds={null}
         />,
       );
       expect(container.innerHTML).toBe("");
@@ -128,38 +99,5 @@ describe("createKeychainRingGeometry", () => {
       // Non-indexed: position count implies triangles
       expect(geo!.attributes.position.count).toBeGreaterThan(0);
     }
-  });
-});
-
-describe("computeLoopPosition", () => {
-  const bounds = { minX: -10, maxX: 10, minY: -15, maxY: 15 };
-
-  it("returns center X, maxY as base position (top-center anchor)", () => {
-    const pos = computeLoopPosition("top-center", bounds, 0, 0);
-    expect(pos.x).toBe(0);
-    expect(pos.y).toBe(15);
-  });
-
-  it("ignores preset value — always anchors at top-center", () => {
-    // All presets should produce the same base position
-    const presets = ["top-left", "top-right", "left-center", "right-center", "bottom-center", "invalid"];
-    for (const preset of presets) {
-      const pos = computeLoopPosition(preset, bounds, 0, 0);
-      expect(pos.x).toBe(0);
-      expect(pos.y).toBe(15);
-    }
-  });
-
-  it("applies offset correctly", () => {
-    const pos = computeLoopPosition("top-center", bounds, 5, -3);
-    expect(pos.x).toBe(5);
-    expect(pos.y).toBe(12);
-  });
-
-  it("works with asymmetric bounds", () => {
-    const asymBounds = { minX: 0, maxX: 20, minY: -5, maxY: 25 };
-    const pos = computeLoopPosition("top-center", asymBounds, 0, 0);
-    expect(pos.x).toBe(10);
-    expect(pos.y).toBe(25);
   });
 });

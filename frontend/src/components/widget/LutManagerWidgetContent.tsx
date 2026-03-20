@@ -7,7 +7,7 @@ import LutManagerPanel from '../LutManagerPanel';
 
 export default function LutManagerWidgetContent() {
   return (
-    <div>
+    <div className="overflow-y-auto max-h-[60vh]">
       <LutManagerPanel />
     </div>
   );

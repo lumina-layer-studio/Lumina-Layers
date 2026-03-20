@@ -7,39 +7,26 @@ import numpy as np
 import trimesh
 
 
-def create_keychain_loop(
-    width_mm: float,
-    length_mm: float,
-    hole_dia_mm: float,
-    thickness_mm: float,
-    attach_x_mm: float,
-    attach_y_mm: float,
-    angle_deg: float = 0.0,
-) -> trimesh.Trimesh:
-    """Create keychain loop mesh with optional Z-axis rotation.
-    创建钥匙扣挂孔网格，支持绕 Z 轴旋转。
-
-    Generates a rectangle + semicircle loop geometry with a circular hole.
-    The mesh is first built at the origin, optionally rotated around its
-    geometric center, then translated to the attachment point.
-    生成矩形+半圆挂孔几何体（含圆孔）。网格先在原点生成，可选绕几何中心
-    旋转后，再平移到吸附点。
-
+def create_keychain_loop(width_mm, length_mm, hole_dia_mm, thickness_mm, 
+                         attach_x_mm, attach_y_mm):
+    """
+    Create keychain loop mesh
+    
+    This is a pure function that generates a rectangle + semicircle loop geometry with hole
+    
     Args:
-        width_mm (float): Loop width in millimeters. (环宽度，毫米)
-        length_mm (float): Loop length in millimeters. (环长度，毫米)
-        hole_dia_mm (float): Hole diameter in millimeters. (孔径，毫米)
-        thickness_mm (float): Loop thickness in millimeters. (环厚度，毫米)
-        attach_x_mm (float): Attachment point X coordinate in millimeters. (吸附点 X 坐标，毫米)
-        attach_y_mm (float): Attachment point Y coordinate in millimeters. (吸附点 Y 坐标，毫米)
-        angle_deg (float): Rotation angle around Z-axis in degrees, default 0. (绕 Z 轴旋转角度，度，默认 0)
-
+        width_mm: Loop width (millimeters)
+        length_mm: Loop length (millimeters)
+        hole_dia_mm: Hole diameter (millimeters)
+        thickness_mm: Loop thickness (millimeters)
+        attach_x_mm: Attachment point X coordinate (millimeters)
+        attach_y_mm: Attachment point Y coordinate (millimeters)
+    
     Returns:
-        trimesh.Trimesh: Loop mesh object. (挂孔网格对象)
+        trimesh.Trimesh: Loop mesh object
     """
     print(f"[GEOMETRY] Creating keychain loop: w={width_mm}, l={length_mm}, "
-          f"hole={hole_dia_mm}, thick={thickness_mm}, pos=({attach_x_mm}, {attach_y_mm}), "
-          f"angle={angle_deg}°")
+          f"hole={hole_dia_mm}, thick={thickness_mm}, pos=({attach_x_mm}, {attach_y_mm})")
     
     # Calculate geometric parameters
     half_w = width_mm / 2
@@ -140,27 +127,8 @@ def create_keychain_loop(
     top_faces = _connect_rings(top_outer_idx, top_hole_idx, vertices_arr, is_top=True)
     faces.extend(top_faces)
     
-    # Build mesh at origin (no translation yet)
+    # Apply position offset
     vertices_arr = np.array(vertices)
-
-    # Apply rotation around geometric center if angle is non-zero
-    if angle_deg != 0.0:
-        # Geometric center of the rectangle+semicircle shape
-        # The shape spans x: [-half_w, half_w], y: [0, rect_height + circle_radius]
-        center_x = 0.0
-        center_y = (rect_height + circle_radius) / 2.0
-
-        angle_rad = np.radians(angle_deg)
-        cos_a = np.cos(angle_rad)
-        sin_a = np.sin(angle_rad)
-
-        # Translate to center, rotate, translate back (vectorized)
-        dx = vertices_arr[:, 0] - center_x
-        dy = vertices_arr[:, 1] - center_y
-        vertices_arr[:, 0] = cos_a * dx - sin_a * dy + center_x
-        vertices_arr[:, 1] = sin_a * dx + cos_a * dy + center_y
-
-    # Apply position offset (translate to attach point)
     vertices_arr[:, 0] += attach_x_mm
     vertices_arr[:, 1] += attach_y_mm
     

@@ -98,14 +98,14 @@ class Stats:
     @staticmethod
     def clear_output() -> tuple:
         """
-        Clear all files in the output directory (except lumina_stats.txt and lumina_lut.json).
+        Clear all files in the output directory (except lumina_stats.txt and lumina_lut.npy).
 
         Returns:
             tuple: (success_count, failed_items)
         """
         success_count = 0
         failed_items = []
-        preserve_files = {"lumina_stats.txt", "lumina_lut.json"}
+        preserve_files = {"lumina_stats.txt", "lumina_lut.npy"}
 
         if os.path.exists(OUTPUT_DIR):
             try:
@@ -136,7 +136,7 @@ class Stats:
             int: Total size in bytes
         """
         total_size = 0
-        preserve_files = {"lumina_stats.txt", "lumina_lut.json"}
+        preserve_files = {"lumina_stats.txt", "lumina_lut.npy"}
 
         if os.path.exists(OUTPUT_DIR):
             try:

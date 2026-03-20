@@ -6,22 +6,6 @@ Lumina Studio 所有重要变更记录。
 
 ---
 
-## v1.6.4 (2026-03-20)
-
-### 改进（PR #159 by @sandboxdream）
-- **渲染性能优化** - 优化 3D 场景渲染，减少不必要的重渲染
-- **面板 UI 重构** - 统一 slate 配色方案、圆角卡片布局，新增 `panelPrimitives` 组件库（`cx`、`PanelIntro`、`StatusBanner`）
-- **设置可靠性** - 异步重试机制（`retryAsync`）用于设置加载；旧版切片器/打印机选项 ID 标准化（`settingsOptionIds`）
-- **Slider 增强** - 新增 `displayDecimals` 和 `minInputWidthCh` props，精细控制显示精度
-- **Tooltip 清理** - 从 Checkbox 和 Slider 组件中移除内联 tooltip，简化 UI
-- **临时文件清理** - 自动检测颜色端点现在正确清理临时文件
-- **项目维护** - 更新 AGENTS.md 指南
-
-### 贡献者
-- 感谢 [@sandboxdream](https://github.com/sandboxdream) 在 PR [#159](https://github.com/MOVIBALE/Lumina-Layers/pull/159) 中贡献的全面 UI/UX 改进和设置可靠性增强 🎉
-
----
-
 ## v1.6.3 (2026-03-08)
 
 ### 新功能

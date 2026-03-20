@@ -3,8 +3,6 @@ import { useThree, useFrame } from "@react-three/fiber";
 import { useGLTF } from "@react-three/drei";
 import * as THREE from "three";
 import { useConverterStore } from "../stores/converterStore";
-import OutlineFrame3D from "./OutlineFrame3D";
-import CloisonneWire3D from "./CloisonneWire3D";
 
 // ========== Exported pure utility functions (testable without Three.js) ==========
 
@@ -48,11 +46,6 @@ export interface InteractiveModelViewerProps {
   scaleY?: number;  // Y 方向缩放比例，默认 1.0
   spacerThick?: number;    // 底板厚度 (mm)，默认 1.2
   structureMode?: string;  // "Double-sided" | "Single-sided"
-  enableOutline?: boolean;   // 是否启用外轮廓预览，默认 false
-  outlineWidth?: number;     // 外轮廓厚度 (mm)，默认 2.0
-  enableCloisonne?: boolean;   // 是否启用景泰蓝预览，默认 false
-  wireWidthMm?: number;        // 金丝宽度 (mm)，默认 0.4
-  wireHeightMm?: number;       // 金丝高度 (mm)，默认 0.1
 }
 
 /** Color layer thickness in mm (5 layers × 0.08mm). */
@@ -70,11 +63,6 @@ function InteractiveModelViewer({
   scaleY = 1,
   spacerThick = 1.2,
   structureMode = "Double-sided",
-  enableOutline = false,
-  outlineWidth = 2.0,
-  enableCloisonne = false,
-  wireWidthMm = 0.4,
-  wireHeightMm = 0.1,
 }: InteractiveModelViewerProps) {
   const { scene } = useGLTF(url);
   const groupRef = useRef<THREE.Group>(null);
@@ -82,7 +70,7 @@ function InteractiveModelViewer({
   // Clone scene once per URL load, apply rotation/centering,
   // and clone each color mesh's material to avoid shared-material mutations.
   // Also separate color_ meshes from non-color children for individual JSX rendering.
-  const { nonColorObject, colorMeshes, modelBounds, sceneCenter, backingPlateMesh } = useMemo(() => {
+  const { nonColorObject, colorMeshes, modelBounds, sceneCenter } = useMemo(() => {
     const clone = scene.clone(true);
 
     // Remove any baked-in bed mesh
@@ -97,20 +85,17 @@ function InteractiveModelViewer({
     // Convert all mesh materials to pure diffuse (no specular reflections).
     // Trimesh-exported GLB uses MeshStandardMaterial which reflects the HDR
     // environment map, causing unwanted glare on the color surfaces.
-    // We replace them with MeshLambertMaterial for a completely matte finish.
-    // Skip backing_plate — it gets its own independent material below.
     clone.traverse((child) => {
-      if (child instanceof THREE.Mesh && child.material && child.name !== "backing_plate") {
+      if (child instanceof THREE.Mesh && child.material) {
         const mats = Array.isArray(child.material)
           ? child.material
           : [child.material];
-        const newMats = mats.map((mat) => {
+        for (const mat of mats) {
           if (mat instanceof THREE.MeshStandardMaterial) {
-            return new THREE.MeshLambertMaterial({ color: mat.color });
+            mat.roughness = 1.0;
+            mat.metalness = 0.0;
           }
-          return mat;
-        });
-        child.material = Array.isArray(child.material) ? newMats : newMats[0];
+        }
       }
     });
 
@@ -131,35 +116,7 @@ function InteractiveModelViewer({
     clone.position.set(-center.x, -center.y, -box.min.z);
     clone.updateMatrixWorld(true);
 
-    // --- Extract backing_plate mesh from GLB scene ---
-    let extractedBackingPlate: THREE.Mesh | null = null;
-    clone.traverse((child) => {
-      if (child instanceof THREE.Mesh && child.name === "backing_plate") {
-        extractedBackingPlate = child;
-      }
-    });
-
-    if (extractedBackingPlate !== null) {
-      const bp = extractedBackingPlate as THREE.Mesh;
-      // Bake world matrix so geometry is in centered world space
-      bp.updateWorldMatrix(true, false);
-      bp.geometry.applyMatrix4(bp.matrixWorld);
-      bp.position.set(0, 0, 0);
-      bp.rotation.set(0, 0, 0);
-      bp.scale.set(1, 1, 1);
-      bp.updateMatrixWorld(true);
-
-      // Detach from clone tree
-      bp.removeFromParent();
-
-      // Apply independent MeshLambertMaterial (Requirement 4.1, 4.2, 4.3)
-      const backingMat = new THREE.MeshLambertMaterial({
-        color: 0xf5f5f5,
-      });
-      bp.material = backingMat;
-    }
-
-    // Separate color_ meshes from the rest (excluding backing_plate)
+    // Separate color_ meshes from the rest
     const colorMeshList: THREE.Mesh[] = [];
     const colorMeshParents: { mesh: THREE.Mesh; parent: THREE.Object3D }[] = [];
 
@@ -168,6 +125,11 @@ function InteractiveModelViewer({
         // Clone material so mutations don't affect the GLTF cache
         if (child.material) {
           const cloned = (child.material as THREE.Material).clone();
+          // Ensure pure diffuse (no specular reflections)
+          if (cloned instanceof THREE.MeshStandardMaterial) {
+            cloned.roughness = 1.0;
+            cloned.metalness = 0.0;
+          }
           child.material = cloned;
         }
         colorMeshList.push(child);
@@ -203,14 +165,6 @@ function InteractiveModelViewer({
         boundsBox.union(mesh.geometry.boundingBox);
       }
     }
-    // Include backing plate in bounds calculation
-    if (extractedBackingPlate !== null) {
-      const bp = extractedBackingPlate as THREE.Mesh;
-      bp.geometry.computeBoundingBox();
-      if (bp.geometry.boundingBox) {
-        boundsBox.union(bp.geometry.boundingBox);
-      }
-    }
 
     const bounds = boundsBox.isEmpty()
       ? null
@@ -222,13 +176,7 @@ function InteractiveModelViewer({
           maxZ: boundsBox.max.z, // thickness direction (toward camera)
         };
 
-    return {
-      nonColorObject: clone,
-      colorMeshes: colorMeshList,
-      modelBounds: bounds,
-      sceneCenter: center,
-      backingPlateMesh: extractedBackingPlate as THREE.Mesh | null,
-    };
+    return { nonColorObject: clone, colorMeshes: colorMeshList, modelBounds: bounds, sceneCenter: center };
   }, [scene]);
 
   // Expose model bounds to store for KeychainRing3D positioning
@@ -239,29 +187,33 @@ function InteractiveModelViewer({
   // ---- White backing plate mesh ----
   const isDoubleSided = structureMode === "Double-sided";
   const backingMesh = useMemo(() => {
-    // When GLB contains backing_plate: use it directly (Requirement 2.2, 2.4)
-    if (backingPlateMesh) {
-      return backingPlateMesh;
-    }
-
-    // Fallback: create rectangular BoxGeometry when GLB has no backing_plate (Requirement 2.3)
     if (!modelBounds) return null;
     const w = modelBounds.maxX - modelBounds.minX;
     const h = modelBounds.maxY - modelBounds.minY;
     if (w <= 0 || h <= 0) return null;
 
     const geo = new THREE.BoxGeometry(w, h, spacerThick);
-    const mat = new THREE.MeshLambertMaterial({
+    const mat = new THREE.MeshStandardMaterial({
       color: 0xf5f5f5,
+      roughness: 0.85,
+      metalness: 0.0,
     });
     const mesh = new THREE.Mesh(geo, mat);
-    mesh.name = "__backing_plate_fallback";
+    mesh.name = "__backing_plate";
 
     const cx = (modelBounds.minX + modelBounds.maxX) / 2;
     const cy = (modelBounds.minY + modelBounds.maxY) / 2;
-    mesh.position.set(cx, cy, spacerThick / 2);
+
+    if (isDoubleSided) {
+      // Double-sided: backing plate sits with its top face at the color layer base
+      // Color layers go upward from spacerThick, backing occupies [0, spacerThick]
+      mesh.position.set(cx, cy, spacerThick / 2);
+    } else {
+      // Single-sided: backing at bottom, colors on top
+      mesh.position.set(cx, cy, spacerThick / 2);
+    }
     return mesh;
-  }, [backingPlateMesh, modelBounds, spacerThick]);
+  }, [modelBounds, spacerThick, isDoubleSided]);
 
   // Camera is managed by BedPlatform's default view — skip auto-fit here
   // so the viewport stays stable when a preview model loads.
@@ -290,13 +242,6 @@ function InteractiveModelViewer({
   // We store this on the converterStore so Scene3D can read it.
   const colorHitRef = useRef(false);
 
-  // Read selectionMode and related state for region click handling
-  const selectionMode = useConverterStore((s) => s.selectionMode);
-  const detectRegion = useConverterStore((s) => s.detectRegion);
-  const regionData = useConverterStore((s) => s.regionData);
-  const previewPixelWidth = useConverterStore((s) => s.previewPixelWidth);
-  const previewPixelHeight = useConverterStore((s) => s.previewPixelHeight);
-
   const handlePointerDown = useCallback(
     (event: PointerEvent) => {
       if (event.button !== 0) return; // Only left click
@@ -314,49 +259,13 @@ function InteractiveModelViewer({
         const hitMesh = intersects[0].object as THREE.Mesh;
         if (hitMesh.name.startsWith("color_")) {
           colorHitRef.current = true;
-
-          if (selectionMode === "current" || selectionMode === "region") {
-            // 当前模式 和 局部区域模式: 3D 点击 → region-detect（单区域选择）
-            // 不立即设置 selectedColor，等 detectRegion 返回后由 store 设置
-            // 这样 RGB 光带只高亮点击的那个连通区域，而非该颜色的所有区域
-            if (modelBounds && previewPixelWidth && previewPixelHeight) {
-              const hitPoint = intersects[0].point;
-              // Undo group scale to get geometry-space coordinates
-              const geoX = hitPoint.x / scaleX;
-              const geoY = hitPoint.y / scaleY;
-              // Normalize within model bounds (0..1)
-              const modelW = modelBounds.maxX - modelBounds.minX;
-              const modelH = modelBounds.maxY - modelBounds.minY;
-              if (modelW > 0 && modelH > 0) {
-                const normX = (geoX - modelBounds.minX) / modelW;
-                // Y is flipped: 3D Y-up → image Y-down
-                const normY = 1 - (geoY - modelBounds.minY) / modelH;
-                const pixelX = Math.round(normX * (previewPixelWidth - 1));
-                const pixelY = Math.round(normY * (previewPixelHeight - 1));
-                const clampedX = Math.max(0, Math.min(previewPixelWidth - 1, pixelX));
-                const clampedY = Math.max(0, Math.min(previewPixelHeight - 1, pixelY));
-                detectRegion(clampedX, clampedY);
-              }
-            }
-          } else {
-            // 全选模式 和 多选模式: 3D 点击 → 切换颜色选择
-            const hex = extractHexFromMeshName(hitMesh.name);
-            if (selectionMode === "select-all") {
-              // 全选模式: 3D 点击选中该颜色用于全局替换
-              const result = toggleColorSelection(selectedColor, hex);
-              onColorClick(result);
-            } else {
-              // 多选模式: 3D 点击切换该颜色在多选集合中的状态
-              // 同时设置 selectedColor 以触发 RGB 光带高亮
-              onColorClick(selectedColor === hex ? null : hex);
-              const { toggleColorInSelection } = useConverterStore.getState();
-              toggleColorInSelection(hex);
-            }
-          }
+          const hex = extractHexFromMeshName(hitMesh.name);
+          const result = toggleColorSelection(selectedColor, hex);
+          onColorClick(result);
         }
       }
     },
-    [threeCtx.gl, threeCtx.camera, colorMeshes, selectedColor, onColorClick, selectionMode, detectRegion, modelBounds, previewPixelWidth, previewPixelHeight, scaleX, scaleY],
+    [threeCtx.gl, threeCtx.camera, colorMeshes, selectedColor, onColorClick],
   );
 
   // Expose colorHitRef check so Scene3D's onPointerMissed can query it
@@ -401,27 +310,9 @@ function InteractiveModelViewer({
       groupRef.current.add(outlineGroup);
     }
 
-    // ---- Backing plate Z positioning and scaling (Requirements 3.1, 3.2, 3.3, 3.4) ----
-    // XY scale is inherited from parent group via scaleX/scaleY (Requirement 3.4)
-    if (backingMesh) {
-      if (backingPlateMesh && backingMesh === backingPlateMesh) {
-        // GLB-extracted backing plate: scale Z to match spacerThick
-        // The native mesh has Z height = 1 voxel layer × LAYER_HEIGHT
-        backingMesh.geometry.computeBoundingBox();
-        const backingBBox = backingMesh.geometry.boundingBox;
-        const nativeH = backingBBox
-          ? backingBBox.max.z - backingBBox.min.z
-          : 1;
-        backingMesh.scale.z = nativeH > 0 ? spacerThick / nativeH : 1;
-        // Bottom-aligned at Z=0; top face at Z=spacerThick (Requirement 3.1, 3.2)
-        backingMesh.position.z = 0;
-      }
-      // Fallback BoxGeometry already has correct size and position from useMemo
-    }
-
     for (const mesh of colorMeshes) {
       const origHex = extractHexFromMeshName(mesh.name);
-      const mat = mesh.material as THREE.MeshLambertMaterial;
+      const mat = mesh.material as THREE.MeshStandardMaterial;
 
       // Color replacement — always apply
       const remappedHex = colorRemapMap[origHex] || origHex;
@@ -448,7 +339,7 @@ function InteractiveModelViewer({
         mesh.scale.z = nativeH > 0 ? COLOR_LAYER_HEIGHT / nativeH : 1;
       }
 
-      // Position color layer on top of the backing plate (top face at Z=spacerThick)
+      // Position color layer on top of the backing plate
       mesh.position.z = spacerThick;
     }
 
@@ -465,27 +356,8 @@ function InteractiveModelViewer({
     // Draw contour outline for selected color using backend-computed contours.
     // Contours are in raw world coords (mm, origin at bottom-left of image).
     // The GLB model is centered by subtracting sceneCenter, so apply same offset.
-    // In current/region mode: use regionData.contours (single connected region only)
-    // In select-all/multi-select mode: use colorContours (all regions of that color)
-    const currentRegionData = regionData;
-    const currentSelectionMode = selectionMode;
-    let polygons: number[][][] | null = null;
-
-    if (selectedColor && modelBounds) {
-      if (
-        (currentSelectionMode === "current" || currentSelectionMode === "region") &&
-        currentRegionData?.contours &&
-        currentRegionData.contours.length > 0
-      ) {
-        // 当前/局部区域模式：只高亮点击的那个连通区域
-        polygons = currentRegionData.contours;
-      } else if (colorContours[selectedColor]) {
-        // 全选/多选模式：高亮该颜色的所有区域
-        polygons = colorContours[selectedColor];
-      }
-    }
-
-    if (polygons && selectedColor && modelBounds) {
+    if (selectedColor && colorContours[selectedColor] && modelBounds) {
+      const polygons = colorContours[selectedColor];
       // Outline sits on top of the color layer (which is on top of the backing plate)
       const colorTopZ = spacerThick + COLOR_LAYER_HEIGHT + 0.1;
       const topZ = enableRelief
@@ -543,7 +415,7 @@ function InteractiveModelViewer({
         outlineArcRef.current.push(arcPairs);
       }
     }
-  }, [colorMeshes, mirrorMeshes, colorRemapMap, colorHeightMap, selectedColor, enableRelief, baseHeight, colorContours, modelBounds, sceneCenter, spacerThick, isDoubleSided, backingMesh, backingPlateMesh, regionData, selectionMode]);
+  }, [colorMeshes, mirrorMeshes, colorRemapMap, colorHeightMap, selectedColor, enableRelief, baseHeight, colorContours, modelBounds, sceneCenter, spacerThick, isDoubleSided]);
 
   // Flowing RGB animation: shift hue offset each frame for a "light strip" effect.
   const tmpColorAnim = useRef(new THREE.Color());
@@ -592,32 +464,16 @@ function InteractiveModelViewer({
   return (
     <group ref={groupRef} scale={[scaleX, scaleY, 1]}>
       <primitive object={nonColorObject} />
-      {/* Double-sided: mirror color layers below the backing plate (Z < 0) */}
-      {mirrorMeshes.map((mesh) => (
-        <primitive key={mesh.uuid} object={mesh} />
-      ))}
-      {/* White backing plate — GLB-extracted shape or rectangular fallback (Z ∈ [0, spacerThick]) */}
+      {/* White backing plate */}
       {backingMesh && <primitive object={backingMesh} />}
-      {/* Color layers on top of backing plate (Z ≥ spacerThick) */}
+      {/* Color layers (positioned on top of backing plate via position.z in useEffect) */}
       {colorMeshes.map((mesh) => (
         <primitive key={mesh.uuid} object={mesh} />
       ))}
-      {/* 外轮廓预览 */}
-      <OutlineFrame3D
-        enabled={enableOutline}
-        outlineWidth={outlineWidth}
-        backingPlateMesh={backingMesh}
-        modelMaxZ={modelBounds?.maxZ ?? 0}
-      />
-      {/* 景泰蓝金色线条预览 */}
-      <CloisonneWire3D
-        enabled={enableCloisonne}
-        wireWidthMm={wireWidthMm}
-        wireHeightMm={wireHeightMm}
-        colorMeshes={colorMeshes}
-        backingPlateMesh={backingMesh}
-        spacerThick={spacerThick}
-      />
+      {/* Double-sided: mirror color layers below the backing plate */}
+      {mirrorMeshes.map((mesh) => (
+        <primitive key={mesh.uuid} object={mesh} />
+      ))}
     </group>
   );
 }

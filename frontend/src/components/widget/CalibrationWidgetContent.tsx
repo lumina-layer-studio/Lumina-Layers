@@ -7,7 +7,7 @@ import CalibrationPanel from '../CalibrationPanel';
 
 export default function CalibrationWidgetContent() {
   return (
-    <div>
+    <div className="overflow-y-auto max-h-[60vh]">
       <CalibrationPanel />
     </div>
   );

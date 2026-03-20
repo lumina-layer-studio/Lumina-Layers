@@ -16,7 +16,7 @@ function makeFile(name: string, type = "image/png"): File {
   return new File(["dummy"], name, { type });
 }
 
-describe("ActionBar — auto batch mode", () => {
+describe("ActionBar — batch mode", () => {
   beforeEach(() => {
     useConverterStore.setState({
       batchMode: false,
@@ -32,46 +32,28 @@ describe("ActionBar — auto batch mode", () => {
     });
   });
 
-  // --- SingleMode (batchFiles empty → batchMode false) ---
+  // --- Non-batch mode ---
 
-  it("shows preview and generate buttons in SingleMode (no batchFiles)", () => {
-    useConverterStore.setState({ batchMode: false, batchFiles: [] });
+  it("shows preview and generate buttons when batchMode is false", () => {
+    useConverterStore.setState({ batchMode: false });
     render(<ActionBar />);
     expect(screen.getByText("预览")).toBeInTheDocument();
     expect(screen.getByText("生成")).toBeInTheDocument();
     expect(screen.queryByText("批量生成")).not.toBeInTheDocument();
   });
 
-  // --- BatchMode (batchFiles has items → batchMode true) ---
+  // --- Batch mode visibility ---
 
-  it("shows batch generate button and hides preview/generate when batchFiles has items", () => {
+  it("shows batch generate button and hides preview/generate when batchMode is true", () => {
     useConverterStore.setState({
       batchMode: true,
-      batchFiles: [makeFile("a.png"), makeFile("b.png")],
+      batchFiles: [makeFile("a.png")],
       lut_name: "test_lut",
     });
     render(<ActionBar />);
     expect(screen.getByText("批量生成")).toBeInTheDocument();
     expect(screen.queryByText("预览")).not.toBeInTheDocument();
     expect(screen.queryByText("生成")).not.toBeInTheDocument();
-  });
-
-  // --- Auto-maintained batchMode via handleFilesSelect ---
-
-  it("auto-enters BatchMode via handleFilesSelect with multiple files", () => {
-    // Start from empty state
-    useConverterStore.setState({ batchMode: false, batchFiles: [], imageFile: null });
-
-    // Use handleFilesSelect to add multiple files (auto-sets batchMode)
-    useConverterStore.getState().handleFilesSelect([makeFile("a.png"), makeFile("b.png")]);
-
-    const state = useConverterStore.getState();
-    expect(state.batchMode).toBe(true);
-    expect(state.batchFiles).toHaveLength(2);
-
-    render(<ActionBar />);
-    expect(screen.getByText("批量生成")).toBeInTheDocument();
-    expect(screen.queryByText("预览")).not.toBeInTheDocument();
   });
 
   // --- Disabled conditions ---

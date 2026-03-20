@@ -20,23 +20,23 @@ import {
 } from '../utils/widgetUtils';
 import type { WidgetId, WidgetLayoutState } from '../types/widget';
 
-// All valid WidgetIds
+// All 14 valid WidgetIds
 const ALL_WIDGET_IDS: WidgetId[] = [
   'basic-settings', 'advanced-settings', 'relief-settings',
-  'outline-settings', 'cloisonne-settings', 'coating-settings',
-  'keychain-loop', 'action-bar', 'calibration', 'extractor',
-  'lut-manager', 'five-color',
+  'palette-panel', 'lut-color-grid', 'outline-settings',
+  'cloisonne-settings', 'coating-settings', 'keychain-loop', 'action-bar',
+  'calibration', 'extractor', 'lut-manager', 'five-color',
 ];
 
 /**
- * Arbitrary: generate a random subset of widgets with random collapsed states,
+ * Arbitrary: generate a random subset of 1-14 widgets with random collapsed states,
  * all snapped to the given edge, with sequential stackOrder.
  */
 const stackWidgetsArb = (edge: 'left' | 'right'): fc.Arbitrary<WidgetLayoutState[]> =>
   fc.tuple(
-    fc.integer({ min: 1, max: ALL_WIDGET_IDS.length }),
-    fc.shuffledSubarray(ALL_WIDGET_IDS, { minLength: 1, maxLength: ALL_WIDGET_IDS.length }),
-    fc.array(fc.boolean(), { minLength: ALL_WIDGET_IDS.length, maxLength: ALL_WIDGET_IDS.length }),
+    fc.integer({ min: 1, max: 14 }),
+    fc.shuffledSubarray(ALL_WIDGET_IDS, { minLength: 1, maxLength: 14 }),
+    fc.array(fc.boolean(), { minLength: 14, maxLength: 14 }),
   ).chain(([count, shuffledIds, collapsedStates]) => {
     const actualCount = Math.min(count, shuffledIds.length);
     const ids = shuffledIds.slice(0, actualCount);
@@ -48,7 +48,6 @@ const stackWidgetsArb = (edge: 'left' | 'right'): fc.Arbitrary<WidgetLayoutState
         visible: true,
         snapEdge: edge,
         stackOrder: i,
-        expandedHeight: EXPANDED_HEIGHT,
       }))
     );
   });
@@ -92,8 +91,8 @@ describe('Granular Floating Widgets — Property-Based Tests', () => {
         fc.property(
           fc.constantFrom('left' as const, 'right' as const),
           fc.integer({ min: 500, max: 5000 }),
-          fc.integer({ min: 1, max: ALL_WIDGET_IDS.length }),
-          fc.array(fc.boolean(), { minLength: ALL_WIDGET_IDS.length, maxLength: ALL_WIDGET_IDS.length }),
+          fc.integer({ min: 1, max: 14 }),
+          fc.array(fc.boolean(), { minLength: 14, maxLength: 14 }),
           (edge, containerWidth, count, collapsedStates) => {
             const ids = ALL_WIDGET_IDS.slice(0, count);
             const widgets: WidgetLayoutState[] = ids.map((id, i) => ({
@@ -103,7 +102,6 @@ describe('Granular Floating Widgets — Property-Based Tests', () => {
               visible: true,
               snapEdge: edge,
               stackOrder: i,
-              expandedHeight: EXPANDED_HEIGHT,
             }));
 
             const positions = computeStackPositions(widgets, edge, containerWidth);

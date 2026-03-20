@@ -10,25 +10,9 @@ to a process pool, with timeout support and graceful shutdown.
 from concurrent.futures import ProcessPoolExecutor
 from typing import Any, Callable, TypeVar
 import asyncio
-import io
 import os
-import sys
 
 T = TypeVar("T")
-
-
-def _worker_init() -> None:
-    """Worker process initializer: force UTF-8 stdout/stderr on Windows.
-    工作进程初始化器：在 Windows 上强制 stdout/stderr 使用 UTF-8 编码，
-    避免 emoji 等非 GBK 字符导致 UnicodeEncodeError。
-    """
-    if sys.platform == "win32":
-        sys.stdout = io.TextIOWrapper(
-            sys.stdout.buffer, encoding="utf-8", errors="replace"
-        )
-        sys.stderr = io.TextIOWrapper(
-            sys.stderr.buffer, encoding="utf-8", errors="replace"
-        )
 
 
 class WorkerPoolManager:
@@ -55,10 +39,7 @@ class WorkerPoolManager:
         """Initialize the process pool.
         初始化进程池。
         """
-        self._pool = ProcessPoolExecutor(
-            max_workers=self._max_workers,
-            initializer=_worker_init,
-        )
+        self._pool = ProcessPoolExecutor(max_workers=self._max_workers)
 
     async def submit(
         self,

@@ -29,7 +29,7 @@ function resetExtractorStore(): void {
     imagePreviewUrl: null,
     imageNaturalWidth: null,
     imageNaturalHeight: null,
-    color_mode: ExtractorColorMode.FOUR_COLOR_RYBW,
+    color_mode: ExtractorColorMode.FOUR_COLOR,
     page: ExtractorPage.PAGE_1,
     corner_points: [],
     offset_x: 0,
@@ -153,7 +153,7 @@ const arbCorners0to4 = fc
 
 const arbExtractorColorMode = fc.constantFrom(
   ExtractorColorMode.BW,
-  ExtractorColorMode.FOUR_COLOR_RYBW,
+  ExtractorColorMode.FOUR_COLOR,
   ExtractorColorMode.SIX_COLOR,
   ExtractorColorMode.EIGHT_COLOR
 );
@@ -465,7 +465,7 @@ describe("Feature: extractor-calibration-tab, Property 9: Store 三向隔离", (
     const arbCalibrationMutation = fc.record({
       color_mode: fc.constantFrom(
         CalibrationColorMode.BW,
-        CalibrationColorMode.FOUR_COLOR_RYBW,
+        CalibrationColorMode.FOUR_COLOR,
         CalibrationColorMode.SIX_COLOR,
         CalibrationColorMode.EIGHT_COLOR
       ),
@@ -493,7 +493,7 @@ describe("Feature: extractor-calibration-tab, Property 9: Store 三向隔离", (
 
         // Reset CalibrationStore
         useCalibrationStore.setState({
-          color_mode: CalibrationColorMode.FOUR_COLOR_RYBW,
+          color_mode: CalibrationColorMode.FOUR_COLOR,
           block_size: 5,
           gap: 0.82,
           backing: BackingColor.WHITE,

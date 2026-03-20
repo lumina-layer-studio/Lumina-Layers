@@ -37,7 +37,7 @@ export interface CalibrationActions {
 // ========== Default State ==========
 
 const DEFAULT_STATE: CalibrationState = {
-  color_mode: CalibrationColorModeEnum.FOUR_COLOR_RYBW,
+  color_mode: CalibrationColorModeEnum.FOUR_COLOR,
   block_size: 5,
   gap: 0.82,
   backing: BackingColorEnum.WHITE,

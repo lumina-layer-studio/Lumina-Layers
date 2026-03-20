@@ -20,7 +20,7 @@ class ColorRecipeLogger:
     Logs color mapping and stacking recipes to a text file.
     """
     
-    def __init__(self, lut_path: str, lut_rgb: np.ndarray, ref_stacks: np.ndarray, color_mode: str, metadata=None):
+    def __init__(self, lut_path: str, lut_rgb: np.ndarray, ref_stacks: np.ndarray, color_mode: str):
         """
         Initialize the logger.
         
@@ -29,21 +29,15 @@ class ColorRecipeLogger:
             lut_rgb: LUT RGB array (N, 3)
             ref_stacks: Reference stacks array (N, 5)
             color_mode: Color mode string (e.g., "8-Color")
-            metadata: Optional LUTMetadata with palette info (可选的 LUT 元数据)
         """
         self.lut_path = lut_path
         self.lut_filename = os.path.basename(lut_path)
         self.lut_rgb = lut_rgb
         self.ref_stacks = ref_stacks
         self.color_mode = color_mode
-        self.metadata = metadata
         
         # Extract color names from LUT filename if possible
         self.color_names = self._extract_color_names_from_filename()
-        
-        # If metadata has palette, prefer palette color names
-        if metadata and hasattr(metadata, 'palette') and metadata.palette:
-            self.color_names = [e.color for e in metadata.palette]
         
         # Color mappings to record
         self.mappings: List[Dict] = []
@@ -261,7 +255,7 @@ class ColorRecipeLogger:
     @staticmethod
     def create_from_processor(processor, output_dir: str, model_filename: str,
                              matched_rgb: np.ndarray, material_matrix: np.ndarray,
-                             mask_solid: np.ndarray, metadata=None):
+                             mask_solid: np.ndarray):
         """
         Create a color recipe logger from image processor results.
         
@@ -272,7 +266,6 @@ class ColorRecipeLogger:
             matched_rgb: Matched RGB array (H, W, 3)
             material_matrix: Material matrix (H, W, 5)
             mask_solid: Solid mask (H, W)
-            metadata: Optional LUTMetadata with palette info (可选的 LUT 元数据)
         
         Returns:
             Path to the generated report file
@@ -281,8 +274,7 @@ class ColorRecipeLogger:
             lut_path=processor.lut_path if hasattr(processor, 'lut_path') else 'unknown.npy',
             lut_rgb=processor.lut_rgb,
             ref_stacks=processor.ref_stacks,
-            color_mode=processor.color_mode,
-            metadata=metadata,
+            color_mode=processor.color_mode
         )
         
         # Extract unique colors and their pixel counts

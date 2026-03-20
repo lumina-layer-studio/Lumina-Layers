@@ -41,12 +41,10 @@ const arbBatchConvertParams: fc.Arbitrary<BatchConvertParams> = fc.record({
   structure_mode: fc.constantFrom("Double-sided", "Single-sided"),
   auto_bg: fc.boolean(),
   bg_tol: fc.integer({ min: 0, max: 100 }),
-  color_mode: fc.constantFrom("4-Color (CMYW)", "4-Color (RYBW)", "6-Color (Smart 1296)", "6-Color (RYBW 1296)", "8-Color Max", "BW (Black & White)"),
+  color_mode: fc.constantFrom("4-Color", "6-Color (Smart 1296)", "8-Color Max", "BW (Black & White)"),
   modeling_mode: fc.constantFrom("high-fidelity", "pixel", "vector"),
   quantize_colors: fc.integer({ min: 2, max: 256 }),
   enable_cleanup: fc.boolean(),
-  hue_weight: fc.double({ min: 0, max: 2 }),
-  chroma_gate: fc.integer({ min: 0, max: 50 }),
 });
 
 // ========== Tests ==========

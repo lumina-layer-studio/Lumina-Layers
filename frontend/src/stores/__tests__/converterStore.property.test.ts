@@ -271,7 +271,7 @@ describe('Property 5: 浮雕启用时高度初始化完整性', () => {
     );
   });
 
-  it('initial heights vary by luminance (not all equal)', () => {
+  it('all initial height values are equal', () => {
     fc.assert(
       fc.property(arbUniquePalette, arbMaxHeight, (palette, maxHeight) => {
         useConverterStore.setState({
@@ -286,10 +286,12 @@ describe('Property 5: 浮雕启用时高度初始化完整性', () => {
         const map = useConverterStore.getState().color_height_map;
         const heights = Object.values(map);
 
-        // All heights should be within valid range
-        for (const h of heights) {
-          expect(h).toBeGreaterThanOrEqual(0.08);
-          expect(h).toBeLessThanOrEqual(maxHeight);
+        // All heights should be equal
+        if (heights.length > 1) {
+          const first = heights[0];
+          for (const h of heights) {
+            expect(h).toBeCloseTo(first, 10);
+          }
         }
       }),
       { numRuns: 200 },

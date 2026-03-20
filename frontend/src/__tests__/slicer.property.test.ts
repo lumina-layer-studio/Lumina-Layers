@@ -575,17 +575,6 @@ describe("Property 6: 品牌配色映射完整性", () => {
 
 import { getButtonLabel } from "../components/sections/SlicerSelector";
 
-/** Mock t function that returns Chinese translations for slicer keys */
-const mockT = (key: string): string => {
-  const map: Record<string, string> = {
-    slicer_open_in: "在 {name} 中打开",
-    slicer_generate_open_in: "生成并在 {name} 中打开",
-    slicer_download_3mf: "下载 3MF",
-    slicer_generate_download: "生成并下载",
-  };
-  return map[key] ?? key;
-};
-
 /**
  * Feature: slicer-launch-integration, Property 4: SlicerSelector 按钮文案反映 3MF 状态
  * **Validates: Requirements 3.2**
@@ -606,9 +595,8 @@ describe("Property 4: SlicerSelector 按钮文案反映 3MF 状态", () => {
   it("hasSlicers=true + non-null threemfDiskPath → '在 {name} 中打开'", () => {
     fc.assert(
       fc.property(diskPathArb, slicerNameArb, (path, name) => {
-        const label = getButtonLabel(true, path, name, mockT);
-        const expected = "在 {name} 中打开".replace("{name}", name);
-        return label === expected;
+        const label = getButtonLabel(true, path, name);
+        return label === `在 ${name} 中打开`;
       }),
       { numRuns: 100 }
     );
@@ -617,9 +605,8 @@ describe("Property 4: SlicerSelector 按钮文案反映 3MF 状态", () => {
   it("hasSlicers=true + null threemfDiskPath → '生成并在 {name} 中打开'", () => {
     fc.assert(
       fc.property(slicerNameArb, (name) => {
-        const label = getButtonLabel(true, null, name, mockT);
-        const expected = "生成并在 {name} 中打开".replace("{name}", name);
-        return label === expected;
+        const label = getButtonLabel(true, null, name);
+        return label === `生成并在 ${name} 中打开`;
       }),
       { numRuns: 100 }
     );
@@ -631,7 +618,7 @@ describe("Property 4: SlicerSelector 按钮文案反映 3MF 状态", () => {
         diskPathArb,
         fc.option(slicerNameArb, { nil: null }),
         (path, name) => {
-          const label = getButtonLabel(false, path, name, mockT);
+          const label = getButtonLabel(false, path, name);
           return label === "下载 3MF";
         }
       ),
@@ -644,7 +631,7 @@ describe("Property 4: SlicerSelector 按钮文案反映 3MF 状态", () => {
       fc.property(
         fc.option(slicerNameArb, { nil: null }),
         (name) => {
-          const label = getButtonLabel(false, null, name, mockT);
+          const label = getButtonLabel(false, null, name);
           return label === "生成并下载";
         }
       ),

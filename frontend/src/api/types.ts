@@ -8,11 +8,8 @@ export interface HealthResponse {
 
 export enum ColorMode {
   BW = "BW (Black & White)",
-  FOUR_COLOR_CMYW = "4-Color (CMYW)",
-  FOUR_COLOR_RYBW = "4-Color (RYBW)",
-  FIVE_COLOR_EXT = "5-Color Extended",
+  FOUR_COLOR = "4-Color",
   SIX_COLOR = "6-Color (Smart 1296)",
-  SIX_COLOR_RYBW = "6-Color (RYBW 1296)",
   EIGHT_COLOR = "8-Color Max",
   MERGED = "Merged",
 }
@@ -40,7 +37,6 @@ export interface ConvertPreviewRequest {
   quantize_colors: number;
   enable_cleanup: boolean;
   hue_weight: number;
-  chroma_gate: number;
   is_dark: boolean;
 }
 
@@ -52,10 +48,6 @@ export interface ConvertGenerateRequest extends ConvertPreviewRequest {
   loop_width: number;
   loop_length: number;
   loop_hole: number;
-  loop_angle?: number;
-  loop_offset_x?: number;
-  loop_offset_y?: number;
-  loop_position_preset?: string;
   loop_pos?: [number, number];
   enable_relief: boolean;
   height_mode?: string;
@@ -70,9 +62,6 @@ export interface ConvertGenerateRequest extends ConvertPreviewRequest {
   coating_height_mm: number;
   replacement_regions?: ColorReplacementItem[];
   free_color_set?: string[];
-  printer_id?: string;
-  slicer?: string;
-  use_cached_matched_rgb?: boolean;
 }
 
 export interface ColorReplacementItem {
@@ -105,14 +94,6 @@ export interface HeightmapUploadResponse {
   original_size: [number, number];
   color_height_map: Record<string, number>;
   warnings: string[];
-}
-
-/** 自动检测推荐量化颜色数响应 */
-export interface AutoDetectColorsResponse {
-  recommended: number;
-  max_safe: number;
-  unique_colors: number;
-  complexity_score: number;
 }
 
 // ========== Response Models ==========
@@ -163,11 +144,9 @@ export interface BedSizeListResponse {
 
 export enum CalibrationColorMode {
   BW = "BW (Black & White)",
-  FOUR_COLOR_CMYW = "4-Color (CMYW)",
-  FOUR_COLOR_RYBW = "4-Color (RYBW)",
+  FOUR_COLOR = "4-Color",
   FIVE_COLOR_EXT = "5-Color Extended (1444)",
   SIX_COLOR = "6-Color (Smart 1296)",
-  SIX_COLOR_RYBW = "6-Color (RYBW 1296)",
   EIGHT_COLOR = "8-Color Max",
 }
 
@@ -202,11 +181,9 @@ export interface CalibrationResponse {
 
 export enum ExtractorColorMode {
   BW = "BW (Black & White)",
-  FOUR_COLOR_CMYW = "4-Color (CMYW)",
-  FOUR_COLOR_RYBW = "4-Color (RYBW)",
+  FOUR_COLOR = "4-Color",
   FIVE_COLOR_EXT = "5-Color Extended",
   SIX_COLOR = "6-Color (Smart 1296)",
-  SIX_COLOR_RYBW = "6-Color (RYBW 1296)",
   EIGHT_COLOR = "8-Color Max",
 }
 
@@ -217,13 +194,6 @@ export enum ExtractorPage {
 
 // ========== Extractor Response Models ==========
 
-/** 调色板条目（提取器返回的默认调色板） */
-export interface ExtractorPaletteEntry {
-  color: string;
-  material: string;
-  hex_color: string;
-}
-
 export interface ExtractResponse {
   session_id: string;
   status: string;
@@ -231,7 +201,6 @@ export interface ExtractResponse {
   lut_download_url: string;
   warp_view_url: string;
   lut_preview_url: string;
-  default_palette: ExtractorPaletteEntry[];
 }
 
 export interface ManualFixResponse {
@@ -344,7 +313,6 @@ export interface BatchConvertParams {
   quantize_colors: number;
   enable_cleanup: boolean;
   hue_weight: number;
-  chroma_gate: number;
 }
 
 // ========== Five-Color Query Models ==========
@@ -374,7 +342,6 @@ export interface FiveColorQueryResponse {
   result_hex: string | null;
   row_index: number;
   message: string;
-  source: string;
 }
 
 // ========== Color Replace Models ==========
@@ -386,44 +353,6 @@ export interface ColorReplaceResponse {
   replacement_count: number;
 }
 
-// ========== Region Detection & Replace Models ==========
-
-/** 连通区域检测响应 */
-export interface RegionDetectResponse {
-  region_id: string;
-  color_hex: string;
-  pixel_count: number;
-  preview_url: string;
-  contours?: number[][][] | null;
-}
-
-/** 区域替换响应 */
-export interface RegionReplaceResponse {
-  preview_url: string;
-  preview_glb_url?: string | null;
-  color_contours?: Record<string, number[][][]> | null;
-  message: string;
-}
-
-// ========== Printer Models ==========
-
-export interface PrinterInfo {
-  id: string;
-  display_name: string;
-  brand: string;
-  bed_width: number;
-  bed_depth: number;
-  bed_height: number;
-  nozzle_count: number;
-  is_dual_head: boolean;
-  supported_slicers: string[];
-}
-
-export interface PrinterListResponse {
-  status: string;
-  printers: PrinterInfo[];
-}
-
 // ========== Settings Models ==========
 
 export interface UserSettings {
@@ -433,8 +362,6 @@ export interface UserSettings {
   last_slicer: string;
   palette_mode: string;
   enable_crop_modal: boolean;
-  printer_model: string;
-  slicer_software: string;
 }
 
 export interface UserSettingsResponse {
@@ -451,65 +378,4 @@ export interface StatsResponse {
   calibrations: number;
   extractions: number;
   conversions: number;
-}
-
-// ========== Slicer Template Models ==========
-
-export interface SlicerOption {
-  id: string;
-  display_name: string;
-}
-
-export interface SlicerListResponse {
-  status: string;
-  slicers: SlicerOption[];
-}
-
-// ========== Vectorizer Models ==========
-
-export interface VectorizeParams {
-  // Core
-  num_colors: number;
-  smoothness: number;
-  detail_level: number;
-  // Output enhancement
-  svg_enable_stroke: boolean;
-  svg_stroke_width: number;
-  thin_line_max_radius: number;
-  enable_coverage_fix: boolean;
-  min_coverage_ratio: number;
-  // Preprocessing
-  smoothing_spatial: number;
-  smoothing_color: number;
-  max_working_pixels: number;
-  // Segmentation
-  slic_region_size: number;
-  edge_sensitivity: number;
-  refine_passes: number;
-  enable_antialias_detect: boolean;
-  aa_tolerance: number;
-  // Curve fitting
-  curve_fit_error: number;
-  contour_simplify: number;
-  merge_segment_tolerance: number;
-  // Filtering
-  min_region_area: number;
-  max_merge_color_dist: number;
-  min_contour_area: number;
-  min_hole_area: number;
-}
-
-export interface VectorizeResponse {
-  status: string;
-  message: string;
-  svg_url: string;
-  width: number;
-  height: number;
-  num_shapes: number;
-  num_colors: number;
-  palette: string[];
-}
-
-export interface VectorizeDefaultsResponse {
-  defaults: VectorizeParams;
 }

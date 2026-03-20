@@ -10,7 +10,7 @@ vi.mock("../api/calibration", () => ({
 
 beforeEach(() => {
   useCalibrationStore.setState({
-    color_mode: CalibrationColorMode.FOUR_COLOR_RYBW,
+    color_mode: CalibrationColorMode.FOUR_COLOR,
     block_size: 5,
     gap: 0.82,
     backing: BackingColor.WHITE,
@@ -40,16 +40,16 @@ describe("CalibrationPanel", () => {
 
     // Color mode dropdown defaults to 4-Color
     const selects = screen.getAllByRole("combobox");
-    expect(selects[0]).toHaveTextContent(CalibrationColorMode.FOUR_COLOR_RYBW);
+    expect(selects[0]).toHaveValue(CalibrationColorMode.FOUR_COLOR);
 
-    // Block size default 5 mm, rendered with two decimals
-    expect(screen.getByLabelText("色块尺寸 value")).toHaveValue("5.00");
+    // Block size default 5 mm
+    expect(screen.getByText("5 mm")).toBeInTheDocument();
 
     // Gap default 0.82 mm
-    expect(screen.getByLabelText("色块间距 value")).toHaveValue("0.82");
+    expect(screen.getByText("0.82 mm")).toBeInTheDocument();
 
     // Backing color defaults to White
-    expect(selects[1]).toHaveTextContent(BackingColor.WHITE);
+    expect(selects[1]).toHaveValue(BackingColor.WHITE);
   });
 
   it("disables block_size, gap, and backing in 8-Color Max mode", () => {

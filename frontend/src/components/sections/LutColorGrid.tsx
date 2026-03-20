@@ -1,11 +1,8 @@
-import { useState, useMemo, useCallback, useEffect, memo } from "react";
+import { useState, useMemo, useCallback, useEffect } from "react";
 import { useConverterStore } from "../../stores/converterStore";
-import { useSettingsStore } from "../../stores/settingsStore";
 import { hexToRgb, sortByColorDistance } from "../../utils/colorUtils";
-import { isCardModeAvailable } from "../../utils/cardUtils";
 import type { LutColorEntry } from "../../api/types";
 import { useI18n } from "../../i18n/context";
-import { cx, workstationInsetCardClass, workstationPanelCardClass } from "../ui/panelPrimitives";
 
 export type HueCategory =
   | "all"
@@ -31,8 +28,7 @@ export function classifyHue(r: number, g: number, b: number): HueCategory {
   const s = max === 0 ? 0 : d / max;
   const v = max;
 
-  // 提高中性色阈值，减少低饱和度颜色的误分类
-  if (s < 0.2 || v < 0.15) return "neutral";
+  if (s < 0.15 || v < 0.1) return "neutral";
 
   let h = 0;
   if (d !== 0) {
@@ -42,15 +38,13 @@ export function classifyHue(r: number, g: number, b: number): HueCategory {
   }
   h = ((h * 60) + 360) % 360;
 
-  // 使用更宽松的色相范围，减少边界色块
-  // 核心策略：扩大每个色相类别的范围，让边界区域有更多容错空间
-  if (h < 20 || h >= 340) return "red";      // 红色: 340-20° (扩大 10°)
-  if (h < 50) return "orange";                // 橙色: 20-50° (扩大 20°)
-  if (h < 80) return "yellow";                // 黄色: 50-80° (扩大 20°)
-  if (h < 170) return "green";                // 绿色: 80-170° (扩大 20°)
-  if (h < 200) return "cyan";                 // 青色: 170-200° (扩大 10°)
-  if (h < 270) return "blue";                 // 蓝色: 200-270° (扩大 20°)
-  if (h < 340) return "purple";               // 紫色: 270-340° (扩大 10°)
+  if (h < 15 || h >= 345) return "red";
+  if (h < 40) return "orange";
+  if (h < 70) return "yellow";
+  if (h < 160) return "green";
+  if (h < 195) return "cyan";
+  if (h < 260) return "blue";
+  if (h < 345) return "purple";
   return "neutral";
 }
 
@@ -89,11 +83,7 @@ function saveFavorites(lutKey: string, favs: Set<string>) {
 
 // ========== Compact ColorSwatch ==========
 
-const SWATCH_GRID_CLASS = "grid grid-cols-[repeat(auto-fit,minmax(3rem,1fr))] gap-1.5";
-const CARD_CELL_SIZE = "clamp(14px, 1vw, 18px)";
-const COLOR_GRID_MAX_HEIGHT = "clamp(12rem, 28vh, 24rem)";
-
-const ColorSwatch = memo(function ColorSwatch({
+function ColorSwatch({
   entry,
   isTarget,
   isFav,
@@ -114,33 +104,78 @@ const ColorSwatch = memo(function ColorSwatch({
       aria-selected={isTarget}
       onClick={onClick}
       onDoubleClick={(e) => { e.stopPropagation(); onDoubleClick(); }}
-      className={`relative flex w-full min-w-0 flex-col items-center rounded-[18px] border px-1 py-1.5 transition-colors ${
-        isTarget
-          ? "border-amber-400 bg-amber-400/10 ring-2 ring-amber-400/30"
-          : "border-transparent hover:border-slate-300 hover:bg-white/65 dark:hover:border-slate-600 dark:hover:bg-slate-900/75"
+      className={`relative flex flex-col items-center rounded cursor-pointer transition-colors hover:bg-gray-700/50 p-0.5 ${
+        isTarget ? "ring-2 ring-yellow-500" : ""
       }`}
       title={`${entry.hex} · ${isFav ? t("lut_grid_dblclick_unfav") : t("lut_grid_dblclick_fav")}`}
     >
       <span
-        className="block h-[clamp(1.1rem,1.7vw,1.3rem)] w-[clamp(1.1rem,1.7vw,1.3rem)] rounded-lg border border-slate-300/80 dark:border-slate-600/80"
+        className="block w-5 h-5 rounded-sm border border-gray-600"
         style={{ backgroundColor: entry.hex }}
       />
       {isFav && (
         <span className="absolute -top-0.5 -right-0.5 text-[8px] leading-none text-yellow-400">★</span>
       )}
-      <span className="mt-0.5 w-full truncate text-center font-mono text-[clamp(0.45rem,0.6vw,0.5rem)] leading-none text-slate-500 dark:text-slate-400">
+      <span className="text-[7px] text-gray-500 font-mono leading-none mt-0.5">
         {entry.hex}
       </span>
     </button>
   );
-});
+}
 
-// Card mode helpers have been moved inside the main component to access state variables.
+// ========== ColorSection ==========
+
+function ColorSection({
+  title,
+  titleColor,
+  colors,
+  selectedColor,
+  colorRemapMap,
+  favorites,
+  onColorClick,
+  onToggleFav,
+}: {
+  title: string;
+  titleColor: string;
+  colors: LutColorEntry[];
+  selectedColor: string | null;
+  colorRemapMap: Record<string, string>;
+  favorites: Set<string>;
+  onColorClick: (hex: string) => void;
+  onToggleFav: (hex: string) => void;
+}) {
+  if (colors.length === 0) return null;
+  return (
+    <div>
+      <p className="text-[10px] font-semibold mb-0.5" style={{ color: titleColor }}>
+        {title}
+      </p>
+      <div className="grid grid-cols-10 gap-0.5">
+        {colors.map((c) => {
+          const hexNoHash = c.hex.replace("#", "");
+          const isTarget = selectedColor
+            ? colorRemapMap[selectedColor] === hexNoHash
+            : false;
+          return (
+            <ColorSwatch
+              key={c.hex}
+              entry={c}
+              isTarget={isTarget}
+              isFav={favorites.has(c.hex.toLowerCase())}
+              onClick={() => onColorClick(c.hex)}
+              onDoubleClick={() => onToggleFav(c.hex)}
+            />
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ========== Main Component ==========
 
 export default function LutColorGrid() {
   const { t } = useI18n();
-  const paletteMode = useSettingsStore((s) => s.paletteMode);
-  const setPaletteMode = useSettingsStore((s) => s.setPaletteMode);
 
   const HUE_FILTERS: { key: HueCategory; label: string; dot: string }[] = [
     { key: "all", label: t("lut_grid_hue_all_short"), dot: "" },
@@ -157,140 +192,15 @@ export default function LutColorGrid() {
 
   const palette = useConverterStore((s) => s.palette);
   const selectedColor = useConverterStore((s) => s.selectedColor);
+  const applyColorRemap = useConverterStore((s) => s.applyColorRemap);
+  const setSelectedColor = useConverterStore((s) => s.setSelectedColor);
   const colorRemapMap = useConverterStore((s) => s.colorRemapMap);
   const lutColors = useConverterStore((s) => s.lutColors);
   const lutColorsLoading = useConverterStore((s) => s.lutColorsLoading);
   const lutColorsLutName = useConverterStore((s) => s.lutColorsLutName);
-  const selectionMode = useConverterStore((s) => s.selectionMode);
-  const selectedColors = useConverterStore((s) => s.selectedColors);
-  const replacePreviewLoading = useConverterStore((s) => s.replacePreviewLoading);
-  const setPendingReplacement = useConverterStore((s) => s.setPendingReplacement);
-  const pendingReplacement = useConverterStore((s) => s.pendingReplacement);
-  const confirmReplacement = useConverterStore((s) => s.confirmReplacement);
-  const colorMode = useConverterStore((s) => s.color_mode);
   const [hueFilter, setHueFilter] = useState<HueCategory>("all");
   const [searchText, setSearchText] = useState("");
   const [favorites, setFavorites] = useState<Set<string>>(new Set());
-
-  const cardAvailable = useMemo(
-    () => isCardModeAvailable(colorMode),
-    [colorMode],
-  );
-
-  // --- Local Components ---
-  const CardSection = ({
-    colors,
-    cols,
-    title,
-    selectedColor,
-    colorRemapMap,
-    onColorClick,
-  }: {
-    colors: LutColorEntry[];
-    cols: number;
-    title?: string;
-    selectedColor: string | null;
-    colorRemapMap: Record<string, string>;
-    onColorClick: (hex: string) => void;
-  }) => {
-    return (
-      <div>
-        {title && (
-          <p className="mb-2 text-[clamp(0.65rem,0.8vw,0.7rem)] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">{title}</p>
-        )}
-        <div
-          className="rounded-[22px] border border-slate-200/80 bg-white/55 p-2 shadow-[var(--shadow-control)] dark:border-slate-700/80 dark:bg-slate-900/60"
-          style={{
-            display: "grid",
-            gridTemplateColumns: `repeat(${cols}, ${CARD_CELL_SIZE})`,
-            gap: "clamp(1px, 0.2vw, 2px)",
-          }}
-        >
-          {colors.map((c, i) => {
-            const hexNoHash = c.hex.replace("#", "");
-            const isTarget = selectedColor
-              ? colorRemapMap[selectedColor] === hexNoHash
-              : false;
-            const [r, g, b] = c.rgb;
-            return (
-              <button
-                key={`${c.hex}-${i}`}
-                type="button"
-                title={`${c.hex} · RGB(${r}, ${g}, ${b})`}
-                onClick={() => onColorClick(c.hex)}
-                className={`cursor-pointer rounded-[8px] border transition-colors ${
-                  isTarget
-                    ? "border-amber-500 ring-1 ring-amber-500"
-                    : "border-transparent hover:border-slate-400"
-                }`}
-                style={{
-                  width: CARD_CELL_SIZE,
-                  height: CARD_CELL_SIZE,
-                  backgroundColor: c.hex,
-                }}
-              />
-            );
-          })}
-        </div>
-      </div>
-    );
-  };
-
-  const CardGrid = ({
-    lutColors,
-    colorMode,
-    selectedColor,
-    colorRemapMap,
-    onColorClick,
-  }: {
-    lutColors: LutColorEntry[];
-    colorMode: string;
-    selectedColor: string | null;
-    colorRemapMap: Record<string, string>;
-    onColorClick: (hex: string) => void;
-  }) => {
-    const total = lutColors.length;
-    const isEightColor = colorMode === "8-Color Max";
-
-    if (isEightColor && total > 1) {
-      const half = Math.floor(total / 2);
-      const colsA = Math.ceil(Math.sqrt(half));
-      const colsB = Math.ceil(Math.sqrt(total - half));
-      return (
-        <div className="flex gap-3 overflow-auto" style={{ maxHeight: COLOR_GRID_MAX_HEIGHT }}>
-          <CardSection
-            colors={lutColors.slice(0, half)}
-            cols={colsA}
-            title={t("lut_grid_card_a")}
-            selectedColor={selectedColor}
-            colorRemapMap={colorRemapMap}
-            onColorClick={onColorClick}
-          />
-          <CardSection
-            colors={lutColors.slice(half)}
-            cols={colsB}
-            title={t("lut_grid_card_b")}
-            selectedColor={selectedColor}
-            colorRemapMap={colorRemapMap}
-            onColorClick={onColorClick}
-          />
-        </div>
-      );
-    }
-
-    const cols = Math.ceil(Math.sqrt(total));
-    return (
-      <div className="overflow-auto" style={{ maxHeight: COLOR_GRID_MAX_HEIGHT }}>
-        <CardSection
-          colors={lutColors}
-          cols={cols}
-          selectedColor={selectedColor}
-          colorRemapMap={colorRemapMap}
-          onColorClick={onColorClick}
-        />
-      </div>
-    );
-  };
 
   // Load favorites when LUT changes
   useEffect(() => {
@@ -347,121 +257,31 @@ export default function LutColorGrid() {
   }, [selectedColor, lutColors]);
 
   const handleColorClick = (clickedHex: string) => {
-    if (replacePreviewLoading) return;
-
-    const hexNoHash = clickedHex.replace("#", "");
-
-    switch (selectionMode) {
-      case 'select-all': {
-        // 全选模式：需要先选中源色
-        if (!selectedColor) return;
-        setPendingReplacement({
-          sourceHex: selectedColor,
-          targetHex: hexNoHash,
-          mode: 'select-all',
-        });
-        break;
-      }
-      case 'multi-select': {
-        // 多选模式：需要先选中至少一个源色
-        if (selectedColors.size === 0) return;
-        setPendingReplacement({
-          sourceHex: selectedColor ?? '',
-          targetHex: hexNoHash,
-          mode: 'multi-select',
-          sourceColors: Array.from(selectedColors),
-        });
-        break;
-      }
-      case 'current':
-      case 'region': {
-        // 当前/区域模式：设置 pending 状态
-        setPendingReplacement({
-          sourceHex: selectedColor ?? '',
-          targetHex: hexNoHash,
-          mode: selectionMode,
-        });
-        break;
-      }
-    }
+    if (!selectedColor) return;
+    applyColorRemap(selectedColor, clickedHex.replace("#", ""));
+    setSelectedColor(null);
   };
 
   return (
-    <div className="relative">
-      {replacePreviewLoading && (
-        <div className="absolute inset-0 z-10 flex items-center justify-center rounded-[28px] bg-slate-950/40">
-          <p className="text-xs text-slate-100">{t("lut_grid_loading")}</p>
-        </div>
-      )}
+    <div>
       {lutColorsLoading ? (
-        <p className="py-4 text-sm text-slate-500 dark:text-slate-400">{t("lut_grid_loading")}</p>
+        <p className="text-xs text-gray-500 py-2">{t("lut_grid_loading")}</p>
       ) : lutColors.length === 0 ? (
-        <p className="py-4 text-sm text-slate-500 dark:text-slate-400">{t("lut_grid_select_lut")}</p>
+        <p className="text-xs text-gray-500 py-2">{t("lut_grid_select_lut")}</p>
       ) : (
-        <div className={cx(workstationPanelCardClass, "flex flex-col gap-3")}>
-          {/* Confirmation preview bar */}
-          {pendingReplacement && (
-            <div className={cx(workstationInsetCardClass, "flex items-center gap-1.5 px-3 py-2")}>
-              {/* Source color swatch(es) */}
-              <div className="flex items-center gap-0.5">
-                {pendingReplacement.mode === 'multi-select' && pendingReplacement.sourceColors ? (
-                  pendingReplacement.sourceColors.map((hex) => (
-                    <span
-                      key={hex}
-                      className="inline-block h-5 w-5 rounded-lg border border-slate-400/80 dark:border-slate-500/80"
-                      style={{ backgroundColor: `#${hex}` }}
-                      title={`#${hex}`}
-                    />
-                  ))
-                ) : (
-                  <span
-                    className="inline-block h-5 w-5 rounded-lg border border-slate-400/80 dark:border-slate-500/80"
-                    style={{ backgroundColor: `#${pendingReplacement.sourceHex}` }}
-                    title={`#${pendingReplacement.sourceHex}`}
-                  />
-                )}
-              </div>
-              {/* Arrow */}
-              <span className="text-xs text-slate-400">→</span>
-              {/* Target color swatch */}
-              <span
-                className="inline-block h-5 w-5 rounded-lg border border-slate-400/80 dark:border-slate-500/80"
-                style={{ backgroundColor: `#${pendingReplacement.targetHex}` }}
-                title={`#${pendingReplacement.targetHex}`}
-              />
-              {/* Spacer */}
-              <div className="flex-1" />
-              {/* Confirm button */}
-              <button
-                type="button"
-                onClick={() => confirmReplacement()}
-                className="rounded-full bg-blue-600 px-2.5 py-1 text-[10px] font-medium text-white transition-colors hover:bg-blue-500"
-              >
-                {t("replace_confirm_btn")}
-              </button>
-              {/* Cancel button */}
-              <button
-                type="button"
-                onClick={() => setPendingReplacement(null)}
-                className="rounded-full border border-slate-300/80 bg-white/80 px-2.5 py-1 text-[10px] font-medium text-slate-700 transition-colors hover:bg-white dark:border-slate-700/80 dark:bg-slate-900/70 dark:text-slate-200 dark:hover:bg-slate-900"
-              >
-                {t("replace_cancel_btn")}
-              </button>
-            </div>
-          )}
-
+        <div className="flex flex-col gap-1">
           {/* Status line */}
-          <p className="text-[clamp(0.65rem,0.8vw,0.7rem)] leading-tight text-slate-500 dark:text-slate-400">
+          <p className="text-[10px] text-gray-400 leading-tight">
             共 {lutColors.length} 色，显示 {visibleCount} 色
             {favorites.size > 0 && ` · ★${favorites.size}`}
             {selectedColor && (
               <>
                 {" · 已选中 "}
                 <span
-                  className="inline-block h-2.5 w-2.5 rounded-md border border-slate-400/80 align-middle dark:border-slate-500/80"
+                  className="inline-block w-2.5 h-2.5 rounded-sm border border-gray-600 align-middle"
                   style={{ backgroundColor: `#${selectedColor}` }}
                 />
-                <span className="font-mono text-[clamp(0.55rem,0.75vw,0.625rem)]"> #{selectedColor}</span>
+                <span className="font-mono text-[10px]"> #{selectedColor}</span>
               </>
             )}
           </p>
@@ -472,155 +292,81 @@ export default function LutColorGrid() {
             placeholder={t("lut_grid_search_placeholder_short")}
             value={searchText}
             onChange={(e) => setSearchText(e.target.value)}
-            className="w-full rounded-2xl border border-slate-200/80 bg-white/78 px-3 py-2 text-[clamp(0.65rem,0.85vw,0.75rem)] text-slate-700 outline-none shadow-[var(--shadow-control)] focus:border-blue-400 focus:ring-4 focus:ring-[var(--focus-ring)] dark:border-slate-700/80 dark:bg-slate-900/72 dark:text-slate-100"
+            className="w-full px-2 py-0.5 text-[10px] rounded border border-gray-600 bg-gray-800 text-gray-200 outline-none focus:border-blue-500"
           />
 
-          {/* Hue filter bar + mode toggle */}
-          <div className="flex items-center gap-0.5">
-            <div className="flex flex-wrap gap-0.5">
-              {HUE_FILTERS.map((f) => (
-                <button
-                  key={f.key}
-                  type="button"
-                  onClick={() => setHueFilter(f.key)}
-                  className={`flex items-center gap-0.5 rounded-full border px-2 py-1 text-[clamp(0.55rem,0.75vw,0.625rem)] transition-colors ${
-                    hueFilter === f.key
-                      ? "border-blue-300 bg-blue-500/12 text-blue-700 dark:border-blue-700 dark:bg-blue-500/16 dark:text-blue-300"
-                      : "border-slate-200/80 bg-white/65 text-slate-500 hover:border-slate-300 dark:border-slate-700/80 dark:bg-slate-900/60 dark:text-slate-400 dark:hover:border-slate-600"
-                  }`}
-                >
-                  {f.key === "fav" ? (
-                    <span className="text-yellow-400 text-[9px]">★</span>
-                  ) : f.dot ? (
-                    <span className="inline-block w-1.5 h-1.5 rounded-full" style={{ backgroundColor: f.dot }} />
-                  ) : null}
-                  {f.label}
-                </button>
-              ))}
-            </div>
-            {cardAvailable && (
-              <>
-                <div className="flex-1" />
-                <div className="flex items-center gap-0.5 shrink-0">
-                  <button
-                    type="button"
-                    onClick={() => setPaletteMode("swatch")}
-                    className={`rounded-full border px-2 py-1 text-[clamp(0.55rem,0.75vw,0.625rem)] transition-colors ${
-                      paletteMode === "swatch"
-                        ? "border-blue-300 bg-blue-500/12 text-blue-700 dark:border-blue-700 dark:bg-blue-500/16 dark:text-blue-300"
-                        : "border-slate-200/80 bg-white/65 text-slate-500 hover:border-slate-300 dark:border-slate-700/80 dark:bg-slate-900/60 dark:text-slate-400 dark:hover:border-slate-600"
-                    }`}
-                  >
-                    {t("lut_grid_mode_swatch")}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setPaletteMode("card")}
-                    className={`rounded-full border px-2 py-1 text-[clamp(0.55rem,0.75vw,0.625rem)] transition-colors ${
-                      paletteMode === "card"
-                        ? "border-blue-300 bg-blue-500/12 text-blue-700 dark:border-blue-700 dark:bg-blue-500/16 dark:text-blue-300"
-                        : "border-slate-200/80 bg-white/65 text-slate-500 hover:border-slate-300 dark:border-slate-700/80 dark:bg-slate-900/60 dark:text-slate-400 dark:hover:border-slate-600"
-                    }`}
-                  >
-                    {t("lut_grid_mode_card")}
-                  </button>
-                </div>
-              </>
-            )}
+          {/* Hue filter bar */}
+          <div className="flex flex-wrap gap-0.5">
+            {HUE_FILTERS.map((f) => (
+              <button
+                key={f.key}
+                type="button"
+                onClick={() => setHueFilter(f.key)}
+                className={`flex items-center gap-0.5 px-1.5 py-0.5 text-[9px] rounded-full border transition-colors ${
+                  hueFilter === f.key
+                    ? "bg-gray-200 text-gray-900 border-gray-400"
+                    : "bg-gray-800 text-gray-400 border-gray-600 hover:border-gray-400"
+                }`}
+              >
+                {f.key === "fav" ? (
+                  <span className="text-yellow-400 text-[9px]">★</span>
+                ) : f.dot ? (
+                  <span className="inline-block w-1.5 h-1.5 rounded-full" style={{ backgroundColor: f.dot }} />
+                ) : null}
+                {f.label}
+              </button>
+            ))}
           </div>
 
-          {/* Color grid — conditional swatch vs card rendering */}
-          {paletteMode === "card" && cardAvailable ? (
-            <CardGrid
-              lutColors={lutColors}
-              colorMode={colorMode}
+          {/* Color grid */}
+          <div className="overflow-y-auto flex flex-col gap-1.5" style={{ maxHeight: '28vh' }} role="listbox" aria-label="LUT 可用颜色列表">
+            {recommendations && recommendations.length > 0 && (
+              <div>
+                <p className="text-[10px] font-semibold mb-0.5" style={{ color: "#f59e0b" }}>
+                  {t("lut_grid_recommendations")} ({recommendations.length})
+                </p>
+                <div className="grid grid-cols-10 gap-0.5">
+                  {recommendations.map((c) => {
+                    const hexNoHash = c.hex.replace("#", "");
+                    const isTarget = selectedColor ? colorRemapMap[selectedColor] === hexNoHash : false;
+                    return (
+                      <ColorSwatch
+                        key={c.hex}
+                        entry={c}
+                        isTarget={isTarget}
+                        isFav={favorites.has(c.hex.toLowerCase())}
+                        onClick={() => handleColorClick(c.hex)}
+                        onDoubleClick={() => toggleFav(c.hex)}
+                      />
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+            <ColorSection
+              title={`${t("lut_grid_used_in_image")} (${usedColors.length})`}
+              titleColor="#4CAF50"
+              colors={usedColors}
               selectedColor={selectedColor}
               colorRemapMap={colorRemapMap}
+              favorites={favorites}
               onColorClick={handleColorClick}
+              onToggleFav={toggleFav}
             />
-          ) : (
-            <div className="dock-scrollbar flex flex-col gap-2 overflow-y-auto pr-1" style={{ maxHeight: COLOR_GRID_MAX_HEIGHT }} role="listbox" aria-label="LUT 可用颜色列表">
-              {recommendations && recommendations.length > 0 && (
-                <div>
-                  <p className="mb-1 text-[clamp(0.65rem,0.8vw,0.7rem)] font-semibold text-amber-500">
-                    {t("lut_grid_recommendations")} ({recommendations.length})
-                  </p>
-                  <div className={SWATCH_GRID_CLASS}>
-                    {recommendations.map((c) => {
-                      const hexNoHash = c.hex.replace("#", "");
-                      const isTarget = selectedColor ? colorRemapMap[selectedColor] === hexNoHash : false;
-                      return (
-                        <div key={c.hex}>
-                          <ColorSwatch
-                            entry={c}
-                            isTarget={isTarget}
-                            isFav={favorites.has(c.hex.toLowerCase())}
-                            onClick={() => handleColorClick(c.hex)}
-                            onDoubleClick={() => toggleFav(c.hex)}
-                          />
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-              {/* Used Colors Section */}
-              {usedColors.length > 0 && (
-                <div>
-                  <p className="mb-1 text-[clamp(0.65rem,0.8vw,0.7rem)] font-semibold text-emerald-500">
-                    {t("lut_grid_used_in_image")} ({usedColors.length})
-                  </p>
-                  <div className={SWATCH_GRID_CLASS}>
-                    {usedColors.map((c) => {
-                      const hexNoHash = c.hex.replace("#", "");
-                      const isTarget = selectedColor ? colorRemapMap[selectedColor] === hexNoHash : false;
-                      return (
-                        <div key={c.hex}>
-                          <ColorSwatch
-                            entry={c}
-                            isTarget={isTarget}
-                            isFav={favorites.has(c.hex.toLowerCase())}
-                            onClick={() => handleColorClick(c.hex)}
-                            onDoubleClick={() => toggleFav(c.hex)}
-                          />
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-
-              {/* Other/All Colors Section */}
-              {otherColors.length > 0 && (
-                <div>
-                  <p className="mb-1 text-[clamp(0.65rem,0.8vw,0.7rem)] font-semibold text-slate-500 dark:text-slate-400">
-                    {usedColors.length > 0 ? `${t("lut_grid_other_available")} (${otherColors.length})` : `${t("lut_grid_all_available")} (${otherColors.length})`}
-                  </p>
-                  <div className={SWATCH_GRID_CLASS}>
-                    {otherColors.map((c) => {
-                      const hexNoHash = c.hex.replace("#", "");
-                      const isTarget = selectedColor ? colorRemapMap[selectedColor] === hexNoHash : false;
-                      return (
-                        <div key={c.hex}>
-                          <ColorSwatch
-                            entry={c}
-                            isTarget={isTarget}
-                            isFav={favorites.has(c.hex.toLowerCase())}
-                            onClick={() => handleColorClick(c.hex)}
-                            onDoubleClick={() => toggleFav(c.hex)}
-                          />
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-
-              {visibleCount === 0 && (
-                <p className="py-1 text-xs text-slate-500 dark:text-slate-400">{t("lut_grid_no_match")}</p>
-              )}
-            </div>
-          )}
+            <ColorSection
+              title={usedColors.length > 0 ? `${t("lut_grid_other_available")} (${otherColors.length})` : `${t("lut_grid_all_available")} (${otherColors.length})`}
+              titleColor="#888"
+              colors={otherColors}
+              selectedColor={selectedColor}
+              colorRemapMap={colorRemapMap}
+              favorites={favorites}
+              onColorClick={handleColorClick}
+              onToggleFav={toggleFav}
+            />
+            {visibleCount === 0 && (
+              <p className="text-xs text-gray-500 py-1">{t("lut_grid_no_match")}</p>
+            )}
+          </div>
         </div>
       )}
     </div>

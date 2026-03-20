@@ -112,26 +112,6 @@ class SmartConfig:
         5: {"name": "Black",   "hex": "#000000", "rgb": [0, 0, 0],       "td": 0.6},
     }
 
-
-class SmartConfigRYBW:
-    """Configuration for the Smart 1296 RYBW (36x36) System.
-    RYBW 6 色系统配置：White, Red, Yellow, Blue, Green, Black。
-    """
-    GRID_DIM: int = 36
-    TOTAL_BLOCKS: int = 1296
-
-    DEFAULT_BLOCK_SIZE: float = 5.0  # mm (Face Down mode)
-    DEFAULT_GAP: float = 0.8  # mm
-
-    FILAMENTS = {
-        0: {"name": "White",  "hex": "#FFFFFF", "rgb": [255, 255, 255], "td": 5.0},
-        1: {"name": "Red",    "hex": "#DC143C", "rgb": [220, 20, 60],   "td": 3.0},
-        2: {"name": "Yellow", "hex": "#FFE600", "rgb": [255, 230, 0],   "td": 6.0},
-        3: {"name": "Blue",   "hex": "#0064F0", "rgb": [0, 100, 240],   "td": 3.5},
-        4: {"name": "Green",  "hex": "#00AE42", "rgb": [0, 174, 66],    "td": 2.0},
-        5: {"name": "Black",  "hex": "#000000", "rgb": [0, 0, 0],       "td": 0.6},
-    }
-
 class ModelingMode(str, Enum):
     """建模模式枚举"""
     HIGH_FIDELITY = "high-fidelity"  # 高保真模式
@@ -175,8 +155,8 @@ class ColorSystem:
             3: [0, 100, 240, 255]
         },
         'map': {"White": 0, "Red": 1, "Yellow": 2, "Blue": 3},
-        'corner_labels': ["左上", "右上", "右下", "左下"],
-        'corner_labels_en': ["Top-Left", "Top-Right", "Bottom-Right", "Bottom-Left"]
+        'corner_labels': ["白色 (左上)", "红色 (右上)", "蓝色 (右下)", "黄色 (左下)"],
+        'corner_labels_en': ["White (TL)", "Red (TR)", "Blue (BR)", "Yellow (BL)"]
     }
 
     SIX_COLOR = {
@@ -195,24 +175,6 @@ class ColorSystem:
         'map': {"White": 0, "Cyan": 1, "Magenta": 2, "Green": 3, "Yellow": 4, "Black": 5},
         'corner_labels': ["白色 (左上)", "青色 (右上)", "品红 (右下)", "黄色 (左下)"],
         'corner_labels_en': ["White (TL)", "Cyan (TR)", "Magenta (BR)", "Yellow (BL)"]
-    }
-
-    SIX_COLOR_RYBW = {
-        'name': '6-Color (RYBW)',
-        'base': 6,
-        'layer_count': 5,
-        'slots': ["White", "Red", "Yellow", "Blue", "Green", "Black"],
-        'preview': {
-            0: [255, 255, 255, 255],  # White
-            1: [220, 20, 60, 255],    # Red
-            2: [255, 230, 0, 255],    # Yellow
-            3: [0, 100, 240, 255],    # Blue
-            4: [0, 174, 66, 255],     # Green
-            5: [0, 0, 0, 255]         # Black
-        },
-        'map': {"White": 0, "Red": 1, "Yellow": 2, "Blue": 3, "Green": 4, "Black": 5},
-        'corner_labels': ["白色 (左上)", "红色 (右上)", "蓝色 (右下)", "黄色 (左下)"],
-        'corner_labels_en': ["White (TL)", "Red (TR)", "Blue (BR)", "Yellow (BL)"]
     }
 
     EIGHT_COLOR = {
@@ -275,19 +237,13 @@ class ColorSystem:
         if mode is None:
             return ColorSystem.RYBW  # Default fallback
         
-        # 4-Color CMYW variant
-        if mode in ("4-Color (CMYW)", "CMYW"):
-            return ColorSystem.CMYW
-        
-        # 4-Color RYBW variant (also handles legacy "4-Color" string)
-        if mode in ("4-Color (RYBW)", "4-Color", "RYBW") or "4-Color" in mode:
+        # Unified 4-Color mode (defaults to RYBW)
+        if mode == "4-Color" or "4-Color" in mode:
             return ColorSystem.RYBW
         
         # Check specific patterns
         if "8-Color" in mode:
             return ColorSystem.EIGHT_COLOR
-        if mode in ("6-Color (RYBW 1296)",):
-            return ColorSystem.SIX_COLOR_RYBW
         if "6-Color" in mode:
             return ColorSystem.SIX_COLOR
         
@@ -318,7 +274,7 @@ PHYSICAL_GRID_SIZE = 34
 DATA_GRID_SIZE = 32
 DST_SIZE = 1000
 CELL_SIZE = DST_SIZE / PHYSICAL_GRID_SIZE
-LUT_FILE_PATH = os.path.join(OUTPUT_DIR, "lumina_lut.json")
+LUT_FILE_PATH = os.path.join(OUTPUT_DIR, "lumina_lut.npy")
 
 # Converter constants
 PREVIEW_SCALE = 2
@@ -428,365 +384,3 @@ def get_tray_runtime_policy():
         return True, "Enabled on desktop platform"
 
     return False, f"Disabled on unsupported platform: {sys.platform}"
-
-
-# ========== Printer Profile Registry ==========
-
-from dataclasses import dataclass, field
-from typing import Optional
-
-LEGACY_SLICER_ID_ALIASES: dict[str, str] = {
-    "bambu": "BambuStudio",
-    "bambu_studio": "BambuStudio",
-    "bambu studio": "BambuStudio",
-    "bambustudio": "BambuStudio",
-    "orca": "OrcaSlicer",
-    "orca_slicer": "OrcaSlicer",
-    "orcaslicer": "OrcaSlicer",
-    "snapmaker": "SnapmakerOrca",
-    "snapmaker_orca": "SnapmakerOrca",
-    "snapmaker orca": "SnapmakerOrca",
-    "snapmakerorca": "SnapmakerOrca",
-    "elegoo": "ElegooSlicer",
-    "elegoo_slicer": "ElegooSlicer",
-    "elegoo slicer": "ElegooSlicer",
-    "elegooslicer": "ElegooSlicer",
-}
-
-
-def normalize_slicer_software_id(slicer: str) -> str:
-    """Normalize legacy slicer IDs to canonical settings IDs.
-    将旧版切片器 ID 规范化为当前设置使用的标准 ID。
-
-    Args:
-        slicer (str): Raw slicer identifier or display-like value. (原始切片器标识)
-
-    Returns:
-        str: Canonical slicer ID when known, otherwise the trimmed input. (标准切片器 ID)
-    """
-    trimmed = slicer.strip()
-    if not trimmed:
-        return DEFAULT_SLICER_ID
-    return LEGACY_SLICER_ID_ALIASES.get(trimmed.lower(), trimmed)
-
-
-def normalize_printer_profile_id(printer_id: str) -> str:
-    """Normalize legacy printer IDs to canonical registry IDs.
-    将旧版打印机 ID 规范化为当前注册表使用的标准 ID。
-
-    Args:
-        printer_id (str): Raw printer identifier. (原始打印机标识)
-
-    Returns:
-        str: Canonical printer ID when known, otherwise normalized text. (标准打印机 ID)
-    """
-    trimmed = printer_id.strip()
-    if not trimmed:
-        return DEFAULT_PRINTER_ID
-    return trimmed.lower().replace("_", "-")
-
-
-@dataclass
-class PrinterProfile:
-    """Printer hardware profile for 3MF export template selection.
-    打印机硬件配置，用于 3MF 导出模板选择。
-
-    Attributes:
-        id (str): Unique printer identifier, e.g. "bambu-h2d". (唯一打印机标识)
-        display_name (str): Human-readable name, e.g. "Bambu Lab H2D". (显示名称)
-        brand (str): Manufacturer brand, e.g. "Bambu Lab". (品牌)
-        bed_width (int): Print bed width in mm. (打印床宽度，毫米)
-        bed_depth (int): Print bed depth in mm. (打印床深度，毫米)
-        bed_height (int): Max print height in mm. (最大打印高度，毫米)
-        nozzle_count (int): Number of nozzles, 1=single, 2=dual. (喷头数量)
-        is_dual_head (bool): Whether the printer has dual print heads. (是否双头)
-        template_file (str): Default (BambuStudio) config template filename. (默认模板文件名)
-        slicer_templates (dict[str, str]): Slicer-specific template filenames. (切片器专属模板)
-        thumbnail (str): Thumbnail image filename, reserved for future use. (缩略图文件名，预留)
-    """
-    id: str
-    display_name: str
-    brand: str
-    bed_width: int
-    bed_depth: int
-    bed_height: int
-    nozzle_count: int
-    is_dual_head: bool
-    template_file: str
-    slicer_templates: dict = field(default_factory=dict)
-    thumbnail: str = ""
-
-    def get_template_file(self, slicer: str = "BambuStudio") -> str:
-        """Return template filename for the given slicer.
-        返回指定切片器的模板文件名。
-
-        Args:
-            slicer (str): Slicer identifier, e.g. "BambuStudio" or "OrcaSlicer". (切片器标识)
-
-        Returns:
-            str: Template filename. Falls back to default template_file. (模板文件名，回退到默认)
-        """
-        normalized_slicer = normalize_slicer_software_id(slicer)
-        return self.slicer_templates.get(normalized_slicer, self.template_file)
-
-
-# Supported slicer software list
-SUPPORTED_SLICERS: list[dict[str, str]] = [
-    {"id": "BambuStudio", "display_name": "BambuStudio"},
-    {"id": "OrcaSlicer", "display_name": "OrcaSlicer"},
-    {"id": "SnapmakerOrca", "display_name": "Snapmaker Orca"},
-    {"id": "ElegooSlicer", "display_name": "ElegooSlicer"},
-]
-
-DEFAULT_SLICER_ID: str = "BambuStudio"
-
-
-PRINTER_PROFILES: dict[str, PrinterProfile] = {
-    "bambu-a1-mini": PrinterProfile(
-        id="bambu-a1-mini", display_name="Bambu Lab A1 mini", brand="Bambu Lab",
-        bed_width=180, bed_depth=180, bed_height=180,
-        nozzle_count=1, is_dual_head=False,
-        template_file="bambu_a1_mini.json",
-        slicer_templates={"OrcaSlicer": "orca_a1_mini.json"},
-    ),
-    "bambu-a1": PrinterProfile(
-        id="bambu-a1", display_name="Bambu Lab A1", brand="Bambu Lab",
-        bed_width=256, bed_depth=256, bed_height=256,
-        nozzle_count=1, is_dual_head=False,
-        template_file="bambu_a1.json",
-        slicer_templates={"OrcaSlicer": "orca_a1.json"},
-    ),
-    "bambu-p1p": PrinterProfile(
-        id="bambu-p1p", display_name="Bambu Lab P1P", brand="Bambu Lab",
-        bed_width=256, bed_depth=256, bed_height=256,
-        nozzle_count=1, is_dual_head=False,
-        template_file="bambu_p1p.json",
-        slicer_templates={"OrcaSlicer": "orca_p1p.json"},
-    ),
-    "bambu-p1s": PrinterProfile(
-        id="bambu-p1s", display_name="Bambu Lab P1S", brand="Bambu Lab",
-        bed_width=256, bed_depth=256, bed_height=250,
-        nozzle_count=1, is_dual_head=False,
-        template_file="bambu_p1s.json",
-        slicer_templates={"OrcaSlicer": "orca_p1s.json"},
-    ),
-    "bambu-x1c": PrinterProfile(
-        id="bambu-x1c", display_name="Bambu Lab X1 Carbon", brand="Bambu Lab",
-        bed_width=256, bed_depth=256, bed_height=256,
-        nozzle_count=1, is_dual_head=False,
-        template_file="bambu_x1c.json",
-        slicer_templates={"OrcaSlicer": "orca_x1c.json"},
-    ),
-    "bambu-x1e": PrinterProfile(
-        id="bambu-x1e", display_name="Bambu Lab X1E", brand="Bambu Lab",
-        bed_width=256, bed_depth=256, bed_height=256,
-        nozzle_count=1, is_dual_head=False,
-        template_file="bambu_x1e.json",
-        slicer_templates={"OrcaSlicer": "orca_x1e.json"},
-    ),
-    "bambu-h2d": PrinterProfile(
-        id="bambu-h2d", display_name="Bambu Lab H2D", brand="Bambu Lab",
-        bed_width=350, bed_depth=320, bed_height=325,
-        nozzle_count=2, is_dual_head=True,
-        template_file="bambu_h2d.json",
-        slicer_templates={"OrcaSlicer": "orca_h2d.json"},
-    ),
-    "bambu-h2d-pro": PrinterProfile(
-        id="bambu-h2d-pro", display_name="Bambu Lab H2D Pro", brand="Bambu Lab",
-        bed_width=350, bed_depth=320, bed_height=325,
-        nozzle_count=2, is_dual_head=True,
-        template_file="bambu_h2d_pro.json",
-        slicer_templates={"OrcaSlicer": "orca_h2d_pro.json"},
-    ),
-    "bambu-h2s": PrinterProfile(
-        id="bambu-h2s", display_name="Bambu Lab H2S", brand="Bambu Lab",
-        bed_width=350, bed_depth=320, bed_height=325,
-        nozzle_count=2, is_dual_head=True,
-        template_file="bambu_h2s.json",
-        slicer_templates={"OrcaSlicer": "orca_h2s.json"},
-    ),
-    "bambu-p2s": PrinterProfile(
-        id="bambu-p2s", display_name="Bambu Lab P2S", brand="Bambu Lab",
-        bed_width=256, bed_depth=256, bed_height=250,
-        nozzle_count=1, is_dual_head=False,
-        template_file="bambu_p2s.json",
-        slicer_templates={"OrcaSlicer": "orca_p2s.json"},
-    ),
-    "bambu-h2c": PrinterProfile(
-        id="bambu-h2c", display_name="Bambu Lab H2C", brand="Bambu Lab",
-        bed_width=350, bed_depth=320, bed_height=325,
-        nozzle_count=2, is_dual_head=True,
-        template_file="bambu_h2c.json",
-        slicer_templates={"OrcaSlicer": "orca_h2c.json"},
-    ),
-    "snapmaker-u1": PrinterProfile(
-        id="snapmaker-u1", display_name="Snapmaker U1", brand="Snapmaker",
-        bed_width=270, bed_depth=270, bed_height=270,
-        nozzle_count=4, is_dual_head=False,
-        template_file="snapmaker_u1.json",
-        slicer_templates={"SnapmakerOrca": "snapmaker_u1.json"},
-    ),
-    "elegoo-cc2": PrinterProfile(
-        id="elegoo-cc2", display_name="Elegoo Centauri Carbon 2", brand="Elegoo",
-        bed_width=256, bed_depth=256, bed_height=256,
-        nozzle_count=1, is_dual_head=False,
-        template_file="elegoo_cc2.json",
-        slicer_templates={"ElegooSlicer": "elegoo_cc2.json"},
-    ),
-}
-
-DEFAULT_PRINTER_ID: str = "bambu-h2d"
-
-
-def get_printer_profile(printer_id: str) -> PrinterProfile:
-    """Get printer profile by ID, falling back to default (H2D) for unknown IDs.
-    根据 ID 获取打印机配置，未知 ID 回退到默认机型 H2D。
-
-    Args:
-        printer_id (str): Printer identifier, e.g. "bambu-h2d". (打印机标识)
-
-    Returns:
-        PrinterProfile: Matching profile or default H2D profile. (匹配的配置或默认 H2D 配置)
-    """
-    normalized_printer_id = normalize_printer_profile_id(printer_id)
-    return PRINTER_PROFILES.get(
-        normalized_printer_id,
-        PRINTER_PROFILES[DEFAULT_PRINTER_ID],
-    )
-
-
-def list_printer_profiles() -> list[PrinterProfile]:
-    """Return all supported printer profiles as a list.
-    返回所有支持的打印机配置列表。
-
-    Returns:
-        list[PrinterProfile]: All registered printer profiles. (所有已注册的打印机配置)
-    """
-    return list(PRINTER_PROFILES.values())
-
-
-# ========== LUT Palette & Metadata ==========
-
-
-@dataclass
-class PaletteEntry:
-    """Palette entry: describes a single base color channel.
-    调色板条目：描述一个基础色通道。
-
-    Attributes:
-        color (str): Color name, e.g. "Red", "Cyan". (颜色名称)
-        material (str): Material name. (材料名称)
-        hex_color (Optional[str]): Hex color value, e.g. "#FF0000". (十六进制颜色值)
-    """
-    color: str
-    material: str = "PLA Basic"
-    hex_color: Optional[str] = None
-
-
-@dataclass
-class LUTMetadata:
-    """LUT metadata: palette + print parameters.
-    LUT 元数据：调色板 + 打印参数。
-
-    Attributes:
-        palette (list[PaletteEntry]): Palette entries. (调色板条目列表)
-        color_mode (Optional[str]): Color mode identifier, e.g. "4-Color (RYBW)". (颜色模式标识)
-        max_color_layers (int): Max color layers in recipe. (最大颜色层数)
-        layer_height_mm (float): Layer height in mm. (层高，毫米)
-        line_width_mm (float): Line width in mm. (线宽，毫米)
-        base_layers (int): Number of base layers. (底板层数)
-        base_channel_idx (int): Base channel index. (底板通道索引)
-        layer_order (str): Print order, "Top2Bottom" or "Bottom2Top". (打印顺序)
-    """
-    palette: list[PaletteEntry] = field(default_factory=list)
-    color_mode: Optional[str] = None
-    max_color_layers: int = 5
-    layer_height_mm: float = 0.08
-    line_width_mm: float = 0.42
-    base_layers: int = 10
-    base_channel_idx: int = 0
-    layer_order: str = "Top2Bottom"
-
-    def to_dict(self) -> dict:
-        """Serialize to a JSON-compatible dictionary.
-        序列化为可 JSON 化的字典。palette 以颜色名为 key 的对象格式输出。
-
-        Returns:
-            dict: JSON-compatible dictionary. (可 JSON 化的字典)
-        """
-        palette_obj: dict = {}
-        for e in self.palette:
-            entry: dict = {"material": e.material}
-            if e.hex_color is not None:
-                entry["hex_color"] = e.hex_color
-            palette_obj[e.color] = entry
-
-        d = {
-            "palette": palette_obj,
-            "max_color_layers": self.max_color_layers,
-            "layer_height_mm": self.layer_height_mm,
-            "line_width_mm": self.line_width_mm,
-            "base_layers": self.base_layers,
-            "base_channel_idx": self.base_channel_idx,
-            "layer_order": self.layer_order,
-        }
-        if self.color_mode is not None:
-            d["color_mode"] = self.color_mode
-        return d
-
-    @classmethod
-    def from_dict(cls, data: dict) -> "LUTMetadata":
-        """Deserialize from a dictionary. Missing fields use defaults.
-        从字典反序列化。支持新对象格式和旧数组格式的 palette。
-
-        Args:
-            data (dict): Source dictionary. (源字典)
-
-        Returns:
-            LUTMetadata: Deserialized metadata instance. (反序列化的元数据实例)
-        """
-        palette_raw = data.get("palette", {})
-        palette: list[PaletteEntry] = []
-
-        if isinstance(palette_raw, dict):
-            # 新格式: {"White": {"material": "PLA Basic", "hex_color": "#FFF"}, ...}
-            for color_name, props in palette_raw.items():
-                if isinstance(props, dict):
-                    palette.append(PaletteEntry(
-                        color=str(color_name),
-                        material=str(props.get("material", "PLA Basic")),
-                        hex_color=props.get("hex_color"),
-                    ))
-        elif isinstance(palette_raw, list):
-            # 旧格式兼容: [{"color": "White", "material": "PLA Basic"}, ...]
-            for item in palette_raw:
-                if isinstance(item, dict) and "color" in item and "material" in item:
-                    palette.append(PaletteEntry(
-                        color=str(item["color"]),
-                        material=str(item["material"]),
-                        hex_color=item.get("hex_color"),
-                    ))
-
-        return cls(
-            palette=palette,
-            color_mode=data.get("color_mode"),
-            max_color_layers=int(data.get("max_color_layers", 5)),
-            layer_height_mm=float(data.get("layer_height_mm", 0.08)),
-            line_width_mm=float(data.get("line_width_mm", 0.42)),
-            base_layers=int(data.get("base_layers", 10)),
-            base_channel_idx=int(data.get("base_channel_idx", 0)),
-            layer_order=str(data.get("layer_order", "Top2Bottom")),
-        )
-
-    @staticmethod
-    def validate_color_name(name: str) -> bool:
-        """Validate that a color name is non-empty after stripping whitespace.
-        校验颜色名称非空（strip 后不为空字符串）。
-
-        Args:
-            name (str): Color name to validate. (待校验的颜色名称)
-
-        Returns:
-            bool: True if valid, False otherwise. (合法返回 True，否则 False)
-        """
-        return isinstance(name, str) and len(name.strip()) > 0

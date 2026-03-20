@@ -7,7 +7,7 @@ import KeychainLoopSettings from '../sections/KeychainLoopSettings';
 
 export default function KeychainLoopWidgetContent() {
   return (
-    <div className="p-3">
+    <div className="overflow-y-auto max-h-[60vh] p-3">
       <KeychainLoopSettings />
     </div>
   );

@@ -24,11 +24,6 @@ import {
   cropImage as apiCropImage,
   convertBatch as apiConvertBatch,
   replaceColor as apiReplaceColor,
-  detectRegion as apiDetectRegion,
-  regionReplace as apiRegionReplace,
-  resetReplacements as apiResetReplacements,
-  autoDetectColors as apiAutoDetectColors,
-  uploadLut as apiUploadLut,
 } from "../api/converter";
 import type { LutColorEntry, LutInfo } from "../api/types";
 import {
@@ -37,47 +32,13 @@ import {
 } from "../utils/colorUtils";
 import { useSettingsStore } from "./settingsStore";
 
-// ========== Selection Mode Types ==========
-
-export type SelectionMode =
-  | "select-all"
-  | "current"
-  | "multi-select"
-  | "region";
-
-export interface RegionData {
-  regionId: string;
-  colorHex: string;
-  pixelCount: number;
-  previewUrl: string;
-  contours?: number[][][] | null;
-}
-
-// ========== Pending Replacement Types ==========
-
-export interface PendingReplacement {
-  sourceHex: string; // 原色 hex（不带 #）
-  targetHex: string; // 目标色 hex（不带 #）
-  mode: SelectionMode; // 触发时的选择模式
-  sourceColors?: string[]; // multi-select 模式下的多个源色
-}
-
 // ========== Helpers ==========
 
 export function clampValue(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
 }
 
-const VALID_IMAGE_TYPES = new Set([
-  "image/jpeg",
-  "image/png",
-  "image/svg+xml",
-  "image/webp",
-  "image/heic",
-  "image/heif",
-]);
-
-export const ACCEPT_IMAGE_FORMATS = Array.from(VALID_IMAGE_TYPES).join(",");
+const VALID_IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/svg+xml"]);
 
 export function isValidImageType(mimeType: string): boolean {
   return VALID_IMAGE_TYPES.has(mimeType);
@@ -108,8 +69,7 @@ export interface ConverterState {
   bg_tol: number;
   quantize_colors: number;
   enable_cleanup: boolean;
-  hue_enable: boolean;
-  chroma_gate: number;
+  hue_weight: number;
   separate_backing: boolean;
 
   // 挂件环
@@ -117,10 +77,6 @@ export interface ConverterState {
   loop_width: number;
   loop_length: number;
   loop_hole: number;
-  loop_angle: number;              // -180 到 180 度，默认 0
-  loop_offset_x: number;           // -20 到 20 mm，默认 0
-  loop_offset_y: number;           // -20 到 20 mm，默认 0
-  loop_position_preset: string;    // 默认 "top-center"
 
   // 浮雕
   enable_relief: boolean;
@@ -166,8 +122,6 @@ export interface ConverterState {
   preview_width_mm: number | null; // 预览时的原始宽度
   preview_height_mm: number | null; // 预览时的原始高度
   preview_spacer_thick: number | null; // 预览时的原始厚度
-  previewPixelWidth: number | null; // 预览图像像素宽度（用于 3D→像素坐标转换）
-  previewPixelHeight: number | null; // 预览图像像素高度（用于 3D→像素坐标转换）
 
   // 模型边界（供 KeychainRing3D 定位）
   modelBounds: {
@@ -182,9 +136,6 @@ export interface ConverterState {
   enableCrop: boolean;
   cropModalOpen: boolean;
   isCropping: boolean;
-
-  // 自动检测颜色
-  autoDetectColorsLoading: boolean;
 
   // UI 状态
   isLoading: boolean;
@@ -220,25 +171,6 @@ export interface ConverterState {
   // 切片集成：3MF 路径
   threemfDiskPath: string | null;
   downloadUrl: string | null;
-
-  // 分层预览
-  layerImages: { layer_index: number; name: string; url: string }[];
-  layerImagesLoading: boolean;
-  layerImagesOpen: boolean;
-
-  // 颜色选择模式
-  selectionMode: SelectionMode;
-  selectedColors: Set<string>;
-  regionData: RegionData | null;
-
-  // 待确认颜色替换
-  pendingReplacement: PendingReplacement | null;
-
-  // 区域替换计数（current 模式不走 colorRemapMap，需要独立计数以启用清除按钮）
-  regionReplacementCount: number;
-
-  // 当前图片是否已手动点击过预览按钮（自动预览的前置条件）
-  hasManualPreview: boolean;
 }
 
 // ========== Actions Interface ==========
@@ -259,17 +191,12 @@ export interface ConverterActions {
   setBgTol: (tol: number) => void;
   setQuantizeColors: (colors: number) => void;
   setEnableCleanup: (enabled: boolean) => void;
-  setHueEnable: (enabled: boolean) => void;
-  setChromaGate: (gate: number) => void;
+  setHueWeight: (weight: number) => void;
   setSeparateBacking: (enabled: boolean) => void;
   setAddLoop: (enabled: boolean) => void;
   setLoopWidth: (width: number) => void;
   setLoopLength: (length: number) => void;
   setLoopHole: (hole: number) => void;
-  setLoopAngle: (angle: number) => void;
-  setLoopOffsetX: (x: number) => void;
-  setLoopOffsetY: (y: number) => void;
-  setLoopPositionPreset: (preset: string) => void;
   setEnableRelief: (enabled: boolean) => void;
   setColorHeightMap: (map: Record<string, number>) => void;
   setHeightmapMaxHeight: (height: number) => void;
@@ -288,17 +215,6 @@ export interface ConverterActions {
   // 调色板与选择
   setSelectedColor: (hex: string | null) => void;
   setPalette: (entries: PaletteEntry[]) => void;
-
-  // 颜色选择模式
-  setSelectionMode: (mode: SelectionMode) => void;
-  toggleColorInSelection: (hex: string) => void;
-  applyBatchColorRemap: (newHex: string) => Promise<void>;
-  detectRegion: (x: number, y: number) => Promise<void>;
-  applyRegionReplace: (newHex: string) => Promise<void>;
-
-  // 待确认颜色替换
-  setPendingReplacement: (pending: PendingReplacement | null) => void;
-  confirmReplacement: () => Promise<void>;
 
   // 颜色替换（纯前端）
   applyColorRemap: (origHex: string, newHex: string) => void;
@@ -321,7 +237,6 @@ export interface ConverterActions {
   setModelBounds: (bounds: ConverterState["modelBounds"]) => void;
 
   // API 操作
-  uploadLut: (file: File) => Promise<void>;
   fetchLutList: () => Promise<void>;
   fetchLutColors: (lutName: string) => Promise<void>;
   submitPreview: () => Promise<void>;
@@ -337,17 +252,12 @@ export interface ConverterActions {
     height: number,
   ) => Promise<void>;
 
-  // 自动检测颜色
-  autoDetectColors: () => Promise<void>;
-
   // 批量模式
+  setBatchMode: (enabled: boolean) => void;
   addBatchFiles: (files: File[]) => void;
   removeBatchFile: (index: number) => void;
   clearBatchFiles: () => void;
   submitBatch: () => Promise<void>;
-
-  // 统一文件选择（auto-batch-multiselect）
-  handleFilesSelect: (files: File[]) => void;
 
   // 颜色替换预览
   submitReplacePreview: () => Promise<void>;
@@ -356,17 +266,9 @@ export interface ConverterActions {
   // 完整流水线（preview → generate）
   submitFullPipeline: () => Promise<string | null>;
 
-  // 自由色
-  toggleFreeColor: (hex: string) => void;
-  clearFreeColors: () => void;
-
   // UI 状态
   setError: (error: string | null) => void;
   clearError: () => void;
-
-  // 分层预览
-  fetchLayerImages: () => Promise<void>;
-  setLayerImagesOpen: (open: boolean) => void;
 }
 
 // ========== localStorage Helpers ==========
@@ -401,26 +303,21 @@ const DEFAULT_STATE: ConverterState = {
   target_height_mm: 60,
   spacer_thick: 1.2,
   structure_mode: StructureModeEnum.DOUBLE_SIDED,
-  color_mode: ColorModeEnum.FOUR_COLOR_RYBW,
+  color_mode: ColorModeEnum.FOUR_COLOR,
   modeling_mode: ModelingModeEnum.HIGH_FIDELITY,
   auto_bg: false,
   bg_tol: 40,
   quantize_colors: 48,
   enable_cleanup: true,
-  hue_enable: false,
-  chroma_gate: 15,
+  hue_weight: 0.0,
   separate_backing: false,
   add_loop: false,
   loop_width: 4.0,
   loop_length: 8.0,
   loop_hole: 2.5,
-  loop_angle: 0,
-  loop_offset_x: 0,
-  loop_offset_y: 0,
-  loop_position_preset: "top-center",
   enable_relief: false,
   color_height_map: {},
-  heightmap_max_height: 3.0,
+  heightmap_max_height: 5.0,
   enable_outline: false,
   outline_width: 2.0,
   enable_cloisonne: false,
@@ -442,13 +339,10 @@ const DEFAULT_STATE: ConverterState = {
   preview_width_mm: null,
   preview_height_mm: null,
   preview_spacer_thick: null,
-  previewPixelWidth: null,
-  previewPixelHeight: null,
   modelBounds: null,
   enableCrop: loadEnableCrop(),
   cropModalOpen: false,
   isCropping: false,
-  autoDetectColorsLoading: false,
   isLoading: false,
   error: null,
   previewImageUrl: null,
@@ -470,15 +364,6 @@ const DEFAULT_STATE: ConverterState = {
   originalPreviewUrl: null,
   threemfDiskPath: null,
   downloadUrl: null,
-  layerImages: [],
-  layerImagesLoading: false,
-  layerImagesOpen: false,
-  selectionMode: "current" as SelectionMode,
-  selectedColors: new Set<string>(),
-  regionData: null,
-  pendingReplacement: null,
-  regionReplacementCount: 0,
-  hasManualPreview: false,
 };
 
 // ========== Preview AbortController ==========
@@ -519,7 +404,6 @@ export const useConverterStore = create<ConverterState & ConverterActions>(
         imageFile: file,
         imagePreviewUrl: previewUrl,
         cropModalOpen: shouldOpenCrop,
-        hasManualPreview: false,
       });
     },
 
@@ -616,15 +500,9 @@ export const useConverterStore = create<ConverterState & ConverterActions>(
         threemfDiskPath: null,
         downloadUrl: null,
       }),
-    setHueEnable: (enabled: boolean) =>
+    setHueWeight: (weight: number) =>
       set({
-        hue_enable: enabled,
-        threemfDiskPath: null,
-        downloadUrl: null,
-      }),
-    setChromaGate: (gate: number) =>
-      set({
-        chroma_gate: clampValue(gate, 0, 50),
+        hue_weight: clampValue(weight, 0, 1),
         threemfDiskPath: null,
         downloadUrl: null,
       }),
@@ -639,18 +517,9 @@ export const useConverterStore = create<ConverterState & ConverterActions>(
     setLoopLength: (length: number) =>
       set({ loop_length: clampValue(length, 4, 15) }),
     setLoopHole: (hole: number) => set({ loop_hole: clampValue(hole, 1, 5) }),
-    setLoopAngle: (angle: number) =>
-      set({ loop_angle: clampValue(angle, -180, 180) }),
-    setLoopOffsetX: (x: number) =>
-      set({ loop_offset_x: clampValue(x, -200, 200) }),
-    setLoopOffsetY: (y: number) =>
-      set({ loop_offset_y: clampValue(y, -200, 200) }),
-    setLoopPositionPreset: (preset: string) => {
-      set({ loop_position_preset: preset });
-    },
 
     // --- 浮雕（互斥） ---
-    setEnableRelief: (enabled: boolean) => {
+    setEnableRelief: (enabled: boolean) =>
       set((state) => {
         const updates: Partial<ConverterState> = {
           enable_relief: enabled,
@@ -663,28 +532,22 @@ export const useConverterStore = create<ConverterState & ConverterActions>(
           downloadUrl: null,
         };
         // Requirement 6.5: When switching enable_relief from false to true,
-        // auto-initialize color_height_map ONLY if it is currently empty.
-        // Use computeAutoHeightMap to assign different heights based on
-        // luminance, so the relief effect is visible immediately.
+        // auto-initialize color_height_map ONLY if it is currently empty
         if (
           enabled &&
           !state.enable_relief &&
           state.palette.length > 0 &&
           Object.keys(state.color_height_map).length === 0
         ) {
-          const mode =
-            state.autoHeightMode === "use-heightmap"
-              ? "darker-higher"
-              : (state.autoHeightMode as "darker-higher" | "lighter-higher");
-          updates.color_height_map = computeAutoHeightMap(
-            state.palette,
-            mode,
-            state.heightmap_max_height,
-          );
+          const defaultHeight = state.heightmap_max_height * 0.5;
+          const initMap: Record<string, number> = {};
+          for (const entry of state.palette) {
+            initMap[entry.matched_hex] = defaultHeight;
+          }
+          updates.color_height_map = initMap;
         }
         return updates;
-      });
-    },
+      }),
     setColorHeightMap: (map: Record<string, number>) =>
       set({ color_height_map: map }),
     setHeightmapMaxHeight: (height: number) => {
@@ -746,232 +609,6 @@ export const useConverterStore = create<ConverterState & ConverterActions>(
     setSelectedColor: (hex: string | null) => set({ selectedColor: hex }),
     setPalette: (entries: PaletteEntry[]) => set({ palette: entries }),
 
-    // --- 颜色选择模式 ---
-    // current: 单区域替换（3D 预览点击 → region-detect → 只替换该连通区域）
-    // select-all: 全局单色替换（选一个颜色 → 全图该颜色都替换）
-    // multi-select: 多选批量替换（选多个颜色 → 批量替换）
-    // region: 保留的局部区域模式
-    setSelectionMode: (mode: SelectionMode) => {
-      switch (mode) {
-        case "current":
-          // 当前模式 = 单区域替换，清空多选，清空 selectedColor，准备 region-detect
-          set({
-            selectionMode: mode,
-            selectedColors: new Set<string>(),
-            selectedColor: null,
-            regionData: null,
-          });
-          break;
-        case "select-all":
-          // 全选模式 = 全局单色替换，清空多选，保留 selectedColor 用于全局替换
-          set({ selectionMode: mode, selectedColors: new Set<string>() });
-          break;
-        case "multi-select":
-          // 多选模式 = 可复选多个颜色，清空多选集合等待用户逐个选择
-          set({ selectionMode: mode, selectedColors: new Set<string>() });
-          break;
-        case "region":
-          set({
-            selectionMode: mode,
-            selectedColors: new Set<string>(),
-            selectedColor: null,
-            regionData: null,
-          });
-          break;
-      }
-    },
-
-    // --- 多选模式颜色切换 ---
-    toggleColorInSelection: (hex: string) => {
-      set((state) => {
-        const next = new Set(state.selectedColors);
-        if (next.has(hex)) {
-          next.delete(hex);
-        } else {
-          next.add(hex);
-        }
-        return { selectedColors: next };
-      });
-    },
-
-    // --- 批量颜色替换 ---
-    applyBatchColorRemap: async (newHex: string) => {
-      const state = _get();
-      const colors = Array.from(state.selectedColors);
-      if (colors.length === 0) return;
-
-      // 1. 快照当前 colorRemapMap，作为单条记录推入 remapHistory
-      const snapshot = { ...state.colorRemapMap };
-      const newHistory = [...state.remapHistory, snapshot];
-
-      // 2. 批量更新 colorRemapMap
-      const newMap = { ...state.colorRemapMap };
-      for (const hex of colors) {
-        newMap[hex] = newHex;
-      }
-      set({
-        colorRemapMap: newMap,
-        remapHistory: newHistory,
-        replacePreviewLoading: true,
-        threemfDiskPath: null,
-        downloadUrl: null,
-      });
-
-      // 3. 依次调用后端替换
-      try {
-        for (const hex of colors) {
-          await _get().submitSingleReplace(hex, newHex);
-        }
-        set({ replacePreviewLoading: false });
-      } catch {
-        // 回滚整个批量操作
-        set({
-          colorRemapMap: snapshot,
-          remapHistory: state.remapHistory,
-          replacePreviewLoading: false,
-          error: "批量颜色替换失败",
-        });
-      }
-    },
-
-    // --- 连通区域检测 ---
-    detectRegion: async (x: number, y: number) => {
-      const state = _get();
-      if (!state.sessionId) {
-        set({ error: "请先预览图片" });
-        return;
-      }
-      try {
-        const response = await apiDetectRegion(state.sessionId, x, y);
-        set({
-          regionData: {
-            regionId: response.region_id,
-            colorHex: response.color_hex,
-            pixelCount: response.pixel_count,
-            previewUrl: response.preview_url,
-            contours: response.contours ?? null,
-          },
-          selectedColor: response.color_hex.replace(/^#/, ""),
-          previewImageUrl: `http://localhost:8000${response.preview_url}`,
-        });
-      } catch (err) {
-        set({
-          error: err instanceof Error ? err.message : "连通区域检测失败",
-        });
-      }
-    },
-
-    // --- 连通区域替换 ---
-    applyRegionReplace: async (newHex: string) => {
-      const state = _get();
-      if (!state.sessionId) {
-        set({ error: "请先预览图片" });
-        return;
-      }
-      if (!state.regionData) {
-        set({ error: "请先选择一个连通区域" });
-        return;
-      }
-      set({ replacePreviewLoading: true, error: null });
-      try {
-        const response = await apiRegionReplace(state.sessionId, `#${newHex}`);
-        const updates: Partial<ConverterState> = {
-          previewImageUrl: `http://localhost:8000${response.preview_url}`,
-          regionData: null,
-          replacePreviewLoading: false,
-          threemfDiskPath: null,
-          downloadUrl: null,
-        };
-
-        // 更新 3D 预览 GLB URL（仅当后端返回非空 URL 时）
-        if (response.preview_glb_url) {
-          updates.previewGlbUrl = `http://localhost:8000${response.preview_glb_url}`;
-        }
-        // preview_glb_url 为 null 时不清除现有 previewGlbUrl
-
-        // 更新颜色轮廓数据（仅当后端返回非空数据时）
-        if (response.color_contours) {
-          updates.colorContours = response.color_contours;
-        }
-
-        // 不递增 regionReplacementCount（已在 confirmReplacement 中处理）
-        set(updates);
-      } catch (err) {
-        set({
-          replacePreviewLoading: false,
-          error: err instanceof Error ? err.message : "区域颜色替换失败",
-        });
-      }
-    },
-
-    // --- 待确认颜色替换 ---
-    setPendingReplacement: (pending: PendingReplacement | null) => {
-      set({ pendingReplacement: pending });
-    },
-
-    confirmReplacement: async () => {
-      const state = _get();
-      const pending = state.pendingReplacement;
-      if (!pending) return;
-
-      // 清除 pending 状态
-      set({ pendingReplacement: null });
-
-      switch (pending.mode) {
-        case "select-all":
-          // 乐观更新 colorRemapMap → 3D 预览即时响应
-          _get().applyColorRemap(pending.sourceHex, pending.targetHex);
-          break;
-        case "multi-select": {
-          // 使用 pending 中保存的 sourceColors，而非 state.selectedColors
-          const colors = pending.sourceColors ?? [];
-          if (colors.length === 0) break;
-          const curState = _get();
-          const snapshot = { ...curState.colorRemapMap };
-          const newHistory = [...curState.remapHistory, snapshot];
-          const newMap = { ...curState.colorRemapMap };
-          for (const hex of colors) {
-            newMap[hex] = pending.targetHex;
-          }
-          set({
-            colorRemapMap: newMap,
-            remapHistory: newHistory,
-            replacePreviewLoading: true,
-            threemfDiskPath: null,
-            downloadUrl: null,
-          });
-          try {
-            for (const hex of colors) {
-              await _get().submitSingleReplace(hex, pending.targetHex);
-            }
-            set({ replacePreviewLoading: false });
-          } catch {
-            set({
-              colorRemapMap: snapshot,
-              remapHistory: curState.remapHistory,
-              replacePreviewLoading: false,
-              error: "批量颜色替换失败",
-            });
-          }
-          break;
-        }
-        case "current":
-        case "region": {
-          // 不更新 colorRemapMap（避免 3D 预览全局变色）
-          // 仅递增 regionReplacementCount 并调用后端区域替换
-          const curState = _get();
-          set({
-            regionReplacementCount: curState.regionReplacementCount + 1,
-          });
-          // 调用后端 region-replace → 2D 预览精确区域替换
-          if (curState.regionData) {
-            await _get().applyRegionReplace(pending.targetHex);
-          }
-          break;
-        }
-      }
-    },
-
     // --- 颜色替换（纯前端） ---
     applyColorRemap: (origHex: string, newHex: string) => {
       const state = _get();
@@ -1015,52 +652,22 @@ export const useConverterStore = create<ConverterState & ConverterActions>(
     },
 
     clearAllRemaps: () => {
-      const state = _get();
+      const originalUrl = _get().originalPreviewUrl;
       set({
         colorRemapMap: {},
         remapHistory: [],
         threemfDiskPath: null,
         downloadUrl: null,
-        regionData: null,
-        regionReplacementCount: 0,
+        ...(originalUrl ? { previewImageUrl: originalUrl } : {}),
       });
-      // 调用后端清空 replacement_regions 并从原始 matched_rgb 重新生成预览和 GLB
-      // 不能依赖 originalPreviewUrl，因为 region-replace 会修改后端缓存的 matched_rgb
-      if (state.sessionId) {
-        apiResetReplacements(state.sessionId)
-          .then((res) => {
-            const url = `http://localhost:8000${res.preview_url}`;
-            const updates: Partial<ConverterState> = {
-              previewImageUrl: url,
-              originalPreviewUrl: url,
-            };
-            // 后端 reset-replacements 现在也会重新生成 GLB
-            if (res.preview_glb_url) {
-              updates.previewGlbUrl = `http://localhost:8000${res.preview_glb_url}`;
-            }
-            set(updates);
-          })
-          .catch(() => {
-            // 后端清空失败时回退到 originalPreviewUrl
-            const fallback = _get().originalPreviewUrl;
-            if (fallback) {
-              set({ previewImageUrl: fallback });
-            }
-          });
-      } else {
-        // 无 session 时直接回退到 originalPreviewUrl
-        const originalUrl = state.originalPreviewUrl;
-        if (originalUrl) {
-          set({ previewImageUrl: originalUrl });
-        }
-      }
     },
 
     // --- 浮雕高度 ---
     updateColorHeight: (hex: string, heightMm: number) => {
-      set((state) => ({
+      const state = _get();
+      set({
         color_height_map: { ...state.color_height_map, [hex]: heightMm },
-      }));
+      });
     },
 
     applyAutoHeight: (mode: "darker-higher" | "lighter-higher") => {
@@ -1125,22 +732,6 @@ export const useConverterStore = create<ConverterState & ConverterActions>(
     },
 
     // --- API 操作 ---
-    uploadLut: async (file: File) => {
-      set({ lutListLoading: true, error: null });
-      try {
-        const res = await apiUploadLut(file);
-        // 上传成功后刷新列表并选中新 LUT
-        await _get().fetchLutList();
-        set({ lut_name: res.name });
-      } catch (err) {
-        set({
-          error: err instanceof Error ? err.message : "LUT 上传失败",
-        });
-      } finally {
-        set({ lutListLoading: false });
-      }
-    },
-
     fetchLutList: async () => {
       set({ lutListLoading: true });
       try {
@@ -1234,8 +825,7 @@ export const useConverterStore = create<ConverterState & ConverterActions>(
             modeling_mode: state.modeling_mode,
             quantize_colors: state.quantize_colors,
             enable_cleanup: state.enable_cleanup,
-            hue_weight: state.hue_enable ? 0.5 : 0.0,
-            chroma_gate: state.hue_enable ? state.chroma_gate : 0,
+            hue_weight: state.hue_weight,
             is_dark: useSettingsStore.getState().theme === "dark",
           },
           signal,
@@ -1262,9 +852,6 @@ export const useConverterStore = create<ConverterState & ConverterActions>(
           preview_width_mm: state.target_width_mm,
           preview_height_mm: state.target_height_mm,
           preview_spacer_thick: state.spacer_thick,
-          previewPixelWidth: response.dimensions?.width ?? null,
-          previewPixelHeight: response.dimensions?.height ?? null,
-          hasManualPreview: true,
         });
       } catch (err) {
         // Ignore aborted requests (user started a new preview)
@@ -1323,8 +910,7 @@ export const useConverterStore = create<ConverterState & ConverterActions>(
           modeling_mode: state.modeling_mode,
           quantize_colors: state.quantize_colors,
           enable_cleanup: state.enable_cleanup,
-          hue_weight: state.hue_enable ? 0.5 : 0.0,
-          chroma_gate: state.hue_enable ? state.chroma_gate : 0,
+          hue_weight: state.hue_weight,
           spacer_thick: state.spacer_thick,
           structure_mode: state.structure_mode,
           separate_backing: state.separate_backing,
@@ -1332,10 +918,6 @@ export const useConverterStore = create<ConverterState & ConverterActions>(
           loop_width: state.loop_width,
           loop_length: state.loop_length,
           loop_hole: state.loop_hole,
-          loop_angle: state.loop_angle,
-          loop_offset_x: state.loop_offset_x,
-          loop_offset_y: state.loop_offset_y,
-          loop_position_preset: state.loop_position_preset,
           enable_relief: state.enable_relief,
           height_mode: state.enable_relief
             ? state.autoHeightMode === "use-heightmap"
@@ -1359,11 +941,8 @@ export const useConverterStore = create<ConverterState & ConverterActions>(
               : undefined,
           free_color_set:
             state.free_color_set.size > 0
-              ? Array.from(state.free_color_set).map((h) => `#${h}`)
+              ? Array.from(state.free_color_set)
               : undefined,
-          printer_id: useSettingsStore.getState().printerModel,
-          slicer: useSettingsStore.getState().slicerSoftware,
-          use_cached_matched_rgb: state.regionReplacementCount > 0,
         });
         // 后端返回 download_url 和可选的 preview_3d_url
         // preview_3d_url 指向 GLB 文件（Three.js 可加载）
@@ -1421,7 +1000,7 @@ export const useConverterStore = create<ConverterState & ConverterActions>(
         // Fetch cropped image as Blob to create a new File
         const blob = await fetch(croppedFullUrl).then((r) => r.blob());
         const croppedFile = new File([blob], state.imageFile.name, {
-          type: "image/png",
+          type: blob.type || state.imageFile.type,
         });
 
         // Revoke previous preview URL
@@ -1450,34 +1029,15 @@ export const useConverterStore = create<ConverterState & ConverterActions>(
       }
     },
 
-    // --- 自动检测颜色 ---
-    autoDetectColors: async () => {
-      const state = _get();
-      if (!state.imageFile) {
-        set({ error: "请先上传图片" });
-        return;
-      }
-      set({ autoDetectColorsLoading: true });
-      try {
-        const result = await apiAutoDetectColors(
-          state.imageFile,
-          state.target_width_mm,
-        );
-        set({
-          quantize_colors: clampValue(result.recommended, 8, 256),
-          autoDetectColorsLoading: false,
-          threemfDiskPath: null,
-          downloadUrl: null,
-        });
-      } catch (err) {
-        set({
-          autoDetectColorsLoading: false,
-          error: err instanceof Error ? err.message : "自动检测失败",
-        });
+    // --- 批量模式 ---
+    setBatchMode: (enabled: boolean) => {
+      if (enabled) {
+        set({ batchMode: true });
+      } else {
+        set({ batchMode: false, batchFiles: [], batchResult: null });
       }
     },
 
-    // --- 批量模式 ---
     addBatchFiles: (files: File[]) => {
       const valid = files.filter((f) => isValidImageType(f.type));
       if (valid.length === 0) return;
@@ -1485,132 +1045,12 @@ export const useConverterStore = create<ConverterState & ConverterActions>(
     },
 
     removeBatchFile: (index: number) => {
-      const state = _get();
-      const remaining = state.batchFiles.filter((_, i) => i !== index);
-
-      if (remaining.length === 1) {
-        // Auto-downgrade: move last file to imageFile, exit BatchMode
-        const lastFile = remaining[0];
-        const previewUrl = URL.createObjectURL(lastFile);
-        const img = new Image();
-        img.onload = () => {
-          set({ aspectRatio: img.naturalWidth / img.naturalHeight });
-        };
-        img.src = previewUrl;
-
-        set({
-          batchFiles: [],
-          imageFile: lastFile,
-          imagePreviewUrl: previewUrl,
-          batchMode: false,
-          hasManualPreview: false,
-        });
-      } else if (remaining.length === 0) {
-        // All files removed: clear all image state
-        const prev = state.imagePreviewUrl;
-        if (prev) URL.revokeObjectURL(prev);
-
-        set({
-          batchFiles: [],
-          imageFile: null,
-          imagePreviewUrl: null,
-          aspectRatio: null,
-          previewImageUrl: null,
-          sessionId: null,
-          previewGlbUrl: null,
-          batchMode: false,
-          hasManualPreview: false,
-        });
-      } else {
-        // Still in BatchMode with multiple files
-        set({ batchFiles: remaining });
-      }
+      set((state) => ({
+        batchFiles: state.batchFiles.filter((_, i) => i !== index),
+      }));
     },
 
     clearBatchFiles: () => set({ batchFiles: [] }),
-
-    handleFilesSelect: (files: File[]) => {
-      // Filter out falsy values and invalid formats
-      const validFiles = files.filter((f) => f && isValidImageType(f.type));
-      if (validFiles.length === 0) return;
-
-      const state = _get();
-      const inBatchMode = state.batchFiles.length > 0;
-
-      // Already in BatchMode → append new files
-      if (inBatchMode) {
-        set({
-          batchFiles: [...state.batchFiles, ...validFiles],
-          batchMode: true,
-        });
-        return;
-      }
-
-      if (validFiles.length === 1) {
-        if (state.imageFile) {
-          // SingleMode: replace imageFile, reset preview state
-          const prev = state.imagePreviewUrl;
-          if (prev) URL.revokeObjectURL(prev);
-
-          const previewUrl = URL.createObjectURL(validFiles[0]);
-          const img = new Image();
-          img.onload = () => {
-            set({ aspectRatio: img.naturalWidth / img.naturalHeight });
-          };
-          img.src = previewUrl;
-
-          set({
-            imageFile: validFiles[0],
-            imagePreviewUrl: previewUrl,
-            previewImageUrl: null,
-            sessionId: null,
-            previewGlbUrl: null,
-            batchMode: false,
-            hasManualPreview: false,
-            cropModalOpen: state.enableCrop,
-          });
-        } else {
-          // Empty state: set imageFile, enter SingleMode
-          const previewUrl = URL.createObjectURL(validFiles[0]);
-          const img = new Image();
-          img.onload = () => {
-            set({ aspectRatio: img.naturalWidth / img.naturalHeight });
-          };
-          img.src = previewUrl;
-
-          set({
-            imageFile: validFiles[0],
-            imagePreviewUrl: previewUrl,
-            batchMode: false,
-            hasManualPreview: false,
-            cropModalOpen: state.enableCrop,
-          });
-        }
-        return;
-      }
-
-      // validFiles.length >= 2: enter BatchMode
-      // Merge existing imageFile (if any) into batchFiles
-      const allFiles = state.imageFile
-        ? [state.imageFile, ...validFiles]
-        : [...validFiles];
-
-      // Revoke previous preview URL
-      const prev = state.imagePreviewUrl;
-      if (prev) URL.revokeObjectURL(prev);
-
-      set({
-        batchFiles: allFiles,
-        imageFile: null,
-        imagePreviewUrl: null,
-        aspectRatio: null,
-        previewImageUrl: null,
-        sessionId: null,
-        previewGlbUrl: null,
-        batchMode: true,
-        hasManualPreview: false,
-      });
-    },
 
     submitBatch: async () => {
       const state = _get();
@@ -1627,8 +1067,7 @@ export const useConverterStore = create<ConverterState & ConverterActions>(
           modeling_mode: state.modeling_mode,
           quantize_colors: state.quantize_colors,
           enable_cleanup: state.enable_cleanup,
-          hue_weight: state.hue_enable ? 0.5 : 0.0,
-          chroma_gate: state.hue_enable ? state.chroma_gate : 0,
+          hue_weight: state.hue_weight,
         };
         const result = await apiConvertBatch(state.batchFiles, params);
         set({ batchResult: result, batchLoading: false });
@@ -1729,53 +1168,8 @@ export const useConverterStore = create<ConverterState & ConverterActions>(
       return await _get().submitGenerate();
     },
 
-    // --- 自由色 ---
-    toggleFreeColor: (hex: string) => {
-      set((state) => {
-        const next = new Set(state.free_color_set);
-        if (next.has(hex)) {
-          next.delete(hex);
-        } else {
-          next.add(hex);
-        }
-        return {
-          free_color_set: next,
-          threemfDiskPath: null,
-          downloadUrl: null,
-        };
-      });
-    },
-
-    clearFreeColors: () => {
-      set({
-        free_color_set: new Set(),
-        threemfDiskPath: null,
-        downloadUrl: null,
-      });
-    },
-
     // --- UI 状态 ---
     setError: (error: string | null) => set({ error }),
     clearError: () => set({ error: null }),
-
-    // --- 分层预览 ---
-    fetchLayerImages: async () => {
-      const { sessionId } = _get();
-      if (!sessionId) return;
-      set({ layerImagesLoading: true });
-      try {
-        const { fetchLayerImages: apiFetch } = await import("../api/converter");
-        const res = await apiFetch(sessionId);
-        set({
-          layerImages: res.layers,
-          layerImagesLoading: false,
-          layerImagesOpen: true,
-        });
-      } catch (e) {
-        console.error("fetchLayerImages failed:", e);
-        set({ layerImagesLoading: false });
-      }
-    },
-    setLayerImagesOpen: (open: boolean) => set({ layerImagesOpen: open }),
   }),
 );

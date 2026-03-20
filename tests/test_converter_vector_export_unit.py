@@ -48,7 +48,7 @@ class TestVectorBranchExport:
     """Confirm the vector conversion path goes through the unified
     Bambu metadata exporter rather than the plain trimesh export."""
 
-    @patch("utils.bambu_3mf_writer.export_scene_with_bambu_metadata")
+    @patch("core.converter.export_scene_with_bambu_metadata")
     @patch("core.vector_engine.VectorProcessor")
     def test_bambu_export_called(self, MockVP, mock_bambu_export, tmp_path):
         """export_scene_with_bambu_metadata should be invoked for SVG vector mode."""
@@ -90,7 +90,7 @@ class TestVectorBranchExport:
 
         mock_bambu_export.assert_called_once()
 
-    @patch("utils.bambu_3mf_writer.export_scene_with_bambu_metadata")
+    @patch("core.converter.export_scene_with_bambu_metadata")
     @patch("core.vector_engine.VectorProcessor")
     def test_slot_names_match_scene_geometry(self, MockVP, mock_bambu_export, tmp_path):
         """slot_names passed to exporter should equal list(scene.geometry.keys())."""
@@ -133,7 +133,7 @@ class TestVectorBranchExport:
         _, kwargs = mock_bambu_export.call_args
         assert kwargs["slot_names"] == ["White", "Cyan", "Board"]
 
-    @patch("utils.bambu_3mf_writer.export_scene_with_bambu_metadata")
+    @patch("core.converter.export_scene_with_bambu_metadata")
     @patch("core.vector_engine.VectorProcessor")
     def test_empty_scene_returns_error(self, MockVP, mock_bambu_export, tmp_path):
         """Empty vector scene should fail before exporter is called."""

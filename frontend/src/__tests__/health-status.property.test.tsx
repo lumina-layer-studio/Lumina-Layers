@@ -4,8 +4,7 @@ import fc from "fast-check";
 
 vi.mock("../api/client", () => ({
   default: {
-    get: vi.fn().mockRejectedValue(new Error("unmocked")),
-    post: vi.fn().mockRejectedValue(new Error("unmocked")),
+    get: vi.fn(),
   },
 }));
 
@@ -14,22 +13,6 @@ vi.mock("../api/converter", () => ({
   convertPreview: vi.fn(),
   convertGenerate: vi.fn(),
   getFileUrl: vi.fn(),
-  fetchBedSizes: vi.fn().mockResolvedValue({ bed_sizes: [] }),
-  uploadHeightmap: vi.fn(),
-  fetchLutColors: vi.fn(),
-  cropImage: vi.fn(),
-  convertBatch: vi.fn(),
-  replaceColor: vi.fn(),
-}));
-
-vi.mock("../api/slicer", () => ({
-  detectSlicers: vi.fn().mockResolvedValue({ slicers: [] }),
-  launchSlicer: vi.fn(),
-}));
-
-vi.mock("../api/lut", () => ({
-  fetchLutInfo: vi.fn(),
-  mergeLuts: vi.fn(),
 }));
 
 vi.mock("../api/extractor", () => ({
@@ -60,8 +43,6 @@ describe("Feature: frontend-scaffold, Property 2: 非 'ok' 状态显示失败徽
   beforeEach(() => {
     vi.clearAllMocks();
     cleanup();
-    // Restore default rejection for unmocked calls
-    vi.mocked(apiClient.get).mockRejectedValue(new Error("unmocked"));
   });
 
   /**
@@ -75,8 +56,6 @@ describe("Feature: frontend-scaffold, Property 2: 非 'ok' 状态显示失败徽
         async (status) => {
           vi.clearAllMocks();
           cleanup();
-          // Restore default rejection for unmocked calls
-          vi.mocked(apiClient.get).mockRejectedValue(new Error("unmocked"));
 
           vi.mocked(apiClient.get).mockResolvedValueOnce({
             data: { status, version: "2.0", uptime_seconds: 0 },

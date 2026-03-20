@@ -1,11 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
+import App from "../App";
 
-// Mock the API client module — default to rejecting so unexpected calls don't crash
+// Mock the API client module
 vi.mock("../api/client", () => ({
   default: {
-    get: vi.fn().mockRejectedValue(new Error("unmocked")),
-    post: vi.fn().mockRejectedValue(new Error("unmocked")),
+    get: vi.fn(),
   },
 }));
 
@@ -14,46 +14,13 @@ vi.mock("../api/converter", () => ({
   convertPreview: vi.fn(),
   convertGenerate: vi.fn(),
   getFileUrl: vi.fn(),
-  fetchBedSizes: vi.fn().mockResolvedValue({ bed_sizes: [] }),
-  uploadHeightmap: vi.fn(),
-  fetchLutColors: vi.fn(),
-  cropImage: vi.fn(),
-  convertBatch: vi.fn(),
-  replaceColor: vi.fn(),
 }));
 
-vi.mock("../api/slicer", () => ({
-  detectSlicers: vi.fn().mockResolvedValue({ slicers: [] }),
-  launchSlicer: vi.fn(),
-}));
-
-vi.mock("../api/lut", () => ({
-  fetchLutInfo: vi.fn(),
-  mergeLuts: vi.fn(),
-}));
-
-vi.mock("../api/extractor", () => ({
-  extractColors: vi.fn(),
-  manualFixCell: vi.fn(),
-}));
-
-vi.mock("../api/system", () => ({
-  clearCache: vi.fn(),
-  getSettings: vi.fn().mockResolvedValue({}),
-  saveSettings: vi.fn(),
-  getStats: vi.fn().mockResolvedValue({}),
-}));
-
-vi.mock("../components/Scene3D", () => ({ default: () => null }));
-
-import App from "../App";
 import apiClient from "../api/client";
 
 describe("App component", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    // Restore default rejection for unmocked calls
-    vi.mocked(apiClient.get).mockRejectedValue(new Error("unmocked"));
   });
 
   it('renders green badge when API returns status "ok"', async () => {
@@ -69,7 +36,7 @@ describe("App component", () => {
   });
 
   it("renders red badge when API request fails", async () => {
-    vi.mocked(apiClient.get).mockRejectedValue(new Error("Network Error"));
+    vi.mocked(apiClient.get).mockRejectedValueOnce(new Error("Network Error"));
 
     render(<App />);
 

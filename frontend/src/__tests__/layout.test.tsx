@@ -42,10 +42,12 @@ describe("Widget Workspace Layout", () => {
     expect(screen.getByTestId("scene3d-mock")).toBeInTheDocument();
   });
 
-  it("renders panel controls toggle button in header", () => {
+  it("renders widget toggle buttons for current tab in header", () => {
     render(<App />);
-    // Widget toggles are now inside a dropdown menu
-    expect(screen.getByTestId("panel-controls-toggle")).toBeInTheDocument();
+    // Default tab is converter, so converter widgets should show
+    expect(screen.getByTestId("widget-toggle-basic-settings")).toBeInTheDocument();
+    // Calibration widget toggle should NOT show on converter tab
+    expect(screen.queryByTestId("widget-toggle-calibration")).not.toBeInTheDocument();
   });
 
   it("renders TabNavBar with tab buttons", () => {

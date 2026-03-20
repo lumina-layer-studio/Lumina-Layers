@@ -34,7 +34,7 @@ describe("convertPreview", () => {
     target_width_mm: 80,
     auto_bg: true,
     bg_tol: 40,
-    color_mode: ColorMode.FOUR_COLOR_RYBW,
+    color_mode: ColorMode.FOUR_COLOR,
     modeling_mode: ModelingMode.HIGH_FIDELITY,
     quantize_colors: 48,
     enable_cleanup: true,
@@ -65,7 +65,7 @@ describe("convertPreview", () => {
     expect(fd.get("target_width_mm")).toBe("80");
     expect(fd.get("auto_bg")).toBe("true");
     expect(fd.get("bg_tol")).toBe("40");
-    expect(fd.get("color_mode")).toBe(ColorMode.FOUR_COLOR_RYBW);
+    expect(fd.get("color_mode")).toBe(ColorMode.FOUR_COLOR);
     expect(fd.get("modeling_mode")).toBe(ModelingMode.HIGH_FIDELITY);
     expect(fd.get("quantize_colors")).toBe("48");
     expect(fd.get("enable_cleanup")).toBe("true");
@@ -204,7 +204,7 @@ describe("fetchLutList", () => {
   it("returns correct LutListResponse", async () => {
     const mockData = {
       luts: [
-        { name: "lut-a", color_mode: ColorMode.FOUR_COLOR_RYBW, path: "/a.npy" },
+        { name: "lut-a", color_mode: ColorMode.FOUR_COLOR, path: "/a.npy" },
         { name: "lut-b", color_mode: ColorMode.BW, path: "/b.npy" },
       ],
     };
@@ -216,7 +216,7 @@ describe("fetchLutList", () => {
     expect(result).toEqual(mockData);
     expect(result.luts).toHaveLength(2);
     expect(result.luts[0].name).toBe("lut-a");
-    expect(result.luts[0].color_mode).toBe(ColorMode.FOUR_COLOR_RYBW);
+    expect(result.luts[0].color_mode).toBe(ColorMode.FOUR_COLOR);
   });
 
   it("propagates network errors", async () => {

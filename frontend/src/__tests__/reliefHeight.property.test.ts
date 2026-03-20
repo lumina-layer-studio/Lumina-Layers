@@ -148,7 +148,7 @@ describe("Relief Height Logic — Property-Based Tests", () => {
       );
     });
 
-    it("initialized heights are within valid range (luminance-based)", () => {
+    it("initialized heights equal heightmap_max_height * 0.5", () => {
       fc.assert(
         fc.property(
           uniquePalette,
@@ -165,13 +165,13 @@ describe("Relief Height Logic — Property-Based Tests", () => {
             useConverterStore.getState().setEnableRelief(true);
 
             const state = useConverterStore.getState();
+            const expectedHeight = maxHeight * 0.5;
 
-            // Heights are now computed by computeAutoHeightMap (luminance-based)
-            // so they should be within [minHeight, maxHeight] range
             for (const entry of palette) {
-              const h = state.color_height_map[entry.matched_hex];
-              expect(h).toBeGreaterThanOrEqual(0.08);
-              expect(h).toBeLessThanOrEqual(maxHeight);
+              expect(state.color_height_map[entry.matched_hex]).toBeCloseTo(
+                expectedHeight,
+                5,
+              );
             }
           },
         ),

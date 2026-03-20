@@ -25,10 +25,8 @@ class ColorMode(str, Enum):
     Attributes:
         BW: Black & White grayscale mode (32 levels).
             黑白灰度模式 (32 级)。
-        FOUR_COLOR_CMYW: 4-Color CMYW mode (1024 colors).
-            4 色 CMYW 模式 (1024 色)。
-        FOUR_COLOR_RYBW: 4-Color RYBW mode (1024 colors).
-            4 色 RYBW 模式 (1024 色)。
+        FOUR_COLOR: 4-Color CMYW/RYBW mode (1024 colors).
+            4 色 CMYW/RYBW 模式 (1024 色)。
         SIX_COLOR: 6-Color extended smart mode (1296 colors).
             6 色扩展智能模式 (1296 色)。
         EIGHT_COLOR: 8-Color professional mode (2738 colors).
@@ -38,11 +36,8 @@ class ColorMode(str, Enum):
     """
 
     BW = "BW (Black & White)"
-    FOUR_COLOR_CMYW = "4-Color (CMYW)"
-    FOUR_COLOR_RYBW = "4-Color (RYBW)"
-    FIVE_COLOR_EXT = "5-Color Extended"
+    FOUR_COLOR = "4-Color"
     SIX_COLOR = "6-Color (Smart 1296)"
-    SIX_COLOR_RYBW = "6-Color (RYBW 1296)"
     EIGHT_COLOR = "8-Color Max"
     MERGED = "Merged"
 
@@ -158,7 +153,7 @@ class ConvertPreviewRequest(BaseModel):
     auto_bg: bool = Field(False, description="自动去背景")
     bg_tol: int = Field(40, ge=0, le=150, description="背景容差")
     color_mode: ColorMode = Field(
-        ColorMode.FOUR_COLOR_RYBW, description="颜色模式"
+        ColorMode.FOUR_COLOR, description="颜色模式"
     )
     modeling_mode: ModelingMode = Field(
         ModelingMode.HIGH_FIDELITY, description="建模模式"
@@ -166,7 +161,6 @@ class ConvertPreviewRequest(BaseModel):
     quantize_colors: int = Field(48, ge=8, le=256, description="K-Means 色彩细节")
     enable_cleanup: bool = Field(True, description="孤立像素清理")
     hue_weight: float = Field(0.0, ge=0.0, le=1.0, description="色相保护权重 (0=纯色差, 0.5=推荐, 1.0=最强)")
-    chroma_gate: float = Field(15.0, ge=0.0, le=50.0, description="暗色彩度门槛 (0=禁用, 15=默认)")
 
 
 class ConvertGenerateRequest(BaseModel):
@@ -212,14 +206,6 @@ class ConvertGenerateRequest(BaseModel):
             环孔直径 (mm)。
         loop_pos: Keychain loop position as (x, y) coordinates.
             环位置 (x, y)。
-        loop_angle: Keychain loop rotation angle in degrees (-180 to 180).
-            环旋转角度 (度)。
-        loop_offset_x: Keychain loop X offset in millimeters (-20 to 20).
-            环 X 偏移 (mm)。
-        loop_offset_y: Keychain loop Y offset in millimeters (-20 to 20).
-            环 Y 偏移 (mm)。
-        loop_position_preset: Keychain loop position preset name.
-            环位置预设名称。
         enable_relief: Whether to enable 2.5D relief mode.
             是否启用 2.5D 浮雕模式。
         color_height_map: Color-to-height mapping for relief mode.
@@ -259,7 +245,7 @@ class ConvertGenerateRequest(BaseModel):
     auto_bg: bool = Field(False, description="自动去背景")
     bg_tol: int = Field(40, ge=0, le=150, description="背景容差")
     color_mode: ColorMode = Field(
-        ColorMode.FOUR_COLOR_RYBW, description="颜色模式"
+        ColorMode.FOUR_COLOR, description="颜色模式"
     )
     modeling_mode: ModelingMode = Field(
         ModelingMode.HIGH_FIDELITY, description="建模模式"
@@ -267,7 +253,6 @@ class ConvertGenerateRequest(BaseModel):
     quantize_colors: int = Field(48, ge=8, le=256, description="K-Means 色彩细节")
     enable_cleanup: bool = Field(True, description="孤立像素清理")
     hue_weight: float = Field(0.0, ge=0.0, le=1.0, description="色相保护权重 (0=纯色差, 0.5=推荐, 1.0=最强)")
-    chroma_gate: float = Field(15.0, ge=0.0, le=50.0, description="暗色彩度门槛 (0=禁用, 15=默认)")
     separate_backing: bool = Field(False, description="底板作为独立对象")
     add_loop: bool = Field(False, description="启用挂件环")
     loop_width: float = Field(
@@ -281,19 +266,6 @@ class ConvertGenerateRequest(BaseModel):
     )
     loop_pos: Optional[Tuple[float, float]] = Field(
         None, description="环位置 (x, y)"
-    )
-    loop_angle: float = Field(
-        0.0, ge=-180, le=180, description="环旋转角度 (度)"
-    )
-    loop_offset_x: float = Field(
-        0.0, ge=-200, le=200, description="环 X 偏移 (mm)"
-    )
-    loop_offset_y: float = Field(
-        0.0, ge=-200, le=200, description="环 Y 偏移 (mm)"
-    )
-    loop_position_preset: Optional[str] = Field(
-        "top-center",
-        description="环位置预设: top-center, top-left, top-right, left-center, right-center, bottom-center",
     )
     enable_relief: bool = Field(False, description="启用 2.5D 浮雕模式")
     height_mode: Optional[str] = Field(
@@ -326,16 +298,6 @@ class ConvertGenerateRequest(BaseModel):
     )
     free_color_set: Optional[Set[str]] = Field(
         None, description="自由色集合 (hex)"
-    )
-    printer_id: str = Field(
-        "bambu-h2d", description="????? ID"
-    )
-    slicer: str = Field(
-        "BambuStudio", description="??????"
-    )
-    use_cached_matched_rgb: bool = Field(
-        False,
-        description="使用 Session 缓存的 matched_rgb 而非从原始图像重新处理",
     )
 
 
@@ -378,23 +340,6 @@ class ColorReplaceRequest(BaseModel):
     replacement_color: str = Field(..., description="替换目标色 (hex)")
 
 
-class ResetReplacementsRequest(BaseModel):
-    """Request model for resetting all color replacements in a session.
-    重置 session 中所有颜色替换的请求模型。
-
-    Used by ``POST /api/convert/reset-replacements`` to clear all
-    replacement_regions and replacement_history, restoring the preview
-    to its original state.
-    用于 ``POST /api/convert/reset-replacements``，清空所有
-    replacement_regions 和 replacement_history，将预览恢复到原始状态。
-
-    Attributes:
-        session_id: Active session identifier. (Session ID)
-    """
-
-    session_id: str = Field(..., description="Session ID")
-
-
 class ColorMergePreviewRequest(BaseModel):
     """Request model for previewing color merge results.
     预览颜色合并结果的请求模型。
@@ -423,88 +368,6 @@ class ColorMergePreviewRequest(BaseModel):
     merge_max_distance: int = Field(
         20, ge=5, le=50, description="最大合并距离 (px)"
     )
-
-
-class RegionDetectRequest(BaseModel):
-    """Request model for detecting a connected region at a click position.
-    检测点击位置连通区域的请求模型。
-
-    Used by ``POST /api/converter/region-detect`` to identify the connected
-    region of same-colored pixels at the given (x, y) coordinate.
-    用于 ``POST /api/converter/region-detect``，识别给定 (x, y) 坐标处
-    同色像素的连通区域。
-
-    Attributes:
-        session_id: Active session identifier. (Session ID)
-        x: Click pixel X coordinate (0-indexed). (点击像素 X 坐标)
-        y: Click pixel Y coordinate (0-indexed). (点击像素 Y 坐标)
-    """
-
-    session_id: str = Field(..., description="Session ID")
-    x: int = Field(..., ge=0, description="点击像素 X 坐标")
-    y: int = Field(..., ge=0, description="点击像素 Y 坐标")
-
-
-class RegionDetectResponse(BaseModel):
-    """Response model for connected region detection.
-    连通区域检测的响应模型。
-
-    Returns the detected region metadata including a unique identifier,
-    the region color, pixel count, and a highlighted preview image URL.
-    返回检测到的区域元数据，包括唯一标识、区域颜色、像素数量和高亮预览图 URL。
-
-    Attributes:
-        region_id: Unique identifier for the detected region. (区域唯一标识)
-        color_hex: Hex color of the region. (区域颜色 hex)
-        pixel_count: Number of pixels in the region. (区域像素数量)
-        preview_url: URL of the highlighted preview image. (高亮预览图 URL)
-    """
-
-    region_id: str = Field(..., description="区域唯一标识")
-    color_hex: str = Field(..., description="区域颜色 hex")
-    pixel_count: int = Field(..., description="区域像素数量")
-    preview_url: str = Field(..., description="高亮预览图 URL")
-    contours: list[list[list[float]]] | None = Field(
-        None, description="区域轮廓坐标（世界坐标 mm），用于 3D 高亮"
-    )
-
-
-class RegionReplaceRequest(BaseModel):
-    """Request model for replacing color in a selected connected region.
-    替换选中连通区域颜色的请求模型。
-
-    Used by ``POST /api/converter/region-replace`` to replace the color
-    of a previously detected connected region with a new target color.
-    用于 ``POST /api/converter/region-replace``，将先前检测到的
-    连通区域颜色替换为新的目标颜色。
-
-    Attributes:
-        session_id: Active session identifier. (Session ID)
-        replacement_color: Target replacement color in hex format. (替换目标色 hex)
-    """
-
-    session_id: str = Field(..., description="Session ID")
-    replacement_color: str = Field(..., description="替换目标色 hex")
-
-
-class RegionReplaceResponse(BaseModel):
-    """Response model for region color replacement.
-    区域颜色替换的响应模型。
-
-    Returns the preview image URL after replacement, an optional GLB URL
-    for refreshing the 3D preview, and an operation message.
-    返回替换后的预览图 URL、可选的 GLB URL（用于刷新 3D 预览）和操作结果消息。
-
-    Attributes:
-        preview_url: URL of the post-replacement preview image. (替换后预览图 URL)
-        preview_glb_url: URL of the regenerated segmented GLB. (重新生成的分段 GLB URL)
-        message: Operation result message. (操作结果消息)
-    """
-
-    preview_url: str = Field(..., description="替换后预览图 URL")
-    preview_glb_url: Optional[str] = Field(None, description="重新生成的分段 GLB URL")
-    color_contours: Optional[dict] = Field(None, description="更新后的颜色轮廓数据")
-    message: str = Field("Region replaced", description="操作结果消息")
 
 
 class BedSizeItem(BaseModel):

@@ -9,16 +9,10 @@ export default function KeychainLoopSettings() {
   const loop_width = useConverterStore((s) => s.loop_width);
   const loop_length = useConverterStore((s) => s.loop_length);
   const loop_hole = useConverterStore((s) => s.loop_hole);
-  const loop_angle = useConverterStore((s) => s.loop_angle);
-  const loop_offset_x = useConverterStore((s) => s.loop_offset_x);
-  const loop_offset_y = useConverterStore((s) => s.loop_offset_y);
   const setAddLoop = useConverterStore((s) => s.setAddLoop);
   const setLoopWidth = useConverterStore((s) => s.setLoopWidth);
   const setLoopLength = useConverterStore((s) => s.setLoopLength);
   const setLoopHole = useConverterStore((s) => s.setLoopHole);
-  const setLoopAngle = useConverterStore((s) => s.setLoopAngle);
-  const setLoopOffsetX = useConverterStore((s) => s.setLoopOffsetX);
-  const setLoopOffsetY = useConverterStore((s) => s.setLoopOffsetY);
 
   return (
     <div className="flex flex-col gap-4">
@@ -28,10 +22,6 @@ export default function KeychainLoopSettings() {
           <Slider label={t("loop_width")} value={loop_width} min={2} max={10} step={0.5} unit="mm" onChange={setLoopWidth} />
           <Slider label={t("loop_length")} value={loop_length} min={4} max={15} step={0.5} unit="mm" onChange={setLoopLength} />
           <Slider label={t("loop_hole_diameter")} value={loop_hole} min={1} max={5} step={0.25} unit="mm" onChange={setLoopHole} />
-
-          <Slider label={t("loop_angle")} value={loop_angle} min={-180} max={180} step={1} unit="°" onChange={setLoopAngle} />
-          <Slider label={t("loop_offset_x")} value={loop_offset_x} min={-200} max={200} step={0.5} unit="mm" onChange={setLoopOffsetX} />
-          <Slider label={t("loop_offset_y")} value={loop_offset_y} min={-200} max={200} step={0.5} unit="mm" onChange={setLoopOffsetY} />
         </>
       )}
     </div>

@@ -41,7 +41,7 @@ function resetStore(): void {
     target_height_mm: 60,
     spacer_thick: 1.2,
     structure_mode: "Double-sided" as never,
-    color_mode: "4-Color (RYBW)" as never,
+    color_mode: "4-Color" as never,
     modeling_mode: "high-fidelity" as never,
     auto_bg: false,
     bg_tol: 40,

@@ -60,7 +60,7 @@ class TestColorModeRouting:
             response = client.post(
                 "/api/calibration/generate",
                 json={
-                    "color_mode": "4-Color (RYBW)",
+                    "color_mode": "4-Color",
                     "block_size": 5,
                     "gap": 0.82,
                     "backing": "White",
@@ -109,10 +109,7 @@ class TestColorModeRouting:
                 },
             )
             assert response.status_code == 200
-            mock_fn.assert_called_once_with(
-                block_size_mm=5.0,
-                gap_mm=0.82,
-            )
+            mock_fn.assert_called_once_with()
 
 
 # =========================================================================
@@ -164,7 +161,7 @@ class TestErrorHandling:
             response = client.post(
                 "/api/calibration/generate",
                 json={
-                    "color_mode": "4-Color (RYBW)",
+                    "color_mode": "4-Color",
                     "block_size": 5,
                     "gap": 0.82,
                     "backing": "White",

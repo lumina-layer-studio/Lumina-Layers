@@ -4,20 +4,9 @@ import tempfile
 from typing import Optional
 
 import numpy as np
-from fastapi import HTTPException, UploadFile
+from fastapi import UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
 from PIL import Image
-
-# HEIC/HEIF support (optional dependency)
-try:
-    from pillow_heif import register_heif_opener
-    register_heif_opener()
-    HAS_HEIF: bool = True
-except ImportError:
-    HAS_HEIF: bool = False
-    print("[WARN] [HEIC] pillow-heif not installed. HEIC/HEIF support disabled.")
-
-HEIC_EXTENSIONS: set[str] = {".heic", ".heif"}
 
 
 async def upload_to_ndarray(file: UploadFile) -> np.ndarray:
@@ -39,11 +28,6 @@ async def upload_to_ndarray(file: UploadFile) -> np.ndarray:
             img = img.convert("RGB")
         return np.array(img, dtype=np.uint8)
     except Exception as e:
-        ext = os.path.splitext(file.filename or "")[1].lower()
-        if ext in HEIC_EXTENSIONS and not HAS_HEIF:
-            raise ValueError(
-                "HEIC/HEIF 格式需要 pillow-heif 库。请执行: pip install pillow-heif"
-            )
         raise ValueError(f"无法解码图像文件: {e}")
 
 
@@ -68,49 +52,6 @@ async def upload_to_tempfile(
     finally:
         os.close(fd)
     return path
-
-
-async def ensure_png_tempfile(file: UploadFile) -> str:
-    """Save uploaded file to temp; convert HEIC/HEIF to PNG.
-    保存上传文件为临时文件；若为 HEIC/HEIF 则转换为 PNG。
-
-    Args:
-        file (UploadFile): FastAPI upload. (FastAPI 上传文件)
-
-    Returns:
-        str: Temp file path (PNG if converted). (临时文件路径)
-
-    Raises:
-        HTTPException: pillow-heif missing or decode failure. (解码失败)
-    """
-    ext = os.path.splitext(file.filename or "")[1].lower()
-    raw_path = await upload_to_tempfile(file)
-
-    if ext not in HEIC_EXTENSIONS:
-        return raw_path
-
-    if not HAS_HEIF:
-        os.unlink(raw_path)
-        raise HTTPException(
-            status_code=422,
-            detail="HEIC/HEIF 格式需要 pillow-heif 库。请执行: pip install pillow-heif",
-        )
-
-    try:
-        with Image.open(raw_path) as img:
-            if img.mode != "RGB":
-                img = img.convert("RGB")
-            fd, png_path = tempfile.mkstemp(suffix=".png")
-            os.close(fd)
-            img.save(png_path, "PNG")
-        os.unlink(raw_path)
-        return png_path
-    except Exception as e:
-        os.unlink(raw_path)
-        raise HTTPException(
-            status_code=422,
-            detail=f"HEIC/HEIF 文件解码失败: {e}",
-        )
 
 
 def pil_to_png_bytes(img: Image.Image) -> bytes:
@@ -140,10 +81,7 @@ def file_to_response(path: str, filename: Optional[str] = None) -> FileResponse:
     if filename is None:
         filename = os.path.basename(path)
     media_type = _guess_media_type(path)
-    # Disable browser caching for image previews to ensure fresh content
-    # after color replacement / reset operations.
-    headers = {"Cache-Control": "no-cache, no-store, must-revalidate"}
-    return FileResponse(path=path, filename=filename, media_type=media_type, headers=headers)
+    return FileResponse(path=path, filename=filename, media_type=media_type)
 
 
 def _guess_media_type(path: str) -> str:
@@ -155,10 +93,6 @@ def _guess_media_type(path: str) -> str:
         ".zip": "application/zip",
         ".npy": "application/octet-stream",
         ".npz": "application/octet-stream",
-        ".json": "application/json",
         ".png": "image/png",
         ".jpg": "image/jpeg",
-        ".heic": "image/heic",
-        ".heif": "image/heif",
-        ".svg": "image/svg+xml",
     }.get(ext, "application/octet-stream")

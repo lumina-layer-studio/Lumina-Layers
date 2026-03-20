@@ -70,7 +70,7 @@ class CalibrationGenerateRequest(BaseModel):
     """
 
     color_mode: CalibrationColorMode = Field(
-        CalibrationColorMode.FOUR_COLOR_RYBW, description="校准颜色模式"
+        CalibrationColorMode.FOUR_COLOR, description="校准颜色模式"
     )
     block_size: int = Field(5, ge=3, le=10, description="色块尺寸 (mm)")
     gap: float = Field(0.82, ge=0.4, le=2.0, description="色块间距 (mm)")

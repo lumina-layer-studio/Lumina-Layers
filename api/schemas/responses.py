@@ -7,7 +7,7 @@ All API endpoint response schemas are defined here.
 
 from typing import Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 
 class CalibrationResponse(BaseModel):
@@ -119,10 +119,6 @@ class ExtractResponse(BaseModel):
     lut_download_url: str
     warp_view_url: str
     lut_preview_url: str
-    default_palette: list[dict] = Field(
-        default_factory=list,
-        description="默认调色板数组，每项含 color、material、hex_color",
-    )
 
 
 class ManualFixResponse(BaseModel):
@@ -167,21 +163,3 @@ class CropResponse(BaseModel):
     cropped_url: str
     width: int
     height: int
-
-
-class AutoDetectColorsResponse(BaseModel):
-    """自动检测推荐量化颜色数响应。"""
-
-    recommended: int
-    max_safe: int
-    unique_colors: int
-    complexity_score: int
-
-
-class ResetReplacementsResponse(BaseModel):
-    """颜色替换重置响应。"""
-
-    status: str
-    message: str
-    preview_url: str
-    preview_glb_url: str | None = None

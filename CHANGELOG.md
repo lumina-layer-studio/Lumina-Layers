@@ -6,22 +6,6 @@ All notable changes to Lumina Studio are documented in this file.
 
 ---
 
-## v1.6.4 (2026-03-20)
-
-### Improvements (PR #159 by @sandboxdream)
-- **Rendering Performance** - Optimized 3D scene rendering and reduced unnecessary re-renders
-- **Panel UI Refactor** - Unified slate color scheme, rounded card layout, and `panelPrimitives` component library (`cx`, `PanelIntro`, `StatusBanner`)
-- **Settings Reliability** - Async retry mechanism (`retryAsync`) for settings loading; legacy slicer/printer option ID normalization (`settingsOptionIds`)
-- **Slider Enhancement** - New `displayDecimals` and `minInputWidthCh` props for finer display control
-- **Tooltip Cleanup** - Removed inline tooltip from Checkbox and Slider components for cleaner UI
-- **Temp File Cleanup** - Auto-detect colors endpoint now properly cleans up temporary files
-- **Project Maintenance** - Updated AGENTS.md guidelines
-
-### Contributors
-- Thanks to [@sandboxdream](https://github.com/sandboxdream) for the comprehensive UI/UX improvements and settings reliability enhancements in PR [#159](https://github.com/MOVIBALE/Lumina-Layers/pull/159) 🎉
-
----
-
 ## v1.6.3 (2026-03-08)
 
 ### Features

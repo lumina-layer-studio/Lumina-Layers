@@ -1,19 +1,5 @@
 import "@testing-library/jest-dom";
 import { vi } from "vitest";
-import { translations } from "./i18n/translations";
-
-// Mock useI18n to return Chinese translations in test environment
-// so that component text assertions match rendered content.
-const mockT = (key: string): string => {
-  const entry = translations[key];
-  if (!entry) return key;
-  return entry["zh"] ?? key;
-};
-
-vi.mock("./i18n/context", () => ({
-  useI18n: () => ({ t: mockT, lang: "zh" as const }),
-  I18nProvider: ({ children }: { children?: React.ReactNode }) => children,
-}));
 
 // Polyfill ResizeObserver for jsdom (used by WidgetWorkspace)
 if (typeof globalThis.ResizeObserver === "undefined") {

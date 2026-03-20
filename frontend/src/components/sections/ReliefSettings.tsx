@@ -7,7 +7,6 @@ import Slider from "../ui/Slider";
 import Dropdown from "../ui/Dropdown";
 import ImageUpload from "../ui/ImageUpload";
 import { useI18n } from "../../i18n/context";
-import { workstationFieldLabelClass } from "../ui/panelPrimitives";
 
 export default function ReliefSettings() {
   const { t } = useI18n();
@@ -92,14 +91,14 @@ export default function ReliefSettings() {
 
             {autoHeightMode === "use-heightmap" && (
               <div className="flex flex-col gap-2">
-                <label className={workstationFieldLabelClass}>{t("relief_heightmap_label")}</label>
+                <label className="text-sm text-gray-300">{t("relief_heightmap_label")}</label>
                 <ImageUpload
                   onFileSelect={handleHeightmapSelect}
                   accept="image/png,image/jpeg,image/bmp,image/tiff"
                   preview={heightmapThumbnailUrl ?? undefined}
                 />
                 {heightmapFile && !heightmapThumbnailUrl && (
-                  <span className="text-xs text-slate-500 dark:text-slate-400">
+                  <span className="text-xs text-gray-400">
                     {t("relief_file_selected")}: {heightmapFile.name}
                   </span>
                 )}

@@ -8,7 +8,6 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import { I18nProvider } from '../i18n/context';
 import { WidgetHeader } from '../components/widget/WidgetHeader';
 import { useWidgetStore, DEFAULT_LAYOUT } from '../stores/widgetStore';
-import { computeDockBottomInset, resolveResponsiveWidgetWidth, WIDGET_WIDTH } from '../utils/widgetUtils';
 
 /** Render helper that wraps component in I18nProvider. */
 function renderWithI18n(ui: React.ReactElement) {
@@ -16,17 +15,6 @@ function renderWithI18n(ui: React.ReactElement) {
 }
 
 describe('Widget Workspace Unit Tests', () => {
-  describe('responsive widget sizing', () => {
-    it('caps widget width at the default width on wide workspaces', () => {
-      expect(resolveResponsiveWidgetWidth(2200)).toBe(WIDGET_WIDTH);
-    });
-
-    it('shrinks widget width on narrow workspaces while keeping a usable minimum', () => {
-      const width = resolveResponsiveWidgetWidth(900);
-      expect(width).toBeGreaterThanOrEqual(280);
-      expect(width).toBeLessThan(WIDGET_WIDTH);
-    });
-  });
   beforeEach(() => {
     useWidgetStore.setState({
       widgets: { ...DEFAULT_LAYOUT },
@@ -150,73 +138,6 @@ describe('Widget Workspace Unit Tests', () => {
       // palette-panel and lut-color-grid have been merged into ColorWorkstation
       expect(widgetIds).not.toContain('palette-panel');
       expect(widgetIds).not.toContain('lut-color-grid');
-    });
-  });
-
-  // ===== 批量位置更新 =====
-  describe('Widget store batched position updates', () => {
-    it('updates multiple widget positions in one action', () => {
-      const { setWidgetPositions } = useWidgetStore.getState();
-
-      setWidgetPositions({
-        'basic-settings': { x: 12, y: 24 },
-        'action-bar': { x: 240, y: 360 },
-      });
-
-      const state = useWidgetStore.getState();
-      expect(state.widgets['basic-settings'].position).toEqual({ x: 12, y: 24 });
-      expect(state.widgets['action-bar'].position).toEqual({ x: 240, y: 360 });
-    });
-
-    it('keeps unrelated widget positions unchanged during batched updates', () => {
-      const { widgets, setWidgetPositions } = useWidgetStore.getState();
-      const originalExtractorPosition = widgets.extractor.position;
-
-      setWidgetPositions({
-        'basic-settings': { x: 64, y: 96 },
-      });
-
-      const state = useWidgetStore.getState();
-      expect(state.widgets.extractor.position).toEqual(originalExtractorPosition);
-      expect(state.widgets['basic-settings'].position).toEqual({ x: 64, y: 96 });
-    });
-  });
-
-  describe('Dock avoidance geometry', () => {
-    it('returns overlap height when workstation overlaps dock', () => {
-      const inset = computeDockBottomInset(
-        { top: 40, bottom: 640, left: 0, right: 366 },
-        { top: 428, bottom: 640, left: 200, right: 1700 }
-      );
-
-      expect(inset).toBe(212);
-    });
-
-    it('returns visible overlap height when workstation is partially collapsed', () => {
-      const inset = computeDockBottomInset(
-        { top: 40, bottom: 640, left: 0, right: 366 },
-        { top: 592, bottom: 772, left: 120, right: 1700 }
-      );
-
-      expect(inset).toBe(48);
-    });
-
-    it('returns zero when workstation does not horizontally overlap dock', () => {
-      const inset = computeDockBottomInset(
-        { top: 40, bottom: 640, left: 0, right: 366 },
-        { top: 428, bottom: 640, left: 500, right: 1800 }
-      );
-
-      expect(inset).toBe(0);
-    });
-
-    it('returns zero when workstation only overlaps horizontally but not vertically', () => {
-      const inset = computeDockBottomInset(
-        { top: 40, bottom: 300, left: 0, right: 366 },
-        { top: 420, bottom: 640, left: 200, right: 1700 }
-      );
-
-      expect(inset).toBe(0);
     });
   });
 });

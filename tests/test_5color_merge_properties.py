@@ -30,7 +30,7 @@ def _make_join_redirector(assets_dir: str):
     """Create an os.path.join side_effect that redirects temp_5c files to assets_dir."""
     def _join(*args: Any) -> str:
         last = args[-1] if args else ""
-        if isinstance(last, str) and ("temp_5c" in last or "lumina_lut" in last):
+        if isinstance(last, str) and "temp_5c" in last:
             return _real_path_join(assets_dir, last)
         return _real_path_join(*args)
     return _join
@@ -106,30 +106,13 @@ class TestLUTMergeShapeInvariant:
     @settings(max_examples=100)
     def test_merge_via_endpoint_shape(self, n: int, m: int) -> None:
         """The merge-5color-extended endpoint produces (N + M, 3) shaped output."""
-        from utils.lut_manager import LUTManager
-        from config import LUTMetadata, PaletteEntry
-
         lut1 = np.random.randint(0, 256, size=(n, 3), dtype=np.uint8)
         lut2 = np.random.randint(0, 256, size=(m, 3), dtype=np.uint8)
 
-        # 构建最小 metadata 用于 save_keyed_json
-        metadata = LUTMetadata(palette=[
-            PaletteEntry(color="White", material="PLA Basic"),
-            PaletteEntry(color="Cyan", material="PLA Basic"),
-            PaletteEntry(color="Magenta", material="PLA Basic"),
-            PaletteEntry(color="Yellow", material="PLA Basic"),
-            PaletteEntry(color="Black", material="PLA Basic"),
-        ])
-        stacks1 = np.zeros((n, 5), dtype=np.int32)
-        stacks2 = np.zeros((m, 5), dtype=np.int32)
-
         with tempfile.TemporaryDirectory() as tmpdir:
-            # 保存为 .json 格式（与端点期望一致）
-            page1_path = _real_path_join(tmpdir, "temp_5c_ext_page_1.json")
-            page2_path = _real_path_join(tmpdir, "temp_5c_ext_page_2.json")
-            LUTManager.save_keyed_json(page1_path, lut1, stacks1, metadata)
-            LUTManager.save_keyed_json(page2_path, lut2, stacks2, metadata)
-            merged_path = _real_path_join(tmpdir, "lumina_lut.json")
+            np.save(_real_path_join(tmpdir, "temp_5c_ext_page_1.npy"), lut1)
+            np.save(_real_path_join(tmpdir, "temp_5c_ext_page_2.npy"), lut2)
+            merged_path = _real_path_join(tmpdir, "lumina_lut.npy")
 
             with (
                 patch("api.routers.extractor.os.path.join",
@@ -140,12 +123,12 @@ class TestLUTMergeShapeInvariant:
 
             assert response.status_code == 200
 
-            merged_rgb, _, _ = LUTManager.load_lut_with_metadata(merged_path)
-            assert merged_rgb.shape == (n + m, 3), (
-                f"Expected ({n + m}, 3), got {merged_rgb.shape}"
+            merged = np.load(merged_path)
+            assert merged.shape == (n + m, 3), (
+                f"Expected ({n + m}, 3), got {merged.shape}"
             )
-            np.testing.assert_array_equal(merged_rgb[:n], lut1)
-            np.testing.assert_array_equal(merged_rgb[n:], lut2)
+            np.testing.assert_array_equal(merged[:n], lut1)
+            np.testing.assert_array_equal(merged[n:], lut2)
 
 
 # ═══════════════════════════════════════════════════════════════

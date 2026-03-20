@@ -10,7 +10,7 @@ export default function AboutView() {
   return (
     <aside
       data-testid="about-panel"
-      className="flex h-full w-full max-w-full flex-col gap-4 overflow-y-auto rounded-[28px] bg-gray-800 p-4 lg:basis-[clamp(18rem,24vw,26rem)] lg:max-w-[26rem]"
+      className="w-[350px] h-full overflow-y-auto bg-gray-800 p-4 flex flex-col gap-4"
     >
       <div>
         <h2 className="text-lg font-semibold text-gray-100">

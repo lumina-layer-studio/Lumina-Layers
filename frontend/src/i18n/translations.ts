@@ -13,10 +13,6 @@ export const translations: Record<string, Record<"zh" | "en", string>> = {
     zh: "多材料3D打印色彩系统 | v1.6.3",
     en: "Multi-Material 3D Print Color System | v1.6.3",
   },
-  app_panel_controls: {
-    zh: "面板控件",
-    en: "Panel Controls",
-  },
   lang_btn_zh: {
     zh: "🌐 中文",
     en: "🌐 中文",
@@ -76,8 +72,8 @@ export const translations: Record<string, Record<"zh" | "en", string>> = {
     en: "#### 📁 Input",
   },
   conv_lut_title: {
-    zh: "**校准数据**",
-    en: "**Calibration Data**",
+    zh: "**校准数据 (.npy)**",
+    en: "**Calibration Data (.npy)**",
   },
   conv_lut_dropdown: {
     zh: "选择预设",
@@ -88,8 +84,8 @@ export const translations: Record<string, Record<"zh" | "en", string>> = {
     en: "Select from library",
   },
   conv_lut_status_default: {
-    zh: "💡 拖放 .npy / .json / .npz 文件自动添加",
-    en: "💡 Drop .npy / .json / .npz to add",
+    zh: "💡 拖放.npy文件自动添加",
+    en: "💡 Drop .npy to add",
   },
   conv_lut_status_selected: {
     zh: "✅ 已选择",
@@ -370,7 +366,7 @@ export const translations: Record<string, Record<"zh" | "en", string>> = {
     en: "Enable Outline",
   },
   conv_outline_width: {
-    zh: "外轮廓厚度(mm)",
+    zh: "轮廓宽度(mm)",
     en: "Outline Width(mm)",
   },
   conv_cloisonne_section: {
@@ -400,10 +396,6 @@ export const translations: Record<string, Record<"zh" | "en", string>> = {
   conv_free_color_clear_btn: {
     zh: "清除自由色",
     en: "Clear Free Colors",
-  },
-  conv_free_color_label: {
-    zh: "🎯 自由色",
-    en: "🎯 Free Colors",
   },
   conv_coating_section: {
     zh: "##### 透明镀层",
@@ -440,16 +432,16 @@ export const translations: Record<string, Record<"zh" | "en", string>> = {
 
   // ==================== Calibration Tab ====================
   cal_title: {
-    zh: "生成校准板",
-    en: "Generate Calibration Board",
+    zh: "### 第二步：生成校准板",
+    en: "### Step 2: Generate Calibration Board",
   },
   cal_desc: {
     zh: "生成1024种颜色的校准板，打印后用于提取打印机的实际色彩数据。",
     en: "Generate a 1024-color calibration board to extract your printer's actual color data.",
   },
   cal_params: {
-    zh: "参数",
-    en: "Parameters",
+    zh: "#### ⚙️ 参数",
+    en: "#### ⚙️ Parameters",
   },
   cal_color_mode: {
     zh: "色彩模式",
@@ -476,8 +468,8 @@ export const translations: Record<string, Record<"zh" | "en", string>> = {
     en: "Status",
   },
   cal_preview: {
-    zh: "预览",
-    en: "Preview",
+    zh: "#### 👁️ 预览",
+    en: "#### 👁️ Preview",
   },
   cal_download: {
     zh: "下载 3MF",
@@ -486,8 +478,8 @@ export const translations: Record<string, Record<"zh" | "en", string>> = {
 
   // ==================== Color Extractor Tab ====================
   ext_title: {
-    zh: "提取颜色数据",
-    en: "Extract Color Data",
+    zh: "### 第三步：提取颜色数据",
+    en: "### Step 3: Extract Color Data",
   },
   ext_desc: {
     zh: "拍摄打印好的校准板照片，提取真实的色彩数据生成 LUT 文件。",
@@ -514,8 +506,8 @@ export const translations: Record<string, Record<"zh" | "en", string>> = {
     en: "🗑️ Reset",
   },
   ext_correction_section: {
-    zh: "校正参数",
-    en: "Correction",
+    zh: "#### 🔧 校正参数",
+    en: "#### 🔧 Correction",
   },
   ext_wb: {
     zh: "自动白平衡",
@@ -616,8 +608,8 @@ export const translations: Record<string, Record<"zh" | "en", string>> = {
     en: "❌ Please upload an image",
   },
   msg_no_lut: {
-    zh: "⚠️ 请选择或上传校准文件！",
-    en: "⚠️ Please select or upload a calibration file!",
+    zh: "⚠️ 请选择或上传 .npy 校准文件！",
+    en: "⚠️ Please upload a .npy calibration file!",
   },
   msg_preview_success: {
     zh: "✅ 预览",
@@ -700,22 +692,6 @@ export const translations: Record<string, Record<"zh" | "en", string>> = {
   palette_undone: {
     zh: "↩️ 已撤销",
     en: "↩️ Undone",
-  },
-  palette_mode_select_all: {
-    zh: "全选",
-    en: "All",
-  },
-  palette_mode_current: {
-    zh: "当前",
-    en: "Current",
-  },
-  palette_mode_multi_select: {
-    zh: "多选",
-    en: "Multi",
-  },
-  palette_mode_region: {
-    zh: "局部区域",
-    en: "Region",
   },
 
   // ==================== Color Merging ====================
@@ -1114,8 +1090,8 @@ export const translations: Record<string, Record<"zh" | "en", string>> = {
     en: "Extractor",
   },
   "widget.lutManager": {
-    zh: "LUT 合并",
-    en: "LUT Merge",
+    zh: "LUT 管理",
+    en: "LUT Manager",
   },
   "widget.fiveColor": {
     zh: "配方查询",
@@ -1142,7 +1118,7 @@ export const translations: Record<string, Record<"zh" | "en", string>> = {
     en: "LUT Color Grid",
   },
   "widget.outlineSettings": {
-    zh: "外轮廓设置",
+    zh: "轮廓设置",
     en: "Outline Settings",
   },
   "widget.cloisonneSettings": {
@@ -1180,105 +1156,12 @@ export const translations: Record<string, Record<"zh" | "en", string>> = {
     en: "Extractor",
   },
   "tab.lutManager": {
-    zh: "LUT 合并",
-    en: "LUT Merge",
+    zh: "LUT 管理",
+    en: "LUT Manager",
   },
   "tab.fiveColor": {
     zh: "配方查询",
     en: "Five-Color",
-  },
-  "tab.vectorizer": {
-    zh: "图像转矢量",
-    en: "Vectorizer",
-  },
-  "tab.settings": {
-    zh: "设置",
-    en: "Settings",
-  },
-
-  // ==================== Settings Panel (Particle Loading) ====================
-  "settings.title": {
-    zh: "系统设置",
-    en: "System Settings",
-  },
-  "settings.desc": {
-    zh: "管理缓存与运行时偏好设置，保持工作区轻量且稳定。",
-    en: "Manage cache and runtime preferences to keep the workspace light and stable.",
-  },
-  "settings.maintenance": {
-    zh: "维护",
-    en: "Maintenance",
-  },
-  "settings.fancy_loading": {
-    zh: "粒子特效加载动画",
-    en: "Particle Effect Loading",
-  },
-  "settings.fancy_loading_desc": {
-    zh: "启用七彩粒子聚合加载特效，关闭后使用轻量级扫描线动画",
-    en: "Enable rainbow particle convergence effect, disable for lightweight scan line animation",
-  },
-  "settings.cache": {
-    zh: "缓存管理",
-    en: "Cache Management",
-  },
-  "settings.clear_cache": {
-    zh: "清除缓存",
-    en: "Clear Cache",
-  },
-  "settings.clear_cache_desc": {
-    zh: "清除后端临时文件和缓存数据",
-    en: "Clear backend temporary files and cached data",
-  },
-  "settings.cache_summary": {
-    zh: "快速回收后端临时文件，适合在长时间使用后整理空间。",
-    en: "Reclaim backend temporary files after longer sessions to tidy up storage.",
-  },
-  "settings.cache_cleared": {
-    zh: "缓存已清除",
-    en: "Cache cleared",
-  },
-  "settings.cache_cleared_detail": {
-    zh: "已清除 {count} 个临时文件，释放 {size}",
-    en: "Cleared {count} temporary files, freed {size}",
-  },
-  "settings.cache_clear_failed": {
-    zh: "清除缓存失败，请稍后重试",
-    en: "Failed to clear cache. Please try again.",
-  },
-
-
-  // ==================== Settings Panel (Slicer Settings) ====================
-  "settings.slicer_settings": {
-    zh: "切片软件设置",
-    en: "Slicer Settings",
-  },
-  "settings.slicer_software": {
-    zh: "切片软件",
-    en: "Slicer Software",
-  },
-  "settings.printer_model": {
-    zh: "打印机型号",
-    en: "Printer Model",
-  },
-  "settings.bed_size": {
-    zh: "打印床尺寸",
-    en: "Bed Size",
-  },
-  "settings.nozzle_count": {
-    zh: "喷头数量",
-    en: "Nozzle Count",
-  },
-  "settings.dual_head": {
-    zh: "双头",
-    en: "Dual Head",
-  },
-  "settings.single_head": {
-    zh: "单头",
-    en: "Single Head",
-  },
-  "loading.generating": {
-    zh: "模型生成中...",
-    en: "Generating model...",
   },
 
   // ==================== App Header ====================
@@ -1392,14 +1275,6 @@ export const translations: Record<string, Record<"zh" | "en", string>> = {
     zh: "关闭错误",
     en: "Close error",
   },
-  lut_manager_mode_summary: {
-    zh: "模式 {mode} · 共 {count} 色",
-    en: "Mode {mode} · {count} colors",
-  },
-  lut_manager_selected_count: {
-    zh: "已选择 {count} 个副 LUT",
-    en: "{count} secondary LUTs selected",
-  },
 
   // ==================== About View ====================
   about_title: {
@@ -1440,7 +1315,7 @@ export const translations: Record<string, Record<"zh" | "en", string>> = {
     zh: "底板颜色",
     en: "Backing Color",
   },
-  cal_generate_btn_panel: {
+  cal_generate_btn: {
     zh: "生成校准板",
     en: "Generate Calibration",
   },
@@ -1522,37 +1397,13 @@ export const translations: Record<string, Record<"zh" | "en", string>> = {
     zh: "未提取",
     en: "Not extracted",
   },
-  ext_page_1_label: {
-    zh: "第 1 页",
-    en: "Page 1",
-  },
-  ext_page_2_label: {
-    zh: "第 2 页",
-    en: "Page 2",
-  },
   ext_download_lut: {
-    zh: "下载 LUT 文件 (.json)",
-    en: "Download LUT File (.json)",
+    zh: "下载 LUT 文件 (.npy)",
+    en: "Download LUT File (.npy)",
   },
   ext_manual_fix_hint: {
     zh: "点击右侧 LUT 预览图中的色块可手动修正颜色",
     en: "Click a cell in the LUT preview to manually fix its color",
-  },
-  ext_material_type_label: {
-    zh: "耗材类型",
-    en: "Material Type",
-  },
-  ext_palette_title: {
-    zh: "调色板确认",
-    en: "Palette Confirmation",
-  },
-  ext_confirm_palette_btn: {
-    zh: "确认调色板",
-    en: "Confirm Palette",
-  },
-  ext_palette_confirmed: {
-    zh: "✓ 调色板已确认",
-    en: "✓ Palette confirmed",
   },
 
   // ==================== Extractor Canvas ====================
@@ -1602,6 +1453,10 @@ export const translations: Record<string, Record<"zh" | "en", string>> = {
   },
 
   // ==================== Basic Settings ====================
+  basic_batch_mode: {
+    zh: "批量模式",
+    en: "Batch Mode",
+  },
   basic_crop_after_upload: {
     zh: "上传后裁剪",
     en: "Crop After Upload",
@@ -1613,18 +1468,6 @@ export const translations: Record<string, Record<"zh" | "en", string>> = {
   basic_lut_placeholder: {
     zh: "选择 LUT...",
     en: "Select LUT...",
-  },
-  basic_lut_upload: {
-    zh: "上传",
-    en: "Upload",
-  },
-  basic_lut_upload_success: {
-    zh: "LUT 上传成功",
-    en: "LUT uploaded",
-  },
-  basic_lut_upload_error: {
-    zh: "LUT 上传失败",
-    en: "LUT upload failed",
   },
   basic_color_mode_label: {
     zh: "色彩模式",
@@ -1651,8 +1494,8 @@ export const translations: Record<string, Record<"zh" | "en", string>> = {
     en: "Modeling Mode",
   },
   basic_image_format_error: {
-    zh: "仅支持 JPG/PNG/SVG/WebP/HEIC 格式",
-    en: "Only JPG/PNG/SVG/WebP/HEIC formats are supported",
+    zh: "仅支持 JPG/PNG/SVG 格式",
+    en: "Only JPG/PNG/SVG formats are supported",
   },
 
   // ==================== Structure Mode Options ====================
@@ -1701,12 +1544,8 @@ export const translations: Record<string, Record<"zh" | "en", string>> = {
     en: "Separate Backing",
   },
   adv_hue_protection: {
-    zh: "🎨 色相保护",
-    en: "🎨 Hue Protection",
-  },
-  adv_chroma_gate: {
-    zh: "🌈 暗色彩度门槛",
-    en: "🌈 Dark Chroma Gate",
+    zh: "色相保护",
+    en: "Hue Protection",
   },
 
   // ==================== Relief Settings ====================
@@ -1745,11 +1584,11 @@ export const translations: Record<string, Record<"zh" | "en", string>> = {
 
   // ==================== Outline Settings ====================
   outline_enable: {
-    zh: "启用外轮廓",
+    zh: "启用描边",
     en: "Enable Outline",
   },
   outline_width: {
-    zh: "外轮廓厚度",
+    zh: "描边宽度",
     en: "Outline Width",
   },
 
@@ -1765,10 +1604,6 @@ export const translations: Record<string, Record<"zh" | "en", string>> = {
   cloisonne_wire_height: {
     zh: "金属丝高度",
     en: "Wire Height",
-  },
-  cloisonne_wip: {
-    zh: "此功能正在施工中，部分效果可能不完整",
-    en: "This feature is under construction, some effects may be incomplete",
   },
 
   // ==================== Coating Settings ====================
@@ -1798,46 +1633,6 @@ export const translations: Record<string, Record<"zh" | "en", string>> = {
     zh: "环孔直径",
     en: "Loop Hole Diameter",
   },
-  loop_angle: {
-    zh: "旋转角度",
-    en: "Rotation Angle",
-  },
-  loop_position_preset: {
-    zh: "位置预设",
-    en: "Position Preset",
-  },
-  loop_offset_x: {
-    zh: "X 偏移",
-    en: "X Offset",
-  },
-  loop_offset_y: {
-    zh: "Y 偏移",
-    en: "Y Offset",
-  },
-  loop_preset_top_center: {
-    zh: "上中",
-    en: "Top Center",
-  },
-  loop_preset_top_left: {
-    zh: "左上",
-    en: "Top Left",
-  },
-  loop_preset_top_right: {
-    zh: "右上",
-    en: "Top Right",
-  },
-  loop_preset_left_center: {
-    zh: "左中",
-    en: "Left Center",
-  },
-  loop_preset_right_center: {
-    zh: "右中",
-    en: "Right Center",
-  },
-  loop_preset_bottom_center: {
-    zh: "下中",
-    en: "Bottom Center",
-  },
 
   // ==================== Action Bar ====================
   action_upload_hint: {
@@ -1863,194 +1658,6 @@ export const translations: Record<string, Record<"zh" | "en", string>> = {
   action_preview_alt: {
     zh: "预览结果",
     en: "Preview result",
-  },
-  action_view_layers: {
-    zh: "查看分层",
-    en: "View Layers",
-  },
-  action_layers_loading: {
-    zh: "加载分层...",
-    en: "Loading layers...",
-  },
-  loading_witty_1: {
-    zh: "正在折叠高维空间...",
-    en: "Folding higher dimensions...",
-  },
-  loading_witty_2: {
-    zh: "正在为打印床预热赛博能量...",
-    en: "Preheating cyber energy for the print bed...",
-  },
-  loading_witty_3: {
-    zh: "正在提炼像素点中的灵魂...",
-    en: "Extracting souls from pixels...",
-  },
-  loading_witty_4: {
-    zh: "正在拼接彩色多边形...",
-    en: "Splicing colorful polygons...",
-  },
-  loading_witty_5: {
-    zh: "正在向打印机注入魔法...",
-    en: "Injecting magic into the printer...",
-  },
-  loading_witty_6: {
-    zh: "正在打磨 3MF 积木块...",
-    en: "Polishing 3MF building blocks...",
-  },
-  loading_witty_7: {
-    zh: "正在从异世界召唤材质...",
-    en: "Summoning textures from another world...",
-  },
-  loading_witty_8: {
-    zh: "正在计算光子跳跃轨道...",
-    en: "Calculating photon jump trajectories...",
-  },
-  loading_witty_9: {
-    zh: "不要走开，马上渲染完毕...",
-    en: "Hold on, rendering almost complete...",
-  },
-  loading_witty_10: {
-    zh: "请给您的喷嘴一点准备时间...",
-    en: "Please give your nozzle some time to prepare...",
-  },
-  loading_witty_11: {
-    zh: "正在校准多发混合挤出机...",
-    en: "Calibrating multi-color mixing extruder...",
-  },
-  loading_witty_12: {
-    zh: "正在清理虚拟构建底板...",
-    en: "Cleaning virtual build plate...",
-  },
-  loading_witty_13: {
-    zh: "正在熔化高精度的数字耗材...",
-    en: "Melting high-precision digital filament...",
-  },
-  loading_witty_14: {
-    zh: "正在挤出完美的底层裙边...",
-    en: "Extruding the perfect base skirt...",
-  },
-  loading_witty_15: {
-    zh: "正在规划 G 代码的最优路径...",
-    en: "Planning optimal G-code paths...",
-  },
-  loading_witty_16: {
-    zh: "正在调教步进电机的脾气...",
-    en: "Tuning the temper of stepper motors...",
-  },
-  loading_witty_17: {
-    zh: "正在精心填充网格内部...",
-    en: "Carefully infilling the mesh interior...",
-  },
-  loading_witty_18: {
-    zh: "预热虚拟喷头至 210°C 中...",
-    en: "Preheating virtual nozzle to 210°C...",
-  },
-  loading_witty_19: {
-    zh: "正在生成仿生有机树状支撑...",
-    en: "Generating bionic organic tree supports...",
-  },
-  loading_witty_20: {
-    zh: "正在抹平第一层讨厌的大象腿...",
-    en: "Smoothing the annoying first layer elephant foot...",
-  },
-  loading_witty_21: {
-    zh: "超级风扇启动，冷却悬垂区域...",
-    en: "Superfan activated, cooling overhangs...",
-  },
-  loading_witty_22: {
-    zh: "正在计算桥接的完美抛物线...",
-    en: "Calculating the perfect parabola for bridging...",
-  },
-  loading_witty_23: {
-    zh: "正在对层叠颜色进行魔法混合...",
-    en: "Magically blending stacked layers of colors...",
-  },
-  loading_witty_24: {
-    zh: "正在宇宙中寻找丢失的 Z 轴原点...",
-    en: "Searching the universe for the lost Z-axis origin...",
-  },
-  loading_witty_25: {
-    zh: "正在安抚打滑的挤出机齿轮...",
-    en: "Pacifying slipping extruder gears...",
-  },
-  loading_witty_26: {
-    zh: "为模型注入强防翘边附着力...",
-    en: "Injecting anti-warping adhesion into the model...",
-  },
-  loading_witty_27: {
-    zh: "正在用微波清理喷嘴上的拉丝...",
-    en: "Microwaving stringing residue off the nozzle...",
-  },
-  loading_witty_28: {
-    zh: "正在将您的灵感切片成一层层...",
-    en: "Slicing your inspiration layer by layer...",
-  },
-  loading_witty_29: {
-    zh: "为调色盘补充一点赛博朋克墨水...",
-    en: "Refilling cyberpunk ink for the palette...",
-  },
-  loading_witty_30: {
-    zh: "正在进行一百万次色彩碰撞测试...",
-    en: "Conducting an intense color collision test...",
-  },
-  loading_witty_31: {
-    zh: "正在把二维像素用力吹成三维...",
-    en: "Blowing 2D pixels vigorously into 3D...",
-  },
-  loading_witty_32: {
-    zh: "构建坚不可摧的 3D 底层网格中...",
-    en: "Building indestructible 3D base grids...",
-  },
-  loading_witty_33: {
-    zh: "熨平顶层，让它像镜面一样反光...",
-    en: "Ironing top layers until they shine like mirrors...",
-  },
-  loading_witty_34: {
-    zh: "正在从虚空深渊中召唤支撑材料...",
-    en: "Summoning support structures from the void abyss...",
-  },
-  loading_witty_35: {
-    zh: "正在解构庞大的彩色三维点云矩阵...",
-    en: "Deconstructing massive colorful 3D matrices...",
-  },
-  loading_witty_36: {
-    zh: "正在为立体模型注入引力波形...",
-    en: "Injecting gravitational waveforms into 3D models...",
-  },
-  loading_witty_37: {
-    zh: "调色中...不，是在重新发明颜色...",
-    en: "Calibrating colors... no, reinventing colors...",
-  },
-  loading_witty_38: {
-    zh: "正在为您一砖一瓦搭建浮雕世界...",
-    en: "Building a relief world for you, brick by brick...",
-  },
-  loading_witty_39: {
-    zh: "正在拿针线缝补模型的破损多边形...",
-    en: "Darning the broken polygons of your model...",
-  },
-  loading_witty_40: {
-    zh: "Lumina 工作室正在为您打印一个好心情...",
-    en: "Lumina Studio is printing a good mood for you...",
-  },
-  action_layers_title: {
-    zh: "分层预览",
-    en: "Layer Preview",
-  },
-  action_layer_nth: {
-    zh: "第",
-    en: "Layer ",
-  },
-  action_layer_unit: {
-    zh: "层",
-    en: "",
-  },
-  action_layer_prev: {
-    zh: "上一层",
-    en: "Prev",
-  },
-  action_layer_next: {
-    zh: "下一层",
-    en: "Next",
   },
 
   // ==================== Bed Size Selector ====================
@@ -2080,7 +1687,7 @@ export const translations: Record<string, Record<"zh" | "en", string>> = {
     zh: "匹配色",
     en: "Matched",
   },
-  palette_replaced_label: {
+  palette_replaced: {
     zh: "替换色",
     en: "Replaced",
   },
@@ -2194,67 +1801,33 @@ export const translations: Record<string, Record<"zh" | "en", string>> = {
     zh: "双击取消收藏",
     en: "Double-click to unfavorite",
   },
-  lut_grid_mode_swatch: {
-    zh: "色块",
-    en: "Swatch",
-  },
-  lut_grid_mode_card: {
-    zh: "色卡",
-    en: "Card",
-  },
-  lut_grid_card_a: {
-    zh: "色卡 A",
-    en: "Card A",
-  },
-  lut_grid_card_b: {
-    zh: "色卡 B",
-    en: "Card B",
-  },
 
-  // ==================== Replace Confirmation ====================
-  replace_confirm_btn: {
-    zh: "确认替换",
-    en: "Confirm Replace",
+  // ==================== Batch File Uploader ====================
+  batch_drop_hint: {
+    zh: "拖拽图片或点击上传（支持多选）",
+    en: "Drag & drop images or click to upload (multi-select)",
   },
-  replace_cancel_btn: {
-    zh: "取消",
-    en: "Cancel",
+  batch_drop_aria: {
+    zh: "拖拽图片或点击上传多个文件",
+    en: "Drag images or click to upload multiple files",
   },
-  replace_preview_label: {
-    zh: "替换预览",
-    en: "Replace Preview",
+  batch_file_count: {
+    zh: "已选 {count} 个文件",
+    en: "{count} files selected",
+  },
+  batch_file_list_label: {
+    zh: "已选文件列表",
+    en: "Selected files list",
+  },
+  batch_delete_file: {
+    zh: "删除 {name}",
+    en: "Delete {name}",
   },
 
   // ==================== Image Upload ====================
   upload_drag_hint: {
     zh: "拖拽图片或点击上传",
     en: "Drag & drop image or click to upload",
-  },
-
-  // ==================== Unified Uploader ====================
-  upload_unified_hint: {
-    zh: "拖拽图片或点击上传（支持多选）",
-    en: "Drag & drop or click to upload (multi-select)",
-  },
-  upload_unified_aria: {
-    zh: "拖拽图片或点击上传文件",
-    en: "Drag images or click to upload files",
-  },
-  upload_add_more: {
-    zh: "添加更多图片",
-    en: "Add more images",
-  },
-  upload_file_count: {
-    zh: "已选 {count} 个文件",
-    en: "{count} files selected",
-  },
-  upload_file_list_label: {
-    zh: "已选文件列表",
-    en: "Selected files list",
-  },
-  upload_delete_file: {
-    zh: "删除 {name}",
-    en: "Delete {name}",
   },
 
   // ==================== Zoomable Image ====================
@@ -2358,22 +1931,6 @@ export const translations: Record<string, Record<"zh" | "en", string>> = {
     zh: "LUT 选择",
     en: "LUT Selection",
   },
-  five_color_title: {
-    zh: "五色配方查询",
-    en: "Five-Color Recipe Query",
-  },
-  five_color_desc: {
-    zh: "从基础色中选出 5 种颜色并查询叠层后的结果色，适合快速验证色片配方。",
-    en: "Pick five base colors and query the blended result to validate layered color recipes quickly.",
-  },
-  five_color_palette: {
-    zh: "基础色板",
-    en: "Base Palette",
-  },
-  five_color_actions: {
-    zh: "操作",
-    en: "Actions",
-  },
   five_color_lut_placeholder: {
     zh: "请选择 LUT",
     en: "Select LUT",
@@ -2394,10 +1951,6 @@ export const translations: Record<string, Record<"zh" | "en", string>> = {
     zh: "查询",
     en: "Query",
   },
-  five_color_query_loading: {
-    zh: "查询中...",
-    en: "Querying...",
-  },
   five_color_close_error: {
     zh: "关闭错误",
     en: "Close error",
@@ -2414,25 +1967,13 @@ export const translations: Record<string, Record<"zh" | "en", string>> = {
     zh: "行号",
     en: "Row",
   },
-  five_color_result_source: {
-    zh: "来源",
-    en: "Source",
-  },
   five_color_result_color: {
     zh: "结果颜色 {hex}",
     en: "Result color {hex}",
   },
-  five_color_result_panel: {
-    zh: "查询结果",
-    en: "Query Result",
-  },
   five_color_not_found: {
     zh: "未找到匹配",
     en: "No match found",
-  },
-  five_color_selection_progress: {
-    zh: "已选择 {count}/{total} 种颜色，请继续完成配方。",
-    en: "{count}/{total} colors selected. Keep building the recipe.",
   },
   five_color_selected: {
     zh: "已选颜色 {n}: {name}",
@@ -2471,311 +2012,5 @@ export const translations: Record<string, Record<"zh" | "en", string>> = {
   widget_collapse: {
     zh: "折叠",
     en: "Collapse",
-  },
-
-  // ==================== WikiTooltip ====================
-  wiki_tooltip_link: {
-    zh: "查看 Wiki 详情 ↗",
-    en: "View Wiki Details ↗",
-  },
-
-  // ==================== Vectorizer Panel ====================
-  "vec.title": {
-    zh: "图像转矢量",
-    en: "Image Vectorizer",
-  },
-  "vec.upload_hint": {
-    zh: "拖放或点击上传图片进行矢量化",
-    en: "Drag & drop or click to upload an image for vectorization",
-  },
-  "vec.basic_params": {
-    zh: "基础参数",
-    en: "Basic Parameters",
-  },
-  "vec.advanced_params": {
-    zh: "高级参数",
-    en: "Advanced Parameters",
-  },
-  "vec.output_enhance": {
-    zh: "输出增强",
-    en: "Output Enhancement",
-  },
-
-  // Core params
-  "vec.num_colors": {
-    zh: "颜色数量",
-    en: "Number of Colors",
-  },
-  "vec.num_colors_auto": {
-    zh: "自动",
-    en: "Auto",
-  },
-  "vec.num_colors_manual": {
-    zh: "手动",
-    en: "Manual",
-  },
-  "vec.detail_level": {
-    zh: "细节等级",
-    en: "Detail Level",
-  },
-  "vec.detail_level_enable": {
-    zh: "启用统一细节控制",
-    en: "Enable Unified Detail Control",
-  },
-  "vec.detail_level_on": {
-    zh: "启用",
-    en: "On",
-  },
-  "vec.detail_level_off": {
-    zh: "禁用",
-    en: "Off",
-  },
-  "vec.smoothness": {
-    zh: "平滑度",
-    en: "Smoothness",
-  },
-
-  // Output enhancement
-  "vec.svg_enable_stroke": {
-    zh: "启用描边",
-    en: "Enable Stroke",
-  },
-  "vec.svg_stroke_width": {
-    zh: "描边宽度",
-    en: "Stroke Width",
-  },
-  "vec.thin_line_max_radius": {
-    zh: "薄线检测半径",
-    en: "Thin Line Max Radius",
-  },
-  "vec.enable_coverage_fix": {
-    zh: "启用覆盖修复",
-    en: "Enable Coverage Fix",
-  },
-  "vec.min_coverage_ratio": {
-    zh: "最小覆盖率",
-    en: "Min Coverage Ratio",
-  },
-
-  // Advanced - Preprocessing
-  "vec.adv_preprocess": {
-    zh: "预处理",
-    en: "Preprocessing",
-  },
-  "vec.smoothing_spatial": {
-    zh: "空间平滑半径",
-    en: "Spatial Smoothing",
-  },
-  "vec.smoothing_color": {
-    zh: "颜色平滑半径",
-    en: "Color Smoothing",
-  },
-  "vec.max_working_pixels": {
-    zh: "最大工作像素数",
-    en: "Max Working Pixels",
-  },
-
-  // Advanced - Segmentation
-  "vec.adv_segmentation": {
-    zh: "超像素分割",
-    en: "Superpixel Segmentation",
-  },
-  "vec.slic_region_size": {
-    zh: "超像素区域大小",
-    en: "SLIC Region Size",
-  },
-  "vec.edge_sensitivity": {
-    zh: "边缘敏感度",
-    en: "Edge Sensitivity",
-  },
-  "vec.refine_passes": {
-    zh: "边界细化次数",
-    en: "Refine Passes",
-  },
-  "vec.enable_antialias_detect": {
-    zh: "启用抗锯齿检测",
-    en: "Antialiasing Detection",
-  },
-  "vec.aa_tolerance": {
-    zh: "抗锯齿容差",
-    en: "AA Tolerance",
-  },
-
-  // Advanced - Curve fitting
-  "vec.adv_curve_fitting": {
-    zh: "曲线拟合",
-    en: "Curve Fitting",
-  },
-  "vec.curve_fit_error": {
-    zh: "曲线拟合误差",
-    en: "Curve Fit Error",
-  },
-  "vec.contour_simplify": {
-    zh: "轮廓简化强度",
-    en: "Contour Simplification",
-  },
-  "vec.merge_segment_tolerance": {
-    zh: "线段合并容差",
-    en: "Merge Segment Tolerance",
-  },
-
-  // Advanced - Filtering
-  "vec.adv_filtering": {
-    zh: "区域过滤",
-    en: "Region Filtering",
-  },
-  "vec.min_region_area": {
-    zh: "最小区域面积",
-    en: "Min Region Area",
-  },
-  "vec.max_merge_color_dist": {
-    zh: "最大合并色差",
-    en: "Max Merge Color Dist",
-  },
-  "vec.min_contour_area": {
-    zh: "最小轮廓面积",
-    en: "Min Contour Area",
-  },
-  "vec.min_hole_area": {
-    zh: "最小孔洞面积",
-    en: "Min Hole Area",
-  },
-  "vec.submit": {
-    zh: "开始矢量化",
-    en: "Start Vectorization",
-  },
-  "vec.processing": {
-    zh: "正在矢量化...",
-    en: "Vectorizing...",
-  },
-  "vec.result_title": {
-    zh: "矢量化结果",
-    en: "Vectorization Result",
-  },
-  "vec.original": {
-    zh: "原始图片",
-    en: "Original",
-  },
-  "vec.svg_preview": {
-    zh: "SVG 预览",
-    en: "SVG Preview",
-  },
-  "vec.shapes": {
-    zh: "形状数",
-    en: "Shapes",
-  },
-  "vec.colors": {
-    zh: "颜色数",
-    en: "Colors",
-  },
-  "vec.download_svg": {
-    zh: "下载 SVG",
-    en: "Download SVG",
-  },
-  "vec.send_to_converter": {
-    zh: "发送到图像转换",
-    en: "Send to Image Converter",
-  },
-  "vec.error": {
-    zh: "矢量化失败",
-    en: "Vectorization Failed",
-  },
-  "vec.no_image": {
-    zh: "请先上传图片",
-    en: "Please upload an image first",
-  },
-
-  // ===== Vectorizer Parameter Hints =====
-  "vec.hint_num_colors": {
-    zh: "自动模式会检测图像的最优颜色数量。切换到手动模式可指定固定值（2-256）。",
-    en: "Auto mode detects the optimal color count. Switch to Manual to specify a fixed value (2-256).",
-  },
-  "vec.hint_smoothness": {
-    zh: "整体轮廓平滑度。0 = 保留所有细节；1 = 最大平滑。控制抽稀精度和平滑迭代。",
-    en: "Overall contour smoothness. 0 = preserve all details; 1 = maximum smoothing. Controls decimation precision and smoothing iterations.",
-  },
-  "vec.hint_detail_level": {
-    zh: "统一细节控制。启用后用一个滑块同时调整多个细节参数；禁用时使用各项独立参数。",
-    en: "Unified detail control. When enabled, a single slider adjusts multiple detail parameters; when disabled, individual parameters are used.",
-  },
-  "vec.hint_svg_enable_stroke": {
-    zh: "为 SVG 路径添加描边。可以减少色块之间的接缝（白线）。",
-    en: "Add stroke to SVG paths. Helps reduce visible seams (white gaps) between color regions.",
-  },
-  "vec.hint_svg_stroke_width": {
-    zh: "描边线条的宽度。增大可更好覆盖接缝，但可能导致细节丢失。",
-    en: "Width of the stroke lines. Larger values cover seams better but may blur fine details.",
-  },
-  "vec.hint_thin_line_max_radius": {
-    zh: "薄线检测的最大半径。用于检测并保留图像中的细线结构。",
-    en: "Max radius for thin line detection. Used to detect and preserve thin structures in the image.",
-  },
-  "vec.hint_enable_coverage_fix": {
-    zh: "启用后会扩展区域边界以确保完整覆盖画布，消除微小间隙。",
-    en: "Expands region boundaries to ensure full canvas coverage, eliminating tiny gaps.",
-  },
-  "vec.hint_min_coverage_ratio": {
-    zh: "画布最小覆盖率阈值。低于此值时会触发覆盖修复。通常保持接近 1.0。",
-    en: "Minimum canvas coverage ratio threshold. Coverage fix is triggered below this value. Keep close to 1.0.",
-  },
-  "vec.hint_smoothing_spatial": {
-    zh: "Mean Shift 空间半径。增大可降噪，但可能模糊细小结构。",
-    en: "Mean Shift spatial radius. Larger values reduce noise but may blur fine structures.",
-  },
-  "vec.hint_smoothing_color": {
-    zh: "Mean Shift 颜色半径。增大可合并相近颜色，减少颜色碎片。",
-    en: "Mean Shift color radius. Larger values merge similar colors, reducing color fragmentation.",
-  },
-  "vec.hint_max_working_pixels": {
-    zh: "内部处理的最大像素数。大图会被缩小到此限制以提升速度。增大可保留更多细节但更慢。",
-    en: "Max pixels for internal processing. Large images are downscaled to this limit for speed. Increase to preserve more detail at the cost of speed.",
-  },
-  "vec.hint_slic_region_size": {
-    zh: "超像素初始区域大小。小值产生更多超像素，保留更多细节但更慢。",
-    en: "Initial superpixel region size. Smaller values create more superpixels with more detail but slower processing.",
-  },
-  "vec.hint_edge_sensitivity": {
-    zh: "边缘检测敏感度。高值更积极地保留边缘，低值产生更平滑的分割。",
-    en: "Edge detection sensitivity. Higher values preserve edges more aggressively; lower values produce smoother segmentation.",
-  },
-  "vec.hint_refine_passes": {
-    zh: "边界细化迭代次数。更多次迭代产生更精确的区域边界，但增加处理时间。",
-    en: "Boundary refinement iterations. More passes produce more precise region boundaries at the cost of processing time.",
-  },
-  "vec.hint_enable_antialias_detect": {
-    zh: "检测并处理抗锯齿像素。对带有平滑边缘的图像效果好，但可能影响像素画风格图像。",
-    en: "Detect and handle antialiased pixels. Works well for images with smooth edges but may affect pixel art style images.",
-  },
-  "vec.hint_aa_tolerance": {
-    zh: "抗锯齿检测的颜色容差（LAB ΔE）。增大可检测更多抗锯齿像素。",
-    en: "Color tolerance for antialiasing detection (LAB ΔE). Increase to detect more antialiased pixels.",
-  },
-  "vec.hint_curve_fit_error": {
-    zh: "贝塞尔曲线拟合的最大误差（像素）。小值更精确但产生更多锚点；大值更平滑但可能丢失细节。",
-    en: "Max error for Bezier curve fitting (pixels). Smaller values are more precise with more anchor points; larger values are smoother but may lose detail.",
-  },
-  "vec.hint_contour_simplify": {
-    zh: "轮廓简化强度。增大可减少轮廓点数，使路径更简洁。",
-    en: "Contour simplification strength. Increase to reduce contour points for cleaner paths.",
-  },
-  "vec.hint_merge_segment_tolerance": {
-    zh: "共线线段合并容差。增大可合并更多近似共线的线段。",
-    en: "Tolerance for merging collinear segments. Increase to merge more nearly-collinear segments.",
-  },
-  "vec.hint_min_region_area": {
-    zh: "面积小于此值的区域会被合并到相邻区域。增大可减少小碎片。",
-    en: "Regions smaller than this area are merged into neighbors. Increase to reduce small fragments.",
-  },
-  "vec.hint_max_merge_color_dist": {
-    zh: "区域合并时允许的最大色差（LAB ΔE²）。增大可合并颜色差异更大的相邻区域。",
-    en: "Max color distance for region merging (LAB ΔE²). Increase to merge neighbors with larger color differences.",
-  },
-  "vec.hint_min_contour_area": {
-    zh: "面积小于此值的轮廓会被过滤掉。用于去除微小噪点形状。",
-    en: "Contours smaller than this area are filtered out. Used to remove tiny noise shapes.",
-  },
-  "vec.hint_min_hole_area": {
-    zh: "面积小于此值的孔洞会被填充。用于去除区域内的微小空洞。",
-    en: "Holes smaller than this area are filled in. Used to remove tiny voids inside regions.",
   },
 };

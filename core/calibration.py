@@ -17,7 +17,7 @@ from colormath.color_objects import sRGBColor, LabColor
 from colormath.color_conversions import convert_color
 from colormath.color_diff import delta_e_cie2000
 
-from config import PrinterConfig, ColorSystem, SmartConfig, SmartConfigRYBW, OUTPUT_DIR, get_asset_path
+from config import PrinterConfig, ColorSystem, SmartConfig, OUTPUT_DIR, get_asset_path
 from core.naming import generate_calibration_filename
 from utils import Stats
 from utils.bambu_3mf_writer import export_scene_with_bambu_metadata
@@ -239,8 +239,13 @@ def get_top_1296_colors():
         
         final_rgb = curr.astype(np.uint8)
         
+        # Convert to Lab for color difference calculation
+        srgb = sRGBColor(final_rgb[0]/255.0, final_rgb[1]/255.0, final_rgb[2]/255.0)
+        lab = convert_color(srgb, LabColor)
+        
         candidates.append({
             "stack": stack,
+            "lab": lab,
             "rgb": final_rgb
         })
     
@@ -441,204 +446,7 @@ def generate_smart_board(block_size_mm=5.0, gap_mm=0.8):
     )
 
 
-# ========== Lumina Smart 1296 RYBW (6-Color RYBW System) ==========
-
-def get_top_1296_colors_rybw():
-    """
-    Intelligent color selection algorithm for 6-color RYBW system.
-    RYBW 6 色系统的智能颜色选择算法。
-
-    Returns 1296 most representative color combinations from 7776 possible
-    combinations (6^5) using RYBW filament set.
-
-    Returns:
-        List of 1296 tuples, each representing a 5-layer color stack
-    """
-    print("[SMART-RYBW] Simulating 6^5 = 7776 combinations...")
-
-    candidates = []
-    filaments = SmartConfigRYBW.FILAMENTS
-    layer_h = PrinterConfig.LAYER_HEIGHT
-    backing = np.array([255, 255, 255])
-
-    alphas = {}
-    for fid, props in filaments.items():
-        bd = props['td'] / 10.0
-        alphas[fid] = min(1.0, layer_h / bd) if bd > 0 else 1.0
-
-    for stack in itertools.product(range(6), repeat=5):
-        curr = backing.astype(float)
-        for fid in stack:
-            rgb = np.array(filaments[fid]['rgb'])
-            a = alphas[fid]
-            curr = rgb * a + curr * (1.0 - a)
-
-        final_rgb = curr.astype(np.uint8)
-
-        candidates.append({
-            "stack": stack,
-            "rgb": final_rgb
-        })
-
-    print(f"[SMART-RYBW] Total candidates: {len(candidates)}. Filtering top 1296...")
-
-    selected = []
-    for i in range(6):
-        stack = (i,) * 5
-        for c in candidates:
-            if c['stack'] == stack:
-                selected.append(c)
-                break
-
-    target = 1296
-    for c in candidates:
-        if len(selected) >= target:
-            break
-        if any(c['stack'] == s['stack'] for s in selected):
-            continue
-        is_distinct = True
-        for s in selected:
-            if np.linalg.norm(c['rgb'].astype(int) - s['rgb'].astype(int)) < 8:
-                is_distinct = False
-                break
-        if is_distinct:
-            selected.append(c)
-
-    if len(selected) < target:
-        for c in candidates:
-            if len(selected) >= target:
-                break
-            if any(c['stack'] == s['stack'] for s in selected):
-                continue
-            selected.append(c)
-
-    print(f"[SMART-RYBW] Final selection: {len(selected)} colors")
-    return [s['stack'] for s in selected[:target]]
-
-
-def generate_smart_board_rybw(block_size_mm=5.0, gap_mm=0.8):
-    """
-    Generate Lumina Smart 1296 RYBW (6-Color) calibration board with 38x38 border layout.
-    生成 RYBW 6 色 Smart 1296 校准板。
-
-    Args:
-        block_size_mm: Size of each color block in mm
-        gap_mm: Gap between blocks in mm
-
-    Returns:
-        Tuple of (output_path, preview_image, status_message)
-    """
-    print("[SMART-RYBW] Generating Smart 1296 RYBW calibration board (38x38 Layout)...")
-
-    stacks = get_top_1296_colors_rybw()
-
-    data_dim = 36
-    padding = 1
-    total_dim = data_dim + 2 * padding
-    block_w = float(block_size_mm)
-    gap = float(gap_mm)
-    margin = 5.0
-
-    board_w = margin * 2 + total_dim * block_w + (total_dim - 1) * gap
-    board_h = board_w
-
-    color_conf = ColorSystem.SIX_COLOR_RYBW
-    preview_colors = color_conf['preview']
-    slot_names = color_conf['slots']
-
-    pixels_per_block = max(1, int(block_w / PrinterConfig.NOZZLE_WIDTH))
-    pixels_gap = max(1, int(gap / PrinterConfig.NOZZLE_WIDTH))
-
-    voxel_w = total_dim * (pixels_per_block + pixels_gap)
-    voxel_h = total_dim * (pixels_per_block + pixels_gap)
-
-    color_layers = 5
-    backing_layers = int(PrinterConfig.BACKING_MM / PrinterConfig.LAYER_HEIGHT)
-    total_layers = color_layers + backing_layers
-
-    full_matrix = np.full((total_layers, voxel_h, voxel_w), 0, dtype=int)
-
-    stacks = [tuple(reversed(s)) for s in stacks]
-
-    for idx, stack in enumerate(stacks):
-        r_data = idx // data_dim
-        c_data = idx % data_dim
-        row = r_data + padding
-        col = c_data + padding
-        px = col * (pixels_per_block + pixels_gap)
-        py = row * (pixels_per_block + pixels_gap)
-        for z in range(color_layers):
-            mat_id = stack[z]
-            full_matrix[z, py:py+pixels_per_block, px:px+pixels_per_block] = mat_id
-
-    # Corner markers: TL=White(0), TR=Red(1), BR=Blue(3), BL=Yellow(2)
-    corners = [
-        (0, 0, 0),
-        (0, total_dim-1, 1),
-        (total_dim-1, total_dim-1, 3),
-        (total_dim-1, 0, 2)
-    ]
-    viewing_surface_z = 0
-    for r, c, mat_id in corners:
-        px = c * (pixels_per_block + pixels_gap)
-        py = r * (pixels_per_block + pixels_gap)
-        full_matrix[viewing_surface_z, py:py+pixels_per_block, px:px+pixels_per_block] = mat_id
-
-    scene = trimesh.Scene()
-    for mat_id in range(6):
-        mesh = _generate_voxel_mesh(full_matrix, mat_id, voxel_h, voxel_w)
-        if mesh:
-            mesh.visual.face_colors = preview_colors[mat_id]
-            name = slot_names[mat_id]
-            mesh.metadata['name'] = name
-            scene.add_geometry(mesh, node_name=name, geom_name=name)
-
-    output_path = os.path.join(OUTPUT_DIR, generate_calibration_filename("6-Color", "SmartRYBW1296"))
-    export_scene_with_bambu_metadata(
-        scene=scene,
-        output_path=output_path,
-        slot_names=slot_names,
-        preview_colors=preview_colors,
-        settings={
-            'layer_height': '0.08',
-            'initial_layer_height': '0.08',
-            'wall_loops': '1',
-            'top_shell_layers': '0',
-            'bottom_shell_layers': '0',
-            'sparse_infill_density': '100%',
-            'sparse_infill_pattern': 'zig-zag',
-        },
-        color_mode="6-Color"
-    )
-
-    bottom_layer = full_matrix[0].astype(np.uint8)
-    preview_arr = np.zeros((voxel_h, voxel_w, 3), dtype=np.uint8)
-    for mat_id, rgba in preview_colors.items():
-        preview_arr[bottom_layer == mat_id] = rgba[:3]
-
-    Stats.increment("calibrations")
-    print(f"[SMART-RYBW] ✅ Smart 1296 RYBW board generated: {output_path}")
-
-    return (
-        output_path,
-        Image.fromarray(preview_arr),
-        f"✅ Smart 1296 RYBW (38x38 边框版) 生成完毕 | 尺寸：{board_w:.1f}mm | 颜色：{', '.join(slot_names)}"
-    )
-
-
-def generate_8color_board(page_index: int = 0, block_size_mm: float = 5.0, gap_mm: float = 0.8):
-    """Generate 8-color calibration board page as 3MF.
-    生成 8 色校准板单页 3MF 模型。
-
-    Args:
-        page_index (int): Page index (0 or 1). (页码索引，0 或 1)
-        block_size_mm (float): Size of each color block in mm. (色块边长，单位 mm)
-        gap_mm (float): Gap between blocks in mm. (色块间距，单位 mm)
-
-    Returns:
-        tuple: (output_path, preview_image, status_message).
-               (输出路径, 预览图像, 状态消息)
-    """
+def generate_8color_board(page_index=0):
     # 1. Load Data
     try:
         path = get_asset_path('smart_8color_stacks.npy')
@@ -666,8 +474,8 @@ def generate_8color_board(page_index: int = 0, block_size_mm: float = 5.0, gap_m
     total_dim = 39
     
     # Calculate Voxels
-    px_blk = max(1, int(block_size_mm / PrinterConfig.NOZZLE_WIDTH))
-    px_gap = max(1, int(gap_mm / PrinterConfig.NOZZLE_WIDTH))
+    px_blk = max(1, int(5.0 / PrinterConfig.NOZZLE_WIDTH))
+    px_gap = max(1, int(0.8 / PrinterConfig.NOZZLE_WIDTH))
     v_w = total_dim * (px_blk + px_gap)
     
     full_matrix = np.full((5 + int(PrinterConfig.BACKING_MM/0.08), v_w, v_w), 0, dtype=int)
@@ -754,19 +562,10 @@ def generate_8color_board(page_index: int = 0, block_size_mm: float = 5.0, gap_m
     
     return out_path, Image.fromarray(prev), "OK"
 
-def generate_8color_batch_zip(block_size_mm: float = 5.0, gap_mm: float = 0.8):
-    """Generate both 8-color pages and zip them.
-    生成两页 8 色校准板并打包为 ZIP。
-
-    Args:
-        block_size_mm (float): Size of each color block in mm. (色块边长，单位 mm)
-        gap_mm (float): Gap between adjacent blocks in mm. (色块间距，单位 mm)
-
-    Returns:
-        tuple: (zip_path, preview_image, status_message). (ZIP 路径、预览图、状态信息)
-    """
-    f1, _, _ = generate_8color_board(0, block_size_mm=block_size_mm, gap_mm=gap_mm)
-    f2, _, _ = generate_8color_board(1, block_size_mm=block_size_mm, gap_mm=gap_mm)
+def generate_8color_batch_zip():
+    """Generates both pages and zips them."""
+    f1, _, _ = generate_8color_board(0)
+    f2, _, _ = generate_8color_board(1)
     
     if not f1 or not f2: return None, None, "[ERROR] Generation failed"
     
@@ -775,7 +574,7 @@ def generate_8color_batch_zip(block_size_mm: float = 5.0, gap_mm: float = 0.8):
         zf.write(f1, os.path.basename(f1))
         zf.write(f2, os.path.basename(f2))
         
-    _, prev, _ = generate_8color_board(0, block_size_mm=block_size_mm, gap_mm=gap_mm)
+    _, prev, _ = generate_8color_board(0) # Show Page 1 as preview
     return zip_path, prev, "[OK] 8-Color Kit (Page 1 & 2) Generated!"
 
 
@@ -1625,19 +1424,10 @@ def _generate_5color_extended_page(block_size_mm, gap_mm, preview_colors, slot_n
     )
 
 
-def generate_5color_extended_batch_zip(block_size_mm: float = 5.0, gap_mm: float = 0.8):
-    """Generate both 5-color extended pages and zip them.
-    生成两页 5 色扩展校准板并打包为 ZIP。
-
-    Args:
-        block_size_mm (float): Swatch block size in mm. (色块边长，单位 mm)
-        gap_mm (float): Gap between swatches in mm. (色块间距，单位 mm)
-
-    Returns:
-        tuple: (zip_path, preview_image, status_message). (ZIP 路径、预览图、状态信息)
-    """
-    f1, _, _ = generate_5color_extended_board(block_size_mm=block_size_mm, gap_mm=gap_mm, page_index=0)
-    f2, _, _ = generate_5color_extended_board(block_size_mm=block_size_mm, gap_mm=gap_mm, page_index=1)
+def generate_5color_extended_batch_zip():
+    """Generates both pages and zips them."""
+    f1, _, _ = generate_5color_extended_board(page_index=0)
+    f2, _, _ = generate_5color_extended_board(page_index=1)
     
     if not f1 or not f2:
         return None, None, "❌ Generation failed"
@@ -1647,5 +1437,5 @@ def generate_5color_extended_batch_zip(block_size_mm: float = 5.0, gap_mm: float
         zf.write(f1, os.path.basename(f1))
         zf.write(f2, os.path.basename(f2))
     
-    _, prev, _ = generate_5color_extended_board(block_size_mm=block_size_mm, gap_mm=gap_mm, page_index=0)  # Show Page 1 as preview
+    _, prev, _ = generate_5color_extended_board(page_index=0)  # Show Page 1 as preview
     return zip_path, prev, "✅ 5-Color Extended Kit (Page 1 & 2) Generated!"

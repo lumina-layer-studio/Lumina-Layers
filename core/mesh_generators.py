@@ -128,7 +128,7 @@ class VoxelMesher(BaseMesher):
         Supports both regular materials (0-7) and backing layer (-2).
         """
         vertices, faces = [], []
-        shrink = 0.0  # Remove gaps for seamless voxels
+        shrink = 0.05  # Preserve gaps for blocky aesthetic
         
         for z in range(voxel_matrix.shape[0]):
             z_bottom, z_top = z, z + 1

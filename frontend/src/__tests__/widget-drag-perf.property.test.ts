@@ -144,9 +144,9 @@ describe('Widget Drag Performance Property-Based Tests', () => {
     // All valid WidgetId values for generating realistic widgets
     const WIDGET_IDS: WidgetId[] = [
       'basic-settings', 'advanced-settings', 'relief-settings',
-      'outline-settings', 'cloisonne-settings', 'coating-settings',
-      'keychain-loop', 'action-bar', 'calibration', 'extractor',
-      'lut-manager', 'five-color',
+      'palette-panel', 'lut-color-grid', 'outline-settings',
+      'cloisonne-settings', 'coating-settings', 'keychain-loop',
+      'action-bar', 'calibration', 'extractor', 'lut-manager', 'five-color',
     ];
 
     /**

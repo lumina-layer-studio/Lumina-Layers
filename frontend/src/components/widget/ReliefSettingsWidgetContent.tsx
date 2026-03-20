@@ -7,7 +7,7 @@ import ReliefSettings from '../sections/ReliefSettings';
 
 export default function ReliefSettingsWidgetContent() {
   return (
-    <div className="p-3">
+    <div className="overflow-y-auto max-h-[60vh] p-3">
       <ReliefSettings />
     </div>
   );

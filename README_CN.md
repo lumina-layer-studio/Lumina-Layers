@@ -422,19 +422,11 @@ python main.py
 
 ## 贡献者
 
-<p align="center">
-  <a href="https://github.com/MOVIBALE/Lumina-Layers/graphs/contributors">
-    <img
-      src="https://contrib.rocks/image?repo=MOVIBALE/Lumina-Layers"
-      alt="贡献者头像墙"
-    />
-  </a>
-</p>
+<a href="https://github.com/MOVIBALE/Lumina-Layers/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=MOVIBALE/Lumina-Layers" />
+</a>
 
-<p align="center">
-  由所有贡献者精心制作！<br />
-   贡献墙支持：<a href="https://contrib.rocks">contrib.rocks</a> 
-</p>
+由所有贡献者精心制作！
 
 ---
 

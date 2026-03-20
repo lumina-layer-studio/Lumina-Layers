@@ -7,7 +7,7 @@ import AdvancedSettings from '../sections/AdvancedSettings';
 
 export default function AdvancedSettingsWidgetContent() {
   return (
-    <div className="p-3">
+    <div className="overflow-y-auto max-h-[60vh] p-3">
       <AdvancedSettings />
     </div>
   );

@@ -7,7 +7,7 @@ import CloisonneSettings from '../sections/CloisonneSettings';
 
 export default function CloisonneSettingsWidgetContent() {
   return (
-    <div className="p-3">
+    <div className="overflow-y-auto max-h-[60vh] p-3">
       <CloisonneSettings />
     </div>
   );

@@ -20,11 +20,7 @@ from api.schemas.system import (
     CacheCleanupDetails,
     ClearCacheResponse,
     ClearCacheResult,
-    PrinterInfo,
-    PrinterListResponse,
     SaveSettingsResponse,
-    SlicerInfo,
-    SlicerListResponse,
     StatsResponse,
     UserSettings,
     UserSettingsResponse,
@@ -124,71 +120,6 @@ def clear_cache(
             output_files_cleaned=result.output_files_cleaned,
         ),
     )
-
-
-# ---------------------------------------------------------------------------
-# Printers endpoint
-# ---------------------------------------------------------------------------
-
-
-@router.get("/printers")
-def get_printers() -> PrinterListResponse:
-    """Return all supported printer models.
-    返回所有支持的打印机型号列表。
-
-    Returns:
-        PrinterListResponse: List of printer metadata. (打印机元数据列表)
-    """
-    profiles = config.list_printer_profiles()
-    printers = []
-    for p in profiles:
-        # Build supported slicer list: default template → BambuStudio, plus slicer_templates keys
-        slicers = []
-        # If template_file starts with "bambu_", default slicer is BambuStudio
-        if p.template_file.startswith("bambu_"):
-            slicers.append("BambuStudio")
-        slicers.extend(p.slicer_templates.keys())
-        # Deduplicate while preserving order
-        seen: set[str] = set()
-        unique_slicers = []
-        for s in slicers:
-            if s not in seen:
-                seen.add(s)
-                unique_slicers.append(s)
-        printers.append(
-            PrinterInfo(
-                id=p.id,
-                display_name=p.display_name,
-                brand=p.brand,
-                bed_width=p.bed_width,
-                bed_depth=p.bed_depth,
-                bed_height=p.bed_height,
-                nozzle_count=p.nozzle_count,
-                is_dual_head=p.is_dual_head,
-                supported_slicers=unique_slicers,
-            )
-        )
-    return PrinterListResponse(status="success", printers=printers)
-
-
-# ---------------------------------------------------------------------------
-# Slicers endpoint
-# ---------------------------------------------------------------------------
-
-
-@router.get("/slicers")
-def get_slicers() -> SlicerListResponse:
-    """Return all supported slicer software options.
-    返回所有支持的切片器软件列表。
-
-    Returns:
-        SlicerListResponse: List of slicer metadata. (切片器元数据列表)
-    """
-    slicers = [
-        SlicerInfo(id=s["id"], display_name=s["display_name"])
-        for s in config.SUPPORTED_SLICERS
-    ]
-    return SlicerListResponse(status="success", slicers=slicers)
 
 
 # ---------------------------------------------------------------------------

@@ -15,21 +15,6 @@ from pydantic import BaseModel, Field
 # ========== Models ==========
 
 
-class PaletteEntrySchema(BaseModel):
-    """Palette entry schema for API responses.
-    调色板条目 Schema。
-
-    Attributes:
-        color: Color name, e.g. "Red", "Cyan". (颜色名称)
-        material: Material name. (材料名称)
-        hex_color: Optional hex color value, e.g. "#FF0000". (十六进制颜色值)
-    """
-
-    color: str = Field(..., description="颜色名称，如 Red、Cyan")
-    material: str = Field("PLA Basic", description="材料名称")
-    hex_color: str | None = Field(None, description="十六进制颜色值，如 #FF0000")
-
-
 class MergeStats(BaseModel):
     """Statistics from a LUT merge operation.
     LUT 合并操作的统计信息。
@@ -100,8 +85,6 @@ class MergeResponse(BaseModel):
     message: str = Field(..., description="结果描述信息")
     filename: str = Field(..., description="合并 LUT 文件显示名称")
     stats: MergeStats = Field(..., description="合并统计信息")
-    palette: list[PaletteEntrySchema] = Field(default_factory=list, description="合并后调色板")
-    warnings: list[str] = Field(default_factory=list, description="打印参数兼容性警告列表")
 
 
 class LutInfoResponse(BaseModel):
@@ -125,10 +108,3 @@ class LutInfoResponse(BaseModel):
     name: str = Field(..., description="LUT 显示名称")
     color_mode: str = Field(..., description="颜色模式")
     color_count: int = Field(..., ge=0, description="颜色数量")
-    palette: list[PaletteEntrySchema] = Field(default_factory=list, description="调色板数组")
-    max_color_layers: int = Field(5, description="最大颜色层数")
-    layer_height_mm: float = Field(0.08, description="层高 (mm)")
-    line_width_mm: float = Field(0.42, description="线宽 (mm)")
-    base_layers: int = Field(10, description="底板层数")
-    base_channel_idx: int = Field(0, description="底板通道索引")
-    layer_order: str = Field("Top2Bottom", description="打印顺序")

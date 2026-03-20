@@ -1,25 +1,21 @@
-import { useRef, useEffect } from "react";
 import { useShallow } from "zustand/react/shallow";
-import { useConverterStore, ACCEPT_IMAGE_FORMATS } from "../../stores/converterStore";
+import { useConverterStore, isValidImageType } from "../../stores/converterStore";
 import {
-  ColorMode,
   ModelingMode,
   StructureMode,
 } from "../../api/types";
-import UnifiedUploader from "../ui/UnifiedUploader";
+import ImageUpload from "../ui/ImageUpload";
+import BatchFileUploader from "../ui/BatchFileUploader";
 import Checkbox from "../ui/Checkbox";
 import Dropdown from "../ui/Dropdown";
 import Slider from "../ui/Slider";
-import Button from "../ui/Button";
 import RadioGroup from "../ui/RadioGroup";
 import { CropModal } from "../ui/CropModal";
 import type { CropData } from "../ui/CropModal";
 import { useI18n } from "../../i18n/context";
-import { useWorkspaceMode } from "../../hooks/useWorkspaceMode";
 
 export default function BasicSettings() {
   const { t } = useI18n();
-  const workspace = useWorkspaceMode();
 
   const structureModeOptions = Object.values(StructureMode).map((v) => ({
     label: t(`structure_mode.${v}`),
@@ -32,7 +28,6 @@ export default function BasicSettings() {
   }));
   // 状态字段使用 useShallow 分组提取，避免无关字段变化触发重渲染
   const {
-    imageFile,
     imagePreviewUrl,
     lut_name,
     lutList,
@@ -49,7 +44,6 @@ export default function BasicSettings() {
     batchMode,
     batchFiles,
   } = useConverterStore(useShallow((s) => ({
-    imageFile: s.imageFile,
     imagePreviewUrl: s.imagePreviewUrl,
     lut_name: s.lut_name,
     lutList: s.lutList,
@@ -68,7 +62,7 @@ export default function BasicSettings() {
   })));
 
   // Action 函数单独提取（函数引用稳定，不需要 shallow）
-  const handleFilesSelect = useConverterStore((s) => s.handleFilesSelect);
+  const setImageFile = useConverterStore((s) => s.setImageFile);
   const setLutName = useConverterStore((s) => s.setLutName);
   const setTargetWidthMm = useConverterStore((s) => s.setTargetWidthMm);
   const setTargetHeightMm = useConverterStore((s) => s.setTargetHeightMm);
@@ -78,27 +72,19 @@ export default function BasicSettings() {
   const setEnableCrop = useConverterStore((s) => s.setEnableCrop);
   const setCropModalOpen = useConverterStore((s) => s.setCropModalOpen);
   const submitCrop = useConverterStore((s) => s.submitCrop);
-  const uploadLut = useConverterStore((s) => s.uploadLut);
+  const setError = useConverterStore((s) => s.setError);
+  const setBatchMode = useConverterStore((s) => s.setBatchMode);
+  const addBatchFiles = useConverterStore((s) => s.addBatchFiles);
   const removeBatchFile = useConverterStore((s) => s.removeBatchFile);
 
   const lutOptions = lutList.map((name) => ({ label: name, value: name }));
 
-  const lutFileRef = useRef<HTMLInputElement>(null);
-
-  // 5-Color Extended 模式下强制锁定为单面（浮雕）
-  const isFiveColorExt = color_mode === ColorMode.FIVE_COLOR_EXT;
-  useEffect(() => {
-    if (isFiveColorExt && structure_mode === StructureMode.DOUBLE_SIDED) {
-      setStructureMode(StructureMode.SINGLE_SIDED);
+  const handleFileSelect = (file: File) => {
+    if (!isValidImageType(file.type)) {
+      setError(t("basic_image_format_error"));
+      return;
     }
-  }, [isFiveColorExt, structure_mode, setStructureMode]);
-
-  const handleLutUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    await uploadLut(file);
-    // Reset so same file can be re-uploaded
-    if (lutFileRef.current) lutFileRef.current.value = "";
+    setImageFile(file);
   };
 
   const handleCropConfirm = (data: CropData) => {
@@ -107,17 +93,27 @@ export default function BasicSettings() {
 
   return (
     <div className="flex flex-col gap-4">
-      <UnifiedUploader
-        singlePreview={imagePreviewUrl ?? undefined}
-        batchFiles={batchFiles}
-        isBatchMode={batchMode}
-        onFilesSelect={handleFilesSelect}
-        onBatchFileRemove={removeBatchFile}
-        accept={ACCEPT_IMAGE_FORMATS}
+      <Checkbox
+        label={t("basic_batch_mode")}
+        checked={batchMode}
+        onChange={setBatchMode}
       />
 
-      {batchFiles.length === 0 && imageFile !== null && (
+      {batchMode ? (
+        <BatchFileUploader
+          files={batchFiles}
+          onFilesAdd={addBatchFiles}
+          onFileRemove={removeBatchFile}
+          accept="image/jpeg,image/png,image/svg+xml"
+        />
+      ) : (
         <>
+          <ImageUpload
+            onFileSelect={handleFileSelect}
+            accept="image/jpeg,image/png,image/svg+xml"
+            preview={imagePreviewUrl ?? undefined}
+          />
+
           <Checkbox
             label={t("basic_crop_after_upload")}
             checked={enableCrop}
@@ -135,33 +131,16 @@ export default function BasicSettings() {
         </>
       )}
 
-      <div className={`gap-2 ${workspace.isCompact ? "grid grid-cols-1" : "flex items-end"}`}>
-        <div className="min-w-0 flex-1">
-          <Dropdown
-            label={t("basic_lut_label")}
-            value={lut_name}
-            options={lutOptions}
-            onChange={setLutName}
-            placeholder={t("basic_lut_placeholder")}
-          />
-        </div>
-        <input
-          ref={lutFileRef}
-          type="file"
-          accept=".npy,.json,.npz"
-          className="hidden"
-          onChange={(e) => void handleLutUpload(e)}
-        />
-        <Button
-          label={`+ ${t("basic_lut_upload")}`}
-          variant="secondary"
-          onClick={() => lutFileRef.current?.click()}
-          className={workspace.isCompact ? "w-full px-3" : "shrink-0 whitespace-nowrap px-3"}
-        />
-      </div>
+      <Dropdown
+        label={t("basic_lut_label")}
+        value={lut_name}
+        options={lutOptions}
+        onChange={setLutName}
+        placeholder={t("basic_lut_placeholder")}
+      />
 
       {lut_name && (
-        <div className="-mt-2 px-1 text-xs text-slate-500 dark:text-slate-400">
+        <div className="text-xs text-gray-500 -mt-2 px-1">
           {t("basic_color_mode_label")}: {color_mode}
         </div>
       )}
@@ -202,7 +181,6 @@ export default function BasicSettings() {
         options={structureModeOptions}
         onChange={(v) => setStructureMode(v as StructureMode)}
         disabled={enable_relief}
-        disabledValues={isFiveColorExt ? [StructureMode.DOUBLE_SIDED] : []}
       />
 
       <RadioGroup

@@ -1361,6 +1361,8 @@ export const useConverterStore = create<ConverterState & ConverterActions>(
             state.free_color_set.size > 0
               ? Array.from(state.free_color_set).map((h) => `#${h}`)
               : undefined,
+          printer_id: useSettingsStore.getState().printerModel,
+          slicer: useSettingsStore.getState().slicerSoftware,
           use_cached_matched_rgb: state.regionReplacementCount > 0,
         });
         // 后端返回 download_url 和可选的 preview_3d_url

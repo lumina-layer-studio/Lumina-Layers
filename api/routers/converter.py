@@ -674,24 +674,9 @@ async def convert_generate(
         "hue_weight": request.hue_weight,
         "chroma_gate": request.chroma_gate,
         "matched_rgb_path": matched_rgb_path,
+        "printer_id": request.printer_id,
+        "slicer": request.slicer,
     }
-
-    # Read printer_model and slicer_software from user_settings.json for 3MF template selection
-    # 从 user_settings.json 读取 printer_model 和 slicer_software 用于 3MF 模板选择
-    printer_id: str = "bambu-h2d"
-    slicer_software: str = "BambuStudio"
-    try:
-        import json as _json
-        from pathlib import Path as _Path
-        _settings_file = _Path("user_settings.json")
-        if _settings_file.exists():
-            _settings_data = _json.loads(_settings_file.read_text(encoding="utf-8"))
-            printer_id = _settings_data.get("printer_model", "bambu-h2d")
-            slicer_software = _settings_data.get("slicer_software", "BambuStudio")
-    except Exception:
-        pass  # Use default on any read error
-    params["printer_id"] = printer_id
-    params["slicer"] = slicer_software
 
     # 3. CPU computation offloaded to process pool (only paths and scalars)
     try:

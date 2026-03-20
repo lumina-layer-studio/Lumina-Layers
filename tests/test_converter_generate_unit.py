@@ -174,6 +174,8 @@ class TestGenerateParameterCompleteness:
                 "wire_height_mm": 0.5,
                 "enable_coating": True,
                 "coating_height_mm": 0.1,
+                "printer_id": "orca-p1s",
+                "slicer": "OrcaSlicer",
             },
         }
 

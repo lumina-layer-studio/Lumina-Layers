@@ -69,9 +69,9 @@ def _create_preview_mesh(
         ).astype(bool)
 
         height, width = new_height, new_width
-        shrink = 0.05 * scale_factor
+        shrink = 0.0
     else:
-        shrink = 0.05
+        shrink = 0.0
 
     vertices = []
     faces = []
@@ -370,9 +370,9 @@ def generate_segmented_glb(cache: dict, max_meshes: int = 64) -> Optional[str]:
                 interpolation=cv2.INTER_NEAREST,
             ).astype(bool)
             height, width = new_h, new_w
-            shrink = 0.05 * scale_factor
+            shrink = 0.0
         else:
-            shrink = 0.05
+            shrink = 0.0
 
         # 2. Extract unique colors and pixel counts (solid pixels only)
         solid_pixels = matched_rgb[mask_solid]  # (N, 3)

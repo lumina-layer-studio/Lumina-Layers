@@ -1,7 +1,8 @@
-import { useRef } from "react";
+import { useRef, useEffect } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { useConverterStore, ACCEPT_IMAGE_FORMATS } from "../../stores/converterStore";
 import {
+  ColorMode,
   ModelingMode,
   StructureMode,
 } from "../../api/types";
@@ -80,6 +81,14 @@ export default function BasicSettings() {
   const lutOptions = lutList.map((name) => ({ label: name, value: name }));
 
   const lutFileRef = useRef<HTMLInputElement>(null);
+
+  // 5-Color Extended 模式下强制锁定为单面（浮雕）
+  const isFiveColorExt = color_mode === ColorMode.FIVE_COLOR_EXT;
+  useEffect(() => {
+    if (isFiveColorExt && structure_mode === StructureMode.DOUBLE_SIDED) {
+      setStructureMode(StructureMode.SINGLE_SIDED);
+    }
+  }, [isFiveColorExt, structure_mode, setStructureMode]);
 
   const handleLutUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -192,6 +201,7 @@ export default function BasicSettings() {
         options={structureModeOptions}
         onChange={(v) => setStructureMode(v as StructureMode)}
         disabled={enable_relief}
+        disabledValues={isFiveColorExt ? [StructureMode.DOUBLE_SIDED] : []}
       />
 
       <RadioGroup

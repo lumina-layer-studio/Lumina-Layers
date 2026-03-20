@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, useEffect } from "react";
+import React, { useState, useMemo, useCallback, useEffect } from "react";
 import { useConverterStore } from "../../stores/converterStore";
 import { useSettingsStore } from "../../stores/settingsStore";
 import { hexToRgb, sortByColorDistance } from "../../utils/colorUtils";
@@ -89,7 +89,7 @@ function saveFavorites(lutKey: string, favs: Set<string>) {
 
 // ========== Compact ColorSwatch ==========
 
-function ColorSwatch({
+const ColorSwatch = React.memo(function ColorSwatch({
   entry,
   isTarget,
   isFav,
@@ -129,7 +129,7 @@ function ColorSwatch({
       </span>
     </button>
   );
-}
+});
 
 // Card mode helpers have been moved inside the main component to access state variables.
 

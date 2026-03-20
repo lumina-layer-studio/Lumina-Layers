@@ -1,5 +1,6 @@
 /* eslint-disable react-refresh/only-export-components */
 import type { HTMLAttributes, ReactNode } from "react";
+import type { WorkspaceMode } from "../../types/workspace";
 
 export function cx(...classes: Array<string | false | null | undefined>) {
   return classes.filter(Boolean).join(" ");
@@ -49,6 +50,33 @@ export const desktopPrimaryColumnClass =
 
 export const desktopSecondaryColumnClass =
   "flex min-w-0 flex-col gap-5";
+
+export function resolvePanelSurfaceClass(mode: WorkspaceMode) {
+  return cx(
+    panelSurfaceClass,
+    mode === "compact" && "px-3 py-3 sm:px-4 sm:py-4",
+    mode === "wide" && "xl:px-7 xl:py-5"
+  );
+}
+
+export function resolveSectionCardClass(mode: WorkspaceMode) {
+  return cx(
+    sectionCardClass,
+    mode === "compact" && "rounded-[24px] px-3.5 py-3.5 sm:px-4 sm:py-4"
+  );
+}
+
+export function resolveDesktopSplitLayoutClass(mode: WorkspaceMode) {
+  if (mode === "compact") {
+    return "grid min-h-0 gap-4";
+  }
+
+  if (mode === "wide") {
+    return desktopSplitLayoutClass;
+  }
+
+  return "grid min-h-0 gap-5 2xl:grid-cols-[minmax(20rem,24rem)_minmax(0,1fr)] 2xl:items-start";
+}
 
 interface PanelIntroProps {
   title: string;

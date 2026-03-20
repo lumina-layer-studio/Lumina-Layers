@@ -56,18 +56,18 @@ function PaletteItem({
             onSelect();
           }
         }}
-        className={`relative flex w-[56px] flex-col items-center gap-1 rounded-2xl px-1.5 py-2 cursor-pointer border transition-all duration-150 ${
+        className={`relative flex w-full min-w-0 flex-col items-center gap-1 rounded-2xl px-1.5 py-2 cursor-pointer border transition-all duration-150 ${
           isSelected
             ? "border-amber-400 bg-amber-400/10 ring-2 ring-amber-400/30"
             : "border-transparent bg-white/35 hover:border-slate-300 hover:bg-white/65 dark:bg-slate-900/35 dark:hover:border-slate-600 dark:hover:bg-slate-900/75"
         }`}
       >
         <span
-          className={`inline-block h-7 w-7 rounded-xl ${borderClass}`}
+          className={`inline-block h-[clamp(1.4rem,2vw,1.75rem)] w-[clamp(1.4rem,2vw,1.75rem)] rounded-xl ${borderClass}`}
           style={{ backgroundColor: `#${displayHex}` }}
           title={`#${displayHex}`}
         />
-        <span className="text-[10px] tabular-nums leading-none text-slate-500 dark:text-slate-400">
+        <span className="text-[clamp(0.55rem,0.75vw,0.625rem)] tabular-nums leading-none text-slate-500 dark:text-slate-400">
           {entry.percentage.toFixed(1)}%
         </span>
       </div>
@@ -88,7 +88,7 @@ function PaletteItem({
           onSelect();
         }
       }}
-      className={`relative flex flex-col gap-2 rounded-[20px] px-2.5 py-2 cursor-pointer border transition-all duration-150 ${
+      className={`relative flex h-full min-h-0 flex-col gap-2 rounded-[20px] px-2.5 py-2 cursor-pointer border transition-all duration-150 ${
         isSelected
           ? "border-amber-400 bg-amber-400/10 ring-2 ring-amber-400/30"
           : "border-transparent bg-white/35 hover:border-slate-300 hover:bg-white/65 dark:bg-slate-900/35 dark:hover:border-slate-600 dark:hover:bg-slate-900/75"
@@ -97,11 +97,11 @@ function PaletteItem({
       {/* Top row: swatch + percentage */}
       <div className="flex items-center gap-1.5">
         <span
-          className={`inline-block h-6 w-6 shrink-0 rounded-xl ${borderClass}`}
+          className={`inline-block h-[clamp(1.25rem,1.7vw,1.5rem)] w-[clamp(1.25rem,1.7vw,1.5rem)] shrink-0 rounded-xl ${borderClass}`}
           style={{ backgroundColor: `#${displayHex}` }}
           title={`#${displayHex}`}
         />
-        <span className="truncate text-[10px] tabular-nums text-slate-500 dark:text-slate-400">
+        <span className="truncate text-[clamp(0.55rem,0.75vw,0.625rem)] tabular-nums text-slate-500 dark:text-slate-400">
           {entry.percentage.toFixed(1)}%
         </span>
       </div>
@@ -134,12 +134,12 @@ interface ColorBlockProps {
 function ColorBlock({ label, hex }: ColorBlockProps) {
   return (
     <div className="flex flex-col items-center gap-1">
-      <span className="text-[10px] font-medium text-slate-500 dark:text-slate-400">{label}</span>
+      <span className="text-[clamp(0.55rem,0.75vw,0.625rem)] font-medium text-slate-500 dark:text-slate-400">{label}</span>
       <span
-        className="inline-block h-11 w-11 rounded-2xl border border-slate-300/80 dark:border-slate-600/80"
+        className="inline-block h-[clamp(2rem,3vw,2.75rem)] w-[clamp(2rem,3vw,2.75rem)] rounded-2xl border border-slate-300/80 dark:border-slate-600/80"
         style={{ backgroundColor: `#${hex}` }}
       />
-      <span className="font-mono text-[10px] text-slate-600 dark:text-slate-300">#{hex}</span>
+      <span className="font-mono text-[clamp(0.55rem,0.75vw,0.625rem)] text-slate-600 dark:text-slate-300">#{hex}</span>
     </div>
   );
 }
@@ -169,7 +169,7 @@ function FreeColorSummary({ freeColors }: { freeColors: Set<string> }) {
   if (freeColors.size === 0) return null;
   return (
     <div className={cx(workstationInsetCardClass, "flex flex-wrap items-center gap-2 px-3 py-2.5")}>
-      <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400">{t("conv_free_color_label")}:</span>
+      <span className="text-[clamp(0.65rem,0.8vw,0.7rem)] font-medium text-slate-500 dark:text-slate-400">{t("conv_free_color_label")}:</span>
       {Array.from(freeColors).sort().map(hex => (
         <span
           key={hex}
@@ -326,8 +326,8 @@ export default function PalettePanel() {
             <div
               className={
                 enable_relief
-                  ? "grid grid-cols-3 gap-2"
-                  : "flex flex-wrap gap-2"
+                  ? "grid grid-cols-[repeat(auto-fit,minmax(7rem,1fr))] gap-2"
+                  : "grid grid-cols-[repeat(auto-fit,minmax(3.4rem,1fr))] gap-2"
               }
             >
               {palette.map((entry) => (

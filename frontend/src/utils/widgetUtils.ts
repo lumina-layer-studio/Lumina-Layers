@@ -4,18 +4,24 @@
  */
 
 import type { WidgetId, WidgetLayoutState, SnapResult } from '../types/widget';
+import type { WorkspaceMode } from '../types/workspace';
 
 // ===== 常量 =====
 /** Default widget width in pixels. (默认 Widget 宽度，单位像素) */
 export const WIDGET_WIDTH = 350;
 export const MIN_WIDGET_WIDTH = 280;
 
-export function resolveResponsiveWidgetWidth(containerWidth: number): number {
+export function resolveResponsiveWidgetWidth(
+  containerWidth: number,
+  mode: WorkspaceMode = 'standard'
+): number {
   if (containerWidth <= 0) return WIDGET_WIDTH;
 
+  const modeMaxWidth = mode === 'compact' ? 320 : mode === 'wide' ? 360 : WIDGET_WIDTH;
+  const modeMinWidth = mode === 'compact' ? 248 : MIN_WIDGET_WIDTH;
   const safeWidth = Math.max(240, containerWidth - 32);
-  const proportionalWidth = Math.round(containerWidth * 0.26);
-  return Math.min(WIDGET_WIDTH, safeWidth, Math.max(MIN_WIDGET_WIDTH, proportionalWidth));
+  const proportionalWidth = Math.round(containerWidth * (mode === 'compact' ? 0.23 : 0.26));
+  return Math.min(modeMaxWidth, safeWidth, Math.max(modeMinWidth, proportionalWidth));
 }
 
 /** Shared widget corner radius in pixels. (Widget 统一圆角，单位像素) */

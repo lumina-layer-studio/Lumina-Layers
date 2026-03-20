@@ -30,7 +30,7 @@ export default function Switch({
         disabled
           ? "cursor-not-allowed opacity-40"
           : "cursor-pointer hover:border-slate-300 hover:bg-white/75 dark:hover:border-slate-600 dark:hover:bg-slate-900/75",
-        checkedLabel || uncheckedLabel ? "min-w-[112px] justify-between gap-3" : "w-[72px] justify-end"
+        checkedLabel || uncheckedLabel ? "min-w-[clamp(5.5rem,10vw,7rem)] justify-between gap-2.5" : "w-[clamp(3.75rem,6vw,4.5rem)] justify-end"
       )}
     >
       {(checkedLabel || uncheckedLabel) && (

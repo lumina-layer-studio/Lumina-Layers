@@ -3,13 +3,15 @@ import { useEffect, useMemo } from "react";
 import { useFiveColorStore } from "../stores/fiveColorStore";
 import { useConverterStore } from "../stores/converterStore";
 import Dropdown from "./ui/Dropdown";
+import { useWorkspaceMode } from "../hooks/useWorkspaceMode";
 import { useI18n } from "../i18n/context";
 import FiveColorCanvas from "./FiveColorCanvas";
 import Button from "./ui/Button";
-import { PanelIntro, StatusBanner, panelSurfaceClass, sectionCardClass } from "./ui/panelPrimitives";
+import { PanelIntro, StatusBanner, resolvePanelSurfaceClass, resolveSectionCardClass } from "./ui/panelPrimitives";
 
 export default function FiveColorQueryPanel() {
   const { t } = useI18n();
+  const workspace = useWorkspaceMode();
   const {
     lutName, baseColors, selectedIndices, queryResult,
     isLoading, error,
@@ -47,7 +49,7 @@ export default function FiveColorQueryPanel() {
       initial={{ opacity: 0, y: 30 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ type: "spring", damping: 25, stiffness: 300 }}
-      className={`${panelSurfaceClass} flex h-full w-full flex-col gap-5 overflow-hidden text-slate-900 dark:text-white`}
+      className={`${resolvePanelSurfaceClass(workspace.mode)} flex h-full w-full flex-col gap-5 overflow-hidden text-slate-900 dark:text-white`}
     >
       <PanelIntro
         eyebrow={t("tab.fiveColor")}
@@ -55,8 +57,16 @@ export default function FiveColorQueryPanel() {
         description={t("five_color_desc")}
       />
 
-      <div className="grid min-h-0 flex-1 gap-5 2xl:grid-cols-[minmax(18rem,22rem)_minmax(0,1fr)_minmax(16rem,20rem)]">
-        <section className={`${sectionCardClass} flex min-h-0 flex-col gap-4`}>
+      <div
+        className={`grid min-h-0 flex-1 gap-5 ${
+          workspace.isWide
+            ? "2xl:grid-cols-[minmax(18rem,22rem)_minmax(0,1fr)_minmax(16rem,20rem)]"
+            : workspace.isCompact
+              ? ""
+              : "xl:grid-cols-[minmax(18rem,22rem)_minmax(0,1fr)]"
+        }`}
+      >
+        <section className={`${resolveSectionCardClass(workspace.mode)} flex min-h-0 flex-col gap-4`}>
           <div className="flex flex-col gap-3">
             <h3 className="text-base font-semibold text-slate-900 dark:text-slate-50">{t("five_color_palette")}</h3>
             <Dropdown
@@ -70,7 +80,7 @@ export default function FiveColorQueryPanel() {
 
           <div className="min-h-0 flex-1 overflow-y-auto pr-1">
             {baseColors.length > 0 ? (
-              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+              <div className={`grid gap-2 ${workspace.isCompact ? "grid-cols-2" : "grid-cols-2 sm:grid-cols-3"}`}>
                 {baseColors.map((color) => {
                   const isSelected = selectedIndices.includes(color.index);
                   const selOrder = selectedIndices.indexOf(color.index);
@@ -110,7 +120,7 @@ export default function FiveColorQueryPanel() {
           </div>
         </section>
 
-        <section className={`${sectionCardClass} relative flex min-h-0 flex-col items-center justify-center gap-4 overflow-hidden`}>
+        <section className={`${resolveSectionCardClass(workspace.mode)} relative flex min-h-0 flex-col items-center justify-center gap-4 overflow-hidden ${workspace.isStandard ? "xl:min-h-[26rem]" : ""}`}>
           <div className="absolute inset-x-0 top-0 h-32 bg-gradient-to-b from-blue-500/10 to-transparent" />
           <div className="relative flex w-full flex-1 items-center justify-center">
             <div className="h-full w-full">
@@ -128,7 +138,7 @@ export default function FiveColorQueryPanel() {
           </p>
         </section>
 
-        <section className={`${sectionCardClass} flex min-h-0 flex-col gap-3`}>
+        <section className={`${resolveSectionCardClass(workspace.mode)} flex min-h-0 flex-col gap-3 ${workspace.isStandard ? "xl:col-span-2" : ""}`}>
           <h3 className="text-base font-semibold text-slate-900 dark:text-slate-50">{t("five_color_actions")}</h3>
 
           <Button

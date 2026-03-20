@@ -8,9 +8,11 @@ import BedSizeSelector from "./BedSizeSelector";
 import SlicerSelector from "./SlicerSelector";
 import WikiTooltip from "../ui/WikiTooltip";
 import { useI18n } from "../../i18n/context";
+import { useWorkspaceMode } from "../../hooks/useWorkspaceMode";
 
 export default function ActionBar() {
   const { t } = useI18n();
+  const workspace = useWorkspaceMode();
   const [zoomedLayerIdx, setZoomedLayerIdx] = useState<number | null>(null);
   const imageFile = useConverterStore((s) => s.imageFile);
   const lut_name = useConverterStore((s) => s.lut_name);
@@ -46,7 +48,7 @@ export default function ActionBar() {
             <p className="text-xs text-yellow-600 dark:text-yellow-400">{t("action_batch_upload_hint")}</p>
           )}
 
-          <div className="flex gap-2">
+          <div className={`gap-2 ${workspace.isCompact ? "grid grid-cols-1" : "flex flex-wrap"}`}>
             <Button
               label={t("action_batch_generate")}
               variant="primary"
@@ -64,7 +66,7 @@ export default function ActionBar() {
             <p className="text-xs text-yellow-600 dark:text-yellow-400">{t("action_upload_hint")}</p>
           )}
 
-          <div className="flex gap-2">
+          <div className={`gap-2 ${workspace.isCompact ? "grid grid-cols-1" : "flex flex-wrap"}`}>
             <Button
               label={t("action_preview")}
               variant="secondary"
@@ -116,7 +118,7 @@ export default function ActionBar() {
       {layerImages.length > 0 && (
         <div className="rounded-lg border border-gray-200 p-3 dark:border-gray-700">
           <h4 className="mb-2 text-xs font-medium text-gray-600 dark:text-gray-400">{t("action_layers_title")}</h4>
-          <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 md:grid-cols-5">
+          <div className={`grid gap-2 ${workspace.isCompact ? "grid-cols-2 sm:grid-cols-3" : "grid-cols-3 sm:grid-cols-4 md:grid-cols-5"}`}>
             {layerImages.map((layer, idx) => (
               <div
                 key={layer.layer_index}
@@ -157,7 +159,7 @@ export default function ActionBar() {
               <span className="text-base font-medium text-white">
                 {t("action_layer_nth")}{zoomedLayerIdx + 1}{t("action_layer_unit")}
               </span>
-              <div className="flex items-center gap-2">
+              <div className={`items-center gap-2 ${workspace.isCompact ? "grid grid-cols-[1fr_auto] gap-y-1" : "flex"}`}>
                 <button
                   className="rounded-lg px-3 py-1 text-sm text-white/80 hover:bg-white/10 disabled:opacity-30"
                   onClick={() => setZoomedLayerIdx(Math.max(0, zoomedLayerIdx - 1))}

@@ -40,6 +40,7 @@ import LutManagerWidgetContent from './LutManagerWidgetContent';
 import FiveColorWidgetContent from './FiveColorWidgetContent';
 import ColorWorkstation from './ColorWorkstation';
 import { useConverterDataInit } from '../../hooks/useConverterDataInit';
+import { useWorkspaceMode } from '../../hooks/useWorkspaceMode';
 import { useI18n } from '../../i18n/context';
 import type { WidgetId } from '../../types/widget';
 import type { ReactNode, ComponentType } from 'react';
@@ -77,6 +78,7 @@ interface WidgetWorkspaceProps {
 
 export function WidgetWorkspace({ children }: WidgetWorkspaceProps) {
   const { t } = useI18n();
+  const workspace = useWorkspaceMode();
   const moveWidget = useWidgetStore((s) => s.moveWidget);
   const setWidgetPositions = useWidgetStore((s) => s.setWidgetPositions);
   const snapAndReorder = useWidgetStore((s) => s.snapAndReorder);
@@ -114,10 +116,13 @@ export function WidgetWorkspace({ children }: WidgetWorkspaceProps) {
     return map;
   }, [activeWidgets]);
   const widgetWidth = useMemo(
-    () => resolveResponsiveWidgetWidth(containerWidth || (typeof window !== 'undefined' ? window.innerWidth : WIDGET_WIDTH)),
-    [containerWidth]
+    () => resolveResponsiveWidgetWidth(
+      containerWidth || (typeof window !== 'undefined' ? window.innerWidth : WIDGET_WIDTH),
+      workspace.mode
+    ),
+    [containerWidth, workspace.mode]
   );
-  const dockScrollWidth = widgetWidth + 16;
+  const dockScrollWidth = widgetWidth + (workspace.isCompact ? 12 : 16);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
@@ -633,7 +638,12 @@ export function WidgetWorkspace({ children }: WidgetWorkspaceProps) {
         </div>
       </DndContext>
       {/* ColorWorkstation — fixed bottom center, outside DnD system (z-35) */}
-      <ColorWorkstation ref={colorWorkstationRef} />
+      <ColorWorkstation
+        ref={colorWorkstationRef}
+        workspaceWidth={containerWidth}
+        dockWidth={dockScrollWidth}
+        mode={workspace.mode}
+      />
     </>
   );
 }

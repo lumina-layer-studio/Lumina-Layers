@@ -6,6 +6,7 @@ import { useVectorizerStore } from "../stores/vectorizerStore";
 import { useConverterStore } from "../stores/converterStore";
 import { useWidgetStore } from "../stores/widgetStore";
 import { usePanZoom } from "../hooks/usePanZoom";
+import { useWorkspaceMode } from "../hooks/useWorkspaceMode";
 import apiClient from "../api/client";
 import ImageUpload from "./ui/ImageUpload";
 import Slider from "./ui/Slider";
@@ -14,7 +15,7 @@ import Switch from "./ui/Switch";
 import Button from "./ui/Button";
 import Accordion from "./ui/Accordion";
 import ZoomViewport from "./ui/ZoomViewport";
-import { cx, sectionCardClass } from "./ui/panelPrimitives";
+import { cx, resolveSectionCardClass } from "./ui/panelPrimitives";
 
 const ACCEPT_FORMATS = "image/png,image/jpeg,image/webp,image/bmp";
 
@@ -30,6 +31,7 @@ export function buildFileUrl(relativePath: string): string {
 
 export default function VectorizerPanel() {
   const { t } = useI18n();
+  const workspace = useWorkspaceMode();
 
   const {
     imagePreviewUrl,
@@ -99,9 +101,9 @@ export default function VectorizerPanel() {
       initial={{ opacity: 0, y: 30 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ type: "spring", damping: 25, stiffness: 300 }}
-      className="mx-auto h-full w-full max-w-4xl overflow-y-auto p-6"
+      className={`mx-auto h-full w-full overflow-y-auto ${workspace.isCompact ? "max-w-none p-4" : "max-w-4xl p-6"}`}
     >
-      <div className="flex flex-col gap-5 rounded-[32px] border border-slate-200/80 bg-white/85 p-6 backdrop-blur-2xl dark:border-slate-700/60 dark:bg-slate-900/85">
+      <div className={`flex flex-col gap-5 border border-slate-200/80 bg-white/85 backdrop-blur-2xl dark:border-slate-700/60 dark:bg-slate-900/85 ${workspace.isCompact ? "rounded-[28px] p-4" : "rounded-[32px] p-6"}`}>
         {/* Title */}
         <h2 className="text-lg font-semibold text-gray-800 dark:text-gray-100">
           {t("vec.title")}
@@ -115,7 +117,7 @@ export default function VectorizerPanel() {
         />
 
         {/* ===== Basic Parameters ===== */}
-        <div className={cx(sectionCardClass, "flex flex-col gap-3")}>
+        <div className={cx(resolveSectionCardClass(workspace.mode), "flex flex-col gap-3")}>
           <h3 className="text-sm font-medium text-gray-600 dark:text-gray-400">
             {t("vec.basic_params")}
           </h3>
@@ -435,7 +437,7 @@ export default function VectorizerPanel() {
             </div>
 
             {/* Synced side-by-side comparison */}
-            <div className="grid grid-cols-1 gap-4 2xl:grid-cols-2">
+            <div className={`grid grid-cols-1 gap-4 ${workspace.isWide ? "2xl:grid-cols-2" : ""}`}>
               {/* Original */}
               <div className="flex flex-col gap-2">
                 <span className="text-xs font-medium text-gray-500 dark:text-gray-400">
@@ -468,8 +470,8 @@ export default function VectorizerPanel() {
             </div>
 
             {/* Stats & Download */}
-            <div className="flex flex-col gap-3 rounded-[24px] border border-gray-200 bg-gray-50 px-4 py-3 dark:border-gray-700 dark:bg-gray-800/60 xl:flex-row xl:items-center xl:justify-between">
-              <div className="flex items-center gap-6 text-sm text-gray-600 dark:text-gray-300">
+            <div className={`flex flex-col gap-3 rounded-[24px] border border-gray-200 bg-gray-50 px-4 py-3 dark:border-gray-700 dark:bg-gray-800/60 ${workspace.isWide ? "xl:flex-row xl:items-center xl:justify-between" : ""}`}>
+              <div className={`text-sm text-gray-600 dark:text-gray-300 ${workspace.isCompact ? "grid gap-2" : "flex flex-wrap items-center gap-6"}`}>
                 <span>
                   {t("vec.shapes")}: <strong>{result.num_shapes}</strong>
                 </span>
@@ -501,7 +503,7 @@ export default function VectorizerPanel() {
               )}
             </div>
 
-            <div className="flex gap-3">
+            <div className={`flex gap-3 ${workspace.isCompact ? "flex-col" : "flex-wrap"}`}>
               <Button
                 label={t("vec.send_to_converter")}
                 onClick={handleSendToConverter}

@@ -5,18 +5,20 @@ import Dropdown from "./ui/Dropdown";
 import Slider from "./ui/Slider";
 import Button from "./ui/Button";
 import { motion } from "framer-motion";
+import { useWorkspaceMode } from "../hooks/useWorkspaceMode";
 import {
   PanelIntro,
   StatusBanner,
-  centeredPanelClass,
-  sectionCardClass,
-  desktopSplitLayoutClass,
   desktopPrimaryColumnClass,
   desktopSecondaryColumnClass,
+  resolveDesktopSplitLayoutClass,
+  resolvePanelSurfaceClass,
+  resolveSectionCardClass,
 } from "./ui/panelPrimitives";
 
 export default function LutManagerPanel() {
   const { t } = useI18n();
+  const workspace = useWorkspaceMode();
   const {
     lutList,
     lutListLoading,
@@ -74,17 +76,17 @@ export default function LutManagerPanel() {
       animate={{ opacity: 1, y: 0 }}
       transition={{ type: "spring", damping: 25, stiffness: 300 }}
       data-testid="lut-manager-panel"
-      className={`${centeredPanelClass} flex flex-col gap-5`}
-    >
+      className={`${resolvePanelSurfaceClass(workspace.mode)} flex flex-col gap-5`}
+      >
       <PanelIntro
         eyebrow={t("tab.lutManager")}
         title={t("lut_manager_title")}
         description={t("lut_manager_desc")}
       />
 
-      <div className={desktopSplitLayoutClass}>
-        <div className={desktopPrimaryColumnClass}>
-          <section className={`${sectionCardClass} flex flex-col gap-3`} data-testid="primary-dropdown">
+      <div className={resolveDesktopSplitLayoutClass(workspace.mode)}>
+          <div className={desktopPrimaryColumnClass}>
+           <section className={`${resolveSectionCardClass(workspace.mode)} flex flex-col gap-3`} data-testid="primary-dropdown">
             <Dropdown
               label={t("lut_manager_primary_label")}
               value={primaryName}
@@ -110,7 +112,7 @@ export default function LutManagerPanel() {
             )}
           </section>
 
-          <section className={`${sectionCardClass} flex flex-col gap-3`}>
+           <section className={`${resolveSectionCardClass(workspace.mode)} flex flex-col gap-3`}>
             <Slider
               label={t("lut_manager_dedup_label")}
               value={dedupThreshold}
@@ -166,7 +168,7 @@ export default function LutManagerPanel() {
         </div>
 
         <div className={desktopSecondaryColumnClass}>
-          <section data-testid="secondary-list" className={`${sectionCardClass} flex flex-col gap-3`}>
+           <section data-testid="secondary-list" className={`${resolveSectionCardClass(workspace.mode)} flex flex-col gap-3`}>
             <div className="flex items-center justify-between gap-3">
               <label className="text-sm font-medium text-slate-700 dark:text-slate-200">{t("lut_manager_secondary_label")}</label>
               <span className="text-xs text-slate-500 dark:text-slate-400">

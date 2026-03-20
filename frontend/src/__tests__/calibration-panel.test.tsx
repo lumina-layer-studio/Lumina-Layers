@@ -40,7 +40,7 @@ describe("CalibrationPanel", () => {
 
     // Color mode dropdown defaults to 4-Color
     const selects = screen.getAllByRole("combobox");
-    expect(selects[0]).toHaveValue(CalibrationColorMode.FOUR_COLOR_RYBW);
+    expect(selects[0]).toHaveTextContent(CalibrationColorMode.FOUR_COLOR_RYBW);
 
     // Block size default 5 mm, rendered with two decimals
     expect(screen.getByLabelText("色块尺寸 value")).toHaveValue("5.00");
@@ -49,7 +49,7 @@ describe("CalibrationPanel", () => {
     expect(screen.getByLabelText("色块间距 value")).toHaveValue("0.82");
 
     // Backing color defaults to White
-    expect(selects[1]).toHaveValue(BackingColor.WHITE);
+    expect(selects[1]).toHaveTextContent(BackingColor.WHITE);
   });
 
   it("disables block_size, gap, and backing in 8-Color Max mode", () => {

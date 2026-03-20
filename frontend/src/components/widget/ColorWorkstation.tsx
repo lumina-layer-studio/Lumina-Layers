@@ -8,7 +8,7 @@
  * 使用 framer-motion 实现平滑的展开/收起高度过渡动画。
  */
 
-import { forwardRef } from 'react';
+import { forwardRef, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { useWidgetStore } from '../../stores/widgetStore';
 import { useSettingsStore } from '../../stores/settingsStore';
@@ -16,20 +16,43 @@ import { useI18n } from '../../i18n/context';
 import PalettePanel from '../sections/PalettePanel';
 import LutColorGrid from '../sections/LutColorGrid';
 import { cx, workstationShellClass } from '../ui/panelPrimitives';
+import type { WorkspaceMode } from '../../types/workspace';
 
 /** Title bar height in pixels. (标题栏高度) */
 export const COLOR_WORKSTATION_TITLE_BAR_HEIGHT = 32;
 export const COLOR_WORKSTATION_WIDTH = 1500;
-const COLOR_WORKSTATION_BODY_HEIGHT = 'clamp(16rem, 30vh, 28rem)';
+const COLOR_WORKSTATION_BODY_HEIGHT = 'clamp(12rem, 24vh, 22rem)';
+
+interface ColorWorkstationProps {
+  workspaceWidth?: number;
+  dockWidth?: number;
+  mode?: WorkspaceMode;
+}
 
 // Chevron icons removed in favor of iOS style drag handle
 
-const ColorWorkstation = forwardRef<HTMLDivElement>(function ColorWorkstation(_, ref) {
+const ColorWorkstation = forwardRef<HTMLDivElement, ColorWorkstationProps>(function ColorWorkstation({
+  workspaceWidth,
+  dockWidth = 0,
+  mode = 'standard',
+}, ref) {
   const activeTab = useWidgetStore((s) => s.activeTab);
   const collapsed = useWidgetStore((s) => s.colorWorkstationCollapsed);
   const toggle = useWidgetStore((s) => s.toggleColorWorkstation);
   const enableBlur = useSettingsStore((s) => s.enableBlur);
   const { t } = useI18n();
+
+  const panelWidth = useMemo(() => {
+    if (!workspaceWidth || workspaceWidth <= 0) {
+      return `min(${COLOR_WORKSTATION_WIDTH}px, calc(100vw - 24px))`;
+    }
+
+    const sideClearance = dockWidth > 0 ? dockWidth * 2 + 32 : 24;
+    const modeFloor = mode === 'compact' ? 560 : 720;
+    const modeMax = mode === 'compact' ? 1040 : COLOR_WORKSTATION_WIDTH;
+    const safeWidth = Math.max(modeFloor, workspaceWidth - sideClearance);
+    return `${Math.min(modeMax, safeWidth)}px`;
+  }, [dockWidth, mode, workspaceWidth]);
 
   // Only render on converter tab
   if (activeTab !== 'converter') return null;
@@ -42,7 +65,7 @@ const ColorWorkstation = forwardRef<HTMLDivElement>(function ColorWorkstation(_,
       animate={{
         height: collapsed
           ? COLOR_WORKSTATION_TITLE_BAR_HEIGHT
-          : `calc(${COLOR_WORKSTATION_BODY_HEIGHT} + ${COLOR_WORKSTATION_TITLE_BAR_HEIGHT}px)`,
+          : `calc(${mode === 'compact' ? 'clamp(10rem, 20vh, 18rem)' : COLOR_WORKSTATION_BODY_HEIGHT} + ${COLOR_WORKSTATION_TITLE_BAR_HEIGHT}px)`,
       }}
       transition={{ type: 'spring', damping: 25, stiffness: 350, mass: 0.8 }}
       onAnimationComplete={() => {
@@ -54,7 +77,8 @@ const ColorWorkstation = forwardRef<HTMLDivElement>(function ColorWorkstation(_,
         bottom: 0,
         left: '50%',
         transform: 'translateX(-50%)',
-        width: `min(${COLOR_WORKSTATION_WIDTH}px, calc(100vw - 24px))`,
+        width: panelWidth,
+        maxWidth: 'calc(100vw - 24px)',
         zIndex: 35,
         overflow: 'hidden',
       }}
@@ -82,13 +106,16 @@ const ColorWorkstation = forwardRef<HTMLDivElement>(function ColorWorkstation(_,
       {/* Content area (only rendered when expanded) */}
       {!collapsed && (
         <div
-          className="flex gap-3 px-3 pb-3 pt-2"
-          style={{ height: COLOR_WORKSTATION_BODY_HEIGHT }}
+          className={cx(
+            "px-3 pb-3 pt-2",
+            mode === 'compact' ? "grid grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)] gap-2" : "flex gap-3"
+          )}
+          style={{ height: mode === 'compact' ? 'clamp(10rem, 20vh, 18rem)' : COLOR_WORKSTATION_BODY_HEIGHT }}
         >
-          <div className="min-w-0 basis-[42%] overflow-y-auto">
+          <div className={cx("min-w-0 overflow-y-auto", mode === 'compact' ? "" : "basis-[42%]")}>
             <PalettePanel />
           </div>
-          <div className="min-w-0 basis-[58%] overflow-y-auto">
+          <div className={cx("min-w-0 overflow-y-auto", mode === 'compact' ? "" : "basis-[58%]")}>
             <LutColorGrid />
           </div>
         </div>

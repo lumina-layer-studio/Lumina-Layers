@@ -6,6 +6,7 @@
 import { motion } from "framer-motion";
 import { useState, useEffect } from "react";
 import { useI18n } from "../i18n/context";
+import { useWorkspaceMode } from "../hooks/useWorkspaceMode";
 import { clearCache, getPrinters, getSlicers } from "../api/system";
 import { useSettingsStore } from "../stores/settingsStore";
 import type { PrinterInfo, SlicerOption } from "../api/types";
@@ -17,13 +18,14 @@ import {
 import { retryAsync } from "../utils/retryAsync";
 import Button from "./ui/Button";
 import Dropdown from "./ui/Dropdown";
-import { PanelIntro, StatusBanner, centeredPanelClass, sectionCardClass } from "./ui/panelPrimitives";
+import { PanelIntro, StatusBanner, resolvePanelSurfaceClass, resolveSectionCardClass } from "./ui/panelPrimitives";
 
 const SETTINGS_OPTIONS_RETRY_ATTEMPTS = 6;
 const SETTINGS_OPTIONS_RETRY_DELAY_MS = 1000;
 
 export default function SettingsPanel() {
   const { t } = useI18n();
+  const workspace = useWorkspaceMode();
 
   const [clearing, setClearing] = useState(false);
   const [cacheResult, setCacheResult] = useState<string | null>(null);
@@ -184,15 +186,15 @@ export default function SettingsPanel() {
       animate={{ opacity: 1, y: 0 }}
       transition={{ type: "spring", damping: 25, stiffness: 300 }}
       data-testid="settings-panel"
-      className={`${centeredPanelClass} flex flex-col gap-5`}
-    >
+      className={`${resolvePanelSurfaceClass(workspace.mode)} flex flex-col gap-5`}
+      >
       <PanelIntro
         eyebrow={t("tab.settings")}
         title={t("settings.title")}
         description={t("settings.desc")}
       />
 
-      <section className={`${sectionCardClass} flex flex-col gap-4`}>
+      <section className={`${resolveSectionCardClass(workspace.mode)} flex flex-col gap-4`}>
         <div>
           <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-500 dark:text-slate-400">
             {t("settings.slicer_settings")}
@@ -201,7 +203,7 @@ export default function SettingsPanel() {
             {t("settings.printer_model")}
           </h4>
         </div>
-        <div className="grid gap-4 md:grid-cols-2">
+        <div className={`grid gap-4 ${workspace.isCompact ? "" : "xl:grid-cols-2"}`}>
           <div>
             <Dropdown
               label={t("settings.slicer_software")}
@@ -246,7 +248,7 @@ export default function SettingsPanel() {
         )}
       </section>
 
-      <section className={`${sectionCardClass} flex flex-col gap-4`}>
+      <section className={`${resolveSectionCardClass(workspace.mode)} flex flex-col gap-4`}>
         <div>
           <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-500 dark:text-slate-400">
             {t("settings.maintenance")}

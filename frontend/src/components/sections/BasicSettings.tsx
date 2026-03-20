@@ -15,9 +15,11 @@ import RadioGroup from "../ui/RadioGroup";
 import { CropModal } from "../ui/CropModal";
 import type { CropData } from "../ui/CropModal";
 import { useI18n } from "../../i18n/context";
+import { useWorkspaceMode } from "../../hooks/useWorkspaceMode";
 
 export default function BasicSettings() {
   const { t } = useI18n();
+  const workspace = useWorkspaceMode();
 
   const structureModeOptions = Object.values(StructureMode).map((v) => ({
     label: t(`structure_mode.${v}`),
@@ -133,7 +135,7 @@ export default function BasicSettings() {
         </>
       )}
 
-      <div className="flex items-end gap-2">
+      <div className={`gap-2 ${workspace.isCompact ? "grid grid-cols-1" : "flex items-end"}`}>
         <div className="min-w-0 flex-1">
           <Dropdown
             label={t("basic_lut_label")}
@@ -154,7 +156,7 @@ export default function BasicSettings() {
           label={`+ ${t("basic_lut_upload")}`}
           variant="secondary"
           onClick={() => lutFileRef.current?.click()}
-          className="shrink-0 whitespace-nowrap px-3"
+          className={workspace.isCompact ? "w-full px-3" : "shrink-0 whitespace-nowrap px-3"}
         />
       </div>
 

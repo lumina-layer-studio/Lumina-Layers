@@ -5,15 +5,16 @@ import { CalibrationColorMode, BackingColor } from "../api/types";
 import Dropdown from "./ui/Dropdown";
 import Slider from "./ui/Slider";
 import Button from "./ui/Button";
+import { useWorkspaceMode } from "../hooks/useWorkspaceMode";
 import {
   PanelIntro,
   StatusBanner,
-  centeredPanelClass,
-  sectionCardClass,
   mutedSectionCardClass,
-  desktopSplitLayoutClass,
   desktopPrimaryColumnClass,
   desktopSecondaryColumnClass,
+  resolveDesktopSplitLayoutClass,
+  resolvePanelSurfaceClass,
+  resolveSectionCardClass,
 } from "./ui/panelPrimitives";
 
 const colorModeOptions = Object.values(CalibrationColorMode).map((v) => ({
@@ -28,6 +29,7 @@ const backingColorOptions = Object.values(BackingColor).map((v) => ({
 
 export default function CalibrationPanel() {
   const { t } = useI18n();
+  const workspace = useWorkspaceMode();
   const {
     color_mode,
     block_size,
@@ -58,17 +60,17 @@ export default function CalibrationPanel() {
       animate={{ opacity: 1, y: 0 }}
       transition={{ type: "spring", damping: 25, stiffness: 300 }}
       data-testid="calibration-panel"
-      className={`${centeredPanelClass} flex flex-col gap-5`}
-    >
+      className={`${resolvePanelSurfaceClass(workspace.mode)} flex flex-col gap-5`}
+      >
       <PanelIntro
         eyebrow={t("tab.calibration")}
         title={t("cal_title")}
         description={t("cal_desc")}
       />
 
-      <div className={desktopSplitLayoutClass}>
-        <div className={desktopPrimaryColumnClass}>
-          <section className={`${sectionCardClass} flex flex-col gap-4`}>
+      <div className={resolveDesktopSplitLayoutClass(workspace.mode)}>
+          <div className={desktopPrimaryColumnClass}>
+           <section className={`${resolveSectionCardClass(workspace.mode)} flex flex-col gap-4`}>
             <div>
               <h3 className="text-base font-semibold text-slate-900 dark:text-slate-50">{t("cal_params")}</h3>
               <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{t("cal_generate_btn")}</p>
@@ -139,7 +141,7 @@ export default function CalibrationPanel() {
           )}
 
           {downloadUrl && (
-            <section className={`${sectionCardClass} flex items-center justify-between gap-3`}>
+             <section className={`${resolveSectionCardClass(workspace.mode)} flex items-center justify-between gap-3`}>
               <div>
                 <h3 className="text-base font-semibold text-slate-900 dark:text-slate-50">{t("cal_download")}</h3>
                 <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{t("cal_status")}</p>
@@ -155,7 +157,7 @@ export default function CalibrationPanel() {
             </section>
           )}
 
-          <section className={`${sectionCardClass} flex flex-col gap-4`}>
+           <section className={`${resolveSectionCardClass(workspace.mode)} flex flex-col gap-4`}>
             <div>
               <h3 className="text-base font-semibold text-slate-900 dark:text-slate-50">{t("cal_preview")}</h3>
               <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{t("cal_preview_alt")}</p>

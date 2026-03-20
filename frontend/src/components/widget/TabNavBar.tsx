@@ -9,6 +9,7 @@ import { motion } from 'framer-motion';
 interface TabNavBarProps {
   activeTab: TabId;
   onTabChange: (tab: TabId) => void;
+  compact?: boolean;
 }
 
 const TAB_ICONS: Record<TabId, React.ReactNode> = {
@@ -63,11 +64,11 @@ const TAB_LIST: { id: TabId; titleKey: string }[] = [
   { id: 'settings', titleKey: 'tab.settings' },
 ];
 
-export default function TabNavBar({ activeTab, onTabChange }: TabNavBarProps) {
+export default function TabNavBar({ activeTab, onTabChange, compact = false }: TabNavBarProps) {
   const { t } = useI18n();
 
   return (
-    <nav className="dock-scrollbar flex max-w-full items-center overflow-x-auto rounded-2xl border border-slate-200/80 bg-slate-100/90 p-1.5 dark:border-slate-800/80 dark:bg-slate-900/90">
+    <nav className={`dock-scrollbar flex max-w-full items-center overflow-x-auto border border-slate-200/80 bg-slate-100/90 dark:border-slate-800/80 dark:bg-slate-900/90 ${compact ? "rounded-[20px] p-1" : "rounded-2xl p-1.5"}`}>
       <div className="flex min-w-max items-center gap-1">
         {TAB_LIST.map(({ id, titleKey }) => {
           const isActive = id === activeTab;
@@ -77,7 +78,8 @@ export default function TabNavBar({ activeTab, onTabChange }: TabNavBarProps) {
               data-testid={`tab-${id}`}
               onClick={() => onTabChange(id)}
               className={`
-                relative z-10 shrink-0 rounded-xl px-3 py-2 text-sm font-semibold tracking-wide transition-colors duration-300 outline-none sm:px-4
+                relative z-10 shrink-0 rounded-xl font-semibold tracking-wide transition-colors duration-300 outline-none
+                ${compact ? "px-2.5 py-2 text-xs sm:px-3" : "px-3 py-2 text-sm sm:px-4"}
                 ${isActive ? 'text-blue-700 dark:text-blue-400' : 'text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-200'}
               `}
               style={{ WebkitTapHighlightColor: 'transparent' }}
@@ -92,7 +94,7 @@ export default function TabNavBar({ activeTab, onTabChange }: TabNavBarProps) {
               )}
               <span className="relative z-10 flex items-center gap-2">
                 <span className="flex items-center justify-center">{TAB_ICONS[id]}</span>
-                <span className="whitespace-nowrap">{t(titleKey)}</span>
+                <span className={`whitespace-nowrap ${compact ? "hidden sm:inline" : ""}`}>{t(titleKey)}</span>
               </span>
             </button>
           );

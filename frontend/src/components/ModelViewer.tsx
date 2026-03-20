@@ -53,17 +53,19 @@ function ModelViewer({ url }: ModelViewerProps) {
     // Convert all mesh materials to pure diffuse (no specular reflections).
     // Trimesh-exported GLB uses MeshStandardMaterial which reflects the HDR
     // environment map, causing unwanted glare on the color surfaces.
+    // We replace them with MeshLambertMaterial for a completely matte finish.
     clone.traverse((child) => {
       if (child instanceof THREE.Mesh && child.material) {
         const mats = Array.isArray(child.material)
           ? child.material
           : [child.material];
-        for (const mat of mats) {
+        const newMats = mats.map((mat) => {
           if (mat instanceof THREE.MeshStandardMaterial) {
-            mat.roughness = 1.0;
-            mat.metalness = 0.0;
+            return new THREE.MeshLambertMaterial({ color: mat.color });
           }
-        }
+          return mat;
+        });
+        child.material = Array.isArray(child.material) ? newMats : newMats[0];
       }
     });
 

@@ -97,18 +97,20 @@ function InteractiveModelViewer({
     // Convert all mesh materials to pure diffuse (no specular reflections).
     // Trimesh-exported GLB uses MeshStandardMaterial which reflects the HDR
     // environment map, causing unwanted glare on the color surfaces.
+    // We replace them with MeshLambertMaterial for a completely matte finish.
     // Skip backing_plate — it gets its own independent material below.
     clone.traverse((child) => {
       if (child instanceof THREE.Mesh && child.material && child.name !== "backing_plate") {
         const mats = Array.isArray(child.material)
           ? child.material
           : [child.material];
-        for (const mat of mats) {
+        const newMats = mats.map((mat) => {
           if (mat instanceof THREE.MeshStandardMaterial) {
-            mat.roughness = 1.0;
-            mat.metalness = 0.0;
+            return new THREE.MeshLambertMaterial({ color: mat.color });
           }
-        }
+          return mat;
+        });
+        child.material = Array.isArray(child.material) ? newMats : newMats[0];
       }
     });
 
@@ -150,11 +152,9 @@ function InteractiveModelViewer({
       // Detach from clone tree
       bp.removeFromParent();
 
-      // Apply independent MeshStandardMaterial (Requirement 4.1, 4.2, 4.3)
-      const backingMat = new THREE.MeshStandardMaterial({
+      // Apply independent MeshLambertMaterial (Requirement 4.1, 4.2, 4.3)
+      const backingMat = new THREE.MeshLambertMaterial({
         color: 0xf5f5f5,
-        roughness: 0.85,
-        metalness: 0.0,
       });
       bp.material = backingMat;
     }
@@ -168,11 +168,6 @@ function InteractiveModelViewer({
         // Clone material so mutations don't affect the GLTF cache
         if (child.material) {
           const cloned = (child.material as THREE.Material).clone();
-          // Ensure pure diffuse (no specular reflections)
-          if (cloned instanceof THREE.MeshStandardMaterial) {
-            cloned.roughness = 1.0;
-            cloned.metalness = 0.0;
-          }
           child.material = cloned;
         }
         colorMeshList.push(child);
@@ -256,10 +251,8 @@ function InteractiveModelViewer({
     if (w <= 0 || h <= 0) return null;
 
     const geo = new THREE.BoxGeometry(w, h, spacerThick);
-    const mat = new THREE.MeshStandardMaterial({
+    const mat = new THREE.MeshLambertMaterial({
       color: 0xf5f5f5,
-      roughness: 0.85,
-      metalness: 0.0,
     });
     const mesh = new THREE.Mesh(geo, mat);
     mesh.name = "__backing_plate_fallback";
@@ -428,7 +421,7 @@ function InteractiveModelViewer({
 
     for (const mesh of colorMeshes) {
       const origHex = extractHexFromMeshName(mesh.name);
-      const mat = mesh.material as THREE.MeshStandardMaterial;
+      const mat = mesh.material as THREE.MeshLambertMaterial;
 
       // Color replacement — always apply
       const remappedHex = colorRemapMap[origHex] || origHex;

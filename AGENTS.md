@@ -29,6 +29,11 @@ Lumina Studio is a Python + React/TypeScript multi-material FDM color workflow b
 - Reuse canonical enums/config from `config.py`, API schemas, and frontend constants
 - New color modes, modeling modes, printer profiles, or slicer integrations must update validation, UI, translations, persisted settings, and tests together
 
+## Lossless Refactoring
+- Keep all existing public API signatures unchanged during refactors
+- Write tests to verify current behavior before modifying implementation
+- Each refactor should focus on a single responsibility; avoid sweeping changes
+
 ## Frontend Rules
 - All user-facing strings must come from `frontend/src/i18n/translations.ts`
 - Support both light and dark themes via tokens/Tailwind vars; no raw UI colors like `#fff`, `bg-white`, or `text-black`
@@ -38,15 +43,17 @@ Lumina Studio is a Python + React/TypeScript multi-material FDM color workflow b
 ## Architecture & Robustness
 - Preserve layering: `core/` -> API/workers -> UI
 - Put reusable business logic in `core/`; routes do validation, session/file handling, and error translation; CPU-heavy work belongs in workers or `core/`
+- The staged pipeline lives in `core/pipeline/` (S01–S12 step modules coordinated by `coordinator.py`)
 - Keep preview/generation flows compatible with `SessionStore` and `FileRegistry`
 - Validate file types, LUT/mode compatibility, coordinates, required cache/session keys, and optional dependencies early with actionable errors
 - Never assume session/cache state exists or is fresh; return deterministic `4xx`/`5xx`, not raw tracebacks
 - Register every temp file for cleanup; preserve original state before destructive cache mutations; prevent stale preview/download caching
 - Use explicit timeouts, distinguish fatal vs non-fatal failures, and degrade optional features such as HEIC/HEIF gracefully
-- Current supported workflows include calibration, extraction/manual correction, LUT merge/inspection, preview/generation, batch conversion, printer/slicer integration, and BW/4-color/6-color/8-color/5-color-extended modes
+- Current supported workflows include calibration, extraction/manual correction, LUT merge/inspection, preview/generation, batch conversion, large-format tiled generation, printer/slicer integration, and BW/4-color/6-color/8-color/5-color-extended modes
 
 ## Tests
 - Backend: `pytest` + Hypothesis; Frontend: Vitest + fast-check
+- File naming: `test_*_unit.py` / `test_*_properties.py` (Python); `*.test.ts(x)` / `*.property.test.ts` (Frontend)
 - Add focused regression tests for new algorithms, bug fixes, cache/session/temp-file cleanup, timeout/fallback paths, invalid uploads/LUTs, and out-of-bounds/background clicks
 
 ## Hygiene & Commits

@@ -282,6 +282,4 @@ frontend/dist/
 assets/temp_*.npy
 .idea/
 *.3mf
-.cursor/*
-!.cursor/rules/
-!.cursor/rules/**
+.cursor/

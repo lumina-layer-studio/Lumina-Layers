@@ -160,10 +160,13 @@ def get_base_colors(lut_name: str = Query(..., description="LUT 显示名称")) 
         for i, rgb in enumerate(base_colors)
     ]
 
+    combinations = engine.stack_lut.tolist() if engine.stack_lut is not None else None
+
     return BaseColorsResponse(
         lut_name=display_name,
         color_count=len(colors),
         colors=colors,
+        combinations=combinations,
     )
 
 

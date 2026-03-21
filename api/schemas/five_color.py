@@ -22,6 +22,7 @@ class BaseColorsResponse(BaseModel):
     lut_name: str = Field(..., description="LUT 显示名称")
     color_count: int = Field(..., description="基础颜色数量")
     colors: list[BaseColorEntry] = Field(..., description="基础颜色列表")
+    combinations: Optional[list[list[int]]] = Field(None, description="所有合法的五色组合索引，若为空则所有组合合法")
 
 
 class FiveColorQueryRequest(BaseModel):

@@ -379,6 +379,7 @@ export interface BaseColorsResponse {
   lut_name: string;
   color_count: number;
   colors: BaseColorEntry[];
+  combinations?: number[][] | null;
 }
 
 export interface FiveColorQueryRequest {

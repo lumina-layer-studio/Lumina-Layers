@@ -8,6 +8,7 @@ import { fetchBaseColors, queryFiveColor } from "../api/fiveColor";
 export interface FiveColorState {
   lutName: string;
   baseColors: BaseColorEntry[];
+  combinations: number[][] | null;
   selectedIndices: number[];
   queryResult: FiveColorQueryResponse | null;
   isLoading: boolean;
@@ -31,6 +32,7 @@ export interface FiveColorActions {
 const DEFAULT_STATE: FiveColorState = {
   lutName: "",
   baseColors: [],
+  combinations: null,
   selectedIndices: [],
   queryResult: null,
   isLoading: false,
@@ -49,12 +51,17 @@ export const useFiveColorStore = create<FiveColorState & FiveColorActions>()(
           lutName,
           selectedIndices: [],
           queryResult: null,
+          combinations: null, // 先清空旧组合，强制拉取最新的
           isLoading: true,
           error: null,
         });
         try {
           const response = await fetchBaseColors(lutName);
-          set({ baseColors: response.colors, isLoading: false });
+          set({ 
+            baseColors: response.colors, 
+            combinations: response.combinations ?? null, 
+            isLoading: false 
+          });
         } catch (err) {
           set({
             error: err instanceof Error ? err.message : "加载基础颜色失败",

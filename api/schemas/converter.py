@@ -512,20 +512,23 @@ class BedSizeItem(BaseModel):
     单个打印热床尺寸选项。
 
     Attributes:
-        label: Display label for the bed size, e.g. "256×256 mm".
-            热床尺寸显示标签。
+        label: Display label for the bed size, e.g. "256×256 mm" or "Bambu Lab H2D".
+            热床尺寸显示标签（可以是尺寸或机型名）。
         width_mm: Bed width in millimeters.
             热床宽度 (mm)。
         height_mm: Bed height in millimeters.
             热床高度 (mm)。
         is_default: Whether this is the default bed size.
             是否为默认热床尺寸。
+        printer_id: Optional printer profile ID if this is from a printer model.
+            可选的打印机配置 ID（如果来自机型）。
     """
 
     label: str = Field(..., description="热床尺寸标签")
     width_mm: int = Field(..., description="热床宽度 (mm)")
     height_mm: int = Field(..., description="热床高度 (mm)")
     is_default: bool = Field(False, description="是否为默认热床尺寸")
+    printer_id: str | None = Field(None, description="打印机配置 ID（如果来自机型）")
 
 
 class BedSizeListResponse(BaseModel):

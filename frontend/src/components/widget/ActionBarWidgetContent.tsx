@@ -7,7 +7,7 @@ import ActionBar from '../sections/ActionBar';
 
 export default function ActionBarWidgetContent() {
   return (
-    <div className="p-3 max-h-[60vh] overflow-y-auto dock-scrollbar">
+    <div className="p-3">
       <ActionBar />
     </div>
   );

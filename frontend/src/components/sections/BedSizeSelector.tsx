@@ -8,7 +8,7 @@ export default function BedSizeSelector() {
     useConverterStore();
 
   const options = bedSizes.map((bed) => ({
-    label: bed.label,
+    label: bed.printer_id ? bed.label : `${bed.label}`,
     value: bed.label,
   }));
 

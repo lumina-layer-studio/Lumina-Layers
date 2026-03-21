@@ -102,8 +102,8 @@ def _image_to_png_bytes(img: object) -> bytes:
 
 @router.get("/bed-sizes", response_model=BedSizeListResponse)
 def get_bed_sizes() -> BedSizeListResponse:
-    """Return all available printer bed sizes.
-    返回所有可用的打印热床尺寸列表。
+    """Return all available printer bed sizes including printer models and custom sizes.
+    返回所有可用的打印热床尺寸列表，包括打印机型号和自定义尺寸。
     """
     beds = [
         BedSizeItem(
@@ -111,8 +111,9 @@ def get_bed_sizes() -> BedSizeListResponse:
             width_mm=w,
             height_mm=h,
             is_default=(label == BedManager.DEFAULT_BED),
+            printer_id=printer_id,
         )
-        for label, w, h in BedManager.BEDS
+        for label, w, h, printer_id in BedManager.get_all_bed_options()
     ]
     return BedSizeListResponse(beds=beds)
 

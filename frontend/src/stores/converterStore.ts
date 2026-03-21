@@ -520,7 +520,10 @@ export const useConverterStore = create<ConverterState & ConverterActions>(
         imagePreviewUrl: previewUrl,
         cropModalOpen: shouldOpenCrop,
         hasManualPreview: false,
+        layerImages: [],
+        layerImagesOpen: false,
       });
+      console.log('[DEBUG] setImageFile: cleared layerImages');
     },
 
     // --- 基础参数 ---
@@ -1115,7 +1118,22 @@ export const useConverterStore = create<ConverterState & ConverterActions>(
       set({ bedSizesLoading: true });
       try {
         const response = await apiFetchBedSizes();
-        set({ bedSizes: response.beds, bedSizesLoading: false });
+        const beds = response.beds;
+        
+        // 获取当前状态
+        const state = useConverterStore.getState();
+        const currentBedLabel = state.bed_label;
+        const settingsPrinterModel = useSettingsStore.getState().printerModel;
+        
+        // 查找当前设置的打印机型号对应的热床选项
+        const printerBed = beds.find(bed => bed.printer_id === settingsPrinterModel);
+        
+        // 如果找到了对应的打印机型号，且当前是默认值，则自动选中
+        if (printerBed && currentBedLabel === "256×256 mm") {
+          set({ bedSizes: beds, bedSizesLoading: false, bed_label: printerBed.label });
+        } else {
+          set({ bedSizes: beds, bedSizesLoading: false });
+        }
       } catch (err) {
         set({
           bedSizesLoading: false,
@@ -1221,7 +1239,8 @@ export const useConverterStore = create<ConverterState & ConverterActions>(
       _previewAbortController = new AbortController();
       const { signal } = _previewAbortController;
 
-      set({ isLoading: true, error: null });
+      set({ isLoading: true, error: null, hasManualPreview: false, layerImages: [], layerImagesOpen: false });
+      console.log('[DEBUG] submitPreview: cleared layerImages');
       try {
         const response = await apiConvertPreview(
           state.imageFile,
@@ -1265,7 +1284,10 @@ export const useConverterStore = create<ConverterState & ConverterActions>(
           previewPixelWidth: response.dimensions?.width ?? null,
           previewPixelHeight: response.dimensions?.height ?? null,
           hasManualPreview: true,
+          layerImages: [],
+          layerImagesOpen: false,
         });
+        console.log('[DEBUG] submitPreview success: cleared layerImages for new sessionId');
       } catch (err) {
         // Ignore aborted requests (user started a new preview)
         if (err instanceof Error && err.name === "CanceledError") {
@@ -1568,7 +1590,10 @@ export const useConverterStore = create<ConverterState & ConverterActions>(
             batchMode: false,
             hasManualPreview: false,
             cropModalOpen: state.enableCrop,
+            layerImages: [],
+            layerImagesOpen: false,
           });
+          console.log('[DEBUG] handleFilesSelect (replace): cleared layerImages');
         } else {
           // Empty state: set imageFile, enter SingleMode
           const previewUrl = URL.createObjectURL(validFiles[0]);
@@ -1584,7 +1609,10 @@ export const useConverterStore = create<ConverterState & ConverterActions>(
             batchMode: false,
             hasManualPreview: false,
             cropModalOpen: state.enableCrop,
+            layerImages: [],
+            layerImagesOpen: false,
           });
+          console.log('[DEBUG] handleFilesSelect (new): cleared layerImages');
         }
         return;
       }
@@ -1609,7 +1637,10 @@ export const useConverterStore = create<ConverterState & ConverterActions>(
         previewGlbUrl: null,
         batchMode: true,
         hasManualPreview: false,
+        layerImages: [],
+        layerImagesOpen: false,
       });
+      console.log('[DEBUG] handleFilesSelect (batch): cleared layerImages');
     },
 
     submitBatch: async () => {

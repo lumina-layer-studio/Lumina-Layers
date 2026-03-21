@@ -34,6 +34,7 @@ export default function Dropdown({
     if (!triggerRef.current) return;
     const rect = triggerRef.current.getBoundingClientRect();
     const viewportPadding = 16;
+    const maxMenuHeight = 288; // max-h-72 = 18rem = 288px
     const preferredWidth = Math.max(rect.width, 420);
     const maxWidth = window.innerWidth - viewportPadding * 2;
     const nextWidth = Math.min(preferredWidth, maxWidth);
@@ -41,8 +42,14 @@ export default function Dropdown({
       Math.max(rect.left, viewportPadding),
       window.innerWidth - viewportPadding - nextWidth,
     );
+    
+    // 检查下方空间是否足够，不够则向上展开
+    const spaceBelow = window.innerHeight - rect.bottom - viewportPadding;
+    const spaceAbove = rect.top - viewportPadding;
+    const shouldOpenUpward = spaceBelow < maxMenuHeight && spaceAbove > spaceBelow;
+    
     setMenuPos({
-      top: rect.bottom + 6,
+      top: shouldOpenUpward ? rect.top - maxMenuHeight - 6 : rect.bottom + 6,
       left: nextLeft,
       width: nextWidth,
     });

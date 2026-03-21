@@ -26,6 +26,60 @@ import cv2
 import trimesh
 from config import ModelingMode
 
+try:
+    import numba
+    HAS_NUMBA = True
+except ImportError:
+    numba = None
+    HAS_NUMBA = False
+
+
+if HAS_NUMBA:
+    @numba.njit(cache=True)
+    def _greedy_rect_numba(mask):
+        h, w = mask.shape
+        processed = np.zeros((h, w), dtype=np.uint8)
+        rects = np.empty((h * w, 4), dtype=np.int32)
+        count = 0
+
+        for y in range(h):
+            x = 0
+            while x < w:
+                if mask[y, x] and processed[y, x] == 0:
+                    x_start = x
+                    x_end = x + 1
+                    while x_end < w and mask[y, x_end] and processed[y, x_end] == 0:
+                        x_end += 1
+
+                    y_end = y + 1
+                    while y_end < h:
+                        valid = 1
+                        for xx in range(x_start, x_end):
+                            if (not mask[y_end, xx]) or processed[y_end, xx] != 0:
+                                valid = 0
+                                break
+                        if valid == 0:
+                            break
+                        y_end += 1
+
+                    for yy in range(y, y_end):
+                        for xx in range(x_start, x_end):
+                            processed[yy, xx] = 1
+
+                    rects[count, 0] = x_start
+                    rects[count, 1] = y
+                    rects[count, 2] = x_end
+                    rects[count, 3] = y_end
+                    count += 1
+                    x = x_end
+                else:
+                    x += 1
+
+        return rects[:count]
+else:
+    def _greedy_rect_numba(mask):
+        return None
+
 
 class BaseMesher(ABC):
     """Mesh generator abstract base class"""
@@ -158,47 +212,84 @@ class HighFidelityMesher(BaseMesher):
         mesh_type = "Backing" if mat_id == -2 else f"Mat ID {mat_id}"
         print(f"[HIGH_FIDELITY] {mesh_type}: Merged {voxel_matrix.shape[0]} layers → {len(layer_groups)} groups")
         
-        vertices = []
-        faces = []
+        layer_rectangles = []
         total_rects = 0
-        
-        # Step 2: Process each layer group with greedy rectangle merging
         for start_z, end_z, mask in layer_groups:
-            z_bottom = float(start_z)
-            z_top = float(end_z + 1)
-            
-            # Step 3: Find maximal rectangles using greedy algorithm
             rectangles = self._greedy_rect_merge(mask, height_px)
+            if not rectangles:
+                continue
             total_rects += len(rectangles)
-            
-            # Step 4: Generate one box per rectangle
-            for x0, y0, x1, y1 in rectangles:
-                # Convert to world coordinates (flip Y)
-                world_y0 = float(height_px - y1)
-                world_y1 = float(height_px - y0)
-                
-                base_idx = len(vertices)
-                vertices.extend([
-                    [x0, world_y0, z_bottom], [x1, world_y0, z_bottom],
-                    [x1, world_y1, z_bottom], [x0, world_y1, z_bottom],
-                    [x0, world_y0, z_top], [x1, world_y0, z_top],
-                    [x1, world_y1, z_top], [x0, world_y1, z_top]
-                ])
-                
-                cube_faces = [
-                    [0, 2, 1], [0, 3, 2],  # bottom
-                    [4, 5, 6], [4, 6, 7],  # top
-                    [0, 1, 5], [0, 5, 4],  # front
-                    [1, 2, 6], [1, 6, 5],  # right
-                    [2, 3, 7], [2, 7, 6],  # back
-                    [3, 0, 4], [3, 4, 7]   # left
-                ]
-                faces.extend([[v + base_idx for v in f] for f in cube_faces])
-        
-        if not vertices:
+            layer_rectangles.append((float(start_z), float(end_z + 1), rectangles))
+
+        if total_rects == 0:
             return None
-        
-        mesh = trimesh.Trimesh(vertices=vertices, faces=faces)
+
+        all_vertices = np.empty((total_rects * 8, 3), dtype=np.float64)
+        all_faces = np.empty((total_rects * 12, 3), dtype=np.int64)
+
+        vertex_template = np.array([
+            [0, 0, 0], [1, 0, 0], [1, 1, 0], [0, 1, 0],
+            [0, 0, 1], [1, 0, 1], [1, 1, 1], [0, 1, 1]
+        ], dtype=np.float64)
+        face_template = np.array([
+            [0, 2, 1], [0, 3, 2],
+            [4, 5, 6], [4, 6, 7],
+            [0, 1, 5], [0, 5, 4],
+            [1, 2, 6], [1, 6, 5],
+            [2, 3, 7], [2, 7, 6],
+            [3, 0, 4], [3, 4, 7]
+        ], dtype=np.int64)
+
+        rect_idx = 0
+        for z_bottom, z_top, rectangles in layer_rectangles:
+            rect_arr = np.asarray(rectangles, dtype=np.float64)
+            x0 = rect_arr[:, 0]
+            y0 = rect_arr[:, 1]
+            x1 = rect_arr[:, 2]
+            y1 = rect_arr[:, 3]
+            world_y0 = height_px - y1
+            world_y1 = height_px - y0
+            n = rect_arr.shape[0]
+
+            base = np.empty((n, 8, 3), dtype=np.float64)
+            base[:, :, :] = vertex_template
+            base[:, 0, 0] = x0
+            base[:, 0, 1] = world_y0
+            base[:, 0, 2] = z_bottom
+            base[:, 1, 0] = x1
+            base[:, 1, 1] = world_y0
+            base[:, 1, 2] = z_bottom
+            base[:, 2, 0] = x1
+            base[:, 2, 1] = world_y1
+            base[:, 2, 2] = z_bottom
+            base[:, 3, 0] = x0
+            base[:, 3, 1] = world_y1
+            base[:, 3, 2] = z_bottom
+            base[:, 4, 0] = x0
+            base[:, 4, 1] = world_y0
+            base[:, 4, 2] = z_top
+            base[:, 5, 0] = x1
+            base[:, 5, 1] = world_y0
+            base[:, 5, 2] = z_top
+            base[:, 6, 0] = x1
+            base[:, 6, 1] = world_y1
+            base[:, 6, 2] = z_top
+            base[:, 7, 0] = x0
+            base[:, 7, 1] = world_y1
+            base[:, 7, 2] = z_top
+
+            v_start = rect_idx * 8
+            v_end = (rect_idx + n) * 8
+            all_vertices[v_start:v_end] = base.reshape(-1, 3)
+
+            offsets = (np.arange(n, dtype=np.int64) * 8 + v_start).reshape(-1, 1, 1)
+            faces = face_template.reshape(1, 12, 3) + offsets
+            f_start = rect_idx * 12
+            f_end = (rect_idx + n) * 12
+            all_faces[f_start:f_end] = faces.reshape(-1, 3)
+            rect_idx += n
+
+        mesh = trimesh.Trimesh(vertices=all_vertices, faces=all_faces)
         mesh.merge_vertices()
         mesh.update_faces(mesh.unique_faces())
         
@@ -232,6 +323,13 @@ class HighFidelityMesher(BaseMesher):
             List of rectangles: [(x0, y0, x1, y1), ...]
             Coordinates are in pixel space (not world space)
         """
+        if HAS_NUMBA:
+            rects = _greedy_rect_numba(mask)
+            return [
+                (float(r[0]), float(r[1]), float(r[2]), float(r[3]))
+                for r in rects
+            ]
+
         h, w = mask.shape
         processed = np.zeros_like(mask, dtype=bool)
         rectangles = []

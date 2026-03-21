@@ -563,4 +563,54 @@ div#confirm-crop-hidden-btn {
 #conv-slicer-dropdown .wrap {
     min-height: unset !important;
 }
+
+/* Palette list/card layout */
+#palette-grid-container {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+}
+
+.palette-list-card {
+    border: 1px solid #e5e7eb;
+    border-radius: 10px;
+    padding: 8px;
+}
+
+.palette-list-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 6px;
+}
+
+.palette-list-scroll {
+    max-height: 340px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.palette-list-item {
+    border: 1px solid #eef0f3;
+    border-radius: 8px;
+    padding: 6px;
+    cursor: pointer;
+}
+
+.palette-list-item:hover {
+    border-color: #cfd8e3;
+    background: #fafcff;
+}
+
+.palette-list-item.is-selected {
+    border-color: #2196F3;
+    background: #eaf4ff;
+}
+
+.palette-delete-btn[disabled] {
+    opacity: .45;
+    cursor: not-allowed;
+}
 """

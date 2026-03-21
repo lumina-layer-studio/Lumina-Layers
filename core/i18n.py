@@ -18,8 +18,8 @@ class I18n:
             'en': '✨ Lumina Studio'
         },
         'app_subtitle': {
-            'zh': '多材料3D打印色彩系统 | v1.6.0',
-            'en': 'Multi-Material 3D Print Color System | v1.6.0'
+            'zh': '多材料3D打印色彩系统 | v1.6.3',
+            'en': 'Multi-Material 3D Print Color System | v1.6.3'
         },
         'lang_btn_zh': {
             'zh': '🌐 中文',
@@ -299,6 +299,30 @@ class I18n:
         'conv_palette_clear_btn': {
             'zh': '🗑️ 清除所有',
             'en': '🗑️ Clear'
+        },
+        'conv_palette_user_replacements_title': {
+            'zh': '用户替换',
+            'en': 'User Replacements'
+        },
+        'conv_palette_auto_pairs_title': {
+            'zh': '自动配准',
+            'en': 'Auto Pairs'
+        },
+        'conv_palette_delete_selected_btn': {
+            'zh': '删除选中',
+            'en': 'Delete Selected'
+        },
+        'conv_palette_delete_selected_empty': {
+            'zh': '❌ 请先选中一项用户替换',
+            'en': '❌ Select one user replacement first'
+        },
+        'conv_palette_user_empty': {
+            'zh': '暂无替换',
+            'en': 'No replacements'
+        },
+        'conv_palette_auto_empty': {
+            'zh': '暂无自动配准',
+            'en': 'No auto pairs'
         },
         'lut_grid_invalid': {
             'zh': '⚠️ 请先选择一个有效的 LUT 文件',
@@ -662,6 +686,85 @@ class I18n:
             'zh': '↩️ 已撤销',
             'en': '↩️ Undone'
         },
+        
+        # ==================== Color Merging ====================
+        'merge_enable_label': {
+            'zh': '启用自动颜色合并 Enable Auto Color Merging',
+            'en': 'Enable Auto Color Merging'
+        },
+        'merge_enable_info': {
+            'zh': '自动合并低使用率颜色到相近颜色',
+            'en': 'Automatically merge low-usage colors to similar colors'
+        },
+        'merge_threshold_label': {
+            'zh': '使用率阈值 Usage Threshold (%)',
+            'en': 'Usage Threshold (%)'
+        },
+        'merge_threshold_info': {
+            'zh': '低于此百分比的颜色将被合并',
+            'en': 'Colors below this percentage will be merged'
+        },
+        'merge_max_distance_label': {
+            'zh': '最大颜色距离 Max Color Distance (Delta-E)',
+            'en': 'Max Color Distance (Delta-E)'
+        },
+        'merge_max_distance_info': {
+            'zh': '只合并距离小于此值的颜色',
+            'en': 'Only merge colors with distance below this value'
+        },
+        'merge_preview_btn': {
+            'zh': '🔍 预览合并效果 Preview Merge',
+            'en': '🔍 Preview Merge'
+        },
+        'merge_apply_btn': {
+            'zh': '✅ 应用合并 Apply Merge',
+            'en': '✅ Apply Merge'
+        },
+        'merge_revert_btn': {
+            'zh': '↩️ 恢复原始 Revert',
+            'en': '↩️ Revert'
+        },
+        'merge_status_empty': {
+            'zh': '💡 调整参数后点击预览',
+            'en': '💡 Adjust parameters and click preview'
+        },
+        'merge_status_preview': {
+            'zh': '🔍 预览: {merged} 种颜色被合并 (质量: {quality:.1f})',
+            'en': '🔍 Preview: {merged} colors merged (quality: {quality:.1f})'
+        },
+        'merge_status_applied': {
+            'zh': '✅ 已应用: {merged} 种颜色被合并',
+            'en': '✅ Applied: {merged} colors merged'
+        },
+        'merge_status_reverted': {
+            'zh': '↩️ 已恢复到原始颜色',
+            'en': '↩️ Reverted to original colors'
+        },
+        'merge_error_empty_palette': {
+            'zh': '❌ 调色板为空，无法执行颜色合并',
+            'en': '❌ Empty palette, cannot perform color merging'
+        },
+        'merge_error_single_color': {
+            'zh': '❌ 图像只包含一种颜色，已禁用颜色合并',
+            'en': '❌ Image contains only one color, merging disabled'
+        },
+        'merge_error_all_below_threshold': {
+            'zh': '⚠️ 所有颜色使用率都低于阈值，已禁用颜色合并以防止颜色丢失',
+            'en': '⚠️ All colors below threshold, merging disabled to prevent color loss'
+        },
+        'merge_warning_no_targets': {
+            'zh': '⚠️ 部分颜色未找到合适的合并目标，保持原始颜色',
+            'en': '⚠️ Some colors have no suitable merge targets, keeping original'
+        },
+        'merge_info_low_usage': {
+            'zh': '💡 检测到 {count} 种低使用率颜色 (<{threshold}%)',
+            'en': '💡 Detected {count} low-usage colors (<{threshold}%)'
+        },
+        'merge_accordion_title': {
+            'zh': '🎨 颜色合并 Color Merging',
+            'en': '🎨 Color Merging'
+        },
+        
         'lut_grid_load_hint': {
             'zh': '加载 LUT 后显示可用颜色',
             'en': 'Load LUT to see available colors'
@@ -760,6 +863,10 @@ class I18n:
             'zh': '🗑️ 清空缓存',
             'en': '🗑️ Clear Cache'
         },
+        'settings_clear_output': {
+            'zh': '🗑️ 清空输出',
+            'en': '🗑️ Clear Output'
+        },
         'settings_reset_counters': {
             'zh': '🔢 使用计数归零',
             'en': '🔢 Reset Counters'
@@ -768,6 +875,10 @@ class I18n:
             'zh': '✅ 缓存已清空，释放了 {} 空间',
             'en': '✅ Cache cleared, freed {} of space'
         },
+        'settings_output_cleared': {
+            'zh': '✅ 输出已清空，释放了 {} 空间',
+            'en': '✅ Output cleared, freed {} of space'
+        },
         'settings_counters_reset': {
             'zh': '✅ 计数器已归零：校准板: {} | 颜色提取: {} | 模型转换: {}',
             'en': '✅ Counters reset: Calibrations: {} | Extractions: {} | Conversions: {}'
@@ -775,6 +886,10 @@ class I18n:
         'settings_cache_size': {
             'zh': '📦 缓存大小: {}',
             'en': '📦 Cache size: {}'
+        },
+        'settings_output_size': {
+            'zh': '📦 输出大小: {}',
+            'en': '📦 Output size: {}'
         },
 
         'theme_toggle_night': {
@@ -886,7 +1001,7 @@ class I18n:
         
         # ==================== About Page Content ====================
         'about_content': {
-            'zh': """## 🌟 Lumina Studio v1.6.0
+            'zh': """## 🌟 Lumina Studio v1.6.3
 
 **多材料3D打印色彩系统**
 
@@ -920,7 +1035,7 @@ class I18n:
 
 ---
 
-### 📝 v1.6.0 更新日志
+### 📝 v1.6.3 更新日志
 
 #### 🧹 孤立像素清理
 - 新增孤立像素清理功能（高保真模式自动启用）
@@ -1032,9 +1147,15 @@ class I18n:
 
 ### 📄 许可证
 
-**CC BY-NC-SA 4.0** - Attribution-NonCommercial-ShareAlike
+**GNU GPL v3.0** 开源协议
 
-**商业豁免**: 个人创作者、街边摊贩、小型私营企业可免费使用本软件生成模型并销售实体打印品。
+GPL 协议允许并鼓励商业使用。我们特别支持大家通过劳动获取收益，你无需获得额外授权即可：
+
+使用本软件生成模型或辅助生产；
+
+销售物理打印成品（如挂件、浮雕、3D 打印件等）；
+
+在夜市、市集、展会或个人网店销售。
 
 ---
 
@@ -1048,11 +1169,11 @@ class I18n:
 ---
 
 <div style="text-align:center; color:#888; margin-top:20px;">
-    Made with ❤️ by [MIN]<br>
-    v1.6.0 | 2025
+    Made with ❤️ by Lumina Studio Contributors<br>
+    v1.6.3 | 2025
 </div>
 """,
-            'en': """## 🌟 Lumina Studio v1.6.0
+            'en': """## 🌟 Lumina Studio v1.6.3
 
 **Multi-Material 3D Print Color System**
 
@@ -1086,7 +1207,7 @@ Accurate color reproduction for FDM printing
 
 ---
 
-### 📝 v1.6.0 Changelog
+### 📝 v1.6.3 Changelog
 
 #### 🧹 Isolated Pixel Cleanup
 - Added isolated pixel cleanup feature (auto-enabled in High-Fidelity mode)
@@ -1198,9 +1319,9 @@ Accurate color reproduction for FDM printing
 
 ### 📄 License
 
-**CC BY-NC-SA 4.0** - Attribution-NonCommercial-ShareAlike
+**GNU GPL v3.0** Open Source License
 
-**Commercial Exemption**: Individual creators, street vendors, and small businesses may freely use this software to generate models and sell physical prints.
+**Commercial Use & "Street Vendor" Support Statement**: GPL permits and encourages commercial use. We specifically support individual creators, street vendors, and small businesses to earn a living through their craft. You may freely use this software to generate models and sell physical prints without additional permission.
 
 ---
 
@@ -1214,8 +1335,8 @@ Special thanks to:
 ---
 
 <div style="text-align:center; color:#888; margin-top:20px;">
-    Made with ❤️ by [MIN]<br>
-    v1.6.0 | 2025
+    Made with ❤️ by Lumina Studio Contributors<br>
+    v1.6.3 | 2025
 </div>
 """
         },

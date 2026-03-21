@@ -269,3 +269,11 @@ lut-npyԤ��/Custom/*.npy
 # Reference projects (for development reference only)
 LD_ColorLayering-main/
 ChromaStack-main/
+
+# Frontend
+node_modules/
+frontend/node_modules/
+frontend/dist/
+
+# Temporary assets
+assets/temp_*.npy

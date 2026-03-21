@@ -16,19 +16,22 @@ from collections import Counter
 
 def _encode_stacks(material_matrix: np.ndarray, base: int) -> np.ndarray:
     """
-    将 (H, W, 5) 的材料矩阵编码为 (H, W) 的整数矩阵。
+    将 (H, W, N) 的材料矩阵编码为 (H, W) 的整数矩阵。
 
-    编码公式: layer0 * B^4 + layer1 * B^3 + layer2 * B^2 + layer3 * B + layer4
+    编码公式: layer0 * B^(N-1) + layer1 * B^(N-2) + ... + layer(N-1)
     其中 B = base（材料 ID 的最大值 + 1）
 
     Args:
-        material_matrix: (H, W, 5) 材料堆叠矩阵
+        material_matrix: (H, W, N) 材料堆叠矩阵
         base: 编码基数，通常为 max(material_id) + 1
 
     Returns:
         (H, W) 整数矩阵，dtype 为 int64
     """
-    weights = np.array([base ** i for i in range(4, -1, -1)], dtype=np.int64)
+    if material_matrix.ndim != 3:
+        raise ValueError(f"material_matrix must be 3D (H, W, N), got shape={material_matrix.shape}")
+    layer_count = material_matrix.shape[2]
+    weights = np.array([base ** i for i in range(layer_count - 1, -1, -1)], dtype=np.int64)
     encoded = np.sum(material_matrix.astype(np.int64) * weights, axis=2)
     return encoded
 
@@ -142,10 +145,10 @@ def cleanup_isolated_pixels(
     单轮清理，不修改输入数组。
 
     Args:
-        material_matrix: (H, W, 5) 材料堆叠矩阵
+        material_matrix: (H, W, N) 材料堆叠矩阵
         matched_rgb: (H, W, 3) 匹配的 RGB 颜色
         lut_rgb: (N, 3) LUT 颜色表
-        ref_stacks: (N, 5) LUT 材料堆叠表
+        ref_stacks: (N, L) LUT 材料堆叠表
 
     Returns:
         (cleaned_matched_rgb, cleaned_material_matrix) - 清理后的副本
@@ -173,7 +176,8 @@ def cleanup_isolated_pixels(
     mode_map = _find_neighbor_mode(encoded, isolated_mask)
 
     # 步骤 4：构建 LUT 编码 → 索引 的映射，用于反查
-    lut_encoded = _encode_stacks(ref_stacks.reshape(1, -1, 5), base).flatten()
+    layer_count = ref_stacks.shape[1]
+    lut_encoded = _encode_stacks(ref_stacks.reshape(1, -1, layer_count), base).flatten()
     # 编码 → LUT 索引的字典
     encode_to_lut_idx = {}
     for idx in range(len(lut_encoded)):

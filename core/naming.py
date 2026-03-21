@@ -24,6 +24,7 @@ COLOR_MODE_TAGS: Dict[str, str] = {
     "4-Color (1024 colors)": "4C",
     "CMYW": "4C",
     "RYBW": "4C",
+    "5-Color Extended": "5C",
     "6-Color": "6C",
     "6-Color (Smart 1296)": "6C",
     "8-Color Max": "8C",
@@ -125,17 +126,17 @@ _TS_PATTERN = r"\d{8}_\d{6}"
 
 # Valid mode and color tags for matching
 _VALID_MODE_TAGS = {"HiFi", "Pixel", "Vector"}
-_VALID_COLOR_TAGS = {"4C", "6C", "8C", "BW", "Merged"}
+_VALID_COLOR_TAGS = {"4C", "5C", "6C", "8C", "BW", "Merged"}
 
 # Regex patterns for each file type
 _MODEL_RE = re.compile(
-    rf"^(.+)_Lumina_(HiFi|Pixel|Vector)_(4C|6C|8C|BW|Merged)_({_TS_PATTERN})(\.[\w]+)$"
+    rf"^(.+)_Lumina_(HiFi|Pixel|Vector)_(4C|5C|6C|8C|BW|Merged)_({_TS_PATTERN})(\.[\w]+)$"
 )
 _PREVIEW_RE = re.compile(
     rf"^(.+)_Preview_({_TS_PATTERN})(\.[\w]+)$"
 )
 _CALIBRATION_RE = re.compile(
-    rf"^Lumina_Calibration_(.+?)_(4C|6C|8C|BW|Merged)_({_TS_PATTERN})(\.[\w]+)$"
+    rf"^Lumina_Calibration_(.+?)_(4C|5C|6C|8C|BW|Merged)_({_TS_PATTERN})(\.[\w]+)$"
 )
 _BATCH_RE = re.compile(
     rf"^Lumina_Batch_({_TS_PATTERN})(\.[\w]+)$"

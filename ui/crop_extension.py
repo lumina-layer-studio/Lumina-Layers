@@ -842,14 +842,78 @@ console.log('Crop modal JS loaded, openCropModal:', typeof window.openCropModal)
         }, 50);
     }
     
+    // Handle row click (user/auto list)
+    function handlePaletteRowClick(e) {
+        var row = e.target.closest('.palette-list-item, .palette-row');
+        if (!row) return false;
+
+        var rowType = row.getAttribute('data-row-type');
+        var rowId = row.getAttribute('data-row-id') || '';
+        var quantized = row.getAttribute('data-quantized');
+        var matched = row.getAttribute('data-matched');
+        var replacement = row.getAttribute('data-replacement');
+
+        if (rowId) {
+            updateGradioTextbox('conv-palette-row-select-hidden', rowId);
+            setTimeout(function() {
+                window.clickGradioButton('conv-palette-row-select-trigger-btn');
+            }, 20);
+        }
+
+        if (rowType === 'user') {
+            // 左侧用户替换：点击后恢复当前行上下文（选中原色+替换色）
+            if (quantized) {
+                updateGradioTextbox('conv-color-selected-hidden', quantized);
+                updateGradioTextbox('conv-highlight-color-hidden', matched || quantized);
+                setTimeout(function() {
+                    window.clickGradioButton('conv-color-trigger-btn');
+                }, 50);
+            }
+            if (replacement) {
+                updateGradioTextbox('conv-lut-color-selected-hidden', replacement);
+                setTimeout(function() {
+                    window.clickGradioButton('conv-lut-color-trigger-btn');
+                }, 50);
+            }
+            return true;
+        }
+
+        if (rowType === 'auto') {
+            // 右侧自动配准：点击后按 quantized 作为内部替换键，matched 仅用于显示语义
+            if (quantized) {
+                updateGradioTextbox('conv-color-selected-hidden', quantized);
+                updateGradioTextbox('conv-highlight-color-hidden', matched || quantized);
+                setTimeout(function() {
+                    window.clickGradioButton('conv-color-trigger-btn');
+                }, 50);
+            }
+            return true;
+        }
+
+        return false;
+    }
+
     // Use event delegation on document body - this survives Gradio re-renders
     document.addEventListener('click', function(e) {
-        // Check for palette swatch
+        // 删除当前选中用户替换
+        if (e.target.closest('#conv-palette-delete-selected')) {
+            setTimeout(function() {
+                window.clickGradioButton('conv-palette-delete-trigger-btn');
+            }, 20);
+            return;
+        }
+
+        // Row-level interaction has priority
+        if (e.target.closest('.palette-list-item, .palette-row')) {
+            handlePaletteRowClick(e);
+            return;
+        }
+        // Legacy palette swatch behavior
         if (e.target.closest('.palette-swatch')) {
             handlePaletteSwatchClick(e);
             return;
         }
-        // Check for LUT swatch
+        // LUT swatch behavior (includes recommendation swatches)
         if (e.target.closest('.lut-color-swatch')) {
             handleLutSwatchClick(e);
             return;

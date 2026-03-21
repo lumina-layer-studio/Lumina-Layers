@@ -13,6 +13,14 @@ from typing import Optional
 
 import cv2
 import numpy as np
+from PIL import Image as PILImage
+
+# HEIC/HEIF support (optional dependency)
+try:
+    from pillow_heif import register_heif_opener
+    register_heif_opener()
+except ImportError:
+    pass
 
 
 @dataclass
@@ -159,9 +167,18 @@ class ColorAnalyzer:
     
     @classmethod
     def _load_image(cls, image_path: str, verbose: bool):
-        """加载图片"""
+        """加载图片（支持 HEIC/HEIF 格式）"""
         t0 = time.time()
         img = cv2.imdecode(np.fromfile(image_path, dtype=np.uint8), cv2.IMREAD_COLOR)
+        
+        # Fallback: cv2 can't decode HEIC/HEIF, use Pillow instead
+        if img is None:
+            try:
+                pil_img = PILImage.open(image_path).convert('RGB')
+                img = cv2.cvtColor(np.array(pil_img), cv2.COLOR_RGB2BGR)
+            except Exception:
+                return None, 0, 0
+        
         if img is None:
             return None, 0, 0
         

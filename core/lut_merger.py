@@ -15,12 +15,31 @@ from colormath.color_objects import sRGBColor, LabColor
 from colormath.color_conversions import convert_color
 from colormath.color_diff import delta_e_cie2000
 
+# Try to import color selection for 5-Color Extended mode reconstruction
+try:
+    from .calibration import select_extended_1444_colors
+except ImportError:
+    try:
+        from core.calibration import select_extended_1444_colors
+    except ImportError:
+        select_extended_1444_colors = None
+
+# Try to import ColorSystem for layer_count
+try:
+    from .config import ColorSystem
+except ImportError:
+    try:
+        from config import ColorSystem
+    except ImportError:
+        ColorSystem = None
+
 
 # Color mode size mapping
 _SIZE_TO_MODE = {
     32: "BW",
     1024: "4-Color",
     1296: "6-Color",
+    2468: "5-Color Extended",
     2738: "8-Color",
 }
 
@@ -42,6 +61,7 @@ _MODE_PRIORITY = {
     "Merged": -1,
     "BW": 0,
     "4-Color": 1,
+    "5-Color Extended": 1,
     "6-Color": 2,
     "8-Color": 3,
 }
@@ -51,6 +71,7 @@ _MODE_MAX_MATERIAL = {
     "BW": 1,
     "4-Color": 3,
     "6-Color": 5,
+    "5-Color Extended": 4,
     "8-Color": 7,
     "Merged": 7,
 }
@@ -61,7 +82,9 @@ _REMAP_TO_8COLOR = {
     "BW": {0: 0, 1: 4},           # White→White, Black→Black
     "4-Color-RYBW": {0: 0, 1: 5, 2: 3, 3: 6},  # White→White, Red→Red, Yellow→Yellow, Blue→DeepBlue
     "4-Color-CMYW": {0: 0, 1: 1, 2: 2, 3: 3},   # White→White, Cyan→Cyan, Magenta→Magenta, Yellow→Yellow
-    "6-Color": {0: 0, 1: 1, 2: 2, 3: 7, 4: 3, 5: 4},  # White→White, Cyan→Cyan, Magenta→Magenta, Green→Green, Yellow→Yellow, Black→Black
+    "6-Color-CMYWGK": {0: 0, 1: 1, 2: 2, 3: 7, 4: 3, 5: 4},  # White→White, Cyan→Cyan, Magenta→Magenta, Green→Green, Yellow→Yellow, Black→Black
+    "6-Color-RYBWGK": {0: 0, 1: 5, 2: 6, 3: 7, 4: 3, 5: 4},  # White→White, Red→Red, Blue→DeepBlue, Green→Green, Yellow→Yellow, Black→Black
+    "5-Color Extended": {0: 0, 1: 5, 2: 3, 3: 6, 4: 4},  # White→White, Red→Red, Yellow→Yellow, Blue→DeepBlue, Black→Black
 }
 
 
@@ -77,6 +100,18 @@ def _detect_4color_subtype(lut_path):
     return "4-Color-RYBW"
 
 
+def _detect_6color_subtype(lut_path):
+    """Detect 6-Color subtype (CMYWGK or RYBWGK) from filename.
+
+    Naming convention: filename containing 'RYBW' → RYBWGK, 'CMYW' → CMYWGK.
+    Default: CMYWGK (most common for 6-color).
+    """
+    basename = os.path.basename(lut_path).upper()
+    if "RYBW" in basename:
+        return "6-Color-RYBWGK"
+    return "6-Color-CMYWGK"
+
+
 def _remap_stacks(stacks, color_mode, lut_path=None):
     """Remap material IDs in stacks from source mode to 8-Color space.
 
@@ -87,7 +122,7 @@ def _remap_stacks(stacks, color_mode, lut_path=None):
     Args:
         stacks: numpy array (N, 5) of material IDs
         color_mode: source color mode string
-        lut_path: optional file path, used to detect 4-Color subtype
+        lut_path: optional file path, used to detect 4-Color/6-Color subtype
 
     Returns:
         numpy array (N, 5) with remapped material IDs
@@ -98,6 +133,8 @@ def _remap_stacks(stacks, color_mode, lut_path=None):
     remap_key = color_mode
     if color_mode == "4-Color" and lut_path:
         remap_key = _detect_4color_subtype(lut_path)
+    elif color_mode == "6-Color" and lut_path:
+        remap_key = _detect_6color_subtype(lut_path)
 
     remap = _REMAP_TO_8COLOR.get(remap_key)
     if remap is None:
@@ -192,7 +229,7 @@ class LUTMerger:
             color_mode: 色彩模式字符串
 
         Returns:
-            (rgb_array[N,3], stacks_array[N,5])
+            (rgb_array[N,3], stacks_array[N,L]) where L is layer_count (5 or 6)
         """
         # .npz 格式直接读取
         if lut_path.endswith('.npz'):
@@ -240,21 +277,70 @@ class LUTMerger:
             return (rgb[:min_len], _remap_stacks(stacks_arr, color_mode, lut_path))
 
         elif color_mode == "8-Color":
-            if getattr(sys, 'frozen', False):
-                stacks_path = os.path.join(sys._MEIPASS, 'assets', 'smart_8color_stacks.npy')
-            else:
-                stacks_path = 'assets/smart_8color_stacks.npy'
+            from config import get_asset_path
+            stacks_path = get_asset_path('smart_8color_stacks.npy')
             raw_stacks = np.load(stacks_path).tolist()
             # 约定转换：底到顶 → 顶到底
             stacks = [tuple(reversed(s)) for s in raw_stacks]
             min_len = min(len(stacks), count)
             return (rgb[:min_len], np.array(stacks[:min_len]))
 
+        elif color_mode == "5-Color Extended":
+            # 5-Color Extended: 2468 colors (1024 base + 1444 extended)
+            # Load from .npz file with 6-layer stacks
+            if lut_path.endswith('.npz'):
+                data = np.load(lut_path)
+                stacks = data['stacks']
+                return (rgb, _remap_stacks(stacks, color_mode, lut_path))
+            
+            # Fallback: generate stacks from index
+            base_stacks = []
+            for i in range(1024):
+                digits = []
+                temp = i
+                for _ in range(5):
+                    digits.append(temp % 4)
+                    temp //= 4
+                base_stacks.append(tuple(reversed(digits)))
+            
+            if select_extended_1444_colors:
+                # Use the same greedy selection algorithm as the board generator
+                ext_stacks = select_extended_1444_colors(base_stacks)
+            else:
+                # Emergency fallback: use the old (imperfect) linear logic
+                # WARNING: This may result in stack-index mismatch if greedy selection was used
+                print("⚠️ [LUT_MERGER] Warning: select_extended_1444_colors not found. Using linear fallback for 5C-EXT.")
+                ext_stacks = []
+                for ext_idx in range(1444):
+                    if ext_idx == 0:
+                        stack = (4, 0, 0, 0, 0, 0)
+                    else:
+                        b_idx = (ext_idx - 1) % 1024
+                        l6 = ((ext_idx - 1) // 1024) + 1
+                        digits = []
+                        temp = b_idx
+                        for _ in range(5):
+                            digits.append(temp % 4)
+                            temp //= 4
+                        stack = (l6,) + tuple(reversed(digits))
+                    ext_stacks.append(stack)
+            
+            # Pad base 1024 stacks to 6 layers with air(-1) at viewing end
+            padded_base = [(-1,) + s for s in base_stacks]
+            stacks = padded_base + ext_stacks
+            
+            stacks_arr = np.array(stacks[:count])
+            return (rgb, _remap_stacks(stacks_arr, color_mode, lut_path))
+
         else:
             # Non-standard mode (e.g. "Merged" from non-standard .npy sizes)
             # Generate dummy stacks: all zeros (white-only base)
             # The RGB data is still valid for merging
-            stacks = np.zeros((count, 5), dtype=np.int32)
+            # Determine layer count from color_mode if possible
+            layer_count = 5  # default
+            if ColorSystem:
+                layer_count = ColorSystem.get(color_mode).get('layer_count', 5)
+            stacks = np.zeros((count, layer_count), dtype=np.int32)
             return (rgb, stacks)
 
     @staticmethod
@@ -266,7 +352,7 @@ class LUTMerger:
             dedup_threshold: Delta-E阈值，0表示仅精确去重
 
         Returns:
-            (merged_rgb[M,3], merged_stacks[M,5], stats_dict)
+            (merged_rgb[M,3], merged_stacks[M,L], stats_dict) where L is layer_count
         """
         if not lut_entries:
             raise ValueError("No LUT entries to merge")

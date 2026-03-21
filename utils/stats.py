@@ -96,6 +96,61 @@ class Stats:
             return {"calibrations": 0, "extractions": 0, "conversions": 0}
 
     @staticmethod
+    def clear_output() -> tuple:
+        """
+        Clear all files in the output directory (except lumina_stats.txt and lumina_lut.npy).
+
+        Returns:
+            tuple: (success_count, failed_items)
+        """
+        success_count = 0
+        failed_items = []
+        preserve_files = {"lumina_stats.txt", "lumina_lut.npy"}
+
+        if os.path.exists(OUTPUT_DIR):
+            try:
+                for item in os.listdir(OUTPUT_DIR):
+                    if item in preserve_files:
+                        continue
+                    
+                    item_path = os.path.join(OUTPUT_DIR, item)
+                    try:
+                        if os.path.isfile(item_path):
+                            os.remove(item_path)
+                        elif os.path.isdir(item_path):
+                            shutil.rmtree(item_path)
+                        success_count += 1
+                    except Exception:
+                        failed_items.append(item_path)
+            except Exception:
+                pass
+
+        return success_count, failed_items
+
+    @staticmethod
+    def get_output_size() -> int:
+        """
+        Get total size of output directory in bytes (excluding system files).
+
+        Returns:
+            int: Total size in bytes
+        """
+        total_size = 0
+        preserve_files = {"lumina_stats.txt", "lumina_lut.npy"}
+
+        if os.path.exists(OUTPUT_DIR):
+            try:
+                for dirpath, dirnames, filenames in os.walk(OUTPUT_DIR):
+                    for f in filenames:
+                        if f not in preserve_files:
+                            fp = os.path.join(dirpath, f)
+                            if os.path.exists(fp):
+                                total_size += os.path.getsize(fp)
+            except Exception:
+                pass
+        return total_size
+
+    @staticmethod
     def _save(data: dict):
         try:
             with open(Stats._file, 'w') as f:

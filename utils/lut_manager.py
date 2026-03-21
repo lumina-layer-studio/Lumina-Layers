@@ -4,6 +4,7 @@ LUT preset management module
 """
 
 import os
+import re
 import sys
 import shutil
 import glob
@@ -37,12 +38,12 @@ class LUTManager:
         LUT_PRESET_DIR = os.path.join(_BASE_DIR, "lut-npy预设")
     
     @classmethod
-    def get_all_lut_files(cls):
-        """
-        Scan and return all available LUT files
-        
+    def get_all_lut_files(cls) -> dict[str, str]:
+        """Scan and return all available LUT files.
+        扫描并返回所有可用的 LUT 文件。
+
         Returns:
-            dict: {display_name: file_path}
+            dict[str, str]: 映射 {显示名称: 文件路径}。
         """
         lut_files = {}
         
@@ -83,24 +84,65 @@ class LUTManager:
     @classmethod
     def get_lut_choices(cls):
         """
-        Get LUT choice list (for Dropdown)
-        
+        Get LUT choice list (for Dropdown).
+        获取 LUT 选择列表（用于下拉菜单）。
+
         Returns:
-            list: Display name list
+            list: Display name list / 显示名称列表
         """
         lut_files = cls.get_all_lut_files()
         return list(lut_files.keys())
+
+    @staticmethod
+    def infer_color_mode(display_name: str, file_path: str) -> str:
+        """Infer color mode from LUT display name or file path.
+        根据 LUT 显示名称或文件路径推断颜色模式。
+
+        Args:
+            display_name: LUT 显示名称。
+            file_path: LUT 文件路径。
+
+        Returns:
+            str: 推断出的颜色模式字符串，与前端 ColorMode 枚举对应。
+        """
+        combined = (display_name + " " + file_path).upper()
+
+        # .npz 文件通常是合并 LUT
+        if file_path.lower().endswith(".npz"):
+            return "Merged"
+
+        # 按关键词匹配（优先级从高到低）
+        if "8色" in combined or "8-COLOR" in combined or "8COLOR" in combined:
+            return "8-Color Max"
+        if "6色" in combined or "6-COLOR" in combined or "6COLOR" in combined:
+            return "6-Color (Smart 1296)"
+        # CMYW/RYBW 必须在 BW 之前检测，避免 "RYBW" 中的 "BW" 误匹配
+        if "CMYW" in combined or "青品黄" in combined:
+            return "4-Color"
+        if "RYBW" in combined or "红黄蓝" in combined:
+            return "4-Color"
+        if "4色" in combined or "4-COLOR" in combined or "4COLOR" in combined:
+            return "4-Color"
+        # BW 单独检测：排除 RYBW/CMYW 已匹配的情况
+        if "黑白" in combined or "B&W" in combined:
+            return "BW (Black & White)"
+        # 仅匹配独立的 "BW"（前后非字母），避免 RYBW 误匹配
+        if re.search(r"(?<![A-Z])BW(?![A-Z])", combined):
+            return "BW (Black & White)"
+
+        # 默认回退为 4-Color
+        return "4-Color"
     
     @classmethod
-    def get_lut_path(cls, display_name):
-        """
-        Get LUT file path by display name
-        
+    def get_lut_path(cls, display_name: str) -> str | None:
+        """Get LUT file path by display name.
+        根据显示名称获取 LUT 文件路径。
+
         Args:
-            display_name: Display name
-        
+            display_name: LUT 显示名称。
+
         Returns:
-            str: File path, returns None if not found
+            str | None: 文件路径，未找到时返回 None。
         """
         lut_files = cls.get_all_lut_files()
         return lut_files.get(display_name)
@@ -118,7 +160,7 @@ class LUTManager:
             tuple: (success_flag, message, new_choice_list)
         """
         if uploaded_file is None:
-            return False, "❌ No file selected", cls.get_lut_choices()
+            return False, "[ERROR] No file selected", cls.get_lut_choices()
         
         try:
             # Ensure preset folder exists
@@ -132,7 +174,7 @@ class LUTManager:
             
             # Validate file extension
             if file_extension not in ('.npy', '.npz'):
-                return False, f"❌ Invalid file type: {file_extension}. Only .npy and .npz are supported.", cls.get_lut_choices()
+                return False, f"[ERROR] Invalid file type: {file_extension}. Only .npy and .npz are supported.", cls.get_lut_choices()
             
             # Use custom name or original name
             if custom_name and custom_name.strip():
@@ -164,11 +206,11 @@ class LUTManager:
             
             print(f"[LUT_MANAGER] Saved uploaded LUT: {dest_path}")
             
-            return True, f"✅ LUT saved: {display_name}\nPlease select from dropdown to use", cls.get_lut_choices()
+            return True, f"[OK] LUT saved: {display_name}\nPlease select from dropdown to use", cls.get_lut_choices()
             
         except Exception as e:
             print(f"[LUT_MANAGER] Error saving LUT: {e}")
-            return False, f"❌ Save failed: {e}", cls.get_lut_choices()
+            return False, f"[ERROR] Save failed: {e}", cls.get_lut_choices()
     
     @classmethod
     def delete_lut(cls, display_name):
@@ -184,16 +226,16 @@ class LUTManager:
         file_path = cls.get_lut_path(display_name)
         
         if not file_path:
-            return False, "❌ File not found", cls.get_lut_choices()
+            return False, "[ERROR] File not found", cls.get_lut_choices()
         
         # Only allow deleting files in Custom folder
         if "Custom" not in file_path:
-            return False, "❌ Can only delete custom LUTs", cls.get_lut_choices()
+            return False, "[ERROR] Can only delete custom LUTs", cls.get_lut_choices()
         
         try:
             os.remove(file_path)
             print(f"[LUT_MANAGER] Deleted LUT: {file_path}")
-            return True, f"✅ Deleted: {display_name}", cls.get_lut_choices()
+            return True, f"[OK] Deleted: {display_name}", cls.get_lut_choices()
         except Exception as e:
             print(f"[LUT_MANAGER] Error deleting LUT: {e}")
-            return False, f"❌ Delete failed: {e}", cls.get_lut_choices()
+            return False, f"[ERROR] Delete failed: {e}", cls.get_lut_choices()

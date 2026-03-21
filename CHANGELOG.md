@@ -1,117 +1,264 @@
-# Lumina Studio 更新日志 / Changelog
+# Changelog
 
-## v1.6.0 (当前版本)
+All notable changes to Lumina Studio are documented in this file.
 
-### 🎨 掐丝珐琅模式 (Cloisonné Mode)
-- 新增掐丝珐琅模式：自动提取颜色边界生成金属丝线框
-- 丝线作为独立对象导出，可在切片软件中单独指定材料
-- 丝线宽度 (0.2-1.2mm) 和高度 (0.04-1.0mm) 可调
-- 强制单面模式（观赏面朝上）
-
-### 🆓 自由配色模式 (Free Color Mode)
-- 新增自由配色功能：突破 LUT 色彩限制，使用任意 RGB 颜色
-- 支持自定义颜色集合，每个颜色独立导出为 3MF 对象
-
-### 🪟 透明镀层 (Coating Layer)
-- 新增透明镀层功能：在模型底部添加透明保护层
-- 镀层高度可调 (0.04-0.12mm)
-- 作为独立对象导出，可指定透明材料
-
-### 🔲 外轮廓 (Outline Border)
-- 新增外轮廓功能：为模型添加边框
-- 轮廓宽度可调 (0.5-5.0mm)
-- 同时开启镀层时，轮廓自动延伸覆盖镀层高度
-
-### 🎴 色卡模式 (Card Palette Layout)
-- 新增色卡布局模式：按物理校准板的空间排列显示 LUT 颜色
-- 8色 LUT 自动分为 A/B 两组并排显示
-- 可在高级设置中切换色块/色卡模式
-
-### 🔍 颜色搜索与过滤 (Color Search & Filter)
-- 新增"以色找色"：ColorPicker 选色后自动匹配 LUT 中最接近的物理色
-- 新增文本搜索：支持 Hex (#FF0000) 和 RGB (255,0,0) 输入，自动定位并高亮
-- 新增色系过滤：按红/橙/黄/绿/青/蓝/紫/中性色分类筛选
-- 匹配色块自动滚动到视野中心，带呼吸灯动效
-
-### 🔄 颜色替换修复 (Color Replacement Fix)
-- **关键修复**：颜色替换现在正确更新 material_matrix 的叠色层数据
-- 使用 KDTree 查找替换色的最近 LUT 条目，获取对应的 ref_stacks（叠色配方）
-- 修复了之前替换色仅影响预览但不影响 3MF 输出的问题
-
-### 🔧 外轮廓 + 镀层兼容性修复
-- 修复同时开启外轮廓和透明镀层时，第一层缺少外轮廓的问题
-- 原因：镀层在 Z<0，切片器对齐后镀层占据底层，轮廓未覆盖
-- 修复：轮廓厚度增加镀层高度，顶点下移覆盖完整高度
-
-### 🚫 浮雕/掐丝珐琅互斥
-- UI 上实现双向互斥：勾选掐丝珐琅自动关闭浮雕，反之亦然
-- 带中英文提示信息
-
-### 🔌 切片器集成 (Slicer Integration)
-- 新增切片器一键打开：自动检测已安装的 Bambu Studio / OrcaSlicer / ElegooSlicer 等
-- 生成模型后可直接在切片器中打开，无需手动拖拽
-- 支持下拉切换切片器，记忆上次选择
-
-### 🖱️ 预览交互改进
-- 修复预览图点击坐标变换（适配 Gradio 6.0）
-- 3D 预览全屏重新设计
-- 裁剪功能新增比例预设 (1:1, 4:3, 3:2, 16:9 等)
-- 记忆用户的颜色模式和建模模式选择
+[📖 中文更新日志 / Chinese Changelog](CHANGELOG_CN.md)
 
 ---
 
-## v1.5.9
+## v1.6.3 (2026-03-08)
 
-### 🧹 代码质量
-- 替换所有裸异常捕获 (`except:`) 为 `except Exception:`
-- 合并 PR #89
+### Features
+- **Cloisonné Mode** - Auto-extract color boundaries to generate metal wire frames; wire exported as independent object for metallic material assignment; adjustable wire width (0.2-1.2mm) and height (0.04-1.0mm); enforced single-sided mode
+- **Free Color Mode** - Use any RGB color beyond LUT constraints; custom color sets with independent 3MF object export
+- **Transparent Coating Layer** - Add transparent protective layer at model bottom; adjustable height (0.04-0.12mm); independent object export for transparent material
+- **Outline Border** - Add customizable border around model; adjustable width (0.5-5.0mm); smart integration with coating layers
+- **Card Palette Layout** - Display LUT colors in physical calibration board spatial arrangement; 8-color auto A/B group split; toggle between block/card layout
+- **Color Search & Filter** - Color picker search, Hex/RGB text search, hue family filtering (Red/Orange/Yellow/Green/Cyan/Blue/Purple/Neutral), auto-scroll with breathing light animation
+- **2.5D Relief Mode** - Height-based modeling with independent Z-axis heights per color; optical layering preserved (top 5 layers); auto height generator (Min-Max normalization); heightmap support (PNG/JPG/BMP); smart validation for aspect ratio and contrast
+- **Isolated Pixel Cleanup** - Automatic noise reduction for isolated color pixels; auto-enabled in High-Fidelity mode
+- **Connected Region Color Replacement** - Local color replacement by 4-connected regions; dual-list palette (user replacement / auto-matched); click-to-replace on 2D preview
+- **CIELAB Perceptual Color Matching** - Color matching switched from RGB Euclidean distance to CIELAB perceptual uniform space; applied to all color matching operations
+- **Automatic Color Merging** - Low-usage color consolidation with CIELAB Delta-E distance; adjustable threshold with preview/apply/revert; test case: 390 → 62 colors (84% reduction)
+- **Slicer Integration** - One-click launch for Bambu Studio / OrcaSlicer / ElegooSlicer; direct workflow without manual drag-and-drop; persistent slicer selection
+- **Complete BambuStudio 3MF Export** - Full multi-material support with proper object naming and metadata integration
+- **5-Color Extended Mode** - Full pipeline support for 5-color extended mode (extractor/converter/naming/UI)
+- **Color Recipe Logging** - Color mapping documentation and logging system with download support
+- **Clear Output** - Support clearing output directory with real-time size display
+- **Large Canvas Option** - Advanced option to remove size limits
+- **Progress Display** - Real-time progress feedback across convert_image_to_3d/svg_to_mesh stages
+
+### Bug Fixes
+- Fixed 8-color stacking order causing incorrect color mixing
+- Fixed 8-color ref_stacks format consistency with 4-color/6-color [top...bottom]
+- Fixed viewing surface (Z=0) and back surface inversion
+- Fixed RYBW mode incorrectly detected as BW mode
+- Fixed color replacement now correctly updates material_matrix stacking data
+- Fixed outline mesh missing on image boundary edges
+- Fixed missing import for safe_fix_3mf_names in BW calibration generation
+- Fixed coating/outline compatibility when both features enabled simultaneously
+- Fixed relief/cloisonné mutual exclusion with auto-disable and info toast
+- Fixed preview click coordinate transformation for Gradio 6.0
+- Fixed 5-Color high-fidelity top/bottom and left/right orientation
+- Fixed 5-Color Extended model orientation and SVG layer count
+- Disabled 2.5D relief for 5-Color Extended mode
+- Fixed 2.5D relief mode state leaks, hex key mismatch and parameter clamping
+- Fixed SVG subpath handling
+- Fixed color_recipe_path return value inconsistency after main branch merge
+- Removed svg_to_mesh internal progress calls to avoid Gradio event loop GIL interference
+- Removed redundant preview pre-generation in generate_with_auto_preview
+- Fixed HEIC format support: frontend display, upload file_types, passback conversion
+- Fixed cached 3MF invalidation when parameters change
+- Fixed ModelingMode None crash on image upload
+- Unified 8-color stacks asset path resolution for PyInstaller
+- Restored ZIP_DEFLATED compression and indent alignment
+- Removed leftover conflict marker in bambu_3mf_writer.py
+- Removed file_types from gr.Image calls (incompatible with Gradio 6.5.1)
+- Fixed SVG upload crash due to Gradio base64 preprocessing bug
+- Fixed SVG geometry crop: replaced pixel-based Dual-Pass Crop with geometry-based bounds crop
+- Fixed SVG even-odd fill rule when combining subpaths
+- Fixed icon.ico regenerated as square sizes and bundled in PyInstaller
+- Fixed slicer launch return count mismatch (5 outputs)
+- Fixed bambu_config_template.json not bundled in PyInstaller and artifact; fixed frozen path resolution
+- Removed unused create_5color_combination_tab and duplicate helper functions from layout_new.py
+
+### Features (Post-Release)
+- **Multi-Color LUT Support** - Added multi-color LUT support and color recipe query functionality
+
+### Performance
+- Full pipeline speed optimization: SVG mode UI ~140s → ~51s (2.7x speedup)
+- Optimized 3MF generation pipeline: vectorized mesh, parallel generation, streaming export, SVG caching
+
+### Other
+- Relicensed project to GPLv3
+- Relief max height default adjusted to 2.4; coating slider range to 0.08-0.16
+- Standardized status messages by removing emoji characters
 
 ---
 
-## v1.5.8
+## v1.5.9 (2026-02-26)
 
-### 🧹 孤立像素清理 (Isolated Pixel Cleanup)
-- 新增孤立像素清理功能（高保真模式自动启用）
-- 智能检测并合并孤立色块，减少打印瑕疵
-- 新增 Aliz PLA & PETG 4/6/8色 npy 预设
-
-### 🏔️ 2.5D 浮雕模式 (Relief Mode)
-- 新增 2.5D 浮雕模式：为不同颜色设置独立的 Z 轴高度
-- 保留顶部 5 层光学叠色，底部用底板材料填充
-- 自动高度生成器：按颜色明度自动分配高度（Min-Max 归一化）
-- 强制单面模式（观赏面朝上）
-
-### 🔧 底板分离 (Backing Separation)
-- 新增底板分离复选框：底板作为独立对象导出
-- 修复 backing 层硬编码和参数传递问题
+### Code Quality
+- Replaced all bare exception catches (`except:`) with `except Exception:`
 
 ---
 
-## v1.5.7
+## v1.5.8 (2026-02-25)
 
-### 🔧 8色模式叠色效果修复
-- **核心修复**：修复 8 色模式图像转换时堆叠顺序错误导致的叠色效果不正确
-- **数据一致性**：确保 8 色模式 ref_stacks 格式与 4 色、6 色保持一致 [顶...底]
-- **观赏面修复**：修复观赏面 (Z=0) 和背面颠倒的问题
-- 修复 RYBW 模式被错误检测为 BW 模式的问题
-- 修复 RYBW 校准板颜色识别问题
-- 修复 8 色手动校色合并后不持久的问题
+### Features
+- **Isolated Pixel Cleanup** - Auto-enabled in High-Fidelity mode; smart detection and merging of isolated color blocks
+- **Backing Separation** - Backing exported as independent object; fixed backing layer hardcoding and parameter passing
 
-### 🎨 完整 8 色图像转换支持
-- UI 新增 8 色模式支持
-- 8 色 LUT 自动检测 (2600-2800 色范围)
-- 完整工作流：校准板生成 → 颜色提取 → 图像转换
+---
 
-### 🐳 Docker 支持
-- 添加 Dockerfile 支持容器化部署
+## v1.5.7 (2026-02-10)
 
-### 📐 宽高联动优化
-- 宽高 Slider 输入框失焦触发联动计算，避免手动输入时频繁跳动
+### Features
+- **6-Color Extended Mode** - 1296 colors (6 base filaments × 3 layers) for wider color gamut
+- **8-Color Professional Mode** - 2738 colors (8 base filaments × 2 pages) for maximum color range
+- **Two-Page Workflow** - 8-color mode uses two calibration boards merged into single LUT
+- **Manual Color Correction** - Click any color cell to manually adjust RGB values before merging
+- **Smart Corner Detection** - Automatic corner marker colors based on selected mode
+- **BW Grayscale Mode** - 32-level grayscale calibration for monochrome prints
+- **LUT Merging with Stacking Preservation** - Combine multiple LUTs (8+6+4+BW); NPZ format with colors and stacking arrays; intelligent reconstruction; full color replacement support
+- **Docker Support** - Dockerfile for containerized deployment
+- **Unified 4-Color Architecture** - Unified 4-color mode architecture with full automated test suite
 
-### 🍎 macOS 修复
-- 修复 Mac 上的 UI 样式问题
+### Bug Fixes
+- Fixed 8-color stacking order causing incorrect color mixing
+- Fixed 8-color ref_stacks format consistency [top...bottom]
+- Fixed viewing surface (Z=0) and back surface inversion
+- Fixed RYBW mode incorrectly detected as BW mode
+- Fixed RYBW calibration board color recognition
+- Fixed 8-color manual correction persistence after merge
+- Fixed Mac UI styling issues
+- Width/height slider input blur triggers linked calculation to avoid frequent jumps during manual input
 
-### 🏗️ 4 色模式架构统一
-- 统一 4 色模式架构 + 全自动测试套件
-- 移除融合 LUT 功能（简化用户体验）
-- 保留 BW 黑白模式
+---
+
+## v1.5.6 (2026-02-08)
+
+### Features
+- **Complete 8-Color Image Conversion** - Full 8-color mode support in UI; auto-detection for 2600-2800 color range LUTs
+- **ModelingMode Enum Migration** - Migrated modeling mode from string comparison to ModelingMode enum
+
+### Bug Fixes
+- Fixed 8-color mode stacking effect
+- Fixed about page missing v1.5.4 version number
+
+---
+
+## v1.5.5 (2026-02-07)
+
+### Features
+- 8-color calibration board algorithm optimization and quality improvement
+
+---
+
+## v1.5.4 (2026-02-06)
+
+### Features
+- **Vector Mode Improvements** - Boolean operation optimization for color overlap handling; SVG order preservation for correct layering; micro Z-offset (0.001mm) for detail independence; enhanced small feature protection
+
+### Bug Fixes
+- Fixed black background in vector mode 2D preview
+- Fixed preview click coordinate transformation for Gradio 6.0
+- Added missing colormath library to requirements
+
+### Other
+- Removed deprecated layout.py
+
+---
+
+## v1.5.3 (2026-02-05)
+
+### Features
+- **Image Cropping** - Non-invasive image cropping with aspect ratio presets
+- **Color Analyzer** - Extracted color recommendation algorithm to independent ColorAnalyzer module
+- **Auto Color Detail Button** - Added width factor support; fixed duplicate click toast issue
+- **Color Replacement Undo** - Added undo functionality; fixed quantized color count parameter not passed
+
+### Performance
+- Vectorized color mapping with RGB encoding + searchsorted
+- Vectorized _greedy_rect_merge with NumPy operations
+
+---
+
+## v1.5.1 (2026-02-03)
+
+### Features
+- **Complete UI Overhaul** - Full UI redesign with batch mode implementation and i18n support
+- **Preview Follows Modeling Mode** - Preview updates based on modeling mode selection
+- **Greedy Rectangle Merge** - Optimized 3MF face count with greedy rectangle merging algorithm
+
+### Performance
+- K-Means pre-scaling optimization: 20-50x speedup for large images
+
+### Bug Fixes
+- Fixed single-sided 3MF output X-axis mirroring
+- Reverted smart mesh simplification to fix missing mesh bugs
+- Fixed merge conflicts in i18n.py
+
+---
+
+## v1.5.0 (2026-02-01)
+
+### Features
+- **Code Standardization** - All code comments translated to English; unified Google-style docstrings; removed redundant comments
+
+---
+
+## v1.4.2 (2026-01-31)
+
+### Features
+- **Tray Icon i18n** - Multi-language support for system tray icon menu options
+
+### Bug Fixes
+- Version number update and bug fixes
+- Reverted "3MF color injection" feature
+
+---
+
+## v1.4.1 (2026-01-29)
+
+### Features
+- **Modeling Mode Consolidation** - High-Fidelity mode replaces Vector & Woodblock modes; two unified modes (High-Fidelity / Pixel Art)
+- **Dynamic Language Toggle** - Click language button to switch Chinese/English; full UI translation without page reload
+- **Output Directory** - Save output files to local project output directory instead of C: temp
+- **Gradio Temp Directory Redirect** - Redirected Gradio temp directory to project directory
+
+### Bug Fixes
+- Fixed 3MF naming issue when colors are missing; use local output dir
+- Fixed transparent background recognition issue
+
+---
+
+## v1.4 (2026-01-20)
+
+### Features
+- **Three Modeling Modes** - Vector Mode (smooth curves, OpenCV contour extraction), Woodblock Mode (SLIC superpixels + detail preservation), Voxel Mode (blocky geometry)
+- **Color Quantization Engine** - "Cluster First, Match Second" with K-Means clustering (8-256 colors); 1000x speed improvement; spatial denoising
+- **Resolution Decoupling** - Vector/Woodblock: 10 px/mm, Voxel: 2.4 px/mm
+- **Smart 3D Preview Downsampling** - Large models auto-simplify preview
+- **Browser Crash Protection** - Detects model complexity, disables preview for 2M+ pixels
+- **System Tray Integration** - System tray icon with macOS title bar support
+- **Modular Code Structure** - Refactored into Core/UI/Utils modules
+- **Auto Port Selection** - Automatically selects available port to avoid conflicts
+
+### Bug Fixes
+- Fixed Gradio 6.0+ compatibility
+- Fixed macOS 26812 trace trap memory issue
+- Fixed cumulative generation statistics font color
+- Fixed language switch button styling
+- Fixed Windows image causing errors on deletion
+
+---
+
+## v1.3 (2026-01-18)
+
+### Features
+- **Bilingual UI** - Chinese/English labels throughout the interface
+- **Live 3D Preview** - Interactive preview with actual LUT-matched colors
+- **Dual Color Modes** - Full support for both CMYW and RYBW color systems
+
+### Bug Fixes
+- Fixed 3MF naming (slicer shows correct color names)
+- Optimized default gap to 0.82mm for standard line widths
+
+---
+
+## v1.2 (2026-01-17)
+
+### Features
+- **Unified Application** - All three tools (Calibration Generator, Color Extractor, Image Converter) merged into single application
+
+---
+
+## v1.0 (2026-01-15)
+
+### Initial Release
+- Calibration board generator
+- Color extractor with computer vision
+- Image-to-3D converter with LUT-based color matching
+- CMYW/RYBW color system support
+- 3MF export for BambuStudio compatibility

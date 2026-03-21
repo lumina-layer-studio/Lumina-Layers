@@ -14,6 +14,15 @@ import cv2
 import numpy as np
 from PIL import Image
 
+# HEIC/HEIF support (optional dependency)
+try:
+    from pillow_heif import register_heif_opener
+    register_heif_opener()
+    HAS_HEIF = True
+except ImportError:
+    HAS_HEIF = False
+    print("⚠️ [HEIC] pillow-heif not installed. HEIC/HEIF support disabled.")
+
 
 @dataclass
 class CropRegion:
@@ -56,7 +65,7 @@ class ImagePreprocessor:
     """
 
     # Supported formats
-    SUPPORTED_FORMATS = {'JPEG', 'JPG', 'PNG', 'GIF', 'BMP', 'WEBP'}
+    SUPPORTED_FORMATS = {'JPEG', 'JPG', 'PNG', 'GIF', 'BMP', 'WEBP', 'HEIF', 'HEIC'}
     
     @staticmethod
     def detect_format(image_path: str) -> str:
@@ -85,9 +94,18 @@ class ImagePreprocessor:
                         return 'JPEG'
                     elif ext == 'PNG':
                         return 'PNG'
+                    elif ext in ('HEIC', 'HEIF'):
+                        return 'HEIF'
                     raise ValueError(f"Cannot detect image format: {image_path}")
                 return fmt.upper()
         except Exception as e:
+            # Check if it's a HEIC file that can't be opened due to missing pillow-heif
+            ext = os.path.splitext(image_path)[1].upper().lstrip('.')
+            if ext in ('HEIC', 'HEIF') and not HAS_HEIF:
+                raise ValueError(
+                    "HEIC/HEIF format detected but pillow-heif is not installed. "
+                    "Please install it: pip install pillow-heif"
+                )
             raise ValueError(f"Cannot read image file: {e}")
 
     @staticmethod
@@ -258,9 +276,9 @@ class ImagePreprocessor:
         # Get dimensions
         width, height = cls.get_image_dimensions(image_path)
         
-        # Convert to PNG if JPEG
+        # Convert to PNG if JPEG or HEIC/HEIF
         was_converted = False
-        if fmt in ('JPEG', 'JPG'):
+        if fmt in ('JPEG', 'JPG', 'HEIF', 'HEIC'):
             processed_path = cls.convert_to_png(image_path)
             was_converted = True
         else:

@@ -1,15 +1,62 @@
-# Lumina Studio
+<p align="center">
+  <img src="logo.png" width="128" alt="Lumina Studio Logo">
+</p>
 
-Physics-Based Multi-Material FDM Color System
+<h1 align="center">Lumina Studio</h1>
 
-[📖 中文文档 / Chinese Version](README_CN.md)
+<p align="center">
+  Physics-Based Multi-Material FDM Color System
+</p>
+
+<p align="center">
+  <a href="https://github.com/MOVIBALE/Lumina-Layers/stargazers">
+    <img src="https://img.shields.io/github/stars/MOVIBALE/Lumina-Layers?style=social" alt="Stars">
+  </a>
+  &nbsp;
+  <a href="https://github.com/MOVIBALE/Lumina-Layers/releases/latest">
+    <img src="https://img.shields.io/github/v/release/MOVIBALE/Lumina-Layers?label=Latest%20Release" alt="Release">
+  </a>
+  &nbsp;
+  <a href="LICENSE">
+    <img src="https://img.shields.io/badge/License-GPL%20v3.0-blue.svg" alt="License">
+  </a>
+</p>
+
+<p align="center">
+  <a href="README_CN.md">📖 中文文档 / Chinese Version</a>
+</p>
+
+---
+
+<h2 align="center">Official Links & Community</h2>
+
+<p align="center"><b>GitHub Repository:</b></p>
+<p align="center">
+  <a href="https://github.com/MOVIBALE/Lumina-Layers">
+    <img src="https://img.shields.io/badge/GitHub-Lumina--Layers-181717?style=for-the-badge&logo=github" alt="GitHub">
+  </a>
+</p>
+
+<p align="center"><b>Follow us on Bilibili:</b></p>
+<p align="center">
+  <a href="https://b23.tv/CCxxiKC">
+    <img src="https://img.shields.io/badge/Bilibili-Lumina%20Studio-00A1D6?style=for-the-badge&logo=bilibili&logoColor=white" alt="Bilibili">
+  </a>
+</p>
+
+<p align="center"><b>Join our QQ Group:</b></p>
+<p align="center">
+  <a href="https://qm.qq.com/q/vocxOMTnj2">
+    <img src="https://img.shields.io/badge/QQ%20Group-1065401448-EB1923?style=for-the-badge&logo=tencentqq&logoColor=white" alt="QQ Group">
+  </a>
+</p>
 
 ---
 
 ## Project Status
 
-**Current Version**: v1.5.7  
-**License**: CC BY-NC-SA 4.0 (with Commercial Exemption)  
+**Current Version**: v1.6.3  
+**License**: GNU GPL v3.0 (with Commercial Use & "Street Vendor" Support)  
 **Nature**: Non-profit independent implementation, open-source community project
 
 ---
@@ -78,24 +125,22 @@ All calibration presets (`.npy` files) are **completely free and open**, adherin
 
 ## License
 
-### Core License: CC BY-NC-SA 4.0
+### Core License: GNU GPL v3.0
 
-- ✅ **Attribution**: You must give appropriate credit
-- ❌ **NonCommercial**: You may not sell the source code or close it
-- 🔄 **ShareAlike**: If you modify it, you must distribute it under the same license
+- ✅ **Open & Free**: You are free to run, study, modify, and distribute this software.
+- 🔄 **Copyleft**: If you modify and distribute this software, you must release the source code under GPL v3.0.
+- ❌ **No Proprietary Derivatives**: Selling closed-source versions of this software or its derivatives is strictly prohibited.
 
-### Commercial Exemption ("Street Vendor" Special Authorization)
+### Commercial Use & "Street Vendor" Support Statement
 
-**For individual creators, street vendors, and small private businesses**:
+**To individual creators, street vendors, and small businesses**:
 
-You **do NOT need to ask for permission**. You automatically have the right to:
+GPL permits and encourages commercial use. We specifically support you to earn a living through your craft. You do **NOT** need to ask for additional permission to:
 - Use this software to generate models
 - Sell physical prints (keychains, reliefs, etc.)
-- Sell at night markets, fairs, and small online shops
+- Sell at night markets, fairs, or personal online shops
 
-**Go set up your stall and make money! This is your right.**
-
-*Note: Batch industrial production, SaaS platform operations, and OEM branding still require commercial licensing from the author.*
+**Go set up your stall and make a living! This is your right.**
 
 ---
 
@@ -150,135 +195,9 @@ Converts images into printable 3D models using calibrated data.
 
 ---
 
-## What's New in v1.5.7 🚀
+## Changelog
 
-### 6-Color and 8-Color Mode Support
-
-- 🎨 **6-Color Extended Mode** - 1296 colors (6 base filaments × 3 layers) for wider color gamut
-- 🌈 **8-Color Professional Mode** - 2738 colors (8 base filaments × 2 pages) for maximum color range
-- � **Two-Page Workflow** - 8-color mode uses two calibration boards that merge into a single LUT
-- 🔧 **Manual Color Correction** - Click any color cell to manually adjust RGB values before merging
-- 🎯 **Smart Corner Detection** - Automatic corner marker colors based on selected mode
-- ⚫ **BW Grayscale Mode** - 32-level grayscale calibration for monochrome prints
-
-### LUT Merging with Stacking Preservation
-
-- 🎨 **Merged LUT Support** - Combine multiple LUTs (8-color + 6-color + 4-color + BW) to expand color gamut
-- � **Stacking Information Preservation** - Merged LUTs now preserve original stacking data from calibration prints
-- 🔄 **NPZ Format** - Merged LUTs saved as `.npz` files containing both colors and stacking arrays
-- 🎯 **Intelligent Reconstruction** - Automatic stacking reconstruction for all LUT types (BW/4-color/6-color/8-color)
-- 🖼️ **Color Replacement Support** - Merged LUTs fully compatible with color replacement feature
-- 📤 **Upload Support** - All file upload components now accept both `.npy` and `.npz` formats
-
-### Technical Improvements
-
-- ✅ **Multi-Object 3MF Export** - Merged LUTs now correctly export separate objects for each material
-- 🔍 **Format Auto-Detection** - System automatically detects and loads `.npy` or `.npz` format
-- 🏷️ **Visual Indicators** - Merged LUTs display `[Merged]` tag in dropdown for easy identification
-- 🐛 **Bug Fixes** - Fixed 8-color manual correction persistence issue
-
----
-
-## What's New in v1.5.4 🚀
-
-### Vector Mode Improvements
-
-- 🐛 **Boolean Operation Optimization** - Improved color overlap handling logic in vector mode
-- 🎯 **SVG Order Preservation** - Maintains original SVG drawing order for correct layering
-- ✨ **Micro Z-Offset Technology** - Adds 0.001mm micro-offset for different colors on same material to maintain detail independence
-- 🛡️ **Small Feature Protection** - Enhanced protection mechanism for small geometric features
-
-### Version Update
-
-- ✅ **Version Bump** - Updated to v1.5.4 for consistency
-
----
-
-## What's New in v1.5.0 🚀
-
-### Code Standardization
-
-- ✅ **English-only Comments** - All code comments translated to English for better international collaboration
-- ✅ **Documentation Standards** - Unified Google-style docstrings across codebase
-- ✅ **Code Cleanup** - Removed redundant comments, kept essential algorithm explanations
-
----
-
-## What's New in v1.4.1 🚀
-
-### Modeling Mode Consolidation
-
-**High-Fidelity Mode Replaces Vector & Woodblock Modes**:
-
-The three modeling modes (Vector/Woodblock/Voxel) have been streamlined into **two unified modes**:
-
-| Mode | Description | Use Case |
-|------|-------------|----------|
-| 🎨 **High-Fidelity Mode** | Unified RLE-based mesh generation with K-Means quantization | Logos, photos, portraits, illustrations |
-| 🧱 **Pixel Art Mode** | Legacy voxel mesher with blocky aesthetic | Pixel art, 8-bit style graphics |
-
-**Why the change?**
-- Vector and Woodblock modes shared 90% of the same code
-- High-Fidelity mode combines the best of both: smooth curves + detail preservation
-- Simpler UI with fewer confusing options
-- Consistent 10 px/mm resolution for all high-quality outputs
-
-### Language Switching
-
-- **🌐 Dynamic Language Toggle**: Click the language button in the top-right corner to switch between Chinese and English
-- **Full UI Translation**: All interface elements update instantly without page reload
-- **Persistent Settings**: Language preference is maintained during the session
-
-### Other Improvements
-
-- **Code Optimization**: Improved code structure and maintainability
-- **Documentation Updates**: Enhanced inline documentation and comments
-- **Stability Improvements**: Minor bug fixes and performance tweaks
-
----
-
-### Previous Updates (v1.4)
-
-### Three Modeling Modes
-
-Lumina Studio v1.4 introduces **three distinct geometry generation engines** to cover everything from pixel art to photo-realistic details:
-
-| Mode | Use Case | Technical Features | Precision |
-|------|----------|-------------------|-----------|
-| 🎨 **Vector Mode** | Logos, illustrations, cartoons | Smooth curves, OpenCV contour extraction | 10 px/mm (0.1mm/pixel) |
-| 🖼️ **Woodblock Mode** ⭐ | Photos, portraits, complex textures | SLIC superpixels + detail preservation | 10 px/mm  |
-| 🧱 **Voxel Mode** | Pixel art, 8-bit style | Blocky geometry, nostalgic aesthetic | 2.4 px/mm (nozzle width) |
-
-### Color Quantization Engine 
-
-**"Cluster First, Match Second"**:
-
-Traditional methods match 1 million pixels to LUT individually. v1.4 instead:
-1. **K-Means Clustering**: Quantize image to K dominant colors (8-256, default 64)
-2. **Match Only K Colors**: 1000× speed improvement
-3. **Spatial Denoising**: Bilateral + median filtering eliminates fragmented regions
-
-**User-Adjustable Parameters**:
-- **Vector Color Detail** slider: 8 colors (minimalist) to 256 colors (photographic)
-
-### Other Improvements
-
-| Feature | Description |
-|---------|-------------|
-| 📏 Resolution Decoupling | Vector/Woodblock: 10 px/mm, Voxel: 2.4 px/mm |
-| 🎮 Smart 3D Preview Downsampling | Large models auto-simplify preview (3MF retains full quality) |
-| 🚫 Browser Crash Protection | Detects model complexity, disables preview for 2M+ pixels |
-
-**Previous Updates (v1.2-1.3)**:
-
-| Feature | Description |
-|---------|-------------|
-| 🔧 Fixed 3MF Naming | Slicer now shows correct color names (White, Cyan, Magenta...) |
-| 🎨 Dual Color Modes | Full support for both CMYW and RYBW color systems |
-| 🎮 Live 3D Preview | Interactive preview with actual LUT-matched colors |
-| 🌐 Bilingual UI | Chinese/English labels throughout the interface |
-| 📏 Optimized Gap | Default gap changed to 0.82mm for standard line widths |
-| 📦 Unified App | All three tools merged into single application |
+For detailed version history, see [CHANGELOG.md](CHANGELOG.md) / [CHANGELOG_CN.md](CHANGELOG_CN.md).
 
 ---
 
@@ -299,22 +218,21 @@ Traditional methods match 1 million pixels to LUT individually. v1.4 instead:
 - ✅ Keychain loop generator
 - ✅ Dynamic language switching (Chinese/English)
 
-### Phase 2: Manga Mode (Monochrome) 🚧 IN PROGRESS
+### Phase 2: Manga Mode (Monochrome) ✅ COMPLETE
 
 **Target**: Manga panels, Ink drawings, High-contrast illustrations
 
-- Logic: Black & White layering using thickness-based grayscale (Lithophane logic)
-- Tech: Simulating screen tones (Ben-Day dots)
+- ✅ Black & White layering using thickness-based grayscale (Lithophane logic)
+- ✅ Simulating screen tones (Ben-Day dots)
 
-### Phase 3: Dynamic Palette Engine
+### Phase 3: Dynamic Palette Engine ✅ COMPLETE
 
 **Target**: Adaptive color systems
 
-- Logic: Dynamic Palette Support (4/6/8 colors auto-selection)
-- Tech:
-  - Intelligent color clustering algorithms
-  - Adaptive dithering algorithms
-  - Perceptual color difference optimization
+- ✅ Dynamic Palette Support (4/6/8 colors auto-selection)
+- ✅ Intelligent color clustering algorithms
+- ✅ Adaptive dithering algorithms
+- ✅ Perceptual color difference optimization
 
 ### Phase 4: Extended Color Modes ✅ COMPLETE
 
@@ -489,13 +407,13 @@ The LUT-based approach solves this by measuring actual printed colors and matchi
 
 ## License
 
-This project is licensed under the **Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International** (CC BY-NC-SA 4.0).
+This project is licensed under the **GNU GPL v3.0** Open Source License.
 
-- ✅ **Attribution**: You must give appropriate credit
-- ❌ **NonCommercial**: You may not use this for commercial purposes (at the source code level)
-- 🔄 **ShareAlike**: If you modify it, you must distribute it under the same license
+- ✅ **Open & Free**: You are free to run, study, modify, and distribute this software.
+- 🔄 **Copyleft**: If you modify and distribute this software, you must release the source code under GPL v3.0.
+- ❌ **No Proprietary Derivatives**: Selling closed-source versions of this software or its derivatives is strictly prohibited.
 
-**Commercial Exemption**: Individual creators, street vendors, and small private businesses may freely use this software to generate models and sell physical prints.
+**Commercial Use & "Street Vendor" Support Statement**: GPL permits and encourages commercial use. We specifically support individual creators, street vendors, and small businesses to earn a living through their craft. You may freely use this software to generate models and sell physical prints without additional permission.
 
 ---
 
@@ -505,10 +423,19 @@ Special thanks to:
 
 - **HueForge** - For pioneering optical color mixing in FDM printing
 - **AutoForge** - For democratizing multi-color workflows
+- **[ChromaStack](https://github.com/borealis-zhe/ChromaStack)** - A multi-color layer stacking model generator for FDM printers, using light transmission algorithms to achieve photo-level color effects
+- **[LD_ColorLayering](https://github.com/Luban-Daddy/LD_ColorLayering)** - An H5 web application for converting images to multi-color 3D models (3MF), supporting multiple color modes and layer stacking
+- **[ChromaPrint3D](https://github.com/Neroued/ChromaPrint3D)** - Converts images to multi-color 3MF models with Bambu Studio preset auto-injection and filament slot matching
 - **The 3D printing community** - For continuous innovation
 
 ---
 
-Made with ❤️ by [MIN]
+## Contributors
+
+<a href="https://github.com/MOVIBALE/Lumina-Layers/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=MOVIBALE/Lumina-Layers" />
+</a>
+
+Made with ❤️ by all our contributors!
 
 ⭐ Star this repo if you find it useful!

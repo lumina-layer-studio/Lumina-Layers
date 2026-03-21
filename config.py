@@ -2,6 +2,7 @@
 
 import os
 import sys
+import platform
 from enum import Enum
 
 # Handle PyInstaller bundled resources
@@ -16,6 +17,43 @@ OUTPUT_DIR = os.path.join(_BASE_DIR, "output")
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 
+def get_asset_path(relative_path: str) -> str:
+    """Resolve asset file path for both script and PyInstaller frozen modes.
+    解析资源文件路径，兼容脚本运行和 PyInstaller 打包模式。
+
+    Args:
+        relative_path (str): Relative path under assets/, e.g. 'smart_8color_stacks.npy'.
+                             (assets/ 下的相对路径)
+
+    Returns:
+        str: Absolute path to the asset file. (资源文件的绝对路径)
+
+    Raises:
+        FileNotFoundError: If the asset file cannot be found. (找不到资源文件时抛出)
+    """
+    candidates = []
+    asset_rel = os.path.join("assets", relative_path)
+
+    if getattr(sys, 'frozen', False):
+        # PyInstaller bundled: check _MEIPASS first, then CWD
+        candidates.append(os.path.join(sys._MEIPASS, asset_rel))
+        candidates.append(os.path.join(os.getcwd(), asset_rel))
+    else:
+        # Script mode: check project root, then parent dir
+        candidates.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), asset_rel))
+        candidates.append(os.path.join(os.getcwd(), asset_rel))
+        candidates.append(os.path.join("..", asset_rel))
+
+    for path in candidates:
+        if os.path.exists(path):
+            return path
+
+    raise FileNotFoundError(
+        f"Asset not found: {relative_path}\n"
+        f"Searched: {candidates}"
+    )
+
+
 class PrinterConfig:
     """Physical printer parameters (layer height, nozzle, backing)."""
     LAYER_HEIGHT: float = 0.08
@@ -23,6 +61,38 @@ class PrinterConfig:
     COLOR_LAYERS: int = 5
     BACKING_MM: float = 1.6
     SHRINK_OFFSET: float = 0.02
+
+
+class WorkerPoolConfig:
+    """Worker pool configuration with env var overrides.
+    工作进程池配置，支持环境变量覆盖。
+
+    Attributes:
+        MAX_WORKERS (int): Max number of worker processes. (最大工作进程数)
+        TASK_TIMEOUT (float): Task timeout in seconds. (任务超时秒数)
+    """
+    MAX_WORKERS: int = min(os.cpu_count() or 2, 4)
+    TASK_TIMEOUT: float = 300.0  # seconds
+
+    @classmethod
+    def from_env(cls) -> "WorkerPoolConfig":
+        """Create config with environment variable overrides.
+        创建配置，支持环境变量覆盖。
+
+        Reads:
+            LUMINA_MAX_WORKERS: Override MAX_WORKERS. (覆盖最大工作进程数)
+            LUMINA_TASK_TIMEOUT: Override TASK_TIMEOUT. (覆盖任务超时秒数)
+
+        Returns:
+            WorkerPoolConfig: Config instance with env overrides applied.
+                              (应用环境变量覆盖后的配置实例)
+        """
+        cfg = cls()
+        if v := os.environ.get("LUMINA_MAX_WORKERS"):
+            cfg.MAX_WORKERS = int(v)
+        if v := os.environ.get("LUMINA_TASK_TIMEOUT"):
+            cfg.TASK_TIMEOUT = float(v)
+        return cfg
 
 
 class SmartConfig:
@@ -100,7 +170,7 @@ class ColorSystem:
             2: [236, 0, 140, 255],    # Magenta
             3: [0, 174, 66, 255],     # Green
             4: [244, 238, 42, 255],   # Yellow
-            5: [20, 20, 20, 255]      # Black
+            5: [0, 0, 0, 255]         # Black (纯黑 #000000)
         },
         'map': {"White": 0, "Cyan": 1, "Magenta": 2, "Green": 3, "Yellow": 4, "Black": 5},
         'corner_labels': ["白色 (左上)", "青色 (右上)", "品红 (右下)", "黄色 (左下)"],
@@ -112,7 +182,7 @@ class ColorSystem:
         'slots': ['Slot 1 (White)', 'Slot 2 (Cyan)', 'Slot 3 (Magenta)', 'Slot 4 (Yellow)', 'Slot 5 (Black)', 'Slot 6 (Red)', 'Slot 7 (Deep Blue)', 'Slot 8 (Green)'],
         'preview': {
             0: [255, 255, 255, 255], 1: [0, 134, 214, 255], 2: [236, 0, 140, 255], 3: [244, 238, 42, 255],
-            4: [20, 20, 20, 255], 5: [193, 46, 31, 255], 6: [10, 41, 137, 255], 7: [0, 174, 66, 255]
+            4: [0, 0, 0, 255], 5: [193, 46, 31, 255], 6: [10, 41, 137, 255], 7: [0, 174, 66, 255]
         },
         'map': {'White': 0, 'Cyan': 1, 'Magenta': 2, 'Yellow': 3, 'Black': 4, 'Red': 5, 'Deep Blue': 6, 'Green': 7},
         'corner_labels': ['TL', 'TR', 'BR', 'BL']
@@ -125,11 +195,28 @@ class ColorSystem:
         'slots': ["White", "Black"],
         'preview': {
             0: [255, 255, 255, 255],  # White
-            1: [20, 20, 20, 255]      # Black
+            1: [0, 0, 0, 255]         # Black (纯黑 #000000)
         },
         'map': {"White": 0, "Black": 1},
         'corner_labels': ["白色 (左上)", "黑色 (右上)", "黑色 (右下)", "黑色 (左下)"],
         'corner_labels_en': ["White (TL)", "Black (TR)", "Black (BR)", "Black (BL)"]
+    }
+
+    FIVE_COLOR_EXTENDED = {
+        'name': '5-Color Extended',
+        'base': 5,
+        'layer_count': 6,
+        'slots': ["White", "Red", "Yellow", "Blue", "Black"],
+        'preview': {
+            0: [255, 255, 255, 255],  # White
+            1: [220, 20, 60, 255],    # Red
+            2: [255, 230, 0, 255],    # Yellow
+            3: [0, 100, 240, 255],    # Blue
+            4: [20, 20, 20, 255]      # Black
+        },
+        'map': {"White": 0, "Red": 1, "Yellow": 2, "Blue": 3, "Black": 4},
+        'corner_labels': ["白色 (左上)", "红色 (右上)", "蓝色 (右下)", "黄色 (左下)", "黑色 (外层)"],
+        'corner_labels_en': ["White (TL)", "Red (TR)", "Blue (BR)", "Yellow (BL)", "Black (Outer)"]
     }
 
     @staticmethod
@@ -173,6 +260,10 @@ class ColorSystem:
         # Check BW last to avoid matching RYBW
         if mode == "BW" or mode == "BW (Black & White)":
             return ColorSystem.BW
+        
+        # 5-Color Extended mode
+        if "5-Color Extended" in mode or "5-Color (Extended)" in mode:
+            return ColorSystem.FIVE_COLOR_EXTENDED
         
         return ColorSystem.RYBW  # Default fallback
 
@@ -255,3 +346,41 @@ class VectorConfig:
     # Parallel processing
     ENABLE_PARALLEL: bool = False      # Parallel layer processing (experimental)
     MAX_WORKERS: int = 5               # Thread pool size
+
+
+# ========== Runtime Platform Policy ==========
+
+def _env_flag(name: str) -> bool:
+    """Return True for common truthy env var values."""
+    return os.environ.get(name, "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def is_wsl_runtime() -> bool:
+    """Detect whether current runtime is WSL."""
+    if "WSL_DISTRO_NAME" in os.environ or "WSL_INTEROP" in os.environ:
+        return True
+    try:
+        return "microsoft" in platform.release().lower()
+    except Exception:
+        return False
+
+
+def get_tray_runtime_policy():
+    """Return (enabled, reason) for system tray initialization."""
+    if _env_flag("DISABLE_TRAY"):
+        return False, "Disabled by DISABLE_TRAY environment variable"
+
+    if is_wsl_runtime():
+        return False, "Disabled on WSL environment"
+
+    # Linux desktop tray support is inconsistent across distros/DEs.
+    # Keep it opt-in to avoid startup noise.
+    if sys.platform.startswith("linux"):
+        if _env_flag("ENABLE_TRAY"):
+            return True, "Enabled on Linux via ENABLE_TRAY=1"
+        return False, "Disabled on Linux by default (set ENABLE_TRAY=1 to force)"
+
+    if os.name == "nt" or sys.platform == "darwin":
+        return True, "Enabled on desktop platform"
+
+    return False, f"Disabled on unsupported platform: {sys.platform}"

@@ -4,6 +4,8 @@ import type {
   ConvertGenerateRequest,
   PreviewResponse,
   GenerateResponse,
+  LargeFormatGenerateRequest,
+  LargeFormatGenerateResponse,
   LutListResponse,
   BedSizeListResponse,
   HeightmapUploadResponse,
@@ -46,6 +48,19 @@ export async function convertGenerate(
 ): Promise<GenerateResponse> {
   const response = await apiClient.post<GenerateResponse>(
     "/convert/generate",
+    { session_id: sessionId, params },
+    { timeout: 0 },
+  );
+  return response.data;
+}
+
+/** 大画幅模式：切割图片并生成多片 3MF 压缩包 */
+export async function convertGenerateLargeFormat(
+  sessionId: string,
+  params: LargeFormatGenerateRequest,
+): Promise<LargeFormatGenerateResponse> {
+  const response = await apiClient.post<LargeFormatGenerateResponse>(
+    "/convert/generate-large-format",
     { session_id: sessionId, params },
     { timeout: 0 },
   );

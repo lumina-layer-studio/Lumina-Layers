@@ -18,6 +18,7 @@ import {
   fetchLutList as apiFetchLutList,
   convertPreview as apiConvertPreview,
   convertGenerate as apiConvertGenerate,
+  convertGenerateLargeFormat as apiConvertGenerateLargeFormat,
   fetchBedSizes as apiFetchBedSizes,
   uploadHeightmap as apiUploadHeightmap,
   fetchLutColors as apiFetchLutColors,
@@ -139,6 +140,11 @@ export interface ConverterState {
   // 涂层
   enable_coating: boolean;
   coating_height_mm: number;
+
+  // 大画幅
+  largeFormatEnabled: boolean;
+  tileWidthMm: number;
+  tileHeightMm: number;
 
   // 颜色替换
   replacement_regions: ColorReplacementItem[];
@@ -280,6 +286,11 @@ export interface ConverterActions {
   setWireHeightMm: (height: number) => void;
   setEnableCoating: (enabled: boolean) => void;
   setCoatingHeightMm: (height: number) => void;
+
+  // 大画幅
+  setLargeFormatEnabled: (enabled: boolean) => void;
+  setTileWidthMm: (width: number) => void;
+  setTileHeightMm: (height: number) => void;
 
   // 热床尺寸
   setBedLabel: (label: string) => void;
@@ -428,6 +439,9 @@ const DEFAULT_STATE: ConverterState = {
   wire_height_mm: 0.4,
   enable_coating: false,
   coating_height_mm: 0.08,
+  largeFormatEnabled: false,
+  tileWidthMm: 250,
+  tileHeightMm: 250,
   replacement_regions: [],
   free_color_set: new Set(),
   selectedColor: null,
@@ -545,14 +559,15 @@ export const useConverterStore = create<ConverterState & ConverterActions>(
 
     setTargetWidthMm: (width: number) =>
       set((state) => {
-        const clamped = clampValue(width, 10, 400);
+        const max = state.largeFormatEnabled ? 9999 : 400;
+        const clamped = clampValue(width, 10, max);
         if (state.aspectRatio) {
           return {
             target_width_mm: clamped,
             target_height_mm: clampValue(
               Math.round(clamped / state.aspectRatio),
               10,
-              400,
+              max,
             ),
             threemfDiskPath: null,
             downloadUrl: null,
@@ -567,14 +582,15 @@ export const useConverterStore = create<ConverterState & ConverterActions>(
 
     setTargetHeightMm: (height: number) =>
       set((state) => {
-        const clamped = clampValue(height, 10, 400);
+        const max = state.largeFormatEnabled ? 9999 : 400;
+        const clamped = clampValue(height, 10, max);
         if (state.aspectRatio) {
           return {
             target_height_mm: clamped,
             target_width_mm: clampValue(
               Math.round(clamped * state.aspectRatio),
               10,
-              400,
+              max,
             ),
           };
         }
@@ -736,6 +752,14 @@ export const useConverterStore = create<ConverterState & ConverterActions>(
       }),
     setCoatingHeightMm: (height: number) =>
       set({ coating_height_mm: clampValue(height, 0.04, 0.12) }),
+
+    // --- 大画幅 ---
+    setLargeFormatEnabled: (enabled: boolean) =>
+      set({ largeFormatEnabled: enabled, threemfDiskPath: null, downloadUrl: null }),
+    setTileWidthMm: (width: number) =>
+      set({ tileWidthMm: clampValue(width, 50, 500), threemfDiskPath: null, downloadUrl: null }),
+    setTileHeightMm: (height: number) =>
+      set({ tileHeightMm: clampValue(height, 50, 500), threemfDiskPath: null, downloadUrl: null }),
 
     // --- 热床尺寸 ---
     setBedLabel: (label: string) => {
@@ -1314,7 +1338,7 @@ export const useConverterStore = create<ConverterState & ConverterActions>(
           mergedReplacements = [...(mergedReplacements ?? []), ...remapRegions];
         }
 
-        const response = await apiConvertGenerate(state.sessionId, {
+        const baseParams = {
           lut_name: state.lut_name,
           target_width_mm: state.target_width_mm,
           auto_bg: state.auto_bg,
@@ -1364,10 +1388,30 @@ export const useConverterStore = create<ConverterState & ConverterActions>(
           printer_id: useSettingsStore.getState().printerModel,
           slicer: useSettingsStore.getState().slicerSoftware,
           use_cached_matched_rgb: state.regionReplacementCount > 0,
-        });
-        // 后端返回 download_url 和可选的 preview_3d_url
-        // preview_3d_url 指向 GLB 文件（Three.js 可加载）
-        // download_url 指向 3MF 文件（ZIP 格式，Three.js 无法加载）
+        } as const;
+
+        if (state.largeFormatEnabled) {
+          const lfResponse = await apiConvertGenerateLargeFormat(
+            state.sessionId!,
+            {
+              target_height_mm: state.target_height_mm,
+              tile_width_mm: state.tileWidthMm,
+              tile_height_mm: state.tileHeightMm,
+              params: baseParams,
+            },
+          );
+          set({
+            isLoading: false,
+            modelUrl: null,
+            threemfDiskPath: null,
+            downloadUrl: lfResponse.download_url
+              ? `http://localhost:8000${lfResponse.download_url}`
+              : null,
+          });
+          return null;
+        }
+
+        const response = await apiConvertGenerate(state.sessionId, baseParams);
         const modelUrl = response.preview_3d_url
           ? `http://localhost:8000${response.preview_3d_url}`
           : null;

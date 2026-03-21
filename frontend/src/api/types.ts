@@ -129,6 +129,24 @@ export interface PreviewResponse {
   contours?: Record<string, number[][][]> | null; // hex -> list of contour polygons (world coords mm)
 }
 
+/** 大画幅生成请求，嵌套 ConvertGenerateRequest + 切片参数 */
+export interface LargeFormatGenerateRequest {
+  target_height_mm: number;
+  tile_width_mm: number;
+  tile_height_mm: number;
+  params: ConvertGenerateRequest;
+}
+
+/** 大画幅生成响应 */
+export interface LargeFormatGenerateResponse {
+  status: string;
+  message: string;
+  download_url: string;
+  tile_count: number;
+  grid_cols: number;
+  grid_rows: number;
+}
+
 /** 生成接口响应，包含下载 URL 和可选的 3D 预览 URL */
 export interface GenerateResponse {
   status: string;

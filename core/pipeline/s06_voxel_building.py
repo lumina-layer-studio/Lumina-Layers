@@ -176,7 +176,7 @@ def _build_voxel_matrix_faceup(material_matrix, mask_solid, spacer_thick, backin
 
 def _build_relief_voxel_matrix(matched_rgb, material_matrix, mask_solid, color_height_map,
                                default_height, structure_mode, backing_color_id, pixel_scale,
-                               height_matrix=None):
+                               height_matrix=None, global_max_height=None):
     """Build 2.5D relief voxel matrix with per-color or per-pixel variable heights.
     构建 2.5D 浮雕体素矩阵，支持按颜色或按像素的可变高度。
 
@@ -199,6 +199,8 @@ def _build_relief_voxel_matrix(matched_rgb, material_matrix, mask_solid, color_h
         backing_color_id (int): backing material ID (0-7)
         pixel_scale (float): mm per pixel
         height_matrix (np.ndarray | None): optional (H, W) float32 per-pixel height matrix
+        global_max_height (float | None): if provided, forces max Z height across all tiles
+            for consistent relief height in large-format mode (大画幅全局最大高度)
 
     Returns:
         tuple: (full_matrix, backing_metadata)
@@ -234,7 +236,10 @@ def _build_relief_voxel_matrix(matched_rgb, material_matrix, mask_solid, color_h
                     pixel_heights[y, x] = color_height_map[hex_color]
 
     # Step 2: Calculate max height to determine total Z layers
-    max_height_mm = np.max(pixel_heights[mask_solid]) if np.any(mask_solid) else default_height
+    if global_max_height is not None:
+        max_height_mm = global_max_height
+    else:
+        max_height_mm = np.max(pixel_heights[mask_solid]) if np.any(mask_solid) else default_height
     max_z_layers = max(OPTICAL_LAYERS + 1, int(np.ceil(max_height_mm / PrinterConfig.LAYER_HEIGHT)))
 
     print(f"[RELIEF] Max height: {max_height_mm:.2f}mm ({max_z_layers} layers)")
@@ -410,6 +415,7 @@ def run(ctx: dict) -> dict:
     heightmap_max_height = ctx.get('heightmap_max_height')
     matched_rgb = ctx['matched_rgb']
     pixel_scale = ctx['pixel_scale']
+    relief_global_max_height = ctx.get('relief_global_max_height')
 
     heightmap_stats = None
 
@@ -491,7 +497,8 @@ def run(ctx: dict) -> dict:
                     structure_mode=structure_mode,
                     backing_color_id=backing_color_id,
                     pixel_scale=pixel_scale,
-                    height_matrix=heightmap_height_matrix
+                    height_matrix=heightmap_height_matrix,
+                    global_max_height=relief_global_max_height,
                 )
             elif enable_relief and height_mode == "color" and color_height_map:
                 print(f"[S06] 2.5D Relief Mode ENABLED")
@@ -505,7 +512,8 @@ def run(ctx: dict) -> dict:
                     default_height=spacer_thick,
                     structure_mode=structure_mode,
                     backing_color_id=backing_color_id,
-                    pixel_scale=pixel_scale
+                    pixel_scale=pixel_scale,
+                    global_max_height=relief_global_max_height,
                 )
             else:
                 # Original flat voxel matrix

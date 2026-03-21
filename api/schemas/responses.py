@@ -63,6 +63,17 @@ class GenerateResponse(BaseModel):
     threemf_disk_path: Optional[str] = None
 
 
+class LargeFormatGenerateResponse(BaseModel):
+    """大画幅切片生成响应。"""
+
+    status: str
+    message: str
+    download_url: str
+    tile_count: int
+    grid_cols: int
+    grid_rows: int
+
+
 class BatchItemResult(BaseModel):
     """批量转换单项结果。"""
 

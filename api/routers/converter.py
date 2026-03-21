@@ -26,6 +26,7 @@ from api.schemas.converter import (
     ColorMergePreviewRequest,
     ColorReplaceRequest,
     ConvertGenerateRequest,
+    LargeFormatGenerateRequest,
     RegionDetectRequest,
     RegionDetectResponse,
     RegionReplaceRequest,
@@ -40,6 +41,7 @@ from api.schemas.responses import (
     CropResponse,
     GenerateResponse,
     HeightmapUploadResponse,
+    LargeFormatGenerateResponse,
     MergePreviewResponse,
     PreviewResponse,
     ResetReplacementsResponse,
@@ -714,6 +716,218 @@ async def convert_generate(
         download_url=f"/api/files/{download_id}",
         preview_3d_url=preview_3d_url,
         threemf_disk_path=threemf_path,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Large-format tiled generation
+# ---------------------------------------------------------------------------
+
+class _LargeFormatBody(BaseModel):
+    """Wrapper combining session_id with large-format parameters."""
+
+    session_id: str
+    params: LargeFormatGenerateRequest
+
+
+@router.post("/generate-large-format")
+async def convert_generate_large_format(
+    body: _LargeFormatBody,
+    store: SessionStore = Depends(get_session_store),
+    registry: FileRegistry = Depends(get_file_registry),
+    pool: WorkerPoolManager = Depends(get_worker_pool),
+) -> LargeFormatGenerateResponse:
+    """Split image into tiles, generate a 3MF per tile, and package into ZIP.
+    将图片切割为网格切片，每片生成 3MF，打包为 ZIP。
+    """
+    import math
+
+    # 1. Session validation
+    session_data = _require_session(store, body.session_id)
+    _require_preview_cache(session_data)
+
+    lf = body.params
+    request = lf.params
+
+    image_path: str | None = session_data.get("image_path")
+    lut_path: str | None = session_data.get("lut_path")
+    if not image_path or not os.path.exists(image_path):
+        raise HTTPException(status_code=409, detail="Image file missing. Call POST /api/convert/preview first.")
+    if not lut_path or not os.path.exists(lut_path):
+        raise HTTPException(status_code=409, detail="LUT file missing. Call POST /api/convert/preview first.")
+
+    # 2. Compute tile grid
+    with Image.open(image_path) as img:
+        px_w, px_h = img.size
+
+    total_w_mm = request.target_width_mm
+    total_h_mm = lf.target_height_mm
+    tile_w_mm = lf.tile_width_mm
+    tile_h_mm = lf.tile_height_mm
+
+    cols = max(1, math.ceil(total_w_mm / tile_w_mm))
+    rows = max(1, math.ceil(total_h_mm / tile_h_mm))
+
+    px_per_mm_x = px_w / total_w_mm
+    px_per_mm_y = px_h / total_h_mm
+
+    # 3. Pre-compute global relief max height for 2.5D consistency
+    relief_global_max_height: float | None = None
+    if request.enable_relief:
+        height_mode = request.height_mode or "color"
+        if height_mode == "color" and request.color_height_map:
+            relief_global_max_height = max(request.color_height_map.values())
+        elif height_mode == "heightmap":
+            hm_gray = session_data.get("heightmap_grayscale")
+            if hm_gray is not None:
+                hm_max_cfg = request.heightmap_max_height if request.heightmap_max_height else 5.0
+                relief_global_max_height = float(hm_max_cfg)
+
+    # 4. Build shared worker params (same as /generate, minus per-tile fields)
+    core_modeling_mode = CoreModelingMode(request.modeling_mode.value)
+    height_mode = request.height_mode or "color"
+
+    replacement_regions = session_data.get("replacement_regions") or None
+    if request.replacement_regions is not None:
+        replacement_regions = [
+            {"quantized_hex": r.quantized_hex, "matched_hex": r.matched_hex, "replacement_hex": r.replacement_hex}
+            for r in request.replacement_regions
+        ]
+    free_color_set = session_data.get("free_color_set") or None
+    if request.free_color_set is not None:
+        free_color_set = request.free_color_set
+
+    base_params: dict = {
+        "spacer_thick": request.spacer_thick,
+        "structure_mode": request.structure_mode.value,
+        "auto_bg": request.auto_bg,
+        "bg_tol": request.bg_tol,
+        "color_mode": request.color_mode.value,
+        "add_loop": request.add_loop,
+        "loop_width": request.loop_width,
+        "loop_length": request.loop_length,
+        "loop_hole": request.loop_hole,
+        "loop_pos": request.loop_pos,
+        "loop_angle": request.loop_angle,
+        "loop_offset_x": request.loop_offset_x,
+        "loop_offset_y": request.loop_offset_y,
+        "loop_position_preset": request.loop_position_preset,
+        "modeling_mode": core_modeling_mode,
+        "quantize_colors": request.quantize_colors,
+        "replacement_regions": replacement_regions,
+        "separate_backing": request.separate_backing,
+        "enable_relief": request.enable_relief,
+        "height_mode": height_mode,
+        "color_height_map": request.color_height_map,
+        "heightmap_max_height": request.heightmap_max_height,
+        "enable_cleanup": request.enable_cleanup,
+        "enable_outline": request.enable_outline,
+        "outline_width": request.outline_width,
+        "enable_cloisonne": request.enable_cloisonne,
+        "wire_width_mm": request.wire_width_mm,
+        "wire_height_mm": request.wire_height_mm,
+        "free_color_set": free_color_set,
+        "enable_coating": request.enable_coating,
+        "coating_height_mm": request.coating_height_mm,
+        "hue_weight": request.hue_weight,
+        "chroma_gate": request.chroma_gate,
+        "printer_id": request.printer_id,
+        "slicer": request.slicer,
+        "relief_global_max_height": relief_global_max_height,
+    }
+
+    # 5. Crop tiles and submit workers
+    sid = body.session_id
+    base_name = os.path.splitext(os.path.basename(image_path))[0]
+    full_img = Image.open(image_path)
+    hm_gray = session_data.get("heightmap_grayscale") if (request.enable_relief and height_mode == "heightmap") else None
+
+    futures = []
+    tile_labels: list[str] = []
+
+    for r in range(rows):
+        for c in range(cols):
+            # mm bounds
+            x0_mm = c * tile_w_mm
+            y0_mm = r * tile_h_mm
+            x1_mm = min(x0_mm + tile_w_mm, total_w_mm)
+            y1_mm = min(y0_mm + tile_h_mm, total_h_mm)
+            cur_tile_w = x1_mm - x0_mm
+            cur_tile_h = y1_mm - y0_mm
+
+            # pixel bounds
+            px_x0 = int(round(x0_mm * px_per_mm_x))
+            px_y0 = int(round(y0_mm * px_per_mm_y))
+            px_x1 = int(round(x1_mm * px_per_mm_x))
+            px_y1 = int(round(y1_mm * px_per_mm_y))
+            px_x1 = min(px_x1, px_w)
+            px_y1 = min(px_y1, px_h)
+
+            tile_img = full_img.crop((px_x0, px_y0, px_x1, px_y1))
+            fd, tile_path = tempfile.mkstemp(suffix=".png")
+            os.close(fd)
+            tile_img.save(tile_path)
+            store.register_temp_file(sid, tile_path)
+
+            tile_params = dict(base_params, target_width_mm=cur_tile_w)
+
+            # Tile-specific heightmap
+            if hm_gray is not None:
+                hm_tile = hm_gray[px_y0:px_y1, px_x0:px_x1]
+                fd2, hm_tile_path = tempfile.mkstemp(suffix=".png")
+                os.close(fd2)
+                Image.fromarray(hm_tile).save(hm_tile_path)
+                store.register_temp_file(sid, hm_tile_path)
+                tile_params["heightmap_path"] = hm_tile_path
+
+            label = f"{base_name}_R{r + 1}C{c + 1}"
+            tile_labels.append(label)
+            futures.append(pool.submit(worker_generate_model, tile_path, lut_path, tile_params))
+
+    full_img.close()
+
+    # 6. Collect results
+    successful_paths: list[tuple[str, str]] = []
+    errors: list[str] = []
+    for label, fut in zip(tile_labels, futures):
+        try:
+            result = await fut
+            tp = result.get("threemf_path")
+            if tp and os.path.exists(tp):
+                successful_paths.append((label, tp))
+            else:
+                errors.append(f"{label}: generation failed — {result.get('status_msg', 'unknown')}")
+        except Exception as e:
+            errors.append(f"{label}: {e}")
+
+    if not successful_paths:
+        detail = "All tiles failed"
+        if errors:
+            detail += ": " + "; ".join(errors[:5])
+        raise HTTPException(status_code=500, detail=detail)
+
+    # 7. Package into ZIP
+    fd, zip_path = tempfile.mkstemp(suffix=".zip")
+    os.close(fd)
+    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
+        for label, tp in successful_paths:
+            zf.write(tp, f"{label}.3mf")
+
+    download_id = registry.register_path(sid, zip_path)
+
+    total_tiles = cols * rows
+    ok_count = len(successful_paths)
+    msg = f"Generated {ok_count}/{total_tiles} tiles ({cols}×{rows})"
+    if errors:
+        msg += f" — {len(errors)} failed"
+
+    return LargeFormatGenerateResponse(
+        status="ok",
+        message=msg,
+        download_url=f"/api/files/{download_id}",
+        tile_count=ok_count,
+        grid_cols=cols,
+        grid_rows=rows,
     )
 
 

@@ -25,6 +25,7 @@ export default function ActionBar() {
   const threemfDiskPath = useConverterStore((s) => s.threemfDiskPath);
   const downloadUrl = useConverterStore((s) => s.downloadUrl);
   const sessionId = useConverterStore((s) => s.sessionId);
+  const largeFormatEnabled = useConverterStore((s) => s.largeFormatEnabled);
 
   const batchMode = useConverterStore((s) => s.batchMode);
   const batchFiles = useConverterStore((s) => s.batchFiles);
@@ -199,6 +200,7 @@ export default function ActionBar() {
         threemfDiskPath={threemfDiskPath}
         downloadUrl={downloadUrl}
         canSubmit={canSubmit}
+        largeFormat={largeFormatEnabled}
         onAutoGenerate={async () => {
           await submitFullPipeline();
           return useConverterStore.getState().threemfDiskPath ?? null;

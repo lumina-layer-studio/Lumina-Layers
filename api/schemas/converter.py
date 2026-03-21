@@ -153,7 +153,7 @@ class ConvertPreviewRequest(BaseModel):
 
     lut_name: str = Field(..., description="LUT 名称")
     target_width_mm: float = Field(
-        60.0, ge=10, le=400, description="目标宽度 (mm)"
+        60.0, ge=10, le=9999, description="目标宽度 (mm)"
     )
     auto_bg: bool = Field(False, description="自动去背景")
     bg_tol: int = Field(40, ge=0, le=150, description="背景容差")
@@ -248,7 +248,7 @@ class ConvertGenerateRequest(BaseModel):
 
     lut_name: str = Field(..., description="LUT 名称")
     target_width_mm: float = Field(
-        60.0, ge=10, le=400, description="目标宽度 (mm)"
+        60.0, ge=10, le=9999, description="目标宽度 (mm)"
     )
     spacer_thick: float = Field(
         1.2, ge=0.2, le=3.5, description="底板厚度 (mm)"
@@ -337,6 +337,31 @@ class ConvertGenerateRequest(BaseModel):
         False,
         description="使用 Session 缓存的 matched_rgb 而非从原始图像重新处理",
     )
+
+
+class LargeFormatGenerateRequest(BaseModel):
+    """Request model for large-format tiled 3MF generation.
+    大画幅切片 3MF 生成的请求模型。
+
+    Splits the image into a grid of tiles, generates a 3MF for each tile,
+    and packages all results into a ZIP archive.
+    将图片切割为网格切片，每片生成一个 3MF，最终打包为 ZIP。
+
+    Attributes:
+        target_height_mm: Total output height in millimeters.
+            总输出高度 (mm)。
+        tile_width_mm: Width of each tile in millimeters.
+            切片宽度 (mm)。
+        tile_height_mm: Height of each tile in millimeters.
+            切片高度 (mm)。
+        params: Shared generation parameters for all tiles.
+            所有切片共享的生成参数。
+    """
+
+    target_height_mm: float = Field(..., gt=0, description="总输出高度 (mm)")
+    tile_width_mm: float = Field(250.0, gt=0, description="切片宽度 (mm)")
+    tile_height_mm: float = Field(250.0, gt=0, description="切片高度 (mm)")
+    params: ConvertGenerateRequest = Field(..., description="生成参数")
 
 
 class ConvertBatchRequest(BaseModel):

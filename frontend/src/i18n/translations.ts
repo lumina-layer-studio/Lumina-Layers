@@ -1744,6 +1744,10 @@ export const translations: Record<string, Record<"zh" | "en", string>> = {
     zh: "启用浮雕",
     en: "Enable Relief",
   },
+  relief_vector_unsupported: {
+    zh: "矢量模式暂不支持浮雕",
+    en: "Relief is not supported in Vector mode",
+  },
   relief_max_height: {
     zh: "最大高度",
     en: "Max Height",

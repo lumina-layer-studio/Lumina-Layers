@@ -1689,8 +1689,11 @@ export const useConverterStore = create<ConverterState & ConverterActions>(
       }
 
       if (validFiles.length === 1) {
+        const isSvg = validFiles[0].name.toLowerCase().endsWith(".svg")
+          || validFiles[0].type === "image/svg+xml";
+        const autoModelingMode = isSvg ? ModelingModeEnum.VECTOR : undefined;
+
         if (state.imageFile) {
-          // SingleMode: replace imageFile, reset preview state
           const prev = state.imagePreviewUrl;
           if (prev) URL.revokeObjectURL(prev);
 
@@ -1709,13 +1712,12 @@ export const useConverterStore = create<ConverterState & ConverterActions>(
             previewGlbUrl: null,
             batchMode: false,
             hasManualPreview: false,
-            cropModalOpen: state.enableCrop,
+            cropModalOpen: isSvg ? false : state.enableCrop,
             layerImages: [],
             layerImagesOpen: false,
+            ...(autoModelingMode ? { modeling_mode: autoModelingMode } : {}),
           });
-          console.log('[DEBUG] handleFilesSelect (replace): cleared layerImages');
         } else {
-          // Empty state: set imageFile, enter SingleMode
           const previewUrl = URL.createObjectURL(validFiles[0]);
           const img = new Image();
           img.onload = () => {
@@ -1728,11 +1730,11 @@ export const useConverterStore = create<ConverterState & ConverterActions>(
             imagePreviewUrl: previewUrl,
             batchMode: false,
             hasManualPreview: false,
-            cropModalOpen: state.enableCrop,
+            cropModalOpen: isSvg ? false : state.enableCrop,
             layerImages: [],
             layerImagesOpen: false,
+            ...(autoModelingMode ? { modeling_mode: autoModelingMode } : {}),
           });
-          console.log('[DEBUG] handleFilesSelect (new): cleared layerImages');
         }
         return;
       }

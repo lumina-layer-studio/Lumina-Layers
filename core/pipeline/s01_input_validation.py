@@ -39,60 +39,60 @@ def run(ctx: dict) -> dict:
         KeyError: 缺少必需的输入键时抛出
     """
     # ---- 读取必需输入 ----
-    image_path = ctx['image_path']
-    lut_path = ctx['lut_path']
-    color_mode = ctx['color_mode']
-    modeling_mode = ctx['modeling_mode']
+    image_path = ctx["image_path"]
+    lut_path = ctx["lut_path"]
+    color_mode = ctx["color_mode"]
+    modeling_mode = ctx["modeling_mode"]
 
     # ---- 输入校验 ----
     if image_path is None:
-        ctx['error'] = "[ERROR] Please upload an image"
+        ctx["error"] = "[ERROR] Please upload an image"
         return ctx
     if lut_path is None:
-        ctx['error'] = "[WARNING] Please select or upload a .npy calibration file!"
+        ctx["error"] = "[WARNING] Please select or upload a .npy calibration file!"
         return ctx
 
     # ---- LUT 路径解析 ----
     if isinstance(lut_path, str):
         actual_lut_path = lut_path
-    elif hasattr(lut_path, 'name'):
+    elif hasattr(lut_path, "name"):
         actual_lut_path = lut_path.name
     else:
-        ctx['error'] = "[ERROR] Invalid LUT file format"
+        ctx["error"] = "[ERROR] Invalid LUT file format"
         return ctx
 
-    ctx['actual_lut_path'] = actual_lut_path
+    ctx["actual_lut_path"] = actual_lut_path
 
     # ---- separate_backing 处理 ----
-    separate_backing = ctx.get('separate_backing', False)
+    separate_backing = ctx.get("separate_backing", False)
     try:
         separate_backing = bool(separate_backing) if separate_backing is not None else False
     except Exception as e:
         print(f"[S01] Error reading separate_backing checkbox state: {e}, using default (False)")
         separate_backing = False
 
-    backing_color_id = ctx.get('backing_color_id', 0)
+    backing_color_id = ctx.get("backing_color_id", 0)
     if separate_backing:
         backing_color_id = -2
         print(f"[S01] Backing separation enabled: backing will be a separate object (white)")
     else:
-        print(f"[S01] Backing separation disabled: backing merged with first layer (backing_color_id={backing_color_id})")
+        print(
+            f"[S01] Backing separation disabled: backing merged with first layer (backing_color_id={backing_color_id})"
+        )
 
-    ctx['separate_backing'] = separate_backing
-    ctx['backing_color_id'] = backing_color_id
+    ctx["separate_backing"] = separate_backing
+    ctx["backing_color_id"] = backing_color_id
 
     # ---- SVG 矢量模式检测 ----
     is_svg_vector = (
-        modeling_mode == ModelingMode.VECTOR
-        and isinstance(image_path, str)
-        and image_path.lower().endswith('.svg')
+        modeling_mode == ModelingMode.VECTOR and isinstance(image_path, str) and image_path.lower().endswith(".svg")
     )
-    ctx['is_svg_vector'] = is_svg_vector
+    ctx["is_svg_vector"] = is_svg_vector
 
     # 矢量模式但非 SVG 文件 → 提前报错
     if modeling_mode == ModelingMode.VECTOR and not is_svg_vector:
-        if isinstance(image_path, str) and not image_path.lower().endswith('.svg'):
-            ctx['error'] = (
+        if isinstance(image_path, str) and not image_path.lower().endswith(".svg"):
+            ctx["error"] = (
                 "⚠️ Vector Native mode requires SVG files!\n\n"
                 "Your file is not an SVG. Please either:\n"
                 "• Upload an SVG file, or\n"
@@ -107,23 +107,24 @@ def run(ctx: dict) -> dict:
 
     # ---- 颜色系统配置 ----
     color_conf = ColorSystem.get(color_mode)
-    
+
     # For Merged LUTs, extract slot_names and preview_colors from LUT palette
     # Use material names as keys (not indices) for direct lookup
-    if color_mode == "Merged" and actual_lut_path.endswith('.json'):
+    if color_mode == "Merged" and actual_lut_path.endswith(".json"):
         try:
             import json
-            with open(actual_lut_path, 'r', encoding='utf-8') as f:
+
+            with open(actual_lut_path, "r", encoding="utf-8") as f:
                 lut_data = json.load(f)
-            if 'palette' in lut_data:
+            if "palette" in lut_data:
                 # Sort palette keys alphabetically to match recipe material IDs
-                slot_names = sorted(lut_data['palette'].keys())
+                slot_names = sorted(lut_data["palette"].keys())
                 print(f"[S01] Merged LUT: Using palette order: {slot_names}")
-                
+
                 # Build preview_colors dict with material names as keys
                 preview_colors = {}
                 for name in slot_names:
-                    hex_color = lut_data['palette'][name].get('hex_color', '#FFFFFF')
+                    hex_color = lut_data["palette"][name].get("hex_color", "#FFFFFF")
                     # Convert hex to RGBA
                     r = int(hex_color[1:3], 16)
                     g = int(hex_color[3:5], 16)
@@ -131,20 +132,20 @@ def run(ctx: dict) -> dict:
                     preview_colors[name] = [r, g, b, 255]
                     print(f"[S01] Material '{name}' -> RGB{[r,g,b]} ({hex_color})")
             else:
-                slot_names = color_conf['slots']
-                preview_colors = color_conf['preview']
+                slot_names = color_conf["slots"]
+                preview_colors = color_conf["preview"]
         except Exception as e:
             print(f"[S01] Warning: Failed to extract palette from Merged LUT: {e}")
-            slot_names = color_conf['slots']
-            preview_colors = color_conf['preview']
+            slot_names = color_conf["slots"]
+            preview_colors = color_conf["preview"]
     else:
-        slot_names = color_conf['slots']
-        preview_colors = color_conf['preview']
+        slot_names = color_conf["slots"]
+        preview_colors = color_conf["preview"]
 
-    ctx['color_conf'] = color_conf
-    ctx['slot_names'] = slot_names
-    ctx['preview_colors'] = preview_colors
-    
+    ctx["color_conf"] = color_conf
+    ctx["slot_names"] = slot_names
+    ctx["preview_colors"] = preview_colors
+
     print(f"[S01] Final slot_names: {slot_names}")
     print(f"[S01] Final preview_colors keys: {list(preview_colors.keys())}")
 
@@ -152,6 +153,6 @@ def run(ctx: dict) -> dict:
     num_materials = len(slot_names)
     if backing_color_id != -2 and (backing_color_id < 0 or backing_color_id >= num_materials):
         print(f"[S01] Warning: Invalid backing_color_id={backing_color_id}, using default (0)")
-        ctx['backing_color_id'] = 0
+        ctx["backing_color_id"] = 0
 
     return ctx

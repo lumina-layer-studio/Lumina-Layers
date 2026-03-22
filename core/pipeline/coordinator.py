@@ -276,11 +276,7 @@ def _run_vector_branch(ctx: dict) -> dict:
             ctx["error"] = "[ERROR] Vector mesh generation failed: no valid geometry generated"
             return ctx
 
-        # 2. Export 3MF
-        _report_progress(ctx, 0.72, "导出 3MF 中... | Exporting 3MF...")
-        base_name = os.path.splitext(os.path.basename(image_path))[0]
-        out_path = os.path.join(OUTPUT_DIR, generate_model_filename(base_name, modeling_mode, color_mode))
-
+        # 1.5a Resolve color config early (needed by backing merge + relief)
         is_six_color = len(vec_processor.img_processor.lut_rgb) == 1296
         if is_six_color:
             vec_color_conf = ColorSystem.SIX_COLOR
@@ -288,6 +284,41 @@ def _run_vector_branch(ctx: dict) -> dict:
         else:
             vec_color_conf = ColorSystem.get(color_mode)
             vec_color_mode = color_mode
+
+        vec_preview_colors = dict(vec_color_conf["preview"])
+        vec_slot_list = vec_color_conf["slots"]
+
+        # Add name-based color entries so 3MF export always finds colors by name,
+        # avoiding index-shift issues when "Board" is present in the geometry list.
+        for _mid, _rgba in list(vec_preview_colors.items()):
+            if isinstance(_mid, int) and _mid < len(vec_slot_list):
+                vec_preview_colors[vec_slot_list[_mid]] = _rgba
+
+        # 1.5b separate_backing handling
+        separate_backing = ctx.get("separate_backing", False)
+        board_geom = scene.geometry.get("Board")
+        if board_geom is not None and not separate_backing:
+            first_slot = vec_slot_list[0] if vec_slot_list else None
+            first_geom = scene.geometry.get(first_slot) if first_slot else None
+            if first_geom is not None:
+                import trimesh as _trimesh
+
+                merged = _trimesh.util.concatenate([first_geom, board_geom])
+                merged.visual.face_colors = first_geom.visual.face_colors
+                merged.metadata["name"] = first_slot
+                scene.geometry[first_slot] = merged
+                del scene.geometry["Board"]
+                print(f"[COORDINATOR] Vector: merged Board into '{first_slot}' (separate_backing=false)")
+            else:
+                print("[COORDINATOR] Vector: Board exists but first slot not found, keeping Board as-is")
+        elif board_geom is not None and separate_backing:
+            vec_preview_colors["Board"] = vec_preview_colors.get(0, [255, 255, 255, 255])
+            print("[COORDINATOR] Vector: keeping Board as separate backing (separate_backing=true)")
+
+        # 2. Export 3MF
+        _report_progress(ctx, 0.72, "导出 3MF 中... | Exporting 3MF...")
+        base_name = os.path.splitext(os.path.basename(image_path))[0]
+        out_path = os.path.join(OUTPUT_DIR, generate_model_filename(base_name, modeling_mode, color_mode))
 
         vec_slot_names = []
         for geom_name, geom in scene.geometry.items():
@@ -303,8 +334,6 @@ def _run_vector_branch(ctx: dict) -> dict:
         if not vec_slot_names:
             ctx["error"] = "[ERROR] Vector export aborted: all generated geometries are empty"
             return ctx
-
-        vec_preview_colors = vec_color_conf["preview"]
 
         vec_print_settings = {
             "layer_height": "0.08",

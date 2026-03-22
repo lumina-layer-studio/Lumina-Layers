@@ -2,6 +2,7 @@ import { useCallback } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { useConverterStore } from "../../stores/converterStore";
 import type { AutoHeightMode } from "../../api/types";
+import { ModelingMode } from "../../api/types";
 import Checkbox from "../ui/Checkbox";
 import Slider from "../ui/Slider";
 import Dropdown from "../ui/Dropdown";
@@ -17,20 +18,24 @@ export default function ReliefSettings() {
     { label: t("relief_lighter_higher"), value: "lighter-higher" },
     { label: t("relief_use_heightmap"), value: "use-heightmap" },
   ];
-  // State fields grouped with useShallow
+
   const {
     enable_relief,
     heightmap_max_height,
     autoHeightMode,
     heightmapFile,
     heightmapThumbnailUrl,
+    modeling_mode,
   } = useConverterStore(useShallow((s) => ({
     enable_relief: s.enable_relief,
     heightmap_max_height: s.heightmap_max_height,
     autoHeightMode: s.autoHeightMode,
     heightmapFile: s.heightmapFile,
     heightmapThumbnailUrl: s.heightmapThumbnailUrl,
+    modeling_mode: s.modeling_mode,
   })));
+
+  const isVector = modeling_mode === ModelingMode.VECTOR;
 
   // Actions extracted individually (stable references)
   const setEnableRelief = useConverterStore((s) => s.setEnableRelief);
@@ -67,11 +72,17 @@ export default function ReliefSettings() {
     <div className="flex flex-col gap-4">
         <Checkbox
           label={t("relief_enable")}
-          checked={enable_relief}
+          checked={isVector ? false : enable_relief}
           onChange={setEnableRelief}
+          disabled={isVector}
         />
+        {isVector && (
+          <p className="text-[clamp(0.6rem,0.8vw,0.7rem)] text-slate-400 dark:text-slate-500">
+            {t("relief_vector_unsupported")}
+          </p>
+        )}
 
-        {enable_relief && (
+        {enable_relief && !isVector && (
           <>
             <Slider
               label={t("relief_max_height")}

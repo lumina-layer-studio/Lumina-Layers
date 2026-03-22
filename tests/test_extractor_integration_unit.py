@@ -54,7 +54,6 @@ class TestCornerPointsValidation:
                 "corner_points": json.dumps([[0, 0], [100, 0], [100, 100]]),
                 "color_mode": "4-Color",
                 "distortion": "0.0",
-                "white_balance": "false",
                 "vignette_correction": "false",
             },
         )
@@ -81,12 +80,9 @@ class TestSessionStatePersistence:
                 "/api/extractor/extract",
                 files={"image": ("test.png", buf, "image/png")},
                 data={
-                    "corner_points": json.dumps(
-                        [[0, 0], [100, 0], [100, 100], [0, 100]]
-                    ),
+                    "corner_points": json.dumps([[0, 0], [100, 0], [100, 100], [0, 100]]),
                     "color_mode": "4-Color",
                     "distortion": "0.0",
-                    "white_balance": "false",
                     "vignette_correction": "false",
                 },
             )
@@ -111,7 +107,7 @@ class TestFieldNameMapping:
     """Verify API field names map to core function parameter names."""
 
     def test_extract_field_name_mapping(self) -> None:
-        """Verify distortion->barrel, white_balance->wb, vignette_correction->bright."""
+        """Verify distortion->barrel, vignette_correction->bright."""
         buf = _make_test_image_buf()
         with patch(
             "api.routers.extractor.run_extraction",
@@ -121,12 +117,9 @@ class TestFieldNameMapping:
                 "/api/extractor/extract",
                 files={"image": ("test.png", buf, "image/png")},
                 data={
-                    "corner_points": json.dumps(
-                        [[0, 0], [100, 0], [100, 100], [0, 100]]
-                    ),
+                    "corner_points": json.dumps([[0, 0], [100, 0], [100, 100], [0, 100]]),
                     "color_mode": "4-Color",
                     "distortion": "0.1",
-                    "white_balance": "true",
                     "vignette_correction": "true",
                 },
             )
@@ -135,7 +128,5 @@ class TestFieldNameMapping:
         call_kwargs = mock_fn.call_args.kwargs
         # distortion -> barrel
         assert call_kwargs["barrel"] == 0.1
-        # white_balance -> wb
-        assert call_kwargs["wb"] is True
         # vignette_correction -> bright
         assert call_kwargs["bright"] is True

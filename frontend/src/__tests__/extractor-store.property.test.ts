@@ -36,7 +36,6 @@ function resetExtractorStore(): void {
     offset_y: 0,
     zoom: 1.0,
     distortion: 0.0,
-    white_balance: false,
     vignette_correction: false,
     isLoading: false,
     error: null,
@@ -64,7 +63,6 @@ function snapshotExtractorState() {
     offset_y: s.offset_y,
     zoom: s.zoom,
     distortion: s.distortion,
-    white_balance: s.white_balance,
     vignette_correction: s.vignette_correction,
     isLoading: s.isLoading,
     error: s.error,
@@ -171,7 +169,6 @@ const arbExtractorMutation = fc.record({
   offset_y: fc.double({ min: -100, max: 100, noNaN: true, noDefaultInfinity: true }),
   zoom: fc.double({ min: -5, max: 5, noNaN: true, noDefaultInfinity: true }),
   distortion: fc.double({ min: -5, max: 5, noNaN: true, noDefaultInfinity: true }),
-  white_balance: fc.boolean(),
   vignette_correction: fc.boolean(),
 });
 
@@ -382,7 +379,6 @@ describe("Feature: extractor-calibration-tab, Property 9: Store 三向隔离", (
         store.setOffsetY(mutation.offset_y);
         store.setZoom(mutation.zoom);
         store.setDistortion(mutation.distortion);
-        store.setWhiteBalance(mutation.white_balance);
         store.setVignetteCorrection(mutation.vignette_correction);
 
         const after = snapshotConverterState();
@@ -409,7 +405,6 @@ describe("Feature: extractor-calibration-tab, Property 9: Store 三向隔离", (
         store.setOffsetY(mutation.offset_y);
         store.setZoom(mutation.zoom);
         store.setDistortion(mutation.distortion);
-        store.setWhiteBalance(mutation.white_balance);
         store.setVignetteCorrection(mutation.vignette_correction);
 
         const after = snapshotCalibrationState();
@@ -523,7 +518,6 @@ describe("Feature: extractor-calibration-tab, Property 10: 标签页切换状态
           store.setOffsetY(mutation.offset_y);
           store.setZoom(mutation.zoom);
           store.setDistortion(mutation.distortion);
-          store.setWhiteBalance(mutation.white_balance);
           store.setVignetteCorrection(mutation.vignette_correction);
           useExtractorStore.setState({ corner_points: [...corners] });
 

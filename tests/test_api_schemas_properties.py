@@ -104,16 +104,22 @@ def st_convert_generate_request(draw: st.DrawFn) -> ConvertGenerateRequest:
         loop_width=draw(st.floats(min_value=2, max_value=10, allow_nan=False)),
         loop_length=draw(st.floats(min_value=4, max_value=15, allow_nan=False)),
         loop_hole=draw(st.floats(min_value=1, max_value=5, allow_nan=False)),
-        loop_pos=draw(st.none() | st.tuples(
-            st.floats(allow_nan=False, allow_infinity=False),
-            st.floats(allow_nan=False, allow_infinity=False),
-        )),
+        loop_pos=draw(
+            st.none()
+            | st.tuples(
+                st.floats(allow_nan=False, allow_infinity=False),
+                st.floats(allow_nan=False, allow_infinity=False),
+            )
+        ),
         enable_relief=draw(st.booleans()),
-        color_height_map=draw(st.none() | st.dictionaries(
-            st_hex_color,
-            st.floats(min_value=0, max_value=20, allow_nan=False),
-            max_size=5,
-        )),
+        color_height_map=draw(
+            st.none()
+            | st.dictionaries(
+                st_hex_color,
+                st.floats(min_value=0, max_value=20, allow_nan=False),
+                max_size=5,
+            )
+        ),
         heightmap_max_height=draw(st.floats(min_value=0.08, max_value=15.0, allow_nan=False)),
         enable_outline=draw(st.booleans()),
         outline_width=draw(st.floats(min_value=0.5, max_value=10.0, allow_nan=False)),
@@ -122,9 +128,13 @@ def st_convert_generate_request(draw: st.DrawFn) -> ConvertGenerateRequest:
         wire_height_mm=draw(st.floats(min_value=0.04, max_value=1.0, allow_nan=False)),
         enable_coating=draw(st.booleans()),
         coating_height_mm=draw(st.floats(min_value=0.04, max_value=0.12, allow_nan=False)),
-        replacement_regions=draw(st.none() | st.lists(
-            st_color_replacement_item(), max_size=3,
-        )),
+        replacement_regions=draw(
+            st.none()
+            | st.lists(
+                st_color_replacement_item(),
+                max_size=3,
+            )
+        ),
         free_color_set=draw(st.none() | st.frozensets(st_hex_color, max_size=3)),
     )
 
@@ -160,8 +170,7 @@ def st_color_merge_preview_request(draw: st.DrawFn) -> ColorMergePreviewRequest:
 def st_extractor_extract_request(draw: st.DrawFn) -> ExtractorExtractRequest:
     """Generate a valid ExtractorExtractRequest instance."""
     corner_points = [
-        draw(st.tuples(st.integers(min_value=0, max_value=5000),
-                        st.integers(min_value=0, max_value=5000)))
+        draw(st.tuples(st.integers(min_value=0, max_value=5000), st.integers(min_value=0, max_value=5000)))
         for _ in range(4)
     ]
     return ExtractorExtractRequest(
@@ -171,7 +180,6 @@ def st_extractor_extract_request(draw: st.DrawFn) -> ExtractorExtractRequest:
         offset_y=draw(st.integers(min_value=-30, max_value=30)),
         zoom=draw(st.floats(min_value=0.8, max_value=1.2, allow_nan=False)),
         distortion=draw(st.floats(min_value=-0.2, max_value=0.2, allow_nan=False)),
-        white_balance=draw(st.booleans()),
         vignette_correction=draw(st.booleans()),
         page=draw(st_extractor_page),
     )
@@ -182,10 +190,12 @@ def st_extractor_manual_fix_request(draw: st.DrawFn) -> ExtractorManualFixReques
     """Generate a valid ExtractorManualFixRequest instance."""
     return ExtractorManualFixRequest(
         lut_path=draw(st_non_empty_str),
-        cell_coord=draw(st.tuples(
-            st.integers(min_value=0, max_value=100),
-            st.integers(min_value=0, max_value=100),
-        )),
+        cell_coord=draw(
+            st.tuples(
+                st.integers(min_value=0, max_value=100),
+                st.integers(min_value=0, max_value=100),
+            )
+        ),
         override_color=draw(st_hex_color),
     )
 
@@ -237,8 +247,7 @@ def test_schema_serialization_round_trip(instance: BaseModel) -> None:
     json_str = instance.model_dump_json()
     restored = type(instance).model_validate_json(json_str)
     assert instance == restored, (
-        f"Round-trip failed for {type(instance).__name__}: "
-        f"original={instance!r}, restored={restored!r}"
+        f"Round-trip failed for {type(instance).__name__}: " f"original={instance!r}, restored={restored!r}"
     )
 
 
@@ -264,9 +273,7 @@ def test_valid_data_passes_validation(instance: BaseModel) -> None:
     try:
         restored = type(instance).model_validate(data)
     except ValidationError as exc:
-        raise AssertionError(
-            f"Valid data rejected for {type(instance).__name__}: {exc}"
-        ) from exc
+        raise AssertionError(f"Valid data rejected for {type(instance).__name__}: {exc}") from exc
     assert restored == instance
 
 
@@ -326,9 +333,7 @@ def test_out_of_range_values_rejected(data: st.DataObject) -> None:
 
     **Validates: Requirements 3.7, 5.3**
     """
-    model_cls, field_name, min_val, max_val = data.draw(
-        st.sampled_from(CONSTRAINED_FIELDS)
-    )
+    model_cls, field_name, min_val, max_val = data.draw(st.sampled_from(CONSTRAINED_FIELDS))
 
     # Decide whether to go below min or above max
     go_below = data.draw(st.booleans())
@@ -336,19 +341,13 @@ def test_out_of_range_values_rejected(data: st.DataObject) -> None:
     if go_below:
         # Generate a value strictly below min_val
         if isinstance(min_val, float):
-            bad_value = data.draw(
-                st.floats(max_value=min_val, exclude_max=True,
-                          allow_nan=False, allow_infinity=False)
-            )
+            bad_value = data.draw(st.floats(max_value=min_val, exclude_max=True, allow_nan=False, allow_infinity=False))
         else:
             bad_value = data.draw(st.integers(max_value=int(min_val) - 1))
     else:
         # Generate a value strictly above max_val
         if isinstance(max_val, float):
-            bad_value = data.draw(
-                st.floats(min_value=max_val, exclude_min=True,
-                          allow_nan=False, allow_infinity=False)
-            )
+            bad_value = data.draw(st.floats(min_value=max_val, exclude_min=True, allow_nan=False, allow_infinity=False))
         else:
             bad_value = data.draw(st.integers(min_value=int(max_val) + 1))
 
@@ -400,8 +399,7 @@ def test_enum_field_string_serialization(instance: BaseModel) -> None:
     for field_name in enum_fields:
         value = parsed[field_name]
         assert isinstance(value, str), (
-            f"{model_name}.{field_name} serialized as {type(value).__name__} "
-            f"({value!r}), expected str"
+            f"{model_name}.{field_name} serialized as {type(value).__name__} " f"({value!r}), expected str"
         )
         # Ensure it's the enum *value* (e.g. "4-Color"), not the enum *name*
         # (e.g. "FOUR_COLOR")
@@ -410,8 +408,7 @@ def test_enum_field_string_serialization(instance: BaseModel) -> None:
         # Check value is one of the enum's string values
         valid_values = [e.value for e in enum_cls]
         assert value in valid_values, (
-            f"{model_name}.{field_name} = {value!r} is not a valid enum value. "
-            f"Expected one of: {valid_values}"
+            f"{model_name}.{field_name} = {value!r} is not a valid enum value. " f"Expected one of: {valid_values}"
         )
 
 
@@ -467,9 +464,7 @@ def test_optional_field_default_values(data: st.DataObject) -> None:
 
     **Validates: Requirements 11.3**
     """
-    model_cls, required_kwargs, field_name, expected = data.draw(
-        st.sampled_from(OPTIONAL_DEFAULTS)
-    )
+    model_cls, required_kwargs, field_name, expected = data.draw(st.sampled_from(OPTIONAL_DEFAULTS))
 
     # Randomize the required field values to add variety
     if "lut_name" in required_kwargs:
@@ -484,7 +479,4 @@ def test_optional_field_default_values(data: st.DataObject) -> None:
     instance = model_cls(**required_kwargs)
     actual = getattr(instance, field_name)
 
-    assert actual == expected, (
-        f"{model_cls.__name__}.{field_name}: expected default {expected!r}, "
-        f"got {actual!r}"
-    )
+    assert actual == expected, f"{model_cls.__name__}.{field_name}: expected default {expected!r}, " f"got {actual!r}"

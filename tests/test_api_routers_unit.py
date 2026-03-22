@@ -69,8 +69,10 @@ class TestConverterEndpoints:
     def test_post_preview_missing_lut_returns_404(self, client: TestClient) -> None:
         """POST /api/convert/preview with unknown LUT returns 404."""
         import io
+
         # Create a minimal valid PNG image
         from PIL import Image as _PILImage
+
         buf = io.BytesIO()
         _PILImage.new("RGB", (4, 4), (128, 64, 32)).save(buf, format="PNG")
         buf.seek(0)
@@ -263,8 +265,7 @@ def st_color_merge_preview_request(draw: st.DrawFn) -> Dict[str, Any]:
 def st_extractor_extract_request(draw: st.DrawFn) -> Dict[str, Any]:
     """Generate a valid JSON-serializable dict for ExtractorExtractRequest."""
     corner_points = [
-        draw(st.tuples(st.integers(min_value=0, max_value=5000),
-                        st.integers(min_value=0, max_value=5000)))
+        draw(st.tuples(st.integers(min_value=0, max_value=5000), st.integers(min_value=0, max_value=5000)))
         for _ in range(4)
     ]
     return ExtractorExtractRequest(
@@ -274,7 +275,6 @@ def st_extractor_extract_request(draw: st.DrawFn) -> Dict[str, Any]:
         offset_y=draw(st.integers(min_value=-30, max_value=30)),
         zoom=draw(st.floats(min_value=0.8, max_value=1.2, allow_nan=False)),
         distortion=draw(st.floats(min_value=-0.2, max_value=0.2, allow_nan=False)),
-        white_balance=draw(st.booleans()),
         vignette_correction=draw(st.booleans()),
         page=draw(st_extractor_page),
     ).model_dump(mode="json")
@@ -285,10 +285,12 @@ def st_extractor_manual_fix_request(draw: st.DrawFn) -> Dict[str, Any]:
     """Generate a valid JSON-serializable dict for ExtractorManualFixRequest."""
     return ExtractorManualFixRequest(
         lut_path=draw(st_non_empty_str),
-        cell_coord=draw(st.tuples(
-            st.integers(min_value=0, max_value=100),
-            st.integers(min_value=0, max_value=100),
-        )),
+        cell_coord=draw(
+            st.tuples(
+                st.integers(min_value=0, max_value=100),
+                st.integers(min_value=0, max_value=100),
+            )
+        ),
         override_color=draw(st_hex_color),
     ).model_dump(mode="json")
 
@@ -343,14 +345,7 @@ def test_all_endpoints_return_stub_response(data: st.DataObject) -> None:
 
     resp = client.post(path, json=payload)
 
-    assert resp.status_code == 200, (
-        f"Endpoint {path} returned {resp.status_code}, expected 200. "
-        f"Body: {resp.text}"
-    )
+    assert resp.status_code == 200, f"Endpoint {path} returned {resp.status_code}, expected 200. " f"Body: {resp.text}"
     body = resp.json()
-    assert "status" in body, (
-        f"Endpoint {path} response missing 'status' field: {body}"
-    )
-    assert body["status"] == "not_implemented", (
-        f"Endpoint {path} status={body['status']!r}, expected 'not_implemented'"
-    )
+    assert "status" in body, f"Endpoint {path} response missing 'status' field: {body}"
+    assert body["status"] == "not_implemented", f"Endpoint {path} status={body['status']!r}, expected 'not_implemented'"

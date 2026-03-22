@@ -65,7 +65,6 @@ function resetExtractorStore(): void {
     offset_y: 0,
     zoom: 1.0,
     distortion: 0.0,
-    white_balance: false,
     vignette_correction: false,
     isLoading: false,
     error: null,

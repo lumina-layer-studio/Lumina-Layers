@@ -73,7 +73,6 @@ async def extractor_extract(
     offset_y: int = Form(0, description="垂直采样偏移"),
     zoom: float = Form(1.0, description="透视校正缩放"),
     distortion: float = Form(0.0, description="畸变校正"),
-    white_balance: bool = Form(False, description="白平衡校正"),
     vignette_correction: bool = Form(False, description="暗角校正"),
     store: SessionStore = Depends(get_session_store),
     registry: FileRegistry = Depends(get_file_registry),
@@ -99,7 +98,7 @@ async def extractor_extract(
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
 
-    # Call core extraction (field name mapping: distortion->barrel, white_balance->wb, vignette_correction->bright)
+    # Call core extraction (field name mapping: distortion->barrel, vignette_correction->bright)
     try:
         vis_img, preview_img, lut_path, status_msg = run_extraction(
             img=img_arr,
@@ -108,7 +107,6 @@ async def extractor_extract(
             offset_y=offset_y,
             zoom=zoom,
             barrel=distortion,
-            wb=white_balance,
             bright=vignette_correction,
             color_mode=color_mode,
             page_choice=page,
@@ -127,6 +125,7 @@ async def extractor_extract(
     # For 8-Color mode: save page-specific temp file
     if "8-Color" in color_mode and lut_path:
         import sys
+
         if getattr(sys, "frozen", False):
             assets_dir = os.path.join(os.getcwd(), "assets")
         else:
@@ -147,6 +146,7 @@ async def extractor_extract(
     # For 5-Color Extended mode: save page-specific temp file
     if "5-Color" in color_mode and lut_path:
         import sys
+
         if getattr(sys, "frozen", False):
             assets_dir = os.path.join(os.getcwd(), "assets")
         else:
@@ -177,9 +177,7 @@ async def extractor_extract(
     lut_preview_id = ""
     if preview_img is not None:
         preview_bytes = _image_to_png_bytes(preview_img)
-        lut_preview_id = registry.register_bytes(
-            session_id, preview_bytes, "lut_preview.png"
-        )
+        lut_preview_id = registry.register_bytes(session_id, preview_bytes, "lut_preview.png")
 
     return ExtractResponse(
         session_id=session_id,
@@ -271,7 +269,9 @@ def extractor_merge_5color_extended(
             merged_stacks = np.zeros((len(merged_rgb), 0), dtype=np.int32)
 
         # Use metadata from first page, update for merged result
-        metadata = LUTManager.infer_default_metadata("lumina_lut", LUT_FILE_PATH, len(merged_rgb), color_mode="5-Color Extended")
+        metadata = LUTManager.infer_default_metadata(
+            "lumina_lut", LUT_FILE_PATH, len(merged_rgb), color_mode="5-Color Extended"
+        )
         LUTManager.save_keyed_json(LUT_FILE_PATH, merged_rgb, merged_stacks, metadata)
     except Exception as e:
         _handle_core_error(e, "5-Color Extended merge")
@@ -330,7 +330,9 @@ def extractor_merge_8color(
         else:
             merged_stacks = np.zeros((len(merged_rgb), 0), dtype=np.int32)
 
-        metadata = LUTManager.infer_default_metadata("lumina_lut", LUT_FILE_PATH, len(merged_rgb), color_mode="8-Color Max")
+        metadata = LUTManager.infer_default_metadata(
+            "lumina_lut", LUT_FILE_PATH, len(merged_rgb), color_mode="8-Color Max"
+        )
         LUTManager.save_keyed_json(LUT_FILE_PATH, merged_rgb, merged_stacks, metadata)
     except Exception as e:
         _handle_core_error(e, "8-Color merge")
@@ -378,15 +380,10 @@ def confirm_palette(
 
     session_data = store.get(request.session_id)
     if session_data is None:
-        raise HTTPException(
-            status_code=404, detail=f"Session {request.session_id} not found"
-        )
+        raise HTTPException(status_code=404, detail=f"Session {request.session_id} not found")
 
     palette_entries = [
-        PaletteEntry(
-            color=e.color.strip(), material=e.material, hex_color=e.hex_color
-        )
-        for e in request.palette
+        PaletteEntry(color=e.color.strip(), material=e.material, hex_color=e.hex_color) for e in request.palette
     ]
 
     # Persist palette to the LUT JSON file on disk

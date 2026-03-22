@@ -12,7 +12,6 @@ export async function extractColors(
     offset_y: number;
     zoom: number;
     distortion: number;
-    white_balance: boolean;
     vignette_correction: boolean;
   }
 ): Promise<ExtractResponse> {
@@ -25,7 +24,6 @@ export async function extractColors(
   fd.append("offset_y", String(params.offset_y));
   fd.append("zoom", String(params.zoom));
   fd.append("distortion", String(params.distortion));
-  fd.append("white_balance", String(params.white_balance));
   fd.append("vignette_correction", String(params.vignette_correction));
 
   const response = await apiClient.post<ExtractResponse>(

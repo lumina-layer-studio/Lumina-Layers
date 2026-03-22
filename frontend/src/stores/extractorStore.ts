@@ -29,7 +29,6 @@ export interface ExtractorState {
   offset_y: number;
   zoom: number;
   distortion: number;
-  white_balance: boolean;
   vignette_correction: boolean;
 
   // API 状态
@@ -75,7 +74,6 @@ export interface ExtractorActions {
   setOffsetY: (value: number) => void;
   setZoom: (value: number) => void;
   setDistortion: (value: number) => void;
-  setWhiteBalance: (value: boolean) => void;
   setVignetteCorrection: (value: boolean) => void;
   submitExtract: () => Promise<void>;
   submitManualFix: (row: number, col: number, color: string) => Promise<void>;
@@ -100,7 +98,6 @@ const DEFAULT_STATE: ExtractorState = {
   offset_y: 0,
   zoom: 1.0,
   distortion: 0.0,
-  white_balance: false,
   vignette_correction: false,
   isLoading: false,
   error: null,
@@ -208,8 +205,6 @@ export const useExtractorStore = create<ExtractorState & ExtractorActions>(
     setDistortion: (value: number) =>
       set({ distortion: clampValue(value, -0.2, 0.2) }),
 
-    setWhiteBalance: (value: boolean) => set({ white_balance: value }),
-
     setVignetteCorrection: (value: boolean) =>
       set({ vignette_correction: value }),
 
@@ -227,7 +222,6 @@ export const useExtractorStore = create<ExtractorState & ExtractorActions>(
           offset_y: state.offset_y,
           zoom: state.zoom,
           distortion: state.distortion,
-          white_balance: state.white_balance,
           vignette_correction: state.vignette_correction,
         });
         const BASE = "http://localhost:8000";

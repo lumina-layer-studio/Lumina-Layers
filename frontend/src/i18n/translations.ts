@@ -517,10 +517,6 @@ export const translations: Record<string, Record<"zh" | "en", string>> = {
     zh: "校正参数",
     en: "Correction",
   },
-  ext_wb: {
-    zh: "自动白平衡",
-    en: "Auto WB",
-  },
   ext_vignette: {
     zh: "暗角校正",
     en: "Vignette",
@@ -1481,10 +1477,6 @@ export const translations: Record<string, Record<"zh" | "en", string>> = {
   ext_distortion_label: {
     zh: "畸变校正 (distortion)",
     en: "Distortion Correction",
-  },
-  ext_wb_label: {
-    zh: "白平衡校正",
-    en: "White Balance Correction",
   },
   ext_vignette_label: {
     zh: "暗角校正",

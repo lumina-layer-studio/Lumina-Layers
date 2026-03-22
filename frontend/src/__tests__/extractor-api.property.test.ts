@@ -40,7 +40,6 @@ function resetExtractorStore(): void {
     offset_y: 0,
     zoom: 1.0,
     distortion: 0.0,
-    white_balance: false,
     vignette_correction: false,
     isLoading: false,
     error: null,
@@ -80,7 +79,6 @@ const arbValidExtractState = fc.record({
   offset_y: fc.integer({ min: -30, max: 30 }),
   zoom: fc.double({ min: 0.8, max: 1.2, noNaN: true, noDefaultInfinity: true }),
   distortion: fc.double({ min: -0.2, max: 0.2, noNaN: true, noDefaultInfinity: true }),
-  white_balance: fc.boolean(),
   vignette_correction: fc.boolean(),
 });
 
@@ -124,7 +122,6 @@ describe("Feature: extractor-calibration-tab, Property 7: API 请求载荷与 St
           offset_y: stateInput.offset_y,
           zoom: stateInput.zoom,
           distortion: stateInput.distortion,
-          white_balance: stateInput.white_balance,
           vignette_correction: stateInput.vignette_correction,
         });
 
@@ -154,7 +151,6 @@ describe("Feature: extractor-calibration-tab, Property 7: API 请求载荷与 St
         expect(calledParams.offset_y).toBe(stateInput.offset_y);
         expect(calledParams.zoom).toBe(stateInput.zoom);
         expect(calledParams.distortion).toBe(stateInput.distortion);
-        expect(calledParams.white_balance).toBe(stateInput.white_balance);
         expect(calledParams.vignette_correction).toBe(stateInput.vignette_correction);
       }),
       { numRuns: 100 }

@@ -47,7 +47,6 @@ export default function ExtractorPanel() {
     offset_y,
     zoom,
     distortion,
-    white_balance,
     vignette_correction,
     isLoading,
     error,
@@ -70,7 +69,6 @@ export default function ExtractorPanel() {
     setOffsetY,
     setZoom,
     setDistortion,
-    setWhiteBalance,
     setVignetteCorrection,
     submitExtract,
     submitMerge,
@@ -149,7 +147,6 @@ export default function ExtractorPanel() {
             <Slider label={t("ext_distortion_label")} value={distortion} min={-0.2} max={0.2} step={0.01} onChange={setDistortion} />
           </div>
           <div className="grid gap-3 lg:grid-cols-2 2xl:grid-cols-1">
-            <Checkbox label={t("ext_wb_label")} checked={white_balance} onChange={setWhiteBalance} />
             <Checkbox label={t("ext_vignette_label")} checked={vignette_correction} onChange={setVignetteCorrection} />
           </div>
         </section>

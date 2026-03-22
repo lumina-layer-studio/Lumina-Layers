@@ -86,6 +86,46 @@ class LuminaImageProcessor:
         
         self._load_lut(lut_path)
     
+    @staticmethod
+    def _get_svg_pixel_dims(svg_path):
+        """Parse SVG width/height in original pixel units from XML.
+        解析 SVG 文件的原始像素尺寸。
+
+        Returns:
+            tuple[float, float]: (width_px, height_px), or (0, 0) on failure.
+        """
+        try:
+            import xml.etree.ElementTree as ET
+            tree = ET.parse(svg_path)
+            root = tree.getroot()
+
+            def strip_unit(s):
+                if not s:
+                    return 0.0
+                s = s.strip()
+                for unit in ('px', 'pt', 'mm', 'cm', 'in'):
+                    if s.endswith(unit):
+                        s = s[:-len(unit)].strip()
+                        break
+                try:
+                    return float(s)
+                except (ValueError, TypeError):
+                    return 0.0
+
+            w = strip_unit(root.get('width', ''))
+            h = strip_unit(root.get('height', ''))
+            if w > 0 and h > 0:
+                return w, h
+
+            vb = root.get('viewBox', '')
+            if vb:
+                parts = vb.replace(',', ' ').split()
+                if len(parts) == 4:
+                    return float(parts[2]), float(parts[3])
+        except Exception:
+            pass
+        return 0.0, 0.0
+
     def _load_svg(self, svg_path, target_width_mm, pixels_per_mm: float = 20.0):
         """
         [Final Fix] Safe Padding + Dual-Pass Transparency Detection.
@@ -119,18 +159,26 @@ class LuminaImageProcessor:
         # 1. 读取 SVG
         drawing = svg2rlg(svg_path)
         
-        # --- 步骤 A: 用几何边界确定内容区域 ---
-        # getBounds() 返回 SVG 几何坐标系下的内容边界，不依赖像素透明度检测，
-        # 在任何分辨率下都完全可靠，彻底消除因抗锯齿导致的内容被裁切问题。
-        x1, y1, x2, y2 = drawing.getBounds()
-        raw_w = x2 - x1
-        raw_h = y2 - y1
-
-        # 平移至原点，仅保留 2px 的固定安全边距（不再使用百分比浮动边距）
-        BORDER_PX_PRE = 4  # 渲染前在画布上留的固定余量（坐标单位）
-        drawing.translate(-x1, -y1)
-        drawing.width  = raw_w
-        drawing.height = raw_h
+        # svglib converts SVG width/height from px to pt (×0.75) but keeps
+        # path coordinates in original SVG user units. The internal Y-flip
+        # transform also uses pt height. Fix both to use original px dims
+        # so the canvas matches the content coordinate system.
+        svg_w, svg_h = self._get_svg_pixel_dims(svg_path)
+        if svg_w > 0 and svg_h > 0:
+            main_group = drawing.contents[0]
+            if hasattr(main_group, 'transform') and main_group.transform:
+                t = list(main_group.transform)
+                if len(t) >= 6 and t[3] == -1:
+                    t[5] = svg_h
+                    main_group.transform = tuple(t)
+            drawing.width = svg_w
+            drawing.height = svg_h
+            raw_w, raw_h = svg_w, svg_h
+        else:
+            raw_w, raw_h = drawing.width, drawing.height
+        if raw_w <= 0 or raw_h <= 0:
+            raise ValueError(f"SVG has zero-size dimensions: {raw_w}x{raw_h}")
+        print(f"[SVG] Canvas: {raw_w:.1f}x{raw_h:.1f}")
 
         # 2. 缩放到目标像素宽度（强制最低渲染质量保证 Dual-Pass 效果）
         target_width_px = int(target_width_mm * pixels_per_mm)
@@ -174,17 +222,23 @@ class LuminaImageProcessor:
             r, g, b = cv2.split(arr_white)
             img_final = cv2.merge([r, g, b, alpha_mask])
 
-            # ── 几何裁切（替代原 Dual-Pass Crop 像素检测）──────────────────
-            # 渲染画布已对齐到内容原点，直接取 render_w × render_h 即为完整内容。
-            # 仅在数组边界内添加 2px 固定留白，避免抗锯齿边缘被截断。
+            # ── 像素级内容裁切 ──────────────────────────────────────────
+            # 用 alpha 掩膜检测实际内容边界，比 getBounds() 几何估算更准确：
+            # 正确处理 stroke 宽度、嵌套 transform、text 等场景。
             BORDER = 2
             h_arr, w_arr = img_final.shape[:2]
-            x_start = max(0, -BORDER)
-            y_start = max(0, -BORDER)
-            x_end   = min(w_arr, render_w + BORDER)
-            y_end   = min(h_arr, render_h + BORDER)
-            img_final = img_final[y_start:y_end, x_start:x_end]
-            print(f"[SVG] Geometry Crop: {img_final.shape[1]}x{img_final.shape[0]} (bounds-based, lossless)")
+            content_rows = np.any(alpha_mask > 0, axis=1)
+            content_cols = np.any(alpha_mask > 0, axis=0)
+
+            if np.any(content_rows) and np.any(content_cols):
+                row_indices = np.where(content_rows)[0]
+                col_indices = np.where(content_cols)[0]
+                y_min = max(0, row_indices[0] - BORDER)
+                x_min = max(0, col_indices[0] - BORDER)
+                y_max = min(h_arr - 1, row_indices[-1] + BORDER)
+                x_max = min(w_arr - 1, col_indices[-1] + BORDER)
+                img_final = img_final[y_min:y_max + 1, x_min:x_max + 1]
+            print(f"[SVG] Content-aware crop: {img_final.shape[1]}x{img_final.shape[0]} px")
 
             # 若渲染时为保证质量而放大，缩回目标像素宽度
             if render_width_px > target_width_px and target_width_px > 0:
@@ -520,25 +574,16 @@ class LuminaImageProcessor:
         
         if is_svg:
             print("[IMAGE_PROCESSOR] SVG detected - Engaging Ultra-High-Fidelity Vector Mode")
-            img_arr = self._load_svg(image_path, target_width_mm, pixels_per_mm=10.0)
-            # SVG reset to PIL object to reuse subsequent logic (e.g., get dimensions)
+            SVG_PIXELS_PER_MM = 10.0
+            img_arr = self._load_svg(image_path, target_width_mm, pixels_per_mm=SVG_PIXELS_PER_MM)
             img = Image.fromarray(img_arr)
             
-            # [CRITICAL] SVG is also a type of High-Fidelity, but it doesn't need denoising
-            # Force override filter parameters, because vector graphics have no noise, no need to blur
-            # 
-            # [SUPER-SAMPLING STRATEGY]
-            # We render at 20 px/mm (2x standard), which physically eliminates jaggies
-            # through super-sampling. This is superior to blur-based anti-aliasing
-            # because it preserves sharp edges while making curves smooth.
             blur_kernel = 0
             smooth_sigma = 0
             print("[IMAGE_PROCESSOR] SVG Mode: Filters disabled (Vector source is clean)")
-            print("[IMAGE_PROCESSOR] Super-sampling at 20 px/mm eliminates jagged edges naturally")
             
-            # Recalculate target_w/h (based on rendered dimensions)
             target_w, target_h = img.size
-            pixel_to_mm_scale = 0.05  # 20 px/mm (1/20) - Ultra-High-Fidelity
+            pixel_to_mm_scale = 1.0 / SVG_PIXELS_PER_MM
         else:
             # [Original Logic] Bitmap loading
             # Load image

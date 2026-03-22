@@ -593,15 +593,23 @@ class VectorProcessor:
             return None
 
         raw_shapes = []
+        skipped_types = {}
+        stroke_only_count = 0
         print("[VECTOR] Parsing SVG geometry...")
 
         for element in svg.elements():
             if not isinstance(element, (Path, Shape)):
-                continue
-            if element.fill is None or element.fill.value is None:
+                type_name = type(element).__name__
+                skipped_types[type_name] = skipped_types.get(type_name, 0) + 1
                 continue
 
-            rgb = (element.fill.red, element.fill.green, element.fill.blue)
+            has_fill = element.fill is not None and element.fill.value is not None
+            has_stroke = (element.stroke is not None
+                          and element.stroke.value is not None
+                          and element.stroke.value != "none")
+
+            if not has_fill and not has_stroke:
+                continue
 
             if isinstance(element, Shape) and not isinstance(element, Path):
                 try:
@@ -609,18 +617,17 @@ class VectorProcessor:
                 except Exception:
                     continue
 
-            sampled_any = False
+            if has_fill:
+                rgb = (element.fill.red, element.fill.green, element.fill.blue)
+            else:
+                rgb = (element.stroke.red, element.stroke.green, element.stroke.blue)
+                stroke_only_count += 1
+
             try:
                 subpaths = list(element.as_subpaths())
             except Exception:
                 subpaths = []
 
-            # Collect all valid subpath polygons first, then combine using the
-            # even-odd fill rule (XOR / symmetric_difference chain).  This correctly
-            # handles paths with interior holes: a subpath contained inside another
-            # produces a ring (filled outer minus transparent inner) rather than two
-            # independent solid polygons — which would create spurious geometry where
-            # there should be transparent cutouts.
             subpath_polys = []
             for subpath in subpaths:
                 try:
@@ -633,38 +640,52 @@ class VectorProcessor:
                 subpath_polys.append(poly)
 
             if len(subpath_polys) == 1:
-                raw_shapes.append({"poly": subpath_polys[0], "color": rgb})
-                sampled_any = True
+                result_poly = subpath_polys[0]
             elif len(subpath_polys) > 1:
                 combined = subpath_polys[0]
                 for sp in subpath_polys[1:]:
                     try:
                         combined = combined.symmetric_difference(sp)
                     except Exception:
-                        pass  # keep accumulated result if XOR fails for this step
+                        pass
                 if combined is not None and not combined.is_empty:
                     if not combined.is_valid:
                         combined = combined.buffer(0)
-                    if not combined.is_empty:
-                        raw_shapes.append({"poly": combined, "color": rgb})
-                        sampled_any = True
+                    result_poly = combined if not combined.is_empty else None
+                else:
+                    result_poly = None
+            else:
+                result_poly = None
 
-            if sampled_any:
+            if result_poly is None:
+                try:
+                    result_poly = _sample_path_to_polygon(element)
+                except Exception:
+                    continue
+
+            if result_poly is None:
                 continue
 
-            # Fallback for compatibility if subpath splitting is unavailable
-            # or yields no valid polygon.
-            try:
-                poly = _sample_path_to_polygon(element)
-                if poly is not None:
-                    raw_shapes.append({"poly": poly, "color": rgb})
-            except Exception:
-                continue
+            if not has_fill and has_stroke:
+                try:
+                    sw = float(getattr(element, 'stroke_width', 1.0) or 1.0)
+                    result_poly = result_poly.buffer(sw / 2.0, cap_style='round',
+                                                     join_style='round')
+                    if result_poly.is_empty:
+                        continue
+                except Exception:
+                    continue
 
+            raw_shapes.append({"poly": result_poly, "color": rgb})
+
+        if skipped_types:
+            print(f"[VECTOR] Skipped non-path elements: {skipped_types}")
+        if stroke_only_count > 0:
+            print(f"[VECTOR] Converted {stroke_only_count} stroke-only elements to filled polygons")
         if not raw_shapes:
             raise ValueError("No valid shapes found in SVG")
 
-        # Global bounding box
+        # Global bounding box — union of parsed shapes and SVG viewport
         min_xs, min_ys, max_xs, max_ys = [], [], [], []
         for item in raw_shapes:
             bx0, by0, bx1, by1 = item["poly"].bounds
@@ -674,8 +695,29 @@ class VectorProcessor:
             max_ys.append(by1)
 
         gx0, gy0 = min(min_xs), min(min_ys)
-        real_w = max(max_xs) - gx0
-        real_h = max(max_ys) - gy0
+        gx1, gy1 = max(max_xs), max(max_ys)
+
+        # Expand bbox to at least cover the SVG's own viewport, so that
+        # even if some edge elements weren't parsed, the model's coordinate
+        # system still matches the SVG's intended dimensions.
+        try:
+            vb = getattr(svg, 'viewbox', None)
+            if vb is not None:
+                vb_x = float(getattr(vb, 'x', 0) or 0)
+                vb_y = float(getattr(vb, 'y', 0) or 0)
+                vb_w = float(getattr(vb, 'width', 0) or 0)
+                vb_h = float(getattr(vb, 'height', 0) or 0)
+                if vb_w > 0 and vb_h > 0:
+                    gx0 = min(gx0, vb_x)
+                    gy0 = min(gy0, vb_y)
+                    gx1 = max(gx1, vb_x + vb_w)
+                    gy1 = max(gy1, vb_y + vb_h)
+                    print(f"[VECTOR] SVG viewBox: ({vb_x}, {vb_y}, {vb_w}, {vb_h})")
+        except Exception:
+            pass
+
+        real_w = gx1 - gx0
+        real_h = gy1 - gy0
 
         print(f"[VECTOR] Global bounds: x={gx0:.1f}, y={gy0:.1f}, w={real_w:.1f}, h={real_h:.1f}")
         if real_w == 0:

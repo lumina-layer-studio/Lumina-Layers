@@ -162,7 +162,7 @@ export default function LutColorGrid() {
   const lutColorsLoading = useConverterStore((s) => s.lutColorsLoading);
   const lutColorsLutName = useConverterStore((s) => s.lutColorsLutName);
   const selectionMode = useConverterStore((s) => s.selectionMode);
-  const selectedColors = useConverterStore((s) => s.selectedColors);
+  const selectedRegions = useConverterStore((s) => s.selectedRegions);
   const replacePreviewLoading = useConverterStore((s) => s.replacePreviewLoading);
   const setPendingReplacement = useConverterStore((s) => s.setPendingReplacement);
   const pendingReplacement = useConverterStore((s) => s.pendingReplacement);
@@ -363,13 +363,13 @@ export default function LutColorGrid() {
         break;
       }
       case 'multi-select': {
-        // 多选模式：需要先选中至少一个源色
-        if (selectedColors.size === 0) return;
+        // 多选模式（多区域）：需要先在 3D 模型上选中至少一个连通区域
+        if (selectedRegions.length === 0) return;
         setPendingReplacement({
           sourceHex: selectedColor ?? '',
           targetHex: hexNoHash,
           mode: 'multi-select',
-          sourceColors: Array.from(selectedColors),
+          sourceRegions: [...selectedRegions],
         });
         break;
       }
@@ -404,15 +404,18 @@ export default function LutColorGrid() {
             <div className={cx(workstationInsetCardClass, "flex items-center gap-1.5 px-3 py-2")}>
               {/* Source color swatch(es) */}
               <div className="flex items-center gap-0.5">
-                {pendingReplacement.mode === 'multi-select' && pendingReplacement.sourceColors ? (
-                  pendingReplacement.sourceColors.map((hex) => (
-                    <span
-                      key={hex}
-                      className="inline-block h-5 w-5 rounded-lg border border-slate-400/80 dark:border-slate-500/80"
-                      style={{ backgroundColor: `#${hex}` }}
-                      title={`#${hex}`}
-                    />
-                  ))
+                {pendingReplacement.mode === 'multi-select' && pendingReplacement.sourceRegions ? (
+                  pendingReplacement.sourceRegions.map((region) => {
+                    const hex = region.colorHex.replace(/^#/, "");
+                    return (
+                      <span
+                        key={region.regionId}
+                        className="inline-block h-5 w-5 rounded-lg border border-slate-400/80 dark:border-slate-500/80"
+                        style={{ backgroundColor: `#${hex}` }}
+                        title={`#${hex} (${region.pixelCount}px)`}
+                      />
+                    );
+                  })
                 ) : (
                   <span
                     className="inline-block h-5 w-5 rounded-lg border border-slate-400/80 dark:border-slate-500/80"

@@ -199,8 +199,8 @@ export default function PalettePanel() {
   const heightmap_max_height = useConverterStore((s) => s.heightmap_max_height);
   const selectionMode = useConverterStore((s) => s.selectionMode);
   const setSelectionMode = useConverterStore((s) => s.setSelectionMode);
-  const selectedColors = useConverterStore((s) => s.selectedColors);
-  const toggleColorInSelection = useConverterStore((s) => s.toggleColorInSelection);
+  const selectedRegions = useConverterStore((s) => s.selectedRegions);
+  const removeRegionFromSelection = useConverterStore((s) => s.removeRegionFromSelection);
   const free_color_set = useConverterStore((s) => s.free_color_set);
   const toggleFreeColor = useConverterStore((s) => s.toggleFreeColor);
   const clearFreeColors = useConverterStore((s) => s.clearFreeColors);
@@ -212,29 +212,24 @@ export default function PalettePanel() {
   const handleSelect = (hex: string) => {
     switch (selectionMode) {
       case 'current':
-        // 当前模式 = 单区域替换，调色板点击不响应（由 3D 预览处理）
+      case 'multi-select':
+      case 'region':
         break;
       case 'select-all':
-        // 全选模式 = 全局单色替换，点击调色板选中一个颜色
         setSelectedColor(selectedColor === hex ? null : hex);
-        break;
-      case 'multi-select':
-        // 多选模式 = 可复选，点击切换选中状态
-        // 同时设置 selectedColor 以触发 RGB 光带高亮
-        setSelectedColor(selectedColor === hex ? null : hex);
-        toggleColorInSelection(hex);
-        break;
-      case 'region':
-        // 局部区域模式，调色板点击不响应（由 3D 预览处理）
         break;
     }
   };
 
+  // Multi-select highlights colors that have at least one region selected
+  const multiSelectHexSet = selectionMode === 'multi-select'
+    ? new Set(selectedRegions.map((r) => r.colorHex.replace(/^#/, "")))
+    : null;
+
   const getIsSelected = (hex: string): boolean => {
-    if (selectionMode === 'multi-select') {
-      return selectedColors.has(hex);
+    if (multiSelectHexSet) {
+      return multiSelectHexSet.has(hex);
     }
-    // 所有其他模式统一使用 selectedColor 高亮（RGB 光带效果一致）
     return selectedColor === hex;
   };
 
@@ -295,6 +290,28 @@ export default function PalettePanel() {
               onClick={() => setSelectionMode('region')}
             />
           </div>
+
+          {/* Multi-select region indicator */}
+          {selectionMode === 'multi-select' && selectedRegions.length > 0 && (
+            <div className={cx(workstationInsetCardClass, "flex flex-wrap items-center gap-2 px-3 py-2.5")}>
+              <span className="text-[clamp(0.55rem,0.75vw,0.625rem)] font-medium text-amber-500 dark:text-amber-400">
+                {t("palette_multi_select_region_count").replace("{count}", String(selectedRegions.length))}
+              </span>
+              {selectedRegions.map((region) => {
+                const hex = region.colorHex.replace(/^#/, "");
+                return (
+                  <button
+                    key={region.regionId}
+                    type="button"
+                    onClick={() => removeRegionFromSelection(region.regionId)}
+                    className="h-5 w-5 rounded-lg border-2 border-amber-400 shadow-sm transition-transform hover:scale-110"
+                    style={{ backgroundColor: `#${hex}` }}
+                    title={`#${hex} (${region.pixelCount}px) — ${t("palette_multi_select_click_remove")}`}
+                  />
+                );
+              })}
+            </div>
+          )}
 
           {/* Free color buttons */}
           <div className="flex flex-wrap gap-2">

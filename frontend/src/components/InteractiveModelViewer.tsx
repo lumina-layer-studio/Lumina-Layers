@@ -192,11 +192,10 @@ function InteractiveModelViewer({
       parent.remove(mesh);
     }
 
-    // Compute model bounding box from all meshes after centering
+    // Compute model bounding box from color meshes only (after centering).
+    // Do NOT include the clone — it may be empty or contain stale transforms
+    // that pollute the bounds and cause pixel coordinate offsets.
     const boundsBox = new THREE.Box3();
-    // Add bounds from the remaining non-color scene
-    boundsBox.expandByObject(clone);
-    // Add bounds from each color mesh (geometry already in centered world space)
     for (const mesh of colorMeshList) {
       mesh.geometry.computeBoundingBox();
       if (mesh.geometry.boundingBox) {
@@ -292,7 +291,9 @@ function InteractiveModelViewer({
 
   // Read selectionMode and related state for region click handling
   const selectionMode = useConverterStore((s) => s.selectionMode);
+  const selectedRegions = useConverterStore((s) => s.selectedRegions);
   const detectRegion = useConverterStore((s) => s.detectRegion);
+  const detectAndAccumulateRegion = useConverterStore((s) => s.detectAndAccumulateRegion);
   const regionData = useConverterStore((s) => s.regionData);
   const previewPixelWidth = useConverterStore((s) => s.previewPixelWidth);
   const previewPixelHeight = useConverterStore((s) => s.previewPixelHeight);
@@ -315,48 +316,37 @@ function InteractiveModelViewer({
         if (hitMesh.name.startsWith("color_")) {
           colorHitRef.current = true;
 
-          if (selectionMode === "current" || selectionMode === "region") {
-            // 当前模式 和 局部区域模式: 3D 点击 → region-detect（单区域选择）
-            // 不立即设置 selectedColor，等 detectRegion 返回后由 store 设置
-            // 这样 RGB 光带只高亮点击的那个连通区域，而非该颜色的所有区域
-            if (modelBounds && previewPixelWidth && previewPixelHeight) {
-              const hitPoint = intersects[0].point;
-              // Undo group scale to get geometry-space coordinates
-              const geoX = hitPoint.x / scaleX;
-              const geoY = hitPoint.y / scaleY;
-              // Normalize within model bounds (0..1)
+          if (selectionMode === "current" || selectionMode === "region" || selectionMode === "multi-select") {
+            // 当前/局部区域/多选模式: 3D 点击 → region-detect
+            if (groupRef.current && modelBounds && previewPixelWidth && previewPixelHeight) {
+              // Use worldToLocal to correctly undo ALL group transforms
+              const localPoint = groupRef.current.worldToLocal(intersects[0].point.clone());
               const modelW = modelBounds.maxX - modelBounds.minX;
               const modelH = modelBounds.maxY - modelBounds.minY;
               if (modelW > 0 && modelH > 0) {
-                const normX = (geoX - modelBounds.minX) / modelW;
-                // Y is flipped: 3D Y-up → image Y-down
-                const normY = 1 - (geoY - modelBounds.minY) / modelH;
+                const normX = (localPoint.x - modelBounds.minX) / modelW;
+                const normY = 1 - (localPoint.y - modelBounds.minY) / modelH;
                 const pixelX = Math.round(normX * (previewPixelWidth - 1));
                 const pixelY = Math.round(normY * (previewPixelHeight - 1));
                 const clampedX = Math.max(0, Math.min(previewPixelWidth - 1, pixelX));
                 const clampedY = Math.max(0, Math.min(previewPixelHeight - 1, pixelY));
-                detectRegion(clampedX, clampedY);
+                if (selectionMode === "multi-select") {
+                  detectAndAccumulateRegion(clampedX, clampedY);
+                } else {
+                  detectRegion(clampedX, clampedY);
+                }
               }
             }
           } else {
-            // 全选模式 和 多选模式: 3D 点击 → 切换颜色选择
+            // 全选模式: 3D 点击 → 切换颜色选择
             const hex = extractHexFromMeshName(hitMesh.name);
-            if (selectionMode === "select-all") {
-              // 全选模式: 3D 点击选中该颜色用于全局替换
-              const result = toggleColorSelection(selectedColor, hex);
-              onColorClick(result);
-            } else {
-              // 多选模式: 3D 点击切换该颜色在多选集合中的状态
-              // 同时设置 selectedColor 以触发 RGB 光带高亮
-              onColorClick(selectedColor === hex ? null : hex);
-              const { toggleColorInSelection } = useConverterStore.getState();
-              toggleColorInSelection(hex);
-            }
+            const result = toggleColorSelection(selectedColor, hex);
+            onColorClick(result);
           }
         }
       }
     },
-    [threeCtx.gl, threeCtx.camera, colorMeshes, selectedColor, onColorClick, selectionMode, detectRegion, modelBounds, previewPixelWidth, previewPixelHeight, scaleX, scaleY],
+    [threeCtx.gl, threeCtx.camera, colorMeshes, selectedColor, onColorClick, selectionMode, detectRegion, detectAndAccumulateRegion, modelBounds, previewPixelWidth, previewPixelHeight, scaleX, scaleY],
   );
 
   // Expose colorHitRef check so Scene3D's onPointerMissed can query it
@@ -462,42 +452,49 @@ function InteractiveModelViewer({
       }
     }
 
-    // Draw contour outline for selected color using backend-computed contours.
+    // Draw contour outlines for selected color(s) using backend-computed contours.
     // Contours are in raw world coords (mm, origin at bottom-left of image).
     // The GLB model is centered by subtracting sceneCenter, so apply same offset.
-    // In current/region mode: use regionData.contours (single connected region only)
-    // In select-all/multi-select mode: use colorContours (all regions of that color)
+    // - current/region: regionData.contours (single connected region)
+    // - select-all: colorContours[selectedColor] (all regions of that color)
+    // - multi-select: each selectedRegion's own contours (individual connected regions)
     const currentRegionData = regionData;
     const currentSelectionMode = selectionMode;
-    let polygons: number[][][] | null = null;
 
-    if (selectedColor && modelBounds) {
+    const outlineTargets: Array<{ hex: string; polygons: number[][][] }> = [];
+
+    if (modelBounds) {
       if (
         (currentSelectionMode === "current" || currentSelectionMode === "region") &&
+        selectedColor &&
         currentRegionData?.contours &&
         currentRegionData.contours.length > 0
       ) {
-        // 当前/局部区域模式：只高亮点击的那个连通区域
-        polygons = currentRegionData.contours;
-      } else if (colorContours[selectedColor]) {
-        // 全选/多选模式：高亮该颜色的所有区域
-        polygons = colorContours[selectedColor];
+        outlineTargets.push({ hex: selectedColor, polygons: currentRegionData.contours });
+      } else if (currentSelectionMode === "multi-select" && selectedRegions.length > 0) {
+        for (const region of selectedRegions) {
+          if (region.contours && region.contours.length > 0) {
+            const hex = region.colorHex.replace(/^#/, "");
+            outlineTargets.push({ hex, polygons: region.contours });
+          }
+        }
+      } else if (selectedColor && colorContours[selectedColor]) {
+        outlineTargets.push({ hex: selectedColor, polygons: colorContours[selectedColor] });
       }
     }
 
-    if (polygons && selectedColor && modelBounds) {
-      // Outline sits on top of the color layer (which is on top of the backing plate)
+    const offsetX = -sceneCenter.x;
+    const offsetY = -sceneCenter.y;
+
+    for (const { hex, polygons } of outlineTargets) {
       const colorTopZ = spacerThick + COLOR_LAYER_HEIGHT + 0.1;
       const topZ = enableRelief
-        ? spacerThick + (colorHeightMap[selectedColor] ?? COLOR_LAYER_HEIGHT) + 0.1
+        ? spacerThick + (colorHeightMap[hex] ?? COLOR_LAYER_HEIGHT) + 0.1
         : colorTopZ;
-      const offsetX = -sceneCenter.x;
-      const offsetY = -sceneCenter.y;
 
       for (const polygon of polygons) {
         if (polygon.length < 3) continue;
         const verts: number[] = [];
-        // Compute cumulative arc length for rainbow hue mapping
         const cumLen: number[] = [0];
         for (let i = 0; i < polygon.length; i++) {
           const [x0, y0] = polygon[i];
@@ -508,7 +505,6 @@ function InteractiveModelViewer({
         }
         const totalLen = cumLen[cumLen.length - 1] || 1;
 
-        // Store normalized arc-length ratios for animation
         const arcPairs: Array<[number, number]> = [];
         for (let i = 0; i < polygon.length; i++) {
           const [x0, y0] = polygon[i];
@@ -520,7 +516,6 @@ function InteractiveModelViewer({
           arcPairs.push([cumLen[i] / totalLen, cumLen[i + 1] / totalLen]);
         }
 
-        // Initialize color buffer (will be updated each frame by useFrame)
         const colorArr = new Float32Array(arcPairs.length * 6);
         const lineGeo = new THREE.BufferGeometry();
         lineGeo.setAttribute(
@@ -543,7 +538,7 @@ function InteractiveModelViewer({
         outlineArcRef.current.push(arcPairs);
       }
     }
-  }, [colorMeshes, mirrorMeshes, colorRemapMap, colorHeightMap, selectedColor, enableRelief, baseHeight, colorContours, modelBounds, sceneCenter, spacerThick, isDoubleSided, backingMesh, backingPlateMesh, regionData, selectionMode]);
+  }, [colorMeshes, mirrorMeshes, colorRemapMap, colorHeightMap, selectedColor, selectedRegions, enableRelief, baseHeight, colorContours, modelBounds, sceneCenter, spacerThick, isDoubleSided, backingMesh, backingPlateMesh, regionData, selectionMode]);
 
   // Flowing RGB animation: shift hue offset each frame for a "light strip" effect.
   const tmpColorAnim = useRef(new THREE.Color());

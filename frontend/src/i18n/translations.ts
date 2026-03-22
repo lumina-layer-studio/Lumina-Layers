@@ -717,6 +717,18 @@ export const translations: Record<string, Record<"zh" | "en", string>> = {
     zh: "局部区域",
     en: "Region",
   },
+  palette_multi_select_count: {
+    zh: "已选 {count} 色",
+    en: "{count} selected",
+  },
+  palette_multi_select_region_count: {
+    zh: "已选 {count} 个区域",
+    en: "{count} regions selected",
+  },
+  palette_multi_select_click_remove: {
+    zh: "点击取消选择",
+    en: "Click to deselect",
+  },
 
   // ==================== Color Merging ====================
   merge_enable_label: {

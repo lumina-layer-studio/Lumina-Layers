@@ -696,6 +696,10 @@ class LUTManager:
             layer_order="Top2Bottom",
         )
         print(f"[LUT_MANAGER] Loaded flat-list JSON: {len(rgb_list)} entries, {len(palette)} colors from {file_path}")
+        if stacks is not None:
+            print(f"[LUT_MANAGER] Generated stacks array: shape={stacks.shape}, dtype={stacks.dtype}")
+        else:
+            print(f"[LUT_MANAGER] WARNING: stacks is None!")
         return rgb, stacks, metadata
 
     @classmethod

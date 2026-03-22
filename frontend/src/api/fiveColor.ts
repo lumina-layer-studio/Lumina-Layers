@@ -18,3 +18,11 @@ export async function queryFiveColor(request: FiveColorQueryRequest): Promise<Fi
   );
   return response.data;
 }
+
+/** 清空 LUT 引擎缓存 */
+export async function clearFiveColorCache(): Promise<{ success: boolean; message: string }> {
+  const response = await apiClient.post<{ success: boolean; message: string }>(
+    "/five-color/clear-cache"
+  );
+  return response.data;
+}

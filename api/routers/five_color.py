@@ -32,6 +32,24 @@ _engine_cache: dict[str, ColorQueryEngine] = {}
 _engine_cache_lock = threading.Lock()
 
 
+def clear_engine_cache():
+    """Clear the LUT engine cache.
+    清空 LUT 引擎缓存。
+    """
+    with _engine_cache_lock:
+        _engine_cache.clear()
+    print("[FIVE_COLOR] Engine cache cleared")
+
+
+@router.post("/clear-cache")
+def clear_cache():
+    """Clear the LUT engine cache.
+    清空 LUT 引擎缓存，强制重新加载所有 LUT。
+    """
+    clear_engine_cache()
+    return {"success": True, "message": "Cache cleared successfully"}
+
+
 def _extract_sources_from_keyed_json(json_path: str) -> list[str]:
     """Extract per-entry 'source' fields from a Keyed JSON LUT file.
     从 Keyed JSON LUT 文件中提取每条记录的 source 字段。
@@ -161,6 +179,12 @@ def get_base_colors(lut_name: str = Query(..., description="LUT 显示名称")) 
     ]
 
     combinations = engine.stack_lut.tolist() if engine.stack_lut is not None else None
+    
+    # Debug logging
+    if engine.stack_lut is not None:
+        print(f"[DEBUG] Returning {len(engine.stack_lut)} combinations for {lut_name}")
+    else:
+        print(f"[DEBUG] WARNING: stack_lut is None for {lut_name}")
 
     return BaseColorsResponse(
         lut_name=display_name,

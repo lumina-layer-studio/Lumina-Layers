@@ -103,12 +103,17 @@ export default function FiveColorQueryPanel() {
               />
             </div>
 
-            <div className="max-h-[40vh] overflow-y-auto pr-1">
+            <div className="pr-1">
               {baseColors.length > 0 ? (
                 <div className="flex flex-col gap-3">
                   {combinations && combinations.length > 0 && (
-                    <div className="text-xs text-blue-500 font-medium px-2">
-                      已加载 {combinations.length} 种有效组合，将智能过滤不可选颜色
+                    <div className="flex flex-col gap-1 px-2">
+                      <div className="text-xs text-blue-600 dark:text-blue-400 font-medium">
+                        ✓ 已加载 {combinations.length} 种有效组合
+                      </div>
+                      <div className="text-xs text-slate-500 dark:text-slate-400">
+                        灰色颜色表示无法形成有效组合（智能过滤已启用）
+                      </div>
                     </div>
                   )}
                   <div className={`grid gap-2 ${workspace.isCompact ? "grid-cols-2" : "grid-cols-2 sm:grid-cols-3 xl:grid-cols-2 2xl:grid-cols-3"}`}>
@@ -236,9 +241,19 @@ export default function FiveColorQueryPanel() {
             )}
 
             {queryResult && !queryResult.found && (
-              <StatusBanner tone="warning">
-                {t("five_color_not_found")}
-              </StatusBanner>
+              <div className="flex flex-col gap-2">
+                <StatusBanner tone="warning">
+                  {t("five_color_not_found")}
+                </StatusBanner>
+                <div className="text-xs text-slate-600 dark:text-slate-400 bg-slate-50 dark:bg-slate-900/50 rounded-lg p-3 border border-slate-200 dark:border-slate-700">
+                  <div className="font-medium mb-1">💡 建议尝试：</div>
+                  <ul className="list-disc list-inside space-y-0.5 ml-1">
+                    <li>点击"反转"按钮尝试相反的颜色顺序</li>
+                    <li>更换不同的颜色组合</li>
+                    <li>注意灰色颜色表示该位置无法形成有效组合</li>
+                  </ul>
+                </div>
+              </div>
             )}
           </div>
         )}

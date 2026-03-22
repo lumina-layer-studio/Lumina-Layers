@@ -569,12 +569,21 @@ class LUTManager:
                 continue
             # Prefer stored RGB for exact roundtrip; fall back to Lab→RGB
             rgb_val = entry.get("rgb")
+            hex_val = entry.get("hex")
             lab = entry.get("lab")
+            
             if rgb_val and len(rgb_val) == 3:
                 r = max(0, min(255, int(rgb_val[0])))
                 g = max(0, min(255, int(rgb_val[1])))
                 b = max(0, min(255, int(rgb_val[2])))
                 rgb_list.append([r, g, b])
+                
+                # Optional: Validate hex consistency with RGB
+                if hex_val:
+                    expected_hex = f"#{r:02X}{g:02X}{b:02X}"
+                    if hex_val.upper() != expected_hex:
+                        print(f"[WARNING] Hex mismatch: RGB {rgb_val} → {expected_hex}, but stored as {hex_val}")
+                        
             elif lab and len(lab) == 3:
                 try:
                     from colormath.color_objects import LabColor, sRGBColor
@@ -769,7 +778,12 @@ class LUTManager:
         for i in range(n):
             entry: dict = {}
             # Store original RGB for exact roundtrip
-            entry["rgb"] = [int(rgb[i][0]), int(rgb[i][1]), int(rgb[i][2])]
+            r, g, b = int(rgb[i][0]), int(rgb[i][1]), int(rgb[i][2])
+            entry["rgb"] = [r, g, b]
+            
+            # Hex color representation (RGB → #RRGGBB)
+            entry["hex"] = f"#{r:02X}{g:02X}{b:02X}"
+            
             # Lab values (pre-computed batch)
             entry["lab"] = [
                 round(float(lab_arr[i][0]), 6),

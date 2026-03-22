@@ -389,11 +389,7 @@ This launches the web interface with all three modules in tabs.
 | Color Matching  | SciPy KDTree                            |
 | 3D Preview      | Gradio Model3D (GLB format)             |
 
----
 
-## Developer Documentation
-
-For detailed architecture documentation, module descriptions, coding standards, and the full image pipeline module reference, see **[CLAUDE.md](CLAUDE.md)**.
 
 ---
 

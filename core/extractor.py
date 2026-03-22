@@ -20,6 +20,78 @@ from utils import Stats
 from utils.lut_manager import LUTManager
 
 
+def _srgb_to_linear(arr: np.ndarray) -> np.ndarray:
+    """Convert sRGB uint8 values to linear-light float64 (IEC 61966-2-1).
+    将 sRGB uint8 值转换为线性光 float64。
+
+    Args:
+        arr (np.ndarray): Input array in sRGB space, dtype uint8. (sRGB 输入)
+
+    Returns:
+        np.ndarray: Linear-light values in [0, 1], dtype float64. (线性光值)
+    """
+    c = arr.astype(np.float64) / 255.0
+    return np.where(c <= 0.04045, c / 12.92, ((c + 0.055) / 1.055) ** 2.4)
+
+
+def _linear_to_srgb(arr: np.ndarray) -> np.ndarray:
+    """Convert linear-light float values back to sRGB uint8.
+    将线性光 float 值转换回 sRGB uint8。
+
+    Args:
+        arr (np.ndarray): Linear-light values in [0, 1]. (线性光值)
+
+    Returns:
+        np.ndarray: sRGB values, dtype uint8. (sRGB 值)
+    """
+    c = np.clip(arr, 0.0, 1.0)
+    srgb = np.where(c <= 0.0031308, 12.92 * c, 1.055 * c ** (1.0 / 2.4) - 0.055)
+    return np.clip(np.round(srgb * 255.0), 0, 255).astype(np.uint8)
+
+
+def _draw_dashed_rect(
+    img: np.ndarray,
+    pt1: tuple[int, int],
+    pt2: tuple[int, int],
+    color: tuple[int, int, int] = (0, 255, 0),
+    thickness: int = 1,
+    dash_len: int = 4,
+) -> None:
+    """Draw a dashed rectangle on *img* in-place.
+    在图像上原地绘制虚线矩形。
+
+    Args:
+        img (np.ndarray): Target image (modified in-place). (目标图像，原地修改)
+        pt1 (tuple[int, int]): Top-left corner (x0, y0). (左上角)
+        pt2 (tuple[int, int]): Bottom-right corner (x1, y1). (右下角)
+        color (tuple[int, int, int]): BGR color. (BGR 颜色)
+        thickness (int): Line thickness in pixels. (线宽)
+        dash_len (int): Dash segment length in pixels. (虚线段长度)
+    """
+    x0, y0 = pt1
+    x1, y1 = pt2
+    edges = [
+        ((x0, y0), (x1, y0)),  # top
+        ((x1, y0), (x1, y1)),  # right
+        ((x1, y1), (x0, y1)),  # bottom
+        ((x0, y1), (x0, y0)),  # left
+    ]
+    for (ex0, ey0), (ex1, ey1) in edges:
+        dx = ex1 - ex0
+        dy = ey1 - ey0
+        length = max(abs(dx), abs(dy))
+        if length == 0:
+            continue
+        step = 2 * dash_len
+        for start in range(0, length, step):
+            end = min(start + dash_len, length)
+            sx = ex0 + dx * start // length
+            sy = ey0 + dy * start // length
+            ex = ex0 + dx * end // length
+            ey = ey0 + dy * end // length
+            cv2.line(img, (sx, sy), (ex, ey), color, thickness)
+
+
 def _generate_recipes(color_mode: str, total_cells: int, page_choice: str = "Page 1") -> np.ndarray:
     """Generate recipe (stacking) arrays for each cell based on color mode.
     根据颜色模式为每个色块生成配方（堆叠）数组。
@@ -224,9 +296,10 @@ def apply_auto_white_balance(img):
     h, w, _ = img.shape
     m = 50
     corners = [img[0:m, 0:m], img[0:m, w-m:w], img[h-m:h, 0:m], img[h-m:h, w-m:w]]
-    avg_white = sum(c.mean(axis=(0, 1)) for c in corners) / 4.0
-    gain = np.array([255, 255, 255]) / (avg_white + 1e-5)
-    return np.clip(img.astype(float) * gain, 0, 255).astype(np.uint8)
+    avg_white = sum(_srgb_to_linear(c).mean(axis=(0, 1)) for c in corners) / 4.0
+    gain = np.array([1.0, 1.0, 1.0]) / (avg_white + 1e-5)
+    linear_img = _srgb_to_linear(img)
+    return _linear_to_srgb(np.clip(linear_img * gain, 0.0, 1.0))
 
 
 def apply_brightness_correction(img):
@@ -357,8 +430,12 @@ def run_extraction(img, points, offset_x, offset_y, zoom, barrel, wb, bright, co
                 x0, y0 = int(max(0, cx - 4)), int(max(0, cy - 4))
                 x1, y1 = int(min(DST_SIZE, cx + 4)), int(min(DST_SIZE, cy + 4))
                 reg = warped[y0:y1, x0:x1]
-                avg = reg.mean(axis=(0, 1)).astype(int) if reg.size > 0 else [0, 0, 0]
+                if reg.size > 0:
+                    avg = _linear_to_srgb(_srgb_to_linear(reg).mean(axis=(0, 1)))
+                else:
+                    avg = [0, 0, 0]
                 cv2.drawMarker(vis, (int(cx), int(cy)), (0, 255, 0), cv2.MARKER_CROSS, 8, 1)
+                _draw_dashed_rect(vis, (x0, y0), (x1, y1), (0, 255, 0), 1, 4)
             else:
                 avg = [0, 0, 0]
             extracted[r, c] = avg

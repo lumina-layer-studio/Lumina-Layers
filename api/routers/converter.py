@@ -424,8 +424,27 @@ def get_layer_images(
 
     h, w = material_matrix.shape[:2]
     n_layers = material_matrix.shape[2]
-    preview_colors = color_conf.get("preview", {})
-    slots = color_conf.get("slots", [])
+    
+    # For Merged LUTs, use the corrected preview_colors and slot_names from cache
+    # (constructed in P01 from LUT palette), otherwise fall back to color_conf
+    preview_colors = cache.get("preview_colors")
+    slots = cache.get("slot_names")
+    
+    if preview_colors is None or slots is None:
+        # Fallback to color_conf for standard color modes
+        preview_colors = color_conf.get("preview", {})
+        slots = color_conf.get("slots", [])
+
+    # Build material_id -> rgba mapping
+    # preview_colors can be either dict[str, rgba] (Merged LUT) or dict[int, rgba] (standard)
+    mat_id_to_rgba = {}
+    if slots and preview_colors:
+        for mat_id, slot_name in enumerate(slots):
+            # Try to get color by name first (Merged LUT), then by ID (standard)
+            if slot_name in preview_colors:
+                mat_id_to_rgba[mat_id] = preview_colors[slot_name]
+            elif mat_id in preview_colors:
+                mat_id_to_rgba[mat_id] = preview_colors[mat_id]
 
     layers = []
     for layer_idx in range(n_layers):
@@ -433,7 +452,7 @@ def get_layer_images(
         # 浅灰背景
         layer_img = np.ones((h, w, 3), dtype=np.uint8) * 220
 
-        for mat_id, rgba in preview_colors.items():
+        for mat_id, rgba in mat_id_to_rgba.items():
             mat_mask = (layer == mat_id) & mask_solid
             if np.any(mat_mask):
                 layer_img[mat_mask] = rgba[:3]

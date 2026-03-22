@@ -817,40 +817,39 @@ def export_scene_with_bambu_metadata(
     writer = BambuStudio3MFWriter(output_path, settings, actual_color_mode, printer_id=printer_id, slicer=slicer)
 
     # Build a mapping from slot_name to preview_color
-    # We need to find the original material ID for each slot_name
-    from config import ColorSystem
-
-    full_color_conf = ColorSystem.get(color_mode)
-    full_slot_names = full_color_conf["slots"]
-
-    # Create name-to-color mapping from original material IDs
+    # CRITICAL: For Merged LUTs, preview_colors uses material names as keys
+    # For standard LUTs, preview_colors uses material IDs as keys
     name_to_color = {}
-    for slot_name in slot_names:
-        # Find this slot_name in the full color system
-        for mat_id, full_name in enumerate(full_slot_names):
-            if slot_name == full_name or slot_name in full_name or full_name in slot_name:
-                if mat_id in preview_colors:
-                    name_to_color[slot_name] = tuple(preview_colors[mat_id][:3])
-                    break
-
-        # Fallback: use gray if not found
-        if slot_name not in name_to_color:
+    print(f"[BAMBU_3MF] Building color mapping:")
+    for idx, slot_name in enumerate(slot_names):
+        # Try to get color by name first (Merged LUT), then by ID (standard)
+        if slot_name in preview_colors:
+            name_to_color[slot_name] = tuple(preview_colors[slot_name][:3])
+            print(f"[BAMBU_3MF]   {idx}: '{slot_name}' -> RGB{name_to_color[slot_name]} (by name)")
+        elif idx in preview_colors:
+            name_to_color[slot_name] = tuple(preview_colors[idx][:3])
+            print(f"[BAMBU_3MF]   {idx}: '{slot_name}' -> RGB{name_to_color[slot_name]} (by ID)")
+        else:
+            # Fallback: use gray if not found
             name_to_color[slot_name] = (200, 200, 200)
+            print(f"[BAMBU_3MF]   {idx}: '{slot_name}' -> RGB(200,200,200) (fallback)")
 
-    print(f"[BAMBU_3MF] Color mapping: {list(name_to_color.keys())}")
+    print(f"[BAMBU_3MF] Color mapping complete: {list(name_to_color.keys())}")
 
     # Add each mesh from the scene IN THE ORDER OF slot_names.
     # Use strict exact-name matching to avoid accidental substring collisions.
+    print(f"[BAMBU_3MF] Adding meshes to 3MF:")
     unmatched = []
-    for slot_name in slot_names:
+    for idx, slot_name in enumerate(slot_names):
         mesh = scene.geometry.get(slot_name)
         if mesh is None:
             unmatched.append(slot_name)
+            print(f"[BAMBU_3MF]   {idx}: '{slot_name}' - NOT FOUND in scene")
             continue
 
         color_rgb = name_to_color.get(slot_name, (200, 200, 200))
         writer.add_mesh(mesh, slot_name, color_rgb)
-        print(f"[BAMBU_3MF] Added mesh '{slot_name}' with color {color_rgb}")
+        print(f"[BAMBU_3MF]   {idx}: '{slot_name}' -> RGB{color_rgb} (added to 3MF)")
 
     if unmatched:
         raise ValueError("[BAMBU_3MF] Missing geometries for slot names: " + ", ".join(unmatched))

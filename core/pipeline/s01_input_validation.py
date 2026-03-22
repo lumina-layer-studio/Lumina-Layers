@@ -107,12 +107,46 @@ def run(ctx: dict) -> dict:
 
     # ---- 颜色系统配置 ----
     color_conf = ColorSystem.get(color_mode)
-    slot_names = color_conf['slots']
-    preview_colors = color_conf['preview']
+    
+    # For Merged LUTs, extract slot_names and preview_colors from LUT palette
+    # Use material names as keys (not indices) for direct lookup
+    if color_mode == "Merged" and actual_lut_path.endswith('.json'):
+        try:
+            import json
+            with open(actual_lut_path, 'r', encoding='utf-8') as f:
+                lut_data = json.load(f)
+            if 'palette' in lut_data:
+                # Sort palette keys alphabetically to match recipe material IDs
+                slot_names = sorted(lut_data['palette'].keys())
+                print(f"[S01] Merged LUT: Using palette order: {slot_names}")
+                
+                # Build preview_colors dict with material names as keys
+                preview_colors = {}
+                for name in slot_names:
+                    hex_color = lut_data['palette'][name].get('hex_color', '#FFFFFF')
+                    # Convert hex to RGBA
+                    r = int(hex_color[1:3], 16)
+                    g = int(hex_color[3:5], 16)
+                    b = int(hex_color[5:7], 16)
+                    preview_colors[name] = [r, g, b, 255]
+                    print(f"[S01] Material '{name}' -> RGB{[r,g,b]} ({hex_color})")
+            else:
+                slot_names = color_conf['slots']
+                preview_colors = color_conf['preview']
+        except Exception as e:
+            print(f"[S01] Warning: Failed to extract palette from Merged LUT: {e}")
+            slot_names = color_conf['slots']
+            preview_colors = color_conf['preview']
+    else:
+        slot_names = color_conf['slots']
+        preview_colors = color_conf['preview']
 
     ctx['color_conf'] = color_conf
     ctx['slot_names'] = slot_names
     ctx['preview_colors'] = preview_colors
+    
+    print(f"[S01] Final slot_names: {slot_names}")
+    print(f"[S01] Final preview_colors keys: {list(preview_colors.keys())}")
 
     # ---- backing_color_id 范围校验 ----
     num_materials = len(slot_names)

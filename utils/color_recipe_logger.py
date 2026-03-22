@@ -191,17 +191,31 @@ class ColorRecipeLogger:
         lines.append(f"总颜色数 / Total Colors: {len(self.mappings)}")
         lines.append("")
         
-        # LUT Color Order
+        # Material Slot Order (not LUT order)
         lines.append("-" * 80)
-        lines.append("LUT 颜色顺序 / LUT Color Order")
+        lines.append("材料槽位顺序 / Material Slot Order")
         lines.append("-" * 80)
         
-        # Show first 8 colors (base colors)
-        for i in range(min(8, len(self.lut_rgb))):
-            rgb = self.lut_rgb[i]
-            hex_color = f'#{rgb[0]:02x}{rgb[1]:02x}{rgb[2]:02x}'
+        # Show material slots with their representative colors
+        # Find a pure stack for each material to get its RGB
+        material_rgb_map = {}
+        for lut_idx in range(len(self.ref_stacks)):
+            stack = self.ref_stacks[lut_idx]
+            # Check if this is a pure color (all layers same material)
+            if len(set(stack)) == 1:
+                material_id = stack[0]
+                if material_id >= 0 and material_id not in material_rgb_map:
+                    material_rgb_map[material_id] = self.lut_rgb[lut_idx]
+        
+        # Display material slots
+        for i in range(min(8, len(self.color_names) if self.color_names else 8)):
             color_name = self._get_color_name(i)
-            lines.append(f"  索引 {i}: {color_name:15s} RGB({rgb[0]:3d}, {rgb[1]:3d}, {rgb[2]:3d}) = {hex_color}")
+            if i in material_rgb_map:
+                rgb = material_rgb_map[i]
+                hex_color = f'#{int(rgb[0]):02x}{int(rgb[1]):02x}{int(rgb[2]):02x}'
+                lines.append(f"  槽位 {i}: {color_name:15s} RGB({int(rgb[0]):3d}, {int(rgb[1]):3d}, {int(rgb[2]):3d}) = {hex_color}")
+            else:
+                lines.append(f"  槽位 {i}: {color_name:15s} (未找到纯色样本)")
         lines.append("")
         
         # Color Mappings

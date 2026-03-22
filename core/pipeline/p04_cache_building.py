@@ -78,6 +78,9 @@ def run(ctx: dict) -> dict:
         'is_dark': is_dark,
         'bed_label': BedManager.DEFAULT_BED,
         'lut_metadata': lut_metadata,
+        # For Merged LUTs, preserve the corrected preview_colors and slot_names from P01
+        'preview_colors': ctx.get('preview_colors'),
+        'slot_names': ctx.get('slot_names'),
     }
 
     # 统一缓存契约：保证 quantized_image 始终可用

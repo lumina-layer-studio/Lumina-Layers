@@ -38,6 +38,7 @@ def _get_image_processor_class():
     global _LuminaImageProcessor
     if _LuminaImageProcessor is None:
         from core.image_processing import LuminaImageProcessor
+
         _LuminaImageProcessor = LuminaImageProcessor
     return _LuminaImageProcessor
 
@@ -160,13 +161,14 @@ class VectorProcessor:
         slot_names = color_conf["slots"]
         preview_colors = color_conf["preview"]
         num_channels = len(slot_names)
-        num_layers = color_conf.get('layer_count', PrinterConfig.COLOR_LAYERS)
+        num_layers = color_conf.get("layer_count", PrinterConfig.COLOR_LAYERS)
 
         # === Stage 4: Match fill colors to LUT recipes ===
         replacement_manager = None
         if color_replacements:
             try:
                 from core.color_replacement import ColorReplacementManager
+
                 replacement_manager = ColorReplacementManager.from_dict(color_replacements)
             except Exception as e:
                 print(f"[VECTOR] Warning: Failed to load color replacements: {e}")
@@ -187,15 +189,26 @@ class VectorProcessor:
         if is_5color:
             # Face-up: reversed optical layers stacked above the backing
             meshes_by_slot = self._run_length_extrude(
-                matched_shapes, num_layers, layer_h, num_channels,
-                slot_names, scale_factor, extrude_cache=extrude_cache,
-                face_up=True, optical_z_base=backing_height,
+                matched_shapes,
+                num_layers,
+                layer_h,
+                num_channels,
+                slot_names,
+                scale_factor,
+                extrude_cache=extrude_cache,
+                face_up=True,
+                optical_z_base=backing_height,
             )
             print(f"[VECTOR] 5-Color face-up: {num_layers} optical layers above {backing_height:.2f}mm backing")
         else:
             meshes_by_slot = self._run_length_extrude(
-                matched_shapes, num_layers, layer_h, num_channels,
-                slot_names, scale_factor, extrude_cache=extrude_cache,
+                matched_shapes,
+                num_layers,
+                layer_h,
+                num_channels,
+                slot_names,
+                scale_factor,
+                extrude_cache=extrude_cache,
             )
         stage_timings["extrude_bottom_s"] = time.perf_counter() - t0
 
@@ -204,9 +217,7 @@ class VectorProcessor:
         if silhouette is None and clipped_shapes:
             # Defensive fallback if union accumulation failed in occlusion stage.
             all_geoms = [
-                s["geometry"]
-                for s in clipped_shapes
-                if s["geometry"] is not None and not s["geometry"].is_empty
+                s["geometry"] for s in clipped_shapes if s["geometry"] is not None and not s["geometry"].is_empty
             ]
             silhouette = unary_union(all_geoms) if all_geoms else None
 
@@ -220,9 +231,13 @@ class VectorProcessor:
             backing_meshes = []
             backing_height = backing_layer_count * layer_h
             backing_meshes.extend(
-                self._extrude_geometry(silhouette, height=backing_height,
-                                       z_offset=backing_z_start, scale=scale_factor,
-                                       extrude_cache=extrude_cache)
+                self._extrude_geometry(
+                    silhouette,
+                    height=backing_height,
+                    z_offset=backing_z_start,
+                    scale=scale_factor,
+                    extrude_cache=extrude_cache,
+                )
             )
             if backing_meshes:
                 backing_name = "Board"
@@ -238,8 +253,14 @@ class VectorProcessor:
             print("[VECTOR] Adding mirrored color layers (double-sided mode)...")
             top_z_start = backing_z_start + backing_layer_count * layer_h
             self._add_double_sided_layers(
-                matched_shapes, num_layers, layer_h, num_channels,
-                slot_names, scale_factor, top_z_start, meshes_by_slot,
+                matched_shapes,
+                num_layers,
+                layer_h,
+                num_channels,
+                slot_names,
+                scale_factor,
+                top_z_start,
+                meshes_by_slot,
                 extrude_cache=extrude_cache,
             )
         stage_timings["extrude_top_s"] = time.perf_counter() - t0
@@ -258,9 +279,7 @@ class VectorProcessor:
                 continue
 
             print(f"[VECTOR] Merging {len(mesh_list)} parts for {name}...")
-            combined = (
-                trimesh.util.concatenate(mesh_list) if len(mesh_list) > 1 else mesh_list[0]
-            )
+            combined = trimesh.util.concatenate(mesh_list) if len(mesh_list) > 1 else mesh_list[0]
             self._fix_coordinates(combined, svg_height_mm)
 
             color_val = preview_colors.get(mat_id, [255, 255, 255, 255])
@@ -360,11 +379,13 @@ class VectorProcessor:
                 if not clipped.is_valid:
                     clipped = clipped.buffer(0)
                 if not clipped.is_empty:
-                    result.append({
-                        "geometry": clipped,
-                        "color": item["color"],
-                        "draw_order": i,
-                    })
+                    result.append(
+                        {
+                            "geometry": clipped,
+                            "color": item["color"],
+                            "draw_order": i,
+                        }
+                    )
 
         result.reverse()
         if return_silhouette:
@@ -406,17 +427,12 @@ class VectorProcessor:
                     matched_rgb = tuple(int(c) for c in self.img_processor.lut_rgb[lut_idx])
                     replacement = replacement_manager.get_replacement(matched_rgb)
                     if replacement is not None:
-                        rep_lab = self.img_processor._rgb_to_lab(
-                            np.array([replacement], dtype=np.uint8)
-                        )
+                        rep_lab = self.img_processor._rgb_to_lab(np.array([replacement], dtype=np.uint8))
                         _, rep_index = self.img_processor.kdtree.query(rep_lab)
                         lut_idx = rep_index[0]
 
                 stack = self.img_processor.ref_stacks[lut_idx]
-                recipe = [
-                    min(int(stack[z]), num_channels - 1)
-                    for z in range(min(num_layers, len(stack)))
-                ]
+                recipe = [min(int(stack[z]), num_channels - 1) for z in range(min(num_layers, len(stack)))]
                 color_cache[rgb] = recipe
 
                 hex_c = f"#{rgb[0]:02x}{rgb[1]:02x}{rgb[2]:02x}"
@@ -425,11 +441,13 @@ class VectorProcessor:
                 elif recipe_log_mode == "summary" and len(sample_logs) < 8:
                     sample_logs.append(f"{hex_c} -> {recipe}")
 
-            matched.append({
-                "geometry": item["geometry"],
-                "recipe": recipe,
-                "color": rgb,
-            })
+            matched.append(
+                {
+                    "geometry": item["geometry"],
+                    "recipe": recipe,
+                    "color": rgb,
+                }
+            )
 
         if recipe_log_mode == "summary":
             print(f"[VECTOR] Recipe cache summary: unique_colors={len(color_cache)}, shapes={len(clipped_shapes)}")
@@ -464,9 +482,17 @@ class VectorProcessor:
         return runs_by_channel
 
     @staticmethod
-    def _run_length_extrude(matched_shapes, num_layers, layer_h,
-                            num_channels, slot_names, scale_factor,
-                            extrude_cache=None, face_up=False, optical_z_base=0.0):
+    def _run_length_extrude(
+        matched_shapes,
+        num_layers,
+        layer_h,
+        num_channels,
+        slot_names,
+        scale_factor,
+        extrude_cache=None,
+        face_up=False,
+        optical_z_base=0.0,
+    ):
         """Extrude each shape per channel, merging consecutive same-channel
         layers into single volumes (run-length encoding).
 
@@ -485,9 +511,7 @@ class VectorProcessor:
 
             layers_to_use = min(num_layers, len(recipe))
 
-            runs_by_channel = VectorProcessor._build_channel_runs(
-                recipe, layers_to_use, num_channels
-            )
+            runs_by_channel = VectorProcessor._build_channel_runs(recipe, layers_to_use, num_channels)
             for ch, runs in runs_by_channel.items():
                 if ch >= len(slot_names):
                     continue
@@ -507,7 +531,10 @@ class VectorProcessor:
                         height = (run_end - run_start + 1) * layer_h
 
                     new_meshes = VectorProcessor._extrude_geometry(
-                        geom, height=height, z_offset=z_bot, scale=scale_factor,
+                        geom,
+                        height=height,
+                        z_offset=z_bot,
+                        scale=scale_factor,
                         extrude_cache=extrude_cache,
                     )
                     meshes_by_slot[slot_name]["meshes"].extend(new_meshes)
@@ -517,9 +544,17 @@ class VectorProcessor:
     # ── Stage 7: Double-sided helper ─────────────────────────────────────
 
     @staticmethod
-    def _add_double_sided_layers(matched_shapes, num_layers, layer_h,
-                                  num_channels, slot_names, scale_factor,
-                                  top_z_start, meshes_by_slot, extrude_cache=None):
+    def _add_double_sided_layers(
+        matched_shapes,
+        num_layers,
+        layer_h,
+        num_channels,
+        slot_names,
+        scale_factor,
+        top_z_start,
+        meshes_by_slot,
+        extrude_cache=None,
+    ):
         """Mirror colour layers above the backing for double-sided mode.
 
         Layer Z order is inverted so the viewing surface faces upward on
@@ -533,9 +568,7 @@ class VectorProcessor:
 
             layers_to_use = min(num_layers, len(recipe))
 
-            runs_by_channel = VectorProcessor._build_channel_runs(
-                recipe, layers_to_use, num_channels
-            )
+            runs_by_channel = VectorProcessor._build_channel_runs(recipe, layers_to_use, num_channels)
             for ch, runs in runs_by_channel.items():
                 if ch >= len(slot_names):
                     continue
@@ -551,7 +584,10 @@ class VectorProcessor:
                     z_bot = top_z_start + inv_start * layer_h
                     height = (inv_end - inv_start + 1) * layer_h
                     new_meshes = VectorProcessor._extrude_geometry(
-                        geom, height=height, z_offset=z_bot, scale=scale_factor,
+                        geom,
+                        height=height,
+                        z_offset=z_bot,
+                        scale=scale_factor,
                         extrude_cache=extrude_cache,
                     )
                     meshes_by_slot[slot_name]["meshes"].extend(new_meshes)
@@ -593,15 +629,22 @@ class VectorProcessor:
             return None
 
         raw_shapes = []
+        skipped_types = {}
+        stroke_only_count = 0
         print("[VECTOR] Parsing SVG geometry...")
 
         for element in svg.elements():
             if not isinstance(element, (Path, Shape)):
-                continue
-            if element.fill is None or element.fill.value is None:
+                type_name = type(element).__name__
+                skipped_types[type_name] = skipped_types.get(type_name, 0) + 1
                 continue
 
-            rgb = (element.fill.red, element.fill.green, element.fill.blue)
+            has_fill = element.fill is not None and element.fill.value is not None
+            has_stroke = (
+                element.stroke is not None and element.stroke.value is not None and element.stroke.value != "none"
+            )
+            if not has_fill and not has_stroke:
+                continue
 
             if isinstance(element, Shape) and not isinstance(element, Path):
                 try:
@@ -609,18 +652,17 @@ class VectorProcessor:
                 except Exception:
                     continue
 
-            sampled_any = False
+            if has_fill:
+                rgb = (element.fill.red, element.fill.green, element.fill.blue)
+            else:
+                rgb = (element.stroke.red, element.stroke.green, element.stroke.blue)
+                stroke_only_count += 1
+
             try:
                 subpaths = list(element.as_subpaths())
             except Exception:
                 subpaths = []
 
-            # Collect all valid subpath polygons first, then combine using the
-            # even-odd fill rule (XOR / symmetric_difference chain).  This correctly
-            # handles paths with interior holes: a subpath contained inside another
-            # produces a ring (filled outer minus transparent inner) rather than two
-            # independent solid polygons — which would create spurious geometry where
-            # there should be transparent cutouts.
             subpath_polys = []
             for subpath in subpaths:
                 try:
@@ -633,38 +675,51 @@ class VectorProcessor:
                 subpath_polys.append(poly)
 
             if len(subpath_polys) == 1:
-                raw_shapes.append({"poly": subpath_polys[0], "color": rgb})
-                sampled_any = True
+                result_poly = subpath_polys[0]
             elif len(subpath_polys) > 1:
                 combined = subpath_polys[0]
                 for sp in subpath_polys[1:]:
                     try:
                         combined = combined.symmetric_difference(sp)
                     except Exception:
-                        pass  # keep accumulated result if XOR fails for this step
+                        pass
                 if combined is not None and not combined.is_empty:
                     if not combined.is_valid:
                         combined = combined.buffer(0)
-                    if not combined.is_empty:
-                        raw_shapes.append({"poly": combined, "color": rgb})
-                        sampled_any = True
+                    result_poly = combined if not combined.is_empty else None
+                else:
+                    result_poly = None
+            else:
+                result_poly = None
 
-            if sampled_any:
+            if result_poly is None:
+                try:
+                    result_poly = _sample_path_to_polygon(element)
+                except Exception:
+                    continue
+
+            if result_poly is None:
                 continue
 
-            # Fallback for compatibility if subpath splitting is unavailable
-            # or yields no valid polygon.
-            try:
-                poly = _sample_path_to_polygon(element)
-                if poly is not None:
-                    raw_shapes.append({"poly": poly, "color": rgb})
-            except Exception:
-                continue
+            if not has_fill and has_stroke:
+                try:
+                    sw = float(getattr(element, "stroke_width", 1.0) or 1.0)
+                    result_poly = result_poly.buffer(sw / 2.0, cap_style="round", join_style="round")
+                    if result_poly.is_empty:
+                        continue
+                except Exception:
+                    continue
 
+            raw_shapes.append({"poly": result_poly, "color": rgb})
+
+        if skipped_types:
+            print(f"[VECTOR] Skipped non-path elements: {skipped_types}")
+        if stroke_only_count > 0:
+            print(f"[VECTOR] Converted {stroke_only_count} stroke-only elements to filled polygons")
         if not raw_shapes:
             raise ValueError("No valid shapes found in SVG")
 
-        # Global bounding box
+        # Global bounding box — union of parsed shapes and SVG viewport
         min_xs, min_ys, max_xs, max_ys = [], [], [], []
         for item in raw_shapes:
             bx0, by0, bx1, by1 = item["poly"].bounds
@@ -674,8 +729,26 @@ class VectorProcessor:
             max_ys.append(by1)
 
         gx0, gy0 = min(min_xs), min(min_ys)
-        real_w = max(max_xs) - gx0
-        real_h = max(max_ys) - gy0
+        gx1, gy1 = max(max_xs), max(max_ys)
+
+        try:
+            vb = getattr(svg, "viewbox", None)
+            if vb is not None:
+                vb_x = float(getattr(vb, "x", 0) or 0)
+                vb_y = float(getattr(vb, "y", 0) or 0)
+                vb_w = float(getattr(vb, "width", 0) or 0)
+                vb_h = float(getattr(vb, "height", 0) or 0)
+                if vb_w > 0 and vb_h > 0:
+                    gx0 = min(gx0, vb_x)
+                    gy0 = min(gy0, vb_y)
+                    gx1 = max(gx1, vb_x + vb_w)
+                    gy1 = max(gy1, vb_y + vb_h)
+                    print(f"[VECTOR] SVG viewBox: ({vb_x}, {vb_y}, {vb_w}, {vb_h})")
+        except Exception:
+            pass
+
+        real_w = gx1 - gx0
+        real_h = gy1 - gy0
 
         print(f"[VECTOR] Global bounds: x={gx0:.1f}, y={gy0:.1f}, w={real_w:.1f}, h={real_h:.1f}")
         if real_w == 0:
@@ -683,7 +756,7 @@ class VectorProcessor:
 
         scale_factor = target_width_mm / real_w
         simplify_tol_svg = max(0.0, (self.sampling_precision / max(scale_factor, 1e-9)) * 0.5)
-        min_area_svg = max(0.0, (self.sampling_precision ** 2) / max(scale_factor ** 2, 1e-12) * 0.25)
+        min_area_svg = max(0.0, (self.sampling_precision**2) / max(scale_factor**2, 1e-12) * 0.25)
 
         final_shapes = []
         for item in raw_shapes:

@@ -16,6 +16,7 @@ import cv2
 try:
     from svglib.svglib import svg2rlg
     from reportlab.graphics import renderPM
+
     HAS_SVG = True
 except ImportError:
     HAS_SVG = False
@@ -24,8 +25,57 @@ _SVG_RASTER_CACHE = {}
 _SVG_RASTER_CACHE_MAX = 4
 
 
-def rasterize_svg(svg_path: str, target_width_mm: float,
-                  pixels_per_mm: float = 20.0) -> np.ndarray:
+def _get_svg_pixel_dims(svg_path: str):
+    """Parse SVG width/height in original pixel units from XML.
+    解析 SVG 文件的原始像素尺寸。
+
+    svglib converts px to pt (x0.75) internally, but path coordinates stay
+    in original SVG user units. This helper reads the true pixel dimensions
+    so we can correct the coordinate mismatch.
+
+    Args:
+        svg_path (str): Path to SVG file. (SVG 文件路径)
+
+    Returns:
+        tuple[float, float]: (width_px, height_px), or (0, 0) on failure.
+            (原始像素尺寸，失败返回 (0, 0))
+    """
+    try:
+        import xml.etree.ElementTree as ET
+
+        tree = ET.parse(svg_path)
+        root = tree.getroot()
+        ns = root.tag.split("}")[0] + "}" if "}" in root.tag else ""
+        actual_root = root if root.tag.endswith("svg") else root.find(f"{ns}svg") or root
+
+        def strip_unit(s):
+            if not s:
+                return 0.0
+            s = s.strip()
+            for unit in ("px", "pt", "mm", "cm", "in"):
+                if s.endswith(unit):
+                    s = s[: -len(unit)].strip()
+                    break
+            try:
+                return float(s)
+            except (ValueError, TypeError):
+                return 0.0
+
+        w = strip_unit(actual_root.get("width", ""))
+        h = strip_unit(actual_root.get("height", ""))
+        if w > 0 and h > 0:
+            return w, h
+        vb = actual_root.get("viewBox", "")
+        if vb:
+            parts = vb.replace(",", " ").split()
+            if len(parts) == 4:
+                return float(parts[2]), float(parts[3])
+    except Exception:
+        pass
+    return 0.0, 0.0
+
+
+def rasterize_svg(svg_path: str, target_width_mm: float, pixels_per_mm: float = 20.0) -> np.ndarray:
     """SVG 双通道光栅化。
     Safe Padding + Dual-Pass Transparency Detection.
 
@@ -63,22 +113,30 @@ def rasterize_svg(svg_path: str, target_width_mm: float,
     # 1. 读取 SVG
     drawing = svg2rlg(svg_path)
 
-    # --- 步骤 A: 用几何边界确定内容区域 ---
-    # getBounds() 返回 SVG 几何坐标系下的内容边界，不依赖像素透明度检测，
-    # 在任何分辨率下都完全可靠，彻底消除因抗锯齿导致的内容被裁切问题。
-    x1, y1, x2, y2 = drawing.getBounds()
-    raw_w = x2 - x1
-    raw_h = y2 - y1
-
-    # 平移至原点，仅保留 2px 的固定安全边距（不再使用百分比浮动边距）
-    BORDER_PX_PRE = 4  # 渲染前在画布上留的固定余量（坐标单位）
-    drawing.translate(-x1, -y1)
-    drawing.width  = raw_w
-    drawing.height = raw_h
+    # --- Fix svglib px→pt coordinate mismatch ---
+    # svglib converts SVG width/height from px to pt (×0.75) but keeps
+    # path coordinates in original SVG user units. The internal Y-flip
+    # transform also uses pt height. Fix both to use original px dims.
+    svg_w, svg_h = _get_svg_pixel_dims(svg_path)
+    if svg_w > 0 and svg_h > 0:
+        main_group = drawing.contents[0]
+        if hasattr(main_group, "transform") and main_group.transform:
+            t = list(main_group.transform)
+            if len(t) >= 6 and t[3] == -1:
+                t[5] = svg_h
+                main_group.transform = tuple(t)
+        drawing.width = svg_w
+        drawing.height = svg_h
+        raw_w, raw_h = svg_w, svg_h
+    else:
+        raw_w, raw_h = float(drawing.width), float(drawing.height)
+    if raw_w <= 0 or raw_h <= 0:
+        raise ValueError(f"SVG has zero-size dimensions: {raw_w}x{raw_h}")
+    print(f"[SVG] Canvas: {raw_w:.1f}x{raw_h:.1f}")
 
     # 2. 缩放到目标像素宽度（强制最低渲染质量保证 Dual-Pass 效果）
     target_width_px = int(target_width_mm * pixels_per_mm)
-    MIN_QUALITY_PX  = 800
+    MIN_QUALITY_PX = 800
     render_width_px = max(target_width_px, MIN_QUALITY_PX)
 
     if raw_w > 0:
@@ -87,22 +145,22 @@ def rasterize_svg(svg_path: str, target_width_mm: float,
         scale_factor = 1.0
 
     drawing.scale(scale_factor, scale_factor)
-    render_w = max(1, int(raw_w  * scale_factor))
-    render_h = max(1, int(raw_h  * scale_factor))
-    drawing.width  = render_w
+    render_w = max(1, int(raw_w * scale_factor))
+    render_h = max(1, int(raw_h * scale_factor))
+    drawing.width = render_w
     drawing.height = render_h
 
     # ================== 【终极方案】双重渲染差分法 ==================
     try:
         # Pass 1: 白底渲染 (0xFFFFFF)
         # 强制不使用透明通道，完全模拟打印在白纸上的效果
-        pil_white = renderPM.drawToPIL(drawing, bg=0xFFFFFF, configPIL={'transparent': False})
-        arr_white = np.array(pil_white.convert('RGB'))  # 丢弃 Alpha，只看颜色
+        pil_white = renderPM.drawToPIL(drawing, bg=0xFFFFFF, configPIL={"transparent": False})
+        arr_white = np.array(pil_white.convert("RGB"))  # 丢弃 Alpha，只看颜色
 
         # Pass 2: 黑底渲染 (0x000000)
         # 强制不使用透明通道，完全模拟打印在黑纸上的效果
-        pil_black = renderPM.drawToPIL(drawing, bg=0x000000, configPIL={'transparent': False})
-        arr_black = np.array(pil_black.convert('RGB'))
+        pil_black = renderPM.drawToPIL(drawing, bg=0x000000, configPIL={"transparent": False})
+        arr_black = np.array(pil_black.convert("RGB"))
 
         # 计算差异 (Difference)
         # diff = |白底图 - 黑底图|
@@ -118,17 +176,22 @@ def rasterize_svg(svg_path: str, target_width_mm: float,
         r, g, b = cv2.split(arr_white)
         img_final = cv2.merge([r, g, b, alpha_mask])
 
-        # ── 几何裁切（替代原 Dual-Pass Crop 像素检测）──────────────────
-        # 渲染画布已对齐到内容原点，直接取 render_w × render_h 即为完整内容。
-        # 仅在数组边界内添加 2px 固定留白，避免抗锯齿边缘被截断。
+        # ── Content-aware pixel crop ──────────────────────────────────
+        # Use alpha mask to detect actual content bounds — more reliable
+        # than getBounds() for strokes, nested transforms, and text.
         BORDER = 2
         h_arr, w_arr = img_final.shape[:2]
-        x_start = max(0, -BORDER)
-        y_start = max(0, -BORDER)
-        x_end   = min(w_arr, render_w + BORDER)
-        y_end   = min(h_arr, render_h + BORDER)
-        img_final = img_final[y_start:y_end, x_start:x_end]
-        print(f"[SVG] Geometry Crop: {img_final.shape[1]}x{img_final.shape[0]} (bounds-based, lossless)")
+        content_rows = np.any(alpha_mask > 0, axis=1)
+        content_cols = np.any(alpha_mask > 0, axis=0)
+        if np.any(content_rows) and np.any(content_cols):
+            row_idx = np.where(content_rows)[0]
+            col_idx = np.where(content_cols)[0]
+            y_min = max(0, row_idx[0] - BORDER)
+            x_min = max(0, col_idx[0] - BORDER)
+            y_max = min(h_arr - 1, row_idx[-1] + BORDER)
+            x_max = min(w_arr - 1, col_idx[-1] + BORDER)
+            img_final = img_final[y_min : y_max + 1, x_min : x_max + 1]
+        print(f"[SVG] Content-aware crop: {img_final.shape[1]}x{img_final.shape[0]} px")
 
         # 若渲染时为保证质量而放大，缩回目标像素宽度
         if render_width_px > target_width_px and target_width_px > 0:
@@ -148,11 +211,12 @@ def rasterize_svg(svg_path: str, target_width_mm: float,
     except Exception as e:
         print(f"[SVG] Dual-Pass failed: {e}")
         import traceback
+
         traceback.print_exc()
 
         # 最后的保底：如果双重渲染失败，回退到普通渲染
-        pil_img = renderPM.drawToPIL(drawing, bg=None, configPIL={'transparent': True})
-        img_fallback = np.array(pil_img.convert('RGBA'))
+        pil_img = renderPM.drawToPIL(drawing, bg=None, configPIL={"transparent": True})
+        img_fallback = np.array(pil_img.convert("RGBA"))
         if cache_key is not None:
             _SVG_RASTER_CACHE[cache_key] = img_fallback.copy()
             while len(_SVG_RASTER_CACHE) > _SVG_RASTER_CACHE_MAX:

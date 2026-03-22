@@ -169,13 +169,14 @@ class LuminaImageProcessor:
         """加载图像（SVG 或位图）并缩放到目标尺寸。
         Load image and resize to target dimensions. Returns (img, w, h, scale, blur, sigma).
         """
+        SVG_PIXELS_PER_MM = 10.0
         is_svg = image_path.lower().endswith(".svg")
         if is_svg:
             print("[IMAGE_PROCESSOR] SVG detected - Engaging Ultra-High-Fidelity Vector Mode")
-            img = Image.fromarray(self._load_svg(image_path, target_width_mm, pixels_per_mm=10.0))
+            img = Image.fromarray(self._load_svg(image_path, target_width_mm, pixels_per_mm=SVG_PIXELS_PER_MM))
             blur_kernel, smooth_sigma = 0, 0
-            print("[IMAGE_PROCESSOR] SVG Mode: Filters disabled, Super-sampling at 20 px/mm")
-            target_w, target_h, pixel_scale = img.size[0], img.size[1], 0.05
+            print("[IMAGE_PROCESSOR] SVG Mode: Filters disabled (Vector source is clean)")
+            target_w, target_h, pixel_scale = img.size[0], img.size[1], 1.0 / SVG_PIXELS_PER_MM
         else:
             img = Image.open(image_path).convert("RGBA")
             self._log_image_info(img, image_path)

@@ -1,4 +1,4 @@
-import { useRef, useEffect, useMemo } from "react";
+import { useRef, useEffect, useMemo, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { useConverterStore, ACCEPT_IMAGE_FORMATS } from "../../stores/converterStore";
 import {
@@ -95,6 +95,7 @@ export default function BasicSettings() {
     largeFormatEnabled,
     tileWidthMm,
     tileHeightMm,
+    previewImageUrl,
   } = useConverterStore(useShallow((s) => ({
     imageFile: s.imageFile,
     imagePreviewUrl: s.imagePreviewUrl,
@@ -115,7 +116,18 @@ export default function BasicSettings() {
     largeFormatEnabled: s.largeFormatEnabled,
     tileWidthMm: s.tileWidthMm,
     tileHeightMm: s.tileHeightMm,
+    previewImageUrl: s.previewImageUrl,
   })));
+
+  const [uploaderExpanded, setUploaderExpanded] = useState(true);
+
+  useEffect(() => {
+    if (previewImageUrl) setUploaderExpanded(false);
+  }, [previewImageUrl]);
+
+  useEffect(() => {
+    if (!imageFile) setUploaderExpanded(true);
+  }, [imageFile]);
 
   // Action 函数单独提取（函数引用稳定，不需要 shallow）
   const handleFilesSelect = useConverterStore((s) => s.handleFilesSelect);
@@ -171,14 +183,36 @@ export default function BasicSettings() {
 
   return (
     <div className="flex flex-col gap-4">
-      <UnifiedUploader
-        singlePreview={imagePreviewUrl ?? undefined}
-        batchFiles={batchFiles}
-        isBatchMode={batchMode}
-        onFilesSelect={handleFilesSelect}
-        onBatchFileRemove={removeBatchFile}
-        accept={ACCEPT_IMAGE_FORMATS}
-      />
+      {uploaderExpanded ? (
+        <UnifiedUploader
+          singlePreview={imagePreviewUrl ?? undefined}
+          batchFiles={batchFiles}
+          isBatchMode={batchMode}
+          onFilesSelect={handleFilesSelect}
+          onBatchFileRemove={removeBatchFile}
+          accept={ACCEPT_IMAGE_FORMATS}
+        />
+      ) : (
+        <button
+          type="button"
+          onClick={() => setUploaderExpanded(true)}
+          className="flex items-center gap-2 rounded-2xl border border-slate-200/80 bg-white/60 px-3 py-2 text-left transition-colors hover:bg-white/90 dark:border-slate-700/60 dark:bg-slate-900/50 dark:hover:bg-slate-900/80"
+        >
+          {imagePreviewUrl && (
+            <img
+              src={imagePreviewUrl}
+              alt=""
+              className="h-8 w-8 shrink-0 rounded-lg object-cover"
+            />
+          )}
+          <span className="min-w-0 flex-1 truncate text-[clamp(0.65rem,0.85vw,0.75rem)] text-slate-600 dark:text-slate-300">
+            {imageFile?.name ?? t("upload_unified_hint")}
+          </span>
+          <span className="shrink-0 text-[10px] text-slate-400 dark:text-slate-500">
+            {t("upload_tap_to_change")}
+          </span>
+        </button>
+      )}
 
       {batchFiles.length === 0 && imageFile !== null && (
         <>

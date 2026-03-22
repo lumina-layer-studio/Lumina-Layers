@@ -2266,6 +2266,10 @@ export const translations: Record<string, Record<"zh" | "en", string>> = {
     zh: "拖拽图片或点击上传（支持多选）",
     en: "Drag & drop or click to upload (multi-select)",
   },
+  upload_tap_to_change: {
+    zh: "点击更换",
+    en: "Tap to change",
+  },
   upload_unified_aria: {
     zh: "拖拽图片或点击上传文件",
     en: "Drag images or click to upload files",

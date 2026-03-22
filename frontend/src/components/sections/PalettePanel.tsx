@@ -319,7 +319,7 @@ export default function PalettePanel() {
 
           {/* Palette items */}
           <div
-            className="dock-scrollbar min-h-0 flex-1 overflow-y-auto pr-1"
+            className="dock-scrollbar flex-1  pr-1"
             role="listbox"
             aria-label={t("palette_list_label")}
           >

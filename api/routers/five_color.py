@@ -81,28 +81,51 @@ def _load_engine(lut_name: str) -> tuple[ColorQueryEngine, str]:
             rgb_data, stack_data, metadata = LUTManager.load_lut_with_metadata(path)
             if rgb_data is None or len(rgb_data) == 0:
                 raise HTTPException(status_code=500, detail="Failed to load JSON LUT: no RGB data")
-            # Use palette names for color_count
-            color_count = len(metadata.palette) if metadata.palette else None
-            # Extract per-entry sources from JSON
-            sources = _extract_sources_from_keyed_json(path)
-            engine = ColorQueryEngine(
-                stack_lut=stack_data, lut_rgb=rgb_data, color_count=color_count,
-                sources=sources,
-            )
-            # Override base_colors from palette hex_color
-            if metadata.palette:
-                engine._palette_names = [e.color for e in metadata.palette]
-                base_from_palette = []
+            
+            # Use palette for color_count and base_colors
+            if metadata.palette and len(metadata.palette) > 0:
+                color_count = len(metadata.palette)
+                # Extract base_colors directly from palette hex_color
+                base_colors_from_palette = []
+                palette_names = []
                 for e in metadata.palette:
+                    palette_names.append(e.color)
                     if e.hex_color:
                         h = e.hex_color.lstrip("#")
                         if len(h) == 6:
-                            base_from_palette.append((int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)))
+                            try:
+                                r, g, b = int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
+                                base_colors_from_palette.append((r, g, b))
+                            except ValueError as err:
+                                print(f"[WARNING] Failed to parse hex_color '{e.hex_color}' for {e.color}: {err}")
+                                base_colors_from_palette.append((128, 128, 128))
                         else:
-                            base_from_palette.append((128, 128, 128))
+                            print(f"[WARNING] Invalid hex_color length for {e.color}: '{e.hex_color}'")
+                            base_colors_from_palette.append((128, 128, 128))
                     else:
-                        base_from_palette.append((128, 128, 128))
-                engine.base_colors = base_from_palette
+                        print(f"[WARNING] No hex_color for {e.color}")
+                        base_colors_from_palette.append((128, 128, 128))
+            else:
+                color_count = None
+                base_colors_from_palette = None
+                palette_names = None
+            
+            # Extract per-entry sources from JSON
+            sources = _extract_sources_from_keyed_json(path)
+            
+            # Create engine
+            engine = ColorQueryEngine(
+                stack_lut=stack_data, 
+                lut_rgb=rgb_data, 
+                color_count=color_count,
+                sources=sources,
+            )
+            
+            # Override base_colors and palette_names from palette
+            if base_colors_from_palette:
+                engine.base_colors = base_colors_from_palette
+                engine._palette_names = palette_names
+                print(f"[INFO] Loaded {len(base_colors_from_palette)} base colors from palette for {lut_name}")
         else:
             # .npy file
             success, msg, rgb_data = StackLUTLoader.load_lut_rgb(path)

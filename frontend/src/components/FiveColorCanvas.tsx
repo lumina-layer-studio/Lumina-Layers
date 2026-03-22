@@ -25,6 +25,8 @@ const SLICE_H = 24;
 const SLICE_SKEW = 20; // 3D 倾斜偏移
 const SLICE_GAP = 6;
 const CORNER_R = 6;
+const LABEL_FONT = "12px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
+const LABEL_FONT_BOLD = "bold 13px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
 
 /** 绘制一个带圆角的平行四边形薄片 */
 function drawSlice(
@@ -111,6 +113,118 @@ function drawResultCircle(
   ctx.restore();
 }
 
+/** 绘制添加位置指示图标（简洁箭头） */
+function drawAddIndicator(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  isDark: boolean,
+  pulseProgress: number, // 0~1 脉动进度
+) {
+  ctx.save();
+  
+  // 图标颜色
+  const iconColor = isDark ? "rgba(96, 165, 250, 0.95)" : "rgba(59, 130, 246, 0.95)";
+  const glowColor = isDark ? "rgba(96, 165, 250, 0.6)" : "rgba(59, 130, 246, 0.5)";
+  
+  // 脉动效果：左右移动 + 透明度
+  const moveOffset = Math.sin(pulseProgress * Math.PI * 2) * 3;
+  const alpha = 0.7 + Math.sin(pulseProgress * Math.PI * 2) * 0.3;
+  const glowIntensity = 8 + Math.sin(pulseProgress * Math.PI * 2) * 4;
+  
+  ctx.translate(x + moveOffset, y);
+  ctx.globalAlpha = alpha;
+  
+  // 发光效果
+  ctx.shadowColor = glowColor;
+  ctx.shadowBlur = glowIntensity;
+  
+  // 绘制三角形箭头（指向右边）
+  ctx.fillStyle = iconColor;
+  ctx.beginPath();
+  ctx.moveTo(-8, -6);  // 左上
+  ctx.lineTo(4, 0);    // 右中
+  ctx.lineTo(-8, 6);   // 左下
+  ctx.closePath();
+  ctx.fill();
+  
+  // 绘制箭头尾部（两条短线）
+  ctx.shadowBlur = glowIntensity * 0.5;
+  ctx.strokeStyle = iconColor;
+  ctx.lineWidth = 2.5;
+  ctx.lineCap = "round";
+  
+  ctx.beginPath();
+  ctx.moveTo(-8, -6);
+  ctx.lineTo(-12, -6);
+  ctx.stroke();
+  
+  ctx.beginPath();
+  ctx.moveTo(-8, 6);
+  ctx.lineTo(-12, 6);
+  ctx.stroke();
+  
+  ctx.restore();
+}
+
+/** 绘制面标签（观赏面/底面） */
+function drawFaceLabel(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  x: number,
+  y: number,
+  isDark: boolean,
+  isBold: boolean = false,
+) {
+  ctx.save();
+  
+  const textColor = isDark ? "rgba(255, 255, 255, 0.85)" : "rgba(0, 0, 0, 0.75)";
+  const bgColor = isDark ? "rgba(30, 41, 59, 0.8)" : "rgba(255, 255, 255, 0.8)";
+  const borderColor = isDark ? "rgba(71, 85, 105, 0.6)" : "rgba(203, 213, 225, 0.6)";
+  
+  ctx.font = isBold ? LABEL_FONT_BOLD : LABEL_FONT;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  
+  // 测量文字宽度
+  const metrics = ctx.measureText(text);
+  const textWidth = metrics.width;
+  const padding = 8;
+  const height = 24;
+  
+  // 绘制背景圆角矩形
+  const rectX = x - textWidth / 2 - padding;
+  const rectY = y - height / 2;
+  const rectW = textWidth + padding * 2;
+  const rectH = height;
+  const radius = 12;
+  
+  ctx.beginPath();
+  ctx.moveTo(rectX + radius, rectY);
+  ctx.lineTo(rectX + rectW - radius, rectY);
+  ctx.quadraticCurveTo(rectX + rectW, rectY, rectX + rectW, rectY + radius);
+  ctx.lineTo(rectX + rectW, rectY + rectH - radius);
+  ctx.quadraticCurveTo(rectX + rectW, rectY + rectH, rectX + rectW - radius, rectY + rectH);
+  ctx.lineTo(rectX + radius, rectY + rectH);
+  ctx.quadraticCurveTo(rectX, rectY + rectH, rectX, rectY + rectH - radius);
+  ctx.lineTo(rectX, rectY + radius);
+  ctx.quadraticCurveTo(rectX, rectY, rectX + radius, rectY);
+  ctx.closePath();
+  
+  ctx.fillStyle = bgColor;
+  ctx.fill();
+  
+  ctx.strokeStyle = borderColor;
+  ctx.lineWidth = 1;
+  ctx.stroke();
+  
+  // 绘制文字
+  ctx.fillStyle = textColor;
+  ctx.fillText(text, x, y);
+  
+  ctx.restore();
+}
+
 export default function FiveColorCanvas({ slices, resultHex, isLoading }: FiveColorCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const animRef = useRef<number>(0);
@@ -169,7 +283,7 @@ export default function FiveColorCanvas({ slices, resultHex, isLoading }: FiveCo
 
     const centerX = w / 2 - SLICE_W / 2 - SLICE_SKEW / 2;
     const totalStackH = 5 * SLICE_H + 4 * SLICE_GAP;
-    const startY = h * 0.3 - totalStackH / 2;
+    const startY = h / 2 - totalStackH / 2;
 
     const phase = phaseRef.current;
     const progress = progressRef.current;
@@ -185,6 +299,15 @@ export default function FiveColorCanvas({ slices, resultHex, isLoading }: FiveCo
         ctx.textAlign = "center";
         ctx.fillText(String(i + 1), centerX + SLICE_W / 2 + SLICE_SKEW / 2, y + SLICE_H / 2 + 4);
       }
+      
+      // 绘制观赏面和底面标签
+      drawFaceLabel(ctx, "观赏面 Viewing Face", w / 2, startY - 35, isDark, true);
+      drawFaceLabel(ctx, "底面 Bottom", w / 2, startY + totalStackH + 35, isDark, false);
+      
+      // 绘制添加位置指示（第一个位置）
+      const pulseProgress = (timestamp % 2000) / 2000; // 2秒一个周期
+      drawAddIndicator(ctx, centerX - 30, startY + SLICE_H / 2, isDark, pulseProgress);
+      
       return;
     }
 
@@ -223,6 +346,16 @@ export default function FiveColorCanvas({ slices, resultHex, isLoading }: FiveCo
           ctx.restore();
         }
       }
+      
+      // 绘制观赏面和底面标签（合并时也显示）
+      if (progress < 0.5) {
+        const labelAlpha = 1 - progress * 2;
+        ctx.save();
+        ctx.globalAlpha = labelAlpha;
+        drawFaceLabel(ctx, "观赏面 Viewing Face", w / 2, startY - 35, isDark, true);
+        drawFaceLabel(ctx, "底面 Bottom", w / 2, startY + totalStackH + 35, isDark, false);
+        ctx.restore();
+      }
     } else {
       // 正常堆叠状态
       for (let i = 0; i < 5; i++) {
@@ -251,6 +384,17 @@ export default function FiveColorCanvas({ slices, resultHex, isLoading }: FiveCo
           ctx.textAlign = "center";
           ctx.fillText(String(i + 1), centerX + SLICE_W / 2 + SLICE_SKEW / 2, y + SLICE_H / 2 + 4);
         }
+      }
+      
+      // 绘制观赏面和底面标签
+      drawFaceLabel(ctx, "观赏面 Viewing Face", w / 2, startY - 35, isDark, true);
+      drawFaceLabel(ctx, "底面 Bottom", w / 2, startY + totalStackH + 35, isDark, false);
+      
+      // 绘制添加位置指示（下一个要添加的位置）
+      if (slices.length < 5) {
+        const nextY = startY + slices.length * (SLICE_H + SLICE_GAP);
+        const pulseProgress = (timestamp % 2000) / 2000; // 2秒一个周期
+        drawAddIndicator(ctx, centerX - 30, nextY + SLICE_H / 2, isDark, pulseProgress);
       }
     }
 

@@ -13,7 +13,7 @@ import time
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 _PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-IMAGE = os.path.join(_PROJECT_ROOT, "TCT.jpg")
+IMAGE = os.path.join(_PROJECT_ROOT, "IMG_0892.JPG")
 LUT = os.path.join(_PROJECT_ROOT, "lut-npy预设", "Custom", "lumina_lut.json")
 
 # TCT.jpg is 3071x4096 (WxH), ratio 1:1.334

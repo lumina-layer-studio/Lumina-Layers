@@ -195,8 +195,8 @@ class BaseMesher(ABC):
         if total_rects == 0:
             return None
 
-        all_vertices = np.empty((total_rects * 8, 3), dtype=np.float64)
-        all_faces = np.empty((total_rects * 12, 3), dtype=np.int64)
+        raw_verts = np.empty((total_rects * 8, 3), dtype=np.float64)
+        raw_faces = np.empty((total_rects * 12, 3), dtype=np.int64)
         rect_idx = 0
 
         for z_bottom, z_top, rect_arr in layer_rectangles:
@@ -207,7 +207,7 @@ class BaseMesher(ABC):
             wy0 = height_px - y1
             wy1 = height_px - y0
 
-            base = np.broadcast_to(self._VERTEX_TEMPLATE, (n, 8, 3)).copy()
+            base = np.empty((n, 8, 3), dtype=np.float64)
             base[:, 0, 0] = x0
             base[:, 0, 1] = wy0
             base[:, 0, 2] = z_bottom
@@ -234,16 +234,25 @@ class BaseMesher(ABC):
             base[:, 7, 2] = z_top
 
             v_start = rect_idx * 8
-            all_vertices[v_start : v_start + n * 8] = base.reshape(-1, 3)
+            raw_verts[v_start : v_start + n * 8] = base.reshape(-1, 3)
 
             offsets = (np.arange(n, dtype=np.int64) * 8 + v_start).reshape(-1, 1, 1)
             faces = self._FACE_TEMPLATE.reshape(1, 12, 3) + offsets
             f_start = rect_idx * 12
-            all_faces[f_start : f_start + n * 12] = faces.reshape(-1, 3)
+            raw_faces[f_start : f_start + n * 12] = faces.reshape(-1, 3)
             rect_idx += n
 
-        mesh = trimesh.Trimesh(vertices=all_vertices, faces=all_faces)
-        mesh.merge_vertices()
+        # Fast vertex dedup via integer coordinate encoding
+        ix = np.round(raw_verts[:, 0]).astype(np.int64)
+        iy = np.round(raw_verts[:, 1]).astype(np.int64)
+        iz = np.round(raw_verts[:, 2]).astype(np.int64)
+        codes = ix * 10_000_000 + iy * 10_000 + iz
+        _, first_idx, inverse = np.unique(codes, return_index=True, return_inverse=True)
+
+        unique_verts = raw_verts[first_idx]
+        deduped_faces = inverse[raw_faces]
+
+        mesh = trimesh.Trimesh(vertices=unique_verts, faces=deduped_faces, process=False)
         mesh.update_faces(mesh.unique_faces())
         return mesh
 

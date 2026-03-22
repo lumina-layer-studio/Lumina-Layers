@@ -354,11 +354,53 @@ class BedManager:
 
     @classmethod
     def get_bed_size(cls, label: str):
-        """Return (width_mm, height_mm) for a given label."""
+        """Return (width_mm, height_mm) for a given label or printer display name.
+        根据标签或打印机显示名称返回热床尺寸。
+        
+        Args:
+            label (str): Bed size label or printer display name. (热床尺寸标签或打印机显示名称)
+        
+        Returns:
+            tuple[int, int]: (width_mm, height_mm). (宽度和高度，毫米)
+        """
+        # Try standard bed sizes first
         for name, w, h in cls.BEDS:
             if name == label:
                 return (w, h)
+        
+        # Try printer profiles by display name
+        for profile in PRINTER_PROFILES.values():
+            if profile.display_name == label:
+                return (profile.bed_width, profile.bed_depth)
+        
         return (256, 256)  # fallback
+
+    @classmethod
+    def get_all_bed_options(cls):
+        """Return all bed size options including printer models and custom sizes.
+        返回所有热床尺寸选项，包括打印机型号和自定义尺寸。
+        
+        Returns:
+            list[tuple]: List of (label, width_mm, height_mm, printer_id).
+                         printer_id is None for custom sizes. 
+                         (标签、宽度、高度、打印机ID的元组列表，自定义尺寸的 printer_id 为 None)
+        """
+        options = []
+        
+        # Add printer models first
+        for profile in PRINTER_PROFILES.values():
+            options.append((
+                profile.display_name,
+                profile.bed_width,
+                profile.bed_depth,
+                profile.id
+            ))
+        
+        # Add custom sizes
+        for label, w, h in cls.BEDS:
+            options.append((label, w, h, None))
+        
+        return options
 
     @classmethod
     def compute_scale(cls, bed_w_mm, bed_h_mm):

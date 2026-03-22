@@ -31,20 +31,26 @@ class HueAwareColorMatcher:
     # w_H 越小 → 色相差异越敏感（更严格保持同色相）
     PRESETS = {
         # 纯 CIELAB 距离（等同于原始 KDTree 行为）
-        'classic': {'w_L': 1.0, 'w_C': 1.0, 'w_H': 1.0},
+        "classic": {"w_L": 1.0, "w_C": 1.0, "w_H": 1.0},
         # 轻度色相保护（≈hw=0.3）
-        'mild': {'w_L': 1.0, 'w_C': 1.0, 'w_H': 0.44},
+        "mild": {"w_L": 1.0, "w_C": 1.0, "w_H": 0.44},
         # 平衡模式（≈hw=0.5）：推荐默认值
-        'balanced': {'w_L': 1.0, 'w_C': 1.0, 'w_H': 0.26},
+        "balanced": {"w_L": 1.0, "w_C": 1.0, "w_H": 0.26},
         # 强色相保护（≈hw=1.0）
-        'strong': {'w_L': 1.0, 'w_C': 1.0, 'w_H': 0.15},
+        "strong": {"w_L": 1.0, "w_C": 1.0, "w_H": 0.15},
     }
 
-    def __init__(self, lut_rgb: np.ndarray, lut_lab: np.ndarray,
-                 hue_weight: float = 0.0,
-                 preset: str = None,
-                 w_L: float = None, w_C: float = None, w_H: float = None,
-                 chroma_gate: float = 15.0):
+    def __init__(
+        self,
+        lut_rgb: np.ndarray,
+        lut_lab: np.ndarray,
+        hue_weight: float = 0.0,
+        preset: str = None,
+        w_L: float = None,
+        w_C: float = None,
+        w_H: float = None,
+        chroma_gate: float = 15.0,
+    ):
         """
         初始化匹配器。
         Initialize matcher.
@@ -78,13 +84,14 @@ class HueAwareColorMatcher:
         self._resolve_weights(hue_weight, preset, w_L, w_C, w_H)
 
         # 构建无彩暗色子集（v7 暗色描边线保护）
-        self._dark_indices, self._dark_kdtree, self._dark_lab = \
-            self._build_dark_achromatic_subset(max_L=153, max_C=8)
+        self._dark_indices, self._dark_kdtree, self._dark_lab = self._build_dark_achromatic_subset(max_L=153, max_C=8)
 
-        print(f"[HueAwareMatcher] 初始化: {self.n_colors} 色, "
-              f"w_L={self.w_L:.2f}, w_C={self.w_C:.2f}, w_H={self.w_H:.2f}, "
-              f"chroma_gate={self.chroma_gate:.1f}, "
-              f"暗色子集={len(self._dark_indices)} 色")
+        print(
+            f"[HueAwareMatcher] 初始化: {self.n_colors} 色, "
+            f"w_L={self.w_L:.2f}, w_C={self.w_C:.2f}, w_H={self.w_H:.2f}, "
+            f"chroma_gate={self.chroma_gate:.1f}, "
+            f"暗色子集={len(self._dark_indices)} 色"
+        )
 
     def _resolve_weights(self, hue_weight, preset, w_L, w_C, w_H):
         """解析权重参数，优先级：手动 > 预设 > hue_weight 映射"""
@@ -94,9 +101,9 @@ class HueAwareColorMatcher:
             self.w_H = w_H
         elif preset and preset in self.PRESETS:
             p = self.PRESETS[preset]
-            self.w_L = p['w_L']
-            self.w_C = p['w_C']
-            self.w_H = p['w_H']
+            self.w_L = p["w_L"]
+            self.w_C = p["w_C"]
+            self.w_H = p["w_H"]
         else:
             # hue_weight 0.0-1.0 映射到权重
             # 核心策略：w_L 保持 1.0 不变，只通过降低 w_H 放大色相惩罚。
@@ -110,8 +117,8 @@ class HueAwareColorMatcher:
             #   hw=0.7 → w_H=0.17  (接近最强)
             #   hw=1.0 → w_H=0.15  (最强)
             hw = np.clip(hue_weight, 0.0, 1.0)
-            self.w_L = 1.0                   # 固定！不改变亮度维度
-            self.w_C = 1.0                   # 固定
+            self.w_L = 1.0  # 固定！不改变亮度维度
+            self.w_C = 1.0  # 固定
             self.w_H = 0.15 + 0.85 * (1.0 - hw) ** 3  # 指数曲线，快速下降
 
     @staticmethod
@@ -128,7 +135,7 @@ class HueAwareColorMatcher:
         L = lab[..., 0]
         a = lab[..., 1] - 128.0  # 中心化
         b = lab[..., 2] - 128.0
-        C = np.sqrt(a ** 2 + b ** 2)
+        C = np.sqrt(a**2 + b**2)
         H = np.degrees(np.arctan2(b, a)) % 360
         return np.stack([L, C, H], axis=-1)
 
@@ -161,12 +168,9 @@ class HueAwareColorMatcher:
         """
         dL = (candidate_lch[:, 0] - input_lch[0]) / self.w_L
         dC = (candidate_lch[:, 1] - input_lch[1]) / self.w_C
-        dH = self._delta_hue(
-            input_lch[2], candidate_lch[:, 2],
-            input_lch[1], candidate_lch[:, 1]
-        ) / self.w_H
+        dH = self._delta_hue(input_lch[2], candidate_lch[:, 2], input_lch[1], candidate_lch[:, 1]) / self.w_H
 
-        return np.sqrt(dL ** 2 + dC ** 2 + dH ** 2)
+        return np.sqrt(dL**2 + dC**2 + dH**2)
 
     @staticmethod
     def _hue_diff(h1, h2):
@@ -177,20 +181,37 @@ class HueAwareColorMatcher:
     @staticmethod
     def _adaptive_hue_threshold(chroma):
         """根据彩度自适应色相阈值，平滑过渡，避免硬分界导致色块。
-        
+
         高彩度 → 严格色相约束；低彩度 → 放宽但仍优先色相；
         极低彩度（C≤2）→ 不约束色相（真正的灰色）。
         """
         if chroma > 15:
-            return 20.0, 45.0   # 高彩度：严格色相
+            return 20.0, 45.0  # 高彩度：严格色相
         elif chroma > 8:
-            return 25.0, 50.0   # 中高彩度
+            return 25.0, 50.0  # 中高彩度
         elif chroma > 5:
-            return 30.0, 55.0   # 中彩度
+            return 30.0, 55.0  # 中彩度
         elif chroma > 2:
-            return 50.0, 80.0   # 低彩度：放宽但仍优先色相
+            return 50.0, 80.0  # 低彩度：放宽但仍优先色相
         else:
             return 999.0, 999.0  # 极低彩度：不约束
+
+    @staticmethod
+    def _adaptive_hue_threshold_vec(chroma_arr):
+        """Vectorized adaptive hue threshold for array of chroma values.
+        向量化自适应色相阈值，对整列 chroma 一次性计算。
+
+        Args:
+            chroma_arr (np.ndarray): (N,) chroma values. (彩度数组)
+
+        Returns:
+            tuple[np.ndarray, np.ndarray]: (ht, ht_relaxed) each (N,).
+                (严格/宽松色相阈值数组)
+        """
+        conditions = [chroma_arr > 15, chroma_arr > 8, chroma_arr > 5, chroma_arr > 2]
+        ht = np.select(conditions, [20.0, 25.0, 30.0, 50.0], default=999.0)
+        ht_relaxed = np.select(conditions, [45.0, 50.0, 55.0, 80.0], default=999.0)
+        return ht, ht_relaxed
 
     def _build_dark_achromatic_subset(self, max_L: float = 153, max_C: float = 8):
         """构建 LUT 中的无彩暗色子集。
@@ -215,138 +236,137 @@ class HueAwareColorMatcher:
         return dark_indices, dark_kdtree, dark_lab
 
     def match_colors_batch(self, input_rgb: np.ndarray, k: int = 16) -> np.ndarray:
-        """
-        色相优先批量颜色匹配。
+        """Batch hue-priority color matching (vectorized).
+        色相优先批量颜色匹配（向量化实现）。
 
-        策略：色相作为硬约束而非软权重，自适应阈值随彩度平滑过渡。
-        1. KDTree 初筛 k 个 CIELAB 最近候选
-        2. 根据输入彩度确定色相阈值（高彩度严格，低彩度放宽）
-        3. 在同色相候选中按 CIELAB 距离选最近的
-        4. 只有 C≤2 的真正灰色才跳过色相约束
+        Strategy: hue as hard constraint with adaptive thresholds.
+        策略：色相作为硬约束，自适应阈值随彩度平滑过渡。
 
-        当 hue_weight=0（纯 CIELAB 模式）时，直接用 KDTree 最近邻。
+        Args:
+            input_rgb (np.ndarray): (N, 3) uint8 RGB array. (输入 RGB 数组)
+            k (int): KDTree candidate count for initial screening.
+                (KDTree 初筛候选数量)
 
-        参数:
-            input_rgb: (N, 3) uint8 RGB 数组
-            k: KDTree 初筛候选数量
-
-        返回:
-            (N,) int 数组，每个输入颜色在 LUT 中的最佳匹配索引
+        Returns:
+            np.ndarray: (N,) int array of best LUT indices per input color.
+                (每个输入颜色在 LUT 中的最佳匹配索引)
         """
         input_rgb = np.asarray(input_rgb, dtype=np.uint8)
         n = len(input_rgb)
 
-        print(f"[HueAwareMatcher] ★★★ match_colors_batch v3 (色相优先 + 暗色子集保护) ★★★ n={n}, k={k}")
+        print(f"[HueAwareMatcher] match_colors_batch (vectorized) n={n}, k={k}")
 
-        # 纯 CIELAB 模式（hue_weight=0），直接 KDTree
-        if (abs(self.w_L - 1.0) < 1e-6 and
-            abs(self.w_C - 1.0) < 1e-6 and
-            abs(self.w_H - 1.0) < 1e-6):
+        if abs(self.w_L - 1.0) < 1e-6 and abs(self.w_C - 1.0) < 1e-6 and abs(self.w_H - 1.0) < 1e-6:
             input_lab = self._rgb_to_lab(input_rgb)
             _, indices = self.kdtree.query(input_lab)
             return indices
 
-        # 转换到 LAB 和 LCH
         input_lab = self._rgb_to_lab(input_rgb)
         input_lch = self._lab_to_lch(input_lab)
 
-        # KDTree 初筛
         k_actual = min(k, self.n_colors)
         _, candidate_indices = self.kdtree.query(input_lab, k=k_actual)
         if candidate_indices.ndim == 1:
             candidate_indices = candidate_indices.reshape(-1, 1)
 
-        # 暗色子集参数
         has_dark = self._dark_indices is not None and len(self._dark_indices) > 0
         k_dark = min(k, len(self._dark_indices)) if has_dark else 0
-        # OpenCV LAB L 范围 0-255, L*50≈128, L*70≈179
         DARK_FORCE_L = 128.0
         DARK_TRANSITION_L = 179.0
 
         result = np.empty(n, dtype=np.intp)
 
-        for i in range(n):
-            input_l = input_lch[i, 0]
-            input_c = input_lch[i, 1]
-            input_h = input_lch[i, 2]
+        # ── Classify pixels into 3 branches ──
+        input_l = input_lch[:, 0]
+        input_c = input_lch[:, 1]
+        is_chromatic = (self.chroma_gate > 0) & (input_c > self.chroma_gate)
+        dark_eligible = has_dark and k_dark > 0
+        dark_force_mask = np.zeros(n, dtype=bool)
+        dark_trans_mask = np.zeros(n, dtype=bool)
+        if dark_eligible:
+            low_chroma = ~is_chromatic
+            dark_force_mask = low_chroma & (input_l < DARK_FORCE_L)
+            dark_trans_mask = low_chroma & ~dark_force_mask & (input_l < DARK_TRANSITION_L)
+        normal_mask = ~dark_force_mask & ~dark_trans_mask
 
-            # 彩度门槛：有彩色跳过暗色子集
-            is_chromatic = self.chroma_gate > 0 and input_c > self.chroma_gate
+        # ── Branch 1: Dark force (batch) ──
+        if np.any(dark_force_mask):
+            idx = np.where(dark_force_mask)[0]
+            _, df_cand = self._dark_kdtree.query(input_lab[idx], k=k_dark)
+            if df_cand.ndim == 1:
+                df_cand = df_cand.reshape(-1, 1)
+            df_lab = self._dark_lab[df_cand]
+            df_dist = np.linalg.norm(df_lab - input_lab[idx, np.newaxis, :], axis=2)
+            df_best = np.argmin(df_dist, axis=1)
+            result[idx] = self._dark_indices[df_cand[np.arange(len(idx)), df_best]]
 
-            # v7: 低亮度强制在无彩暗色子集中匹配（仅低彩度）
-            if input_l < DARK_FORCE_L and has_dark and k_dark > 0 and not is_chromatic:
-                _, dark_cand_idx = self._dark_kdtree.query(input_lab[i], k=k_dark)
-                if np.ndim(dark_cand_idx) == 0:
-                    dark_cand_idx = np.array([int(dark_cand_idx)])
-                dark_cand_lab = self._dark_lab[dark_cand_idx]
-                dark_dist = np.linalg.norm(dark_cand_lab - input_lab[i], axis=1)
-                best_dark = np.argmin(dark_dist)
-                result[i] = self._dark_indices[dark_cand_idx[best_dark]]
-                continue
+        # ── Branch 2: Dark transition (batch) ──
+        if np.any(dark_trans_mask):
+            idx = np.where(dark_trans_mask)[0]
+            m = len(idx)
+            t = (input_l[idx] - DARK_FORCE_L) / (DARK_TRANSITION_L - DARK_FORCE_L)
 
-            # v7: 过渡区间 — 全 LUT 搜索但偏好暗色（仅低彩度）
-            if input_l < DARK_TRANSITION_L and has_dark and k_dark > 0 and not is_chromatic:
-                t = (input_l - DARK_FORCE_L) / (DARK_TRANSITION_L - DARK_FORCE_L)
+            dt_cand = candidate_indices[idx]
+            dt_cand_lab = self.lut_lab[dt_cand]
+            dt_dist = np.linalg.norm(dt_cand_lab - input_lab[idx, np.newaxis, :], axis=2)
+            dt_best_local = np.argmin(dt_dist, axis=1)
+            arange_m = np.arange(m)
+            dt_best_full = dt_cand[arange_m, dt_best_local]
+            dt_dist_full = dt_dist[arange_m, dt_best_local]
 
-                # 全 LUT 候选
-                cand_idx = candidate_indices[i]
-                cand_lab = self.lut_lab[cand_idx]
-                lab_dist = np.linalg.norm(cand_lab - input_lab[i], axis=1)
-                best_full = cand_idx[np.argmin(lab_dist)]
-                dist_full = np.min(lab_dist)
+            _, dt_dark_cand = self._dark_kdtree.query(input_lab[idx], k=k_dark)
+            if dt_dark_cand.ndim == 1:
+                dt_dark_cand = dt_dark_cand.reshape(-1, 1)
+            dt_dark_lab = self._dark_lab[dt_dark_cand]
+            dt_dark_dist = np.linalg.norm(dt_dark_lab - input_lab[idx, np.newaxis, :], axis=2)
+            dt_dark_best_local = np.argmin(dt_dark_dist, axis=1)
+            dt_best_dark = self._dark_indices[dt_dark_cand[arange_m, dt_dark_best_local]]
+            dt_dist_dark = dt_dark_dist[arange_m, dt_dark_best_local]
 
-                # 暗色子集候选
-                _, dark_cand_idx = self._dark_kdtree.query(input_lab[i], k=k_dark)
-                if np.ndim(dark_cand_idx) == 0:
-                    dark_cand_idx = np.array([int(dark_cand_idx)])
-                dark_cand_lab = self._dark_lab[dark_cand_idx]
-                dark_dist = np.linalg.norm(dark_cand_lab - input_lab[i], axis=1)
-                best_dark_local = np.argmin(dark_dist)
-                best_dark_global = self._dark_indices[dark_cand_idx[best_dark_local]]
-                dist_dark = dark_dist[best_dark_local]
+            use_dark = dt_dist_dark * (1.0 + t) <= dt_dist_full * (2.0 - t)
+            result[idx] = np.where(use_dark, dt_best_dark, dt_best_full)
 
-                # 混合：t=0 完全用暗色，t=1 完全用全 LUT
-                if dist_dark * (1.0 + t) <= dist_full * (2.0 - t):
-                    result[i] = best_dark_global
-                else:
-                    result[i] = best_full
-                continue
+        # ── Branch 3: Normal hue-priority matching (fully vectorized) ──
+        if np.any(normal_mask):
+            idx = np.where(normal_mask)[0]
+            m = len(idx)
+            arange_m = np.arange(m)
 
-            # 正常亮度：色相优先匹配
-            cand_idx = candidate_indices[i]
-            cand_lab = self.lut_lab[cand_idx]
-            cand_lch = self.lut_lch[cand_idx]
-            lab_dist = np.linalg.norm(cand_lab - input_lab[i], axis=1)
+            nm_cand = candidate_indices[idx]
+            nm_cand_lab = self.lut_lab[nm_cand]
+            nm_lab_dist = np.linalg.norm(nm_cand_lab - input_lab[idx, np.newaxis, :], axis=2)
 
-            ht, ht_relaxed = self._adaptive_hue_threshold(input_c)
+            nm_cand_lch = self.lut_lch[nm_cand]
+            nm_cand_h = nm_cand_lch[:, :, 2]
+            nm_cand_c = nm_cand_lch[:, :, 1]
 
-            if input_c <= 2.0:
-                # 真正的灰色，色相完全不可靠
-                best = np.argmin(lab_dist)
-            else:
-                cand_h = cand_lch[:, 2]
-                cand_c = cand_lch[:, 1]
-                hdiff = self._hue_diff(input_h, cand_h)
+            nm_input_c = input_c[idx]
+            nm_input_h = input_lch[idx, 2]
 
-                # 候选彩度门槛随输入彩度降低
-                min_cand_c = max(1.0, input_c * 0.3)
+            ht, ht_relaxed = self._adaptive_hue_threshold_vec(nm_input_c)
 
-                same_hue_mask = (hdiff < ht) & (cand_c > min_cand_c)
+            hdiff = self._hue_diff(nm_input_h[:, np.newaxis], nm_cand_h)
+            min_cand_c = np.maximum(1.0, nm_input_c * 0.3)
 
-                if np.any(same_hue_mask):
-                    same_hue_dist = lab_dist.copy()
-                    same_hue_dist[~same_hue_mask] = 1e9
-                    best = np.argmin(same_hue_dist)
-                else:
-                    relaxed_mask = (hdiff < ht_relaxed) & (cand_c > min_cand_c * 0.5)
-                    if np.any(relaxed_mask):
-                        relaxed_dist = lab_dist.copy()
-                        relaxed_dist[~relaxed_mask] = 1e9
-                        best = np.argmin(relaxed_dist)
-                    else:
-                        best = np.argmin(lab_dist)
+            same_hue = (hdiff < ht[:, np.newaxis]) & (nm_cand_c > min_cand_c[:, np.newaxis])
+            relaxed = (hdiff < ht_relaxed[:, np.newaxis]) & (nm_cand_c > min_cand_c[:, np.newaxis] * 0.5)
 
-            result[i] = cand_idx[best]
+            is_gray = nm_input_c <= 2.0
+            has_same = np.any(same_hue, axis=1)
+            has_relax = np.any(relaxed, axis=1)
+
+            eff_dist = nm_lab_dist.copy()
+
+            use_same = ~is_gray & has_same
+            if np.any(use_same):
+                eff_dist[use_same] = np.where(same_hue[use_same], nm_lab_dist[use_same], 1e9)
+
+            use_relaxed = ~is_gray & ~has_same & has_relax
+            if np.any(use_relaxed):
+                eff_dist[use_relaxed] = np.where(relaxed[use_relaxed], nm_lab_dist[use_relaxed], 1e9)
+
+            best_local = np.argmin(eff_dist, axis=1)
+            result[idx] = nm_cand[arange_m, best_local]
 
         return result
 

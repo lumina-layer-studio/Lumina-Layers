@@ -238,7 +238,7 @@ export default function ExtractorCanvas() {
     return (
       <div
         data-testid="extractor-results"
-        className="flex h-full min-h-0 flex-1 flex-col gap-5 overflow-auto px-3 py-3 sm:px-5 sm:py-4 xl:px-7"
+        className="relative flex h-full min-h-0 flex-1 flex-col gap-5 overflow-auto px-3 py-3 sm:px-5 sm:py-4 xl:px-7"
       >
         {/* 色卡 + LUT 预览：左右并排，等宽 */}
         <div className="flex h-full min-h-0 w-full flex-col gap-6 2xl:flex-row">
@@ -295,11 +295,11 @@ export default function ExtractorCanvas() {
             </div>
           )}
         </div>
-        {/* 手动修正浮层：选中色块后显示 */}
+        {/* 手动修正浮层：选中色块后悬浮显示 */}
         {selectedCell && (
           <div
             data-testid="manual-fix-popup"
-            className="flex items-center gap-3 rounded-2xl border border-slate-200/80 bg-slate-50/96 px-4 py-3 dark:border-slate-700/80 dark:bg-slate-900/96"
+            className="absolute bottom-6 left-1/2 -translate-x-1/2 z-10 flex items-center gap-3 rounded-2xl border border-slate-200/80 bg-slate-50/96 px-4 py-3 shadow-lg dark:border-slate-700/80 dark:bg-slate-900/96"
           >
             <span className="text-sm text-slate-700 dark:text-slate-300">
               {t("ext_canvas_row")} {selectedCell[0] + 1} / {t("ext_canvas_col")} {selectedCell[1] + 1}

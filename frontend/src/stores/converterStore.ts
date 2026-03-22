@@ -18,6 +18,7 @@ import {
   fetchLutList as apiFetchLutList,
   convertPreview as apiConvertPreview,
   convertGenerate as apiConvertGenerate,
+  convertGenerateLargeFormat as apiConvertGenerateLargeFormat,
   fetchBedSizes as apiFetchBedSizes,
   uploadHeightmap as apiUploadHeightmap,
   fetchLutColors as apiFetchLutColors,
@@ -139,6 +140,11 @@ export interface ConverterState {
   // 涂层
   enable_coating: boolean;
   coating_height_mm: number;
+
+  // 大画幅
+  largeFormatEnabled: boolean;
+  tileWidthMm: number;
+  tileHeightMm: number;
 
   // 颜色替换
   replacement_regions: ColorReplacementItem[];
@@ -280,6 +286,11 @@ export interface ConverterActions {
   setWireHeightMm: (height: number) => void;
   setEnableCoating: (enabled: boolean) => void;
   setCoatingHeightMm: (height: number) => void;
+
+  // 大画幅
+  setLargeFormatEnabled: (enabled: boolean) => void;
+  setTileWidthMm: (width: number) => void;
+  setTileHeightMm: (height: number) => void;
 
   // 热床尺寸
   setBedLabel: (label: string) => void;
@@ -428,6 +439,9 @@ const DEFAULT_STATE: ConverterState = {
   wire_height_mm: 0.4,
   enable_coating: false,
   coating_height_mm: 0.08,
+  largeFormatEnabled: false,
+  tileWidthMm: 250,
+  tileHeightMm: 250,
   replacement_regions: [],
   free_color_set: new Set(),
   selectedColor: null,
@@ -520,7 +534,10 @@ export const useConverterStore = create<ConverterState & ConverterActions>(
         imagePreviewUrl: previewUrl,
         cropModalOpen: shouldOpenCrop,
         hasManualPreview: false,
+        layerImages: [],
+        layerImagesOpen: false,
       });
+      console.log('[DEBUG] setImageFile: cleared layerImages');
     },
 
     // --- 基础参数 ---
@@ -545,14 +562,15 @@ export const useConverterStore = create<ConverterState & ConverterActions>(
 
     setTargetWidthMm: (width: number) =>
       set((state) => {
-        const clamped = clampValue(width, 10, 400);
+        const max = state.largeFormatEnabled ? 9999 : 400;
+        const clamped = clampValue(width, 10, max);
         if (state.aspectRatio) {
           return {
             target_width_mm: clamped,
             target_height_mm: clampValue(
               Math.round(clamped / state.aspectRatio),
               10,
-              400,
+              max,
             ),
             threemfDiskPath: null,
             downloadUrl: null,
@@ -567,14 +585,15 @@ export const useConverterStore = create<ConverterState & ConverterActions>(
 
     setTargetHeightMm: (height: number) =>
       set((state) => {
-        const clamped = clampValue(height, 10, 400);
+        const max = state.largeFormatEnabled ? 9999 : 400;
+        const clamped = clampValue(height, 10, max);
         if (state.aspectRatio) {
           return {
             target_height_mm: clamped,
             target_width_mm: clampValue(
               Math.round(clamped * state.aspectRatio),
               10,
-              400,
+              max,
             ),
           };
         }
@@ -736,6 +755,14 @@ export const useConverterStore = create<ConverterState & ConverterActions>(
       }),
     setCoatingHeightMm: (height: number) =>
       set({ coating_height_mm: clampValue(height, 0.04, 0.12) }),
+
+    // --- 大画幅 ---
+    setLargeFormatEnabled: (enabled: boolean) =>
+      set({ largeFormatEnabled: enabled, threemfDiskPath: null, downloadUrl: null }),
+    setTileWidthMm: (width: number) =>
+      set({ tileWidthMm: clampValue(width, 50, 500), threemfDiskPath: null, downloadUrl: null }),
+    setTileHeightMm: (height: number) =>
+      set({ tileHeightMm: clampValue(height, 50, 500), threemfDiskPath: null, downloadUrl: null }),
 
     // --- 热床尺寸 ---
     setBedLabel: (label: string) => {
@@ -1115,7 +1142,22 @@ export const useConverterStore = create<ConverterState & ConverterActions>(
       set({ bedSizesLoading: true });
       try {
         const response = await apiFetchBedSizes();
-        set({ bedSizes: response.beds, bedSizesLoading: false });
+        const beds = response.beds;
+        
+        // 获取当前状态
+        const state = useConverterStore.getState();
+        const currentBedLabel = state.bed_label;
+        const settingsPrinterModel = useSettingsStore.getState().printerModel;
+        
+        // 查找当前设置的打印机型号对应的热床选项
+        const printerBed = beds.find(bed => bed.printer_id === settingsPrinterModel);
+        
+        // 如果找到了对应的打印机型号，且当前是默认值，则自动选中
+        if (printerBed && currentBedLabel === "256×256 mm") {
+          set({ bedSizes: beds, bedSizesLoading: false, bed_label: printerBed.label });
+        } else {
+          set({ bedSizes: beds, bedSizesLoading: false });
+        }
       } catch (err) {
         set({
           bedSizesLoading: false,
@@ -1221,7 +1263,8 @@ export const useConverterStore = create<ConverterState & ConverterActions>(
       _previewAbortController = new AbortController();
       const { signal } = _previewAbortController;
 
-      set({ isLoading: true, error: null });
+      set({ isLoading: true, error: null, hasManualPreview: false, layerImages: [], layerImagesOpen: false });
+      console.log('[DEBUG] submitPreview: cleared layerImages');
       try {
         const response = await apiConvertPreview(
           state.imageFile,
@@ -1265,7 +1308,10 @@ export const useConverterStore = create<ConverterState & ConverterActions>(
           previewPixelWidth: response.dimensions?.width ?? null,
           previewPixelHeight: response.dimensions?.height ?? null,
           hasManualPreview: true,
+          layerImages: [],
+          layerImagesOpen: false,
         });
+        console.log('[DEBUG] submitPreview success: cleared layerImages for new sessionId');
       } catch (err) {
         // Ignore aborted requests (user started a new preview)
         if (err instanceof Error && err.name === "CanceledError") {
@@ -1314,7 +1360,7 @@ export const useConverterStore = create<ConverterState & ConverterActions>(
           mergedReplacements = [...(mergedReplacements ?? []), ...remapRegions];
         }
 
-        const response = await apiConvertGenerate(state.sessionId, {
+        const baseParams = {
           lut_name: state.lut_name,
           target_width_mm: state.target_width_mm,
           auto_bg: state.auto_bg,
@@ -1364,10 +1410,30 @@ export const useConverterStore = create<ConverterState & ConverterActions>(
           printer_id: useSettingsStore.getState().printerModel,
           slicer: useSettingsStore.getState().slicerSoftware,
           use_cached_matched_rgb: state.regionReplacementCount > 0,
-        });
-        // 后端返回 download_url 和可选的 preview_3d_url
-        // preview_3d_url 指向 GLB 文件（Three.js 可加载）
-        // download_url 指向 3MF 文件（ZIP 格式，Three.js 无法加载）
+        } as const;
+
+        if (state.largeFormatEnabled) {
+          const lfResponse = await apiConvertGenerateLargeFormat(
+            state.sessionId!,
+            {
+              target_height_mm: state.target_height_mm,
+              tile_width_mm: state.tileWidthMm,
+              tile_height_mm: state.tileHeightMm,
+              params: baseParams,
+            },
+          );
+          set({
+            isLoading: false,
+            modelUrl: null,
+            threemfDiskPath: null,
+            downloadUrl: lfResponse.download_url
+              ? `http://localhost:8000${lfResponse.download_url}`
+              : null,
+          });
+          return null;
+        }
+
+        const response = await apiConvertGenerate(state.sessionId, baseParams);
         const modelUrl = response.preview_3d_url
           ? `http://localhost:8000${response.preview_3d_url}`
           : null;
@@ -1568,7 +1634,10 @@ export const useConverterStore = create<ConverterState & ConverterActions>(
             batchMode: false,
             hasManualPreview: false,
             cropModalOpen: state.enableCrop,
+            layerImages: [],
+            layerImagesOpen: false,
           });
+          console.log('[DEBUG] handleFilesSelect (replace): cleared layerImages');
         } else {
           // Empty state: set imageFile, enter SingleMode
           const previewUrl = URL.createObjectURL(validFiles[0]);
@@ -1584,7 +1653,10 @@ export const useConverterStore = create<ConverterState & ConverterActions>(
             batchMode: false,
             hasManualPreview: false,
             cropModalOpen: state.enableCrop,
+            layerImages: [],
+            layerImagesOpen: false,
           });
+          console.log('[DEBUG] handleFilesSelect (new): cleared layerImages');
         }
         return;
       }
@@ -1609,7 +1681,10 @@ export const useConverterStore = create<ConverterState & ConverterActions>(
         previewGlbUrl: null,
         batchMode: true,
         hasManualPreview: false,
+        layerImages: [],
+        layerImagesOpen: false,
       });
+      console.log('[DEBUG] handleFilesSelect (batch): cleared layerImages');
     },
 
     submitBatch: async () => {

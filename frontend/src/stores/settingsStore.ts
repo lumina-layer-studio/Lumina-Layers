@@ -86,7 +86,18 @@ export const useSettingsStore = create<SettingsState & SettingsActions>()(
 
       setPaletteMode: (mode: "swatch" | "card") => set({ paletteMode: mode }),
 
-      setPrinterModel: (id: string) => set({ printerModel: id }),
+      setPrinterModel: (id: string) => {
+        set({ printerModel: id });
+        
+        // 延迟导入避免循环依赖
+        import("./converterStore").then(({ useConverterStore }) => {
+          const { bedSizes, setBedLabel } = useConverterStore.getState();
+          const printerBed = bedSizes.find(bed => bed.printer_id === id);
+          if (printerBed) {
+            setBedLabel(printerBed.label);
+          }
+        });
+      },
 
       setSlicerSoftware: (id: string) => set({ slicerSoftware: id }),
 

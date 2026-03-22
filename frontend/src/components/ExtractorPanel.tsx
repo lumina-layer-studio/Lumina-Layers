@@ -7,14 +7,11 @@ import Slider from "./ui/Slider";
 import Checkbox from "./ui/Checkbox";
 import Button from "./ui/Button";
 import ImageUpload from "./ui/ImageUpload";
-import { useWorkspaceMode } from "../hooks/useWorkspaceMode";
 import {
   PanelIntro,
   StatusBanner,
-  cx,
-  resolvePanelSurfaceClass,
-  resolveSectionCardClass,
-  workstationInputClass,
+  panelSurfaceClass,
+  sectionCardClass,
 } from "./ui/panelPrimitives";
 
 const colorModeOptions = Object.values(ExtractorColorMode).map((v) => ({
@@ -40,7 +37,6 @@ const pageOptions = Object.values(ExtractorPage).map((v) => ({
 
 export default function ExtractorPanel() {
   const { t } = useI18n();
-  const workspace = useWorkspaceMode();
   const {
     color_mode,
     page,
@@ -102,7 +98,7 @@ export default function ExtractorPanel() {
       animate={{ opacity: 1, x: 0 }}
       transition={{ type: "spring", damping: 25, stiffness: 300 }}
       data-testid="extractor-panel"
-      className={`${resolvePanelSurfaceClass(workspace.mode)} h-auto w-full overflow-y-auto ${workspace.isWide ? "2xl:h-full 2xl:basis-[clamp(22rem,30vw,30rem)] 2xl:shrink-0" : ""}`}
+      className={`${panelSurfaceClass} h-auto w-full overflow-y-auto xl:h-full xl:w-[400px] xl:shrink-0 2xl:w-[480px]`}
     >
       <div className="flex flex-col gap-5">
         <PanelIntro
@@ -111,8 +107,8 @@ export default function ExtractorPanel() {
           description={t("ext_desc")}
         />
 
-        <section className={`${resolveSectionCardClass(workspace.mode)} flex flex-col gap-4`}>
-          <div className={`grid gap-4 ${workspace.isWide ? "2xl:grid-cols-2" : ""}`}>
+        <section className={`${sectionCardClass} flex flex-col gap-4`}>
+          <div className="grid gap-4 2xl:grid-cols-2">
             <div data-testid="color-mode-select">
               <Dropdown
                 label={t("ext_color_mode_label")}
@@ -133,7 +129,7 @@ export default function ExtractorPanel() {
               </div>
             )}
 
-            <div data-testid="image-upload" className={`flex flex-col gap-2 ${workspace.isWide ? "2xl:col-span-2" : ""}`}>
+            <div data-testid="image-upload" className="flex flex-col gap-2 2xl:col-span-2">
               <label className="text-sm font-medium text-slate-700 dark:text-slate-200">{t("ext_upload_label")}</label>
               <ImageUpload
                 onFileSelect={(file) => setImageFile(file)}
@@ -144,21 +140,21 @@ export default function ExtractorPanel() {
           </div>
         </section>
 
-        <section className={`${resolveSectionCardClass(workspace.mode)} flex flex-col gap-4`}>
+        <section className={`${sectionCardClass} flex flex-col gap-4`}>
           <h3 className="text-base font-semibold text-slate-900 dark:text-slate-50">{t("ext_correction_section")}</h3>
-          <div className={`grid gap-4 ${workspace.isWide ? "2xl:grid-cols-2" : ""}`}>
+          <div className="grid gap-4 2xl:grid-cols-2">
             <Slider label={t("ext_offset_x_label")} value={offset_x} min={-30} max={30} step={1} onChange={setOffsetX} />
             <Slider label={t("ext_offset_y_label")} value={offset_y} min={-30} max={30} step={1} onChange={setOffsetY} />
             <Slider label={t("ext_zoom_label")} value={zoom} min={0.8} max={1.2} step={0.01} onChange={setZoom} />
             <Slider label={t("ext_distortion_label")} value={distortion} min={-0.2} max={0.2} step={0.01} onChange={setDistortion} />
           </div>
-          <div className={`grid gap-3 ${workspace.isCompact ? "" : workspace.isWide ? "lg:grid-cols-2 2xl:grid-cols-1" : "lg:grid-cols-2"}`}>
+          <div className="grid gap-3 lg:grid-cols-2 2xl:grid-cols-1">
             <Checkbox label={t("ext_wb_label")} checked={white_balance} onChange={setWhiteBalance} />
             <Checkbox label={t("ext_vignette_label")} checked={vignette_correction} onChange={setVignetteCorrection} />
           </div>
         </section>
 
-        <section className={`${resolveSectionCardClass(workspace.mode)} flex flex-col gap-3 ${workspace.isCompact ? "" : "lg:flex-row"}`}>
+        <section className={`${sectionCardClass} flex flex-col gap-3 lg:flex-row`}>
           <div data-testid="extract-button">
             <Button
               label={t("ext_extract_btn_label")}
@@ -180,12 +176,12 @@ export default function ExtractorPanel() {
         </section>
 
         {isMultiPage && (
-          <section data-testid="merge-section" className={`${resolveSectionCardClass(workspace.mode)} flex flex-col gap-3`}>
+          <section data-testid="merge-section" className={`${sectionCardClass} flex flex-col gap-3`}>
             <div>
               <h3 className="text-base font-semibold text-slate-900 dark:text-slate-50">{mergeTitle}</h3>
               <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{t("ext_page_label")}</p>
             </div>
-            <div className={`grid gap-2 text-sm ${workspace.isCompact ? "" : workspace.isWide ? "lg:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2" : "lg:grid-cols-2"}`}>
+            <div className="grid gap-2 text-sm lg:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">
               <div className="flex items-center justify-between rounded-2xl border border-slate-200/80 bg-white/55 px-3 py-2 dark:border-slate-700/80 dark:bg-slate-900/55">
                 <span className="text-slate-600 dark:text-slate-300">{t("ext_page_1_label")}</span>
                 <span className={p1Done ? "text-emerald-600 dark:text-emerald-400" : "text-slate-400 dark:text-slate-500"}>
@@ -218,7 +214,7 @@ export default function ExtractorPanel() {
         )}
 
         {defaultPalette.length > 0 && !paletteConfirmed && (
-          <section data-testid="palette-confirm-section" className={`${resolveSectionCardClass(workspace.mode)} flex flex-col gap-3`}>
+          <section data-testid="palette-confirm-section" className={`${sectionCardClass} flex flex-col gap-3`}>
             <div>
               <h3 className="text-base font-semibold text-slate-900 dark:text-slate-50">{t("ext_palette_title")}</h3>
               <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{t("ext_material_type_label")}</p>
@@ -239,7 +235,7 @@ export default function ExtractorPanel() {
                     style={{ backgroundColor: entry.hex_color || "#ccc" }}
                   />
                   <input
-                    className={cx(workstationInputClass, "min-h-10 flex-1 px-3")}
+                    className="min-h-10 flex-1 rounded-2xl border border-slate-200/80 bg-white/90 px-3 py-2 text-sm text-slate-800 outline-none shadow-[var(--shadow-control)] focus:border-blue-400 focus:ring-4 focus:ring-[var(--focus-ring)] dark:border-slate-700/80 dark:bg-slate-900 dark:text-slate-100"
                     value={entry.color}
                     onChange={(e) => updatePaletteEntry(idx, { color: e.target.value })}
                   />
@@ -264,7 +260,7 @@ export default function ExtractorPanel() {
         )}
 
         {lut_download_url && (
-          <section className={`${resolveSectionCardClass(workspace.mode)} flex flex-col gap-3`}>
+          <section className={`${sectionCardClass} flex flex-col gap-3`}>
             <a
               data-testid="lut-download-link"
               href={lut_download_url}

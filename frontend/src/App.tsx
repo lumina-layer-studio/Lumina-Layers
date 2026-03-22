@@ -265,16 +265,20 @@ function AppContent() {
         {activeTab === 'calibration' && <CalibrationPanel />}
 
         {activeTab === 'extractor' && (
-          <div className={`flex h-full min-h-0 flex-col ${workspace.isWide ? "2xl:flex-row" : ""}`}>
+          <div className="flex h-full min-h-0">
             <ExtractorPanel />
-            <div className={`relative min-h-0 flex-1 overflow-hidden border-slate-200/70 dark:border-slate-800/80 ${workspace.isWide ? "border-t 2xl:border-l 2xl:border-t-0" : "border-t"}`}>
+            <div className="relative min-h-0 flex-1 overflow-hidden border-l border-slate-200/70 dark:border-slate-800/80">
               <ExtractorCanvas />
             </div>
           </div>
         )}
 
         {activeTab === 'lut-manager' && <LutManagerPanel />}
-        {activeTab === 'five-color' && <FiveColorQueryPanel />}
+        {activeTab === 'five-color' && (
+          <div className="flex h-full min-h-0">
+            <FiveColorQueryPanel />
+          </div>
+        )}
         {activeTab === 'vectorizer' && <VectorizerPanel />}
         {activeTab === 'settings' && <SettingsPanel />}
       </main>

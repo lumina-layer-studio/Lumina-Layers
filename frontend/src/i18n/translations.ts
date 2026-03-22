@@ -168,12 +168,12 @@ export const translations: Record<string, Record<"zh" | "en", string>> = {
     en: "Structure",
   },
   conv_structure_double: {
-    zh: "双面 (钥匙扣)",
-    en: "Double-sided (Keychain)",
+    zh: "双面",
+    en: "Double-sided",
   },
   conv_structure_single: {
-    zh: "单面 (浮雕)",
-    en: "Single-sided (Relief)",
+    zh: "单面",
+    en: "Single-sided",
   },
   conv_modeling_mode: {
     zh: "🎨 建模模式",
@@ -1655,13 +1655,39 @@ export const translations: Record<string, Record<"zh" | "en", string>> = {
     en: "Only JPG/PNG/SVG/WebP/HEIC formats are supported",
   },
 
+  // ==================== Large Format Mode ====================
+  slicer_download_zip: {
+    zh: "下载 ZIP",
+    en: "Download ZIP",
+  },
+  slicer_generate_download_zip: {
+    zh: "生成并下载 ZIP",
+    en: "Generate & Download ZIP",
+  },
+  basic_large_format: {
+    zh: "大画幅模式",
+    en: "Large Format Mode",
+  },
+  basic_large_format_hint: {
+    zh: "自动切割为多片 3MF 压缩包",
+    en: "Auto-tiled into a ZIP of 3MF files",
+  },
+  basic_tile_width: {
+    zh: "切片宽度",
+    en: "Tile Width",
+  },
+  basic_tile_height: {
+    zh: "切片高度",
+    en: "Tile Height",
+  },
+
   // ==================== Structure Mode Options ====================
   "structure_mode.Double-sided": {
-    zh: "双面（钥匙扣）",
+    zh: "双面",
     en: "Double-sided",
   },
   "structure_mode.Single-sided": {
-    zh: "单面（浮雕）",
+    zh: "单面",
     en: "Single-sided",
   },
 

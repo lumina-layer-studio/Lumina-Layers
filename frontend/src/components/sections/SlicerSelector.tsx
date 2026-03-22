@@ -57,7 +57,13 @@ export function getButtonLabel(
   threemfDiskPath: string | null,
   slicerName: string | null,
   t: (key: string) => string,
+  largeFormat?: boolean,
 ): string {
+  if (largeFormat) {
+    return threemfDiskPath || hasSlicers
+      ? t("slicer_download_zip")
+      : t("slicer_generate_download_zip");
+  }
   if (hasSlicers) {
     return threemfDiskPath
       ? t("slicer_open_in").replace("{name}", slicerName ?? "")
@@ -71,6 +77,7 @@ interface SlicerSelectorProps {
   downloadUrl: string | null;
   canSubmit: boolean;
   onAutoGenerate: () => Promise<string | null>;
+  largeFormat?: boolean;
 }
 
 export default function SlicerSelector({
@@ -78,6 +85,7 @@ export default function SlicerSelector({
   downloadUrl,
   canSubmit,
   onAutoGenerate,
+  largeFormat,
 }: SlicerSelectorProps) {
   const slicers = useSlicerStore((s) => s.slicers);
   const selectedSlicerId = useSlicerStore((s) => s.selectedSlicerId);
@@ -163,41 +171,38 @@ export default function SlicerSelector({
     link.click();
   };
 
-  const handleMainClick = async () => {
-    if (!hasSlicers) {
-      // Download fallback (task 7.3)
-      if (downloadUrl) {
-        // 3MF already exists — download directly
-        triggerDownload(downloadUrl);
-      } else {
-        // No 3MF — auto-generate then download
-        setIsAutoGenerating(true);
-        try {
-          await onAutoGenerate();
-          // Read the latest downloadUrl from ConverterStore after generation
-          const latestDownloadUrl = useConverterStore.getState().downloadUrl;
-          if (latestDownloadUrl) {
-            triggerDownload(latestDownloadUrl);
-          }
-        } catch {
-          // Error state is set by submitGenerate in ConverterStore
-        } finally {
-          setIsAutoGenerating(false);
-        }
-      }
-      return;
-    }
-
-    // Has slicers
-    if (threemfDiskPath) {
-      // 3MF exists — launch slicer directly
-      void launchSlicer(threemfDiskPath);
+  const handleDownloadOrGenerate = async () => {
+    if (downloadUrl) {
+      triggerDownload(downloadUrl);
     } else {
-      // No 3MF — auto-generate then launch (task 7.1 + 7.2)
       setIsAutoGenerating(true);
       try {
         await onAutoGenerate();
-        // Read the latest threemfDiskPath from ConverterStore after generation
+        const latestDownloadUrl = useConverterStore.getState().downloadUrl;
+        if (latestDownloadUrl) {
+          triggerDownload(latestDownloadUrl);
+        }
+      } catch {
+        // Error state is set by submitGenerate in ConverterStore
+      } finally {
+        setIsAutoGenerating(false);
+      }
+    }
+  };
+
+  const handleMainClick = async () => {
+    if (largeFormat || !hasSlicers) {
+      await handleDownloadOrGenerate();
+      return;
+    }
+
+    // Has slicers (normal mode)
+    if (threemfDiskPath) {
+      void launchSlicer(threemfDiskPath);
+    } else {
+      setIsAutoGenerating(true);
+      try {
+        await onAutoGenerate();
         const latestPath = useConverterStore.getState().threemfDiskPath;
         if (latestPath) {
           void launchSlicer(latestPath);
@@ -232,6 +237,7 @@ export default function SlicerSelector({
     threemfDiskPath,
     selectedSlicer?.display_name ?? null,
     t,
+    largeFormat,
   );
 
   return (
@@ -316,7 +322,7 @@ export default function SlicerSelector({
                   <path d="M10.75 2.75a.75.75 0 00-1.5 0v8.614L6.295 8.235a.75.75 0 10-1.09 1.03l4.25 4.5a.75.75 0 001.09 0l4.25-4.5a.75.75 0 00-1.09-1.03l-2.955 3.129V2.75z" />
                   <path d="M3.5 12.75a.75.75 0 00-1.5 0v2.5A2.75 2.75 0 004.75 18h10.5A2.75 2.75 0 0018 15.25v-2.5a.75.75 0 00-1.5 0v2.5c0 .69-.56 1.25-1.25 1.25H4.75c-.69 0-1.25-.56-1.25-1.25v-2.5z" />
                 </svg>
-                {t("slicer_download_3mf")}
+                {largeFormat ? t("slicer_download_zip") : t("slicer_download_3mf")}
               </button>
             </div>,
             document.body,
@@ -341,7 +347,7 @@ export default function SlicerSelector({
                     <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
                   </svg>
                 )}
-                {getButtonLabel(false, threemfDiskPath, null, t)}
+                {getButtonLabel(false, threemfDiskPath, null, t, largeFormat)}
               </button>
             </>
           )}

@@ -40,6 +40,7 @@ from core.pipeline.s03_color_replacement import _normalize_color_replacements_in
 try:
     from svglib.svglib import svg2rlg
     from reportlab.graphics import renderPM
+
     HAS_SVG_LIB = True
 except ImportError:
     HAS_SVG_LIB = False
@@ -54,24 +55,24 @@ _RASTER_STEPS = [
     # S01 is called separately (before vector branch check)
     (s02_image_processing, "S02", 0.05, 0.20, False),
     (s03_color_replacement, "S03", 0.20, 0.25, False),
-    (s04_debug_preview,     "S04", 0.25, 0.28, True),
-    (s05_preview_generation,"S05", 0.28, 0.35, False),
-    (s06_voxel_building,    "S06", 0.35, 0.45, False),
-    (s07_mesh_generation,   "S07", 0.45, 0.60, False),
-    (s08_auxiliary_meshes,  "S08", 0.60, 0.68, False),
-    (s09_export_3mf,        "S09", 0.68, 0.75, False),
-    (s10_color_recipe,      "S10", 0.75, 0.80, True),
-    (s11_glb_preview,       "S11", 0.80, 0.90, False),
-    (s12_result_assembly,   "S12", 0.90, 1.00, False),
+    (s04_debug_preview, "S04", 0.25, 0.28, True),
+    (s05_preview_generation, "S05", 0.28, 0.35, False),
+    (s06_voxel_building, "S06", 0.35, 0.45, False),
+    (s07_mesh_generation, "S07", 0.45, 0.60, False),
+    (s08_auxiliary_meshes, "S08", 0.60, 0.68, False),
+    (s09_export_3mf, "S09", 0.68, 0.75, False),
+    (s10_color_recipe, "S10", 0.75, 0.80, True),
+    (s11_glb_preview, "S11", 0.80, 0.90, False),
+    (s12_result_assembly, "S12", 0.90, 1.00, False),
 ]
 
 _PREVIEW_STEPS = [
     # P01 is called separately (for early error check)
-    (p02_lut_metadata,    "P02", 0.10, 0.20, False),
+    (p02_lut_metadata, "P02", 0.10, 0.20, False),
     (p03_core_processing, "P03", 0.20, 0.55, False),
-    (p04_cache_building,  "P04", 0.55, 0.70, False),
+    (p04_cache_building, "P04", 0.55, 0.70, False),
     (p05_palette_extraction, "P05", 0.70, 0.80, False),
-    (p06_bed_rendering,   "P06", 0.80, 1.00, False),
+    (p06_bed_rendering, "P06", 0.80, 1.00, False),
 ]
 
 
@@ -84,7 +85,7 @@ def _report_progress(ctx: dict, value: float, desc: str = "") -> None:
         value: 进度值 (0.0 - 1.0)
         desc: 进度描述文本
     """
-    progress = ctx.get('progress')
+    progress = ctx.get("progress")
     if progress is not None:
         progress(value, desc=desc)
 
@@ -92,6 +93,7 @@ def _report_progress(ctx: dict, value: float, desc: str = "") -> None:
 # ===================================================================
 # Raster pipeline
 # ===================================================================
+
 
 def run_raster_pipeline(ctx: dict) -> dict:
     """Execute raster conversion pipeline S01-S12 in order.
@@ -110,36 +112,53 @@ def run_raster_pipeline(ctx: dict) -> dict:
     Returns:
         更新后的 PipelineContext 字典
     """
+    pipeline_t0 = time.perf_counter()
+    step_timings = {}
+
     # ---- S01: Input validation ----
     _report_progress(ctx, 0.0, "输入验证中... | Validating inputs...")
+    t0 = time.perf_counter()
     try:
         ctx = s01_input_validation.run(ctx)
     except Exception as exc:
-        ctx['error'] = f"[S01] {exc}"
+        ctx["error"] = f"[S01] {exc}"
         return ctx
+    step_timings["S01"] = time.perf_counter() - t0
 
-    if ctx.get('error'):
+    if ctx.get("error"):
         return ctx
 
     # ---- Vector branch check ----
-    if ctx.get('is_svg_vector'):
+    if ctx.get("is_svg_vector"):
         return _run_vector_branch(ctx)
 
     # ---- S02-S12: Raster steps ----
     for module, label, prog_before, prog_after, optional in _RASTER_STEPS:
         _report_progress(ctx, prog_before, f"{label} 执行中...")
+        t0 = time.perf_counter()
         try:
             ctx = module.run(ctx)
         except Exception as exc:
             if optional:
                 print(f"[COORDINATOR] Warning: optional step {label} failed: {exc}")
             else:
-                ctx['error'] = f"[{label}] {exc}"
+                ctx["error"] = f"[{label}] {exc}"
                 print(f"[COORDINATOR] Pipeline aborted at {label}: {exc}")
                 return ctx
-        if ctx.get('error'):
+        step_timings[label] = time.perf_counter() - t0
+        if ctx.get("error"):
             return ctx
         _report_progress(ctx, prog_after)
+
+    total_s = time.perf_counter() - pipeline_t0
+    print(f"\n{'=' * 60}")
+    print(f"[PIPELINE] S01-S12 completed in {total_s:.2f}s")
+    for label, elapsed in step_timings.items():
+        pct = elapsed / total_s * 100 if total_s > 0 else 0
+        print(f"  {label}: {elapsed:.2f}s ({pct:.1f}%)")
+    print(f"{'=' * 60}")
+    ctx["_pipeline_total_s"] = total_s
+    ctx["_step_timings"] = step_timings
 
     return ctx
 
@@ -147,6 +166,7 @@ def run_raster_pipeline(ctx: dict) -> dict:
 # ===================================================================
 # Preview pipeline
 # ===================================================================
+
 
 def run_preview_pipeline(ctx: dict) -> dict:
     """Execute preview pipeline P01-P06 in order.
@@ -165,10 +185,10 @@ def run_preview_pipeline(ctx: dict) -> dict:
     try:
         ctx = p01_preview_validation.run(ctx)
     except Exception as exc:
-        ctx['error'] = f"[P01] {exc}"
+        ctx["error"] = f"[P01] {exc}"
         return ctx
 
-    if ctx.get('error'):
+    if ctx.get("error"):
         return ctx
 
     # ---- P02-P06 ----
@@ -180,20 +200,20 @@ def run_preview_pipeline(ctx: dict) -> dict:
             if optional:
                 print(f"[COORDINATOR] Warning: optional step {label} failed: {exc}")
             else:
-                ctx['error'] = f"[{label}] {exc}"
+                ctx["error"] = f"[{label}] {exc}"
                 print(f"[COORDINATOR] Preview pipeline aborted at {label}: {exc}")
                 return ctx
-        if ctx.get('error'):
+        if ctx.get("error"):
             return ctx
         _report_progress(ctx, prog_after)
 
     return ctx
 
 
-
 # ===================================================================
 # Vector branch (SVG native processing)
 # ===================================================================
+
 
 def _run_vector_branch(ctx: dict) -> dict:
     """Execute SVG native vector processing branch.
@@ -214,15 +234,15 @@ def _run_vector_branch(ctx: dict) -> dict:
     from utils.bambu_3mf_writer import export_scene_with_bambu_metadata
     from utils import Stats
 
-    image_path = ctx['image_path']
-    actual_lut_path = ctx['actual_lut_path']
-    color_mode = ctx['color_mode']
-    modeling_mode = ctx['modeling_mode']
-    target_width_mm = ctx['target_width_mm']
-    spacer_thick = ctx['spacer_thick']
-    structure_mode = ctx['structure_mode']
-    color_replacements = ctx.get('color_replacements')
-    replacement_regions = ctx.get('replacement_regions')
+    image_path = ctx["image_path"]
+    actual_lut_path = ctx["actual_lut_path"]
+    color_mode = ctx["color_mode"]
+    modeling_mode = ctx["modeling_mode"]
+    target_width_mm = ctx["target_width_mm"]
+    spacer_thick = ctx["spacer_thick"]
+    structure_mode = ctx["structure_mode"]
+    color_replacements = ctx.get("color_replacements")
+    replacement_regions = ctx.get("replacement_regions")
 
     print("[COORDINATOR] Using Native Vector Engine (Shapely/Clipper)...")
     vector_timing = {}
@@ -253,7 +273,7 @@ def _run_vector_branch(ctx: dict) -> dict:
             vector_timing.update(vec_processor.last_stage_timings)
 
         if len(scene.geometry) == 0:
-            ctx['error'] = "[ERROR] Vector mesh generation failed: no valid geometry generated"
+            ctx["error"] = "[ERROR] Vector mesh generation failed: no valid geometry generated"
             return ctx
 
         # 2. Export 3MF
@@ -281,27 +301,27 @@ def _run_vector_branch(ctx: dict) -> dict:
             vec_slot_names.append(geom_name)
 
         if not vec_slot_names:
-            ctx['error'] = "[ERROR] Vector export aborted: all generated geometries are empty"
+            ctx["error"] = "[ERROR] Vector export aborted: all generated geometries are empty"
             return ctx
 
-        vec_preview_colors = vec_color_conf['preview']
+        vec_preview_colors = vec_color_conf["preview"]
 
         vec_print_settings = {
-            'layer_height': '0.08',
-            'initial_layer_height': '0.08',
-            'wall_loops': '1',
-            'top_shell_layers': '0',
-            'bottom_shell_layers': '0',
-            'sparse_infill_density': '100%',
-            'sparse_infill_pattern': 'zig-zag',
-            'nozzle_temperature': ['220'] * 8,
-            'bed_temperature': ['60'] * 8,
-            'filament_type': ['PLA'] * 8,
-            'print_speed': '100',
-            'travel_speed': '150',
-            'enable_support': '0',
-            'brim_width': '5',
-            'brim_type': 'auto_brim',
+            "layer_height": "0.08",
+            "initial_layer_height": "0.08",
+            "wall_loops": "1",
+            "top_shell_layers": "0",
+            "bottom_shell_layers": "0",
+            "sparse_infill_density": "100%",
+            "sparse_infill_pattern": "zig-zag",
+            "nozzle_temperature": ["220"] * 8,
+            "bed_temperature": ["60"] * 8,
+            "filament_type": ["PLA"] * 8,
+            "print_speed": "100",
+            "travel_speed": "150",
+            "enable_support": "0",
+            "brim_width": "5",
+            "brim_type": "auto_brim",
         }
 
         export_t0 = time.perf_counter()
@@ -312,8 +332,8 @@ def _run_vector_branch(ctx: dict) -> dict:
             preview_colors=vec_preview_colors,
             settings=vec_print_settings,
             color_mode=vec_color_mode,
-            printer_id=ctx.get('printer_id', 'bambu-h2d'),
-            slicer=ctx.get('slicer', 'BambuStudio'),
+            printer_id=ctx.get("printer_id", "bambu-h2d"),
+            slicer=ctx.get("slicer", "BambuStudio"),
         )
         print(f"[COORDINATOR] Vector 3MF exported with Bambu metadata: {out_path}")
         vector_timing["export_3mf_s"] = time.perf_counter() - export_t0
@@ -338,9 +358,7 @@ def _run_vector_branch(ctx: dict) -> dict:
         if skip_heavy_preview:
             print("[COORDINATOR] Skipping SVG 2D preview due to LUMINA_VECTOR_SKIP_2D_PREVIEW=1")
         elif HAS_SVG_LIB:
-            preview_img = _generate_vector_2d_preview(
-                vec_processor, image_path, target_width_mm, vector_replacements
-            )
+            preview_img = _generate_vector_2d_preview(vec_processor, image_path, target_width_mm, vector_replacements)
         else:
             print("[COORDINATOR] svglib not installed, skipping 2D preview")
         vector_timing["preview_2d_s"] = time.perf_counter() - preview_t0
@@ -351,7 +369,7 @@ def _run_vector_branch(ctx: dict) -> dict:
         _log_vector_timings(vector_timing)
 
         msg = "Vector conversion complete! Objects merged by material."
-        ctx['result_tuple'] = (out_path, glb_path, preview_img, msg, None)
+        ctx["result_tuple"] = (out_path, glb_path, preview_img, msg, None)
         return ctx
 
     except Exception as e:
@@ -364,13 +382,13 @@ def _run_vector_branch(ctx: dict) -> dict:
             "- Or switch to 'High-Fidelity' mode for rasterization"
         )
         print(f"[COORDINATOR] {error_msg}")
-        ctx['error'] = error_msg
+        ctx["error"] = error_msg
         return ctx
 
 
-def _generate_vector_2d_preview(vec_processor, image_path: str,
-                                target_width_mm: float,
-                                vector_replacements: dict) -> 'np.ndarray | None':
+def _generate_vector_2d_preview(
+    vec_processor, image_path: str, target_width_mm: float, vector_replacements: dict
+) -> "np.ndarray | None":
     """Generate 2D preview image from SVG for vector branch.
     为矢量分支从 SVG 生成 2D 预览图像。
 
@@ -384,13 +402,12 @@ def _generate_vector_2d_preview(vec_processor, image_path: str,
         np.ndarray | None: RGBA 预览图像，失败返回 None
     """
     try:
-        preview_rgba = vec_processor.img_processor._load_svg(
-            image_path, target_width_mm, pixels_per_mm=10.0
-        )
+        preview_rgba = vec_processor.img_processor._load_svg(image_path, target_width_mm, pixels_per_mm=10.0)
 
         # Apply color replacements to preview
         if vector_replacements:
             from core.color_replacement import ColorReplacementManager
+
             manager = ColorReplacementManager.from_dict(vector_replacements)
             replacements = manager.get_all_replacements()
 

@@ -25,6 +25,7 @@ export default function ActionBar() {
   const threemfDiskPath = useConverterStore((s) => s.threemfDiskPath);
   const downloadUrl = useConverterStore((s) => s.downloadUrl);
   const sessionId = useConverterStore((s) => s.sessionId);
+  const largeFormatEnabled = useConverterStore((s) => s.largeFormatEnabled);
 
   const batchMode = useConverterStore((s) => s.batchMode);
   const batchFiles = useConverterStore((s) => s.batchFiles);
@@ -66,13 +67,14 @@ export default function ActionBar() {
             <p className="text-xs text-yellow-600 dark:text-yellow-400">{t("action_upload_hint")}</p>
           )}
 
-          <div className={`gap-2 ${workspace.isCompact ? "grid grid-cols-1" : "flex flex-wrap"}`}>
+          <div className="grid grid-cols-1 gap-2">
             <Button
               label={t("action_preview")}
               variant="secondary"
               onClick={submitPreview}
               disabled={!canSubmit || isLoading}
               loading={isLoading}
+              className="w-full"
             />
             <WikiTooltip
               title="生成 3D 模型"
@@ -85,6 +87,7 @@ export default function ActionBar() {
                 onClick={() => void submitGenerate()}
                 disabled={!canSubmit || isLoading}
                 loading={isLoading}
+                className="w-full"
               />
             </WikiTooltip>
             {hasPreview && (
@@ -94,6 +97,7 @@ export default function ActionBar() {
                 onClick={() => void fetchLayerImages()}
                 disabled={layerImagesLoading}
                 loading={layerImagesLoading}
+                className="w-full"
               />
             )}
           </div>
@@ -199,6 +203,7 @@ export default function ActionBar() {
         threemfDiskPath={threemfDiskPath}
         downloadUrl={downloadUrl}
         canSubmit={canSubmit}
+        largeFormat={largeFormatEnabled}
         onAutoGenerate={async () => {
           await submitFullPipeline();
           return useConverterStore.getState().threemfDiskPath ?? null;

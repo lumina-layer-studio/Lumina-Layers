@@ -154,6 +154,8 @@ export const WidgetPanel = React.memo(function WidgetPanel({
     borderRadius: WIDGET_PANEL_RADIUS,
     pointerEvents: isBeingDragged ? 'none' : 'auto',
     zIndex: isBeingDragged ? 50 : 30,
+    overflow: 'hidden',
+    contain: 'layout style',
     ...(isBeingDragged ? { opacity: 0 } : {}),
   };
 
@@ -210,8 +212,10 @@ export const WidgetPanel = React.memo(function WidgetPanel({
           onPointerDown={(e) => e.stopPropagation()}
           style={{
             height: widget.collapsed || isBeingDragged ? 0 : 'auto',
-            overflow: widget.collapsed || isBeingDragged ? 'hidden' : 'visible',
-            visibility: widget.collapsed || isBeingDragged ? 'hidden' : 'visible',
+            overflow: 'hidden',
+            ...(widget.collapsed || isBeingDragged
+              ? { visibility: 'hidden' as const, contentVisibility: 'hidden' as const }
+              : {}),
           }}
         >
           <WidgetErrorBoundary widgetId={widgetId}>

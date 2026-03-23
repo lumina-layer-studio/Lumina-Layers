@@ -242,11 +242,13 @@ class BaseMesher(ABC):
             raw_faces[f_start : f_start + n * 12] = faces.reshape(-1, 3)
             rect_idx += n
 
-        # Fast vertex dedup via integer coordinate encoding
+        # Fast vertex dedup via collision-free integer coordinate encoding
         ix = np.round(raw_verts[:, 0]).astype(np.int64)
         iy = np.round(raw_verts[:, 1]).astype(np.int64)
         iz = np.round(raw_verts[:, 2]).astype(np.int64)
-        codes = ix * 10_000_000 + iy * 10_000 + iz
+        stride_x = int(ix.max()) + 2
+        stride_xy = stride_x * (int(iy.max()) + 2)
+        codes = ix + iy * stride_x + iz * stride_xy
         _, first_idx, inverse = np.unique(codes, return_index=True, return_inverse=True)
 
         unique_verts = raw_verts[first_idx]

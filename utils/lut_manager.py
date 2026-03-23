@@ -26,21 +26,21 @@ class LUTManager:
         exe_dir = os.path.dirname(sys.executable)
         
         # Try exe directory first (where we copy it in the spec file)
-        if os.path.exists(os.path.join(exe_dir, "lut-npy预设")):
-            LUT_PRESET_DIR = os.path.join(exe_dir, "lut-npy预设")
+        if os.path.exists(os.path.join(exe_dir, "lut-preset")):
+            LUT_PRESET_DIR = os.path.join(exe_dir, "lut-preset")
         # Then try _internal directory (fallback)
-        elif os.path.exists(os.path.join(exe_dir, "_internal", "lut-npy预设")):
-            LUT_PRESET_DIR = os.path.join(exe_dir, "_internal", "lut-npy预设")
+        elif os.path.exists(os.path.join(exe_dir, "_internal", "lut-preset")):
+            LUT_PRESET_DIR = os.path.join(exe_dir, "_internal", "lut-preset")
         # Finally try _MEIPASS (bundled resources)
-        elif hasattr(sys, '_MEIPASS') and os.path.exists(os.path.join(sys._MEIPASS, "lut-npy预设")):
-            LUT_PRESET_DIR = os.path.join(sys._MEIPASS, "lut-npy预设")
+        elif hasattr(sys, '_MEIPASS') and os.path.exists(os.path.join(sys._MEIPASS, "lut-preset")):
+            LUT_PRESET_DIR = os.path.join(sys._MEIPASS, "lut-preset")
         else:
             # Fallback to exe directory (will be created if needed)
-            LUT_PRESET_DIR = os.path.join(exe_dir, "lut-npy预设")
+            LUT_PRESET_DIR = os.path.join(exe_dir, "lut-preset")
     else:
         # Running as script
         _BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        LUT_PRESET_DIR = os.path.join(_BASE_DIR, "lut-npy预设")
+        LUT_PRESET_DIR = os.path.join(_BASE_DIR, "lut-preset")
     
     @classmethod
     def get_all_lut_files(cls) -> dict[str, str]:

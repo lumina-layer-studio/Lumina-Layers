@@ -84,8 +84,8 @@ jobs:
         if (Test-Path "assets") {
             Copy-Item -Path "assets" -Destination "$targetDir/assets" -Recurse
         }
-        if (Test-Path "lut-npy预设") {
-            Copy-Item -Path "lut-npy预设" -Destination "$targetDir/lut-npy预设" -Recurse
+        if (Test-Path "lut-preset") {
+            Copy-Item -Path "lut-preset" -Destination "$targetDir/lut-preset" -Recurse
         }
 
     - name: Upload Artifact

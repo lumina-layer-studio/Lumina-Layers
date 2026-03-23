@@ -135,7 +135,7 @@ def _pick_first_existing(candidates):
 
 
 def _pick_latest_lut():
-    lut_dir = os.path.join(_ROOT, "lut-npy预设", "Aliz", "PETG", "5色")
+    lut_dir = os.path.join(_ROOT, "lut-preset", "Aliz", "PETG", "5色")
     matches = glob.glob(os.path.join(lut_dir, "*.npy"))
     if not matches:
         raise FileNotFoundError(f"No LUT .npy file found in: {lut_dir}")

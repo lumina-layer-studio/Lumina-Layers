@@ -150,7 +150,7 @@ The software identifies the color recipe in two steps:
 ## 文件夹结构建议 / Recommended Folder Structure
 
 ```
-lut-npy预设/
+lut-preset/
 ├── {品牌 Brand}/
 │   ├── {耗材 Material}/
 │   │   ├── 4色/

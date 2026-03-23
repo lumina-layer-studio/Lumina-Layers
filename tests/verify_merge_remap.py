@@ -201,7 +201,7 @@ def verify_real_lut_files():
     print(f"{'='*60}")
 
     preset_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-                              "lut-npy预设", "Custom")
+                              "lut-preset", "Custom")
 
     lut_files = {
         "Bambulab&PLA&8色&红-品红-青-蓝-黄-白-绿-黑.npy": ("8-Color", 2738),
@@ -278,7 +278,7 @@ def verify_merged_npz():
     print(f"{'='*60}")
 
     preset_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-                              "lut-npy预设", "Custom")
+                              "lut-preset", "Custom")
 
     errors = 0
     for fname in os.listdir(preset_dir):
@@ -320,7 +320,7 @@ def verify_image_conversion():
 
     # Find merged .npz
     preset_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-                              "lut-npy预设", "Custom")
+                              "lut-preset", "Custom")
     npz_files = [f for f in os.listdir(preset_dir) if f.endswith('.npz')]
     if not npz_files:
         print(f"  ⚠️  No .npz files found, skipping")

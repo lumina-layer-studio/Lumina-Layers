@@ -442,7 +442,7 @@ def hex_to_rgb(hex_color: str) -> tuple[int, int, int]:
 
 ### 完整 4 色示例
 
-参见项目中的 `lut-npy预设/Custom/CMYK.json` 文件。
+参见项目中的 `lut-preset/Custom/CMYK.json` 文件。
 
 ## 相关文件
 

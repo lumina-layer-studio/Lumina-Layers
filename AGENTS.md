@@ -8,7 +8,7 @@ Lumina Studio is a Python + React/TypeScript multi-material FDM color workflow b
 - `api/`: FastAPI routers, schemas, session/file lifecycle, and worker orchestration
 - `frontend/src/`: React 19, TypeScript, Zustand, Axios, Three.js, Tailwind, and Vitest
 - `tests/` and `frontend/src/__tests__/`: backend/frontend regression coverage
-- `printer_profiles/`, `assets/`, `lut-npy预设/`: templates, runtime assets, and LUT presets
+- `printer_profiles/`, `assets/`, `lut-preset/`: templates, runtime assets, and LUT presets
 
 ## Common Commands
 - `pip install -r requirements.txt`

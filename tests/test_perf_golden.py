@@ -34,7 +34,7 @@ _PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 HIFI_IMAGE = os.path.join(_PROJECT_ROOT, "TCT.jpg")
 PIXEL_IMAGE = os.path.join(_PROJECT_ROOT, "Giant_Pumpkin.png")
-LUT_PATH = os.path.join(_PROJECT_ROOT, "lut-npy预设", "Custom", "lumina_lut.json")
+LUT_PATH = os.path.join(_PROJECT_ROOT, "lut-preset", "Custom", "lumina_lut.json")
 
 BASELINE_PATH = os.path.join(_PROJECT_ROOT, "tests", "golden_baseline.npz")
 TIMINGS_PATH = os.path.join(_PROJECT_ROOT, "tests", "golden_timings.json")

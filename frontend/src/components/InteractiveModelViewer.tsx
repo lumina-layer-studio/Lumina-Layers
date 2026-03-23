@@ -528,7 +528,7 @@ function InteractiveModelViewer({
         );
         const lineMat = new THREE.LineBasicMaterial({
           vertexColors: true,
-          linewidth: 2,
+          linewidth: 3,
           depthTest: false,
         });
         const line = new THREE.LineSegments(lineGeo, lineMat);
@@ -540,16 +540,31 @@ function InteractiveModelViewer({
     }
   }, [colorMeshes, mirrorMeshes, colorRemapMap, colorHeightMap, selectedColor, selectedRegions, enableRelief, baseHeight, colorContours, modelBounds, sceneCenter, spacerThick, isDoubleSided, backingMesh, backingPlateMesh, regionData, selectionMode]);
 
-  // Flowing RGB animation: shift hue offset each frame for a "light strip" effect.
+  // Flowing RGB animation with flash-on-select and brightness pulse.
   const tmpColorAnim = useRef(new THREE.Color());
+  const outlineBirthTime = useRef(0);
   useFrame(() => {
     const lines = outlineObjsRef.current;
     const arcs = outlineArcRef.current;
-    if (lines.length === 0) return;
+    if (lines.length === 0) {
+      outlineBirthTime.current = 0;
+      return;
+    }
 
-    // Advance hue offset over time (~0.3 full cycles per second)
-    const time = performance.now() * 0.0003;
+    const now = performance.now();
+    if (outlineBirthTime.current === 0) outlineBirthTime.current = now;
+    const age = now - outlineBirthTime.current;
 
+    // Flash twice on first appearance (0-700ms), then gentle pulse
+    let lightness: number;
+    if (age < 700) {
+      const phase = (age / 175) * Math.PI;
+      lightness = 0.35 + 0.4 * Math.abs(Math.sin(phase));
+    } else {
+      lightness = 0.45 + 0.1 * Math.sin(now * 0.005);
+    }
+
+    const time = now * 0.001;
     const c = tmpColorAnim.current;
     for (let li = 0; li < lines.length; li++) {
       const colorAttr = lines[li].geometry.getAttribute("color") as THREE.BufferAttribute;
@@ -560,11 +575,9 @@ function InteractiveModelViewer({
       for (let si = 0; si < pairs.length; si++) {
         const [t0, t1] = pairs[si];
         const idx = si * 6;
-        // Start vertex
-        c.setHSL((t0 + time) % 1.0, 1.0, 0.55);
+        c.setHSL((t0 + time) % 1.0, 1.0, lightness);
         arr[idx] = c.r; arr[idx + 1] = c.g; arr[idx + 2] = c.b;
-        // End vertex
-        c.setHSL((t1 + time) % 1.0, 1.0, 0.55);
+        c.setHSL((t1 + time) % 1.0, 1.0, lightness);
         arr[idx + 3] = c.r; arr[idx + 4] = c.g; arr[idx + 5] = c.b;
       }
       colorAttr.needsUpdate = true;

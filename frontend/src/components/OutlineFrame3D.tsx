@@ -4,8 +4,8 @@ import * as THREE from "three";
 
 // ========== Constants ==========
 
-/** Animation speed: hue cycles per second (~0.3). */
-const ANIM_SPEED = 0.0003;
+/** Animation speed: hue cycles per second. */
+const ANIM_SPEED = 0.001;
 
 // ========== Exported pure utility functions (testable without React) ==========
 
@@ -583,7 +583,7 @@ export default function OutlineFrame3D({
     for (let i = 0; i < vertCount; i++) {
       const angle = Math.atan2(posAttr.getY(i) - cy, posAttr.getX(i) - cx);
       const hue = (angle / (2 * Math.PI) + 1) % 1; // normalize to [0, 1]
-      tmpColor.current.setHSL(hue, 1.0, 0.55);
+      tmpColor.current.setHSL(hue, 1.0, 0.5);
       colorArr[i * 3] = tmpColor.current.r;
       colorArr[i * 3 + 1] = tmpColor.current.g;
       colorArr[i * 3 + 2] = tmpColor.current.b;
@@ -601,20 +601,34 @@ export default function OutlineFrame3D({
     return geo;
   }, [enabled, backingPlateMesh, outlineWidth, modelMaxZ]);
 
-  // Flowing RGB animation: shift hue offset each frame for a "light strip" effect.
-  // RGB 炫彩灯带动画：每帧偏移色相，产生流动彩虹效果。
+  // Flowing RGB animation with brightness pulse for visibility.
+  // RGB 炫彩灯带动画 + 亮度脉动，提高选区可见性。
+  const birthTime = useRef(0);
   useFrame(() => {
     if (!meshRef.current || !geometry) return;
     const colorAttr = geometry.getAttribute("color") as THREE.BufferAttribute;
     const hueParams = geometry.userData.hueParams as Float32Array | undefined;
     if (!colorAttr || !hueParams) return;
 
-    const time = performance.now() * ANIM_SPEED;
+    const now = performance.now();
+    if (birthTime.current === 0) birthTime.current = now;
+    const age = now - birthTime.current;
+    const time = now * ANIM_SPEED;
+
+    // Flash twice on first appearance (0-600ms), then steady pulse
+    let lightness: number;
+    if (age < 600) {
+      const phase = (age / 150) * Math.PI;
+      lightness = 0.5 + 0.35 * Math.abs(Math.sin(phase));
+    } else {
+      lightness = 0.45 + 0.1 * Math.sin(now * 0.004);
+    }
+
     const arr = colorAttr.array as Float32Array;
     const c = tmpColor.current;
 
     for (let i = 0; i < hueParams.length; i++) {
-      c.setHSL((hueParams[i] + time) % 1.0, 1.0, 0.55);
+      c.setHSL((hueParams[i] + time) % 1.0, 1.0, lightness);
       arr[i * 3] = c.r;
       arr[i * 3 + 1] = c.g;
       arr[i * 3 + 2] = c.b;

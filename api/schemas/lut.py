@@ -23,11 +23,13 @@ class PaletteEntrySchema(BaseModel):
         color: Color name, e.g. "Red", "Cyan". (颜色名称)
         material: Material name. (材料名称)
         hex_color: Optional hex color value, e.g. "#FF0000". (十六进制颜色值)
+        color_name: Optional manufacturer-provided display name. (厂商颜色名称)
     """
 
     color: str = Field(..., description="颜色名称，如 Red、Cyan")
     material: str = Field("PLA Basic", description="材料名称")
     hex_color: str | None = Field(None, description="十六进制颜色值，如 #FF0000")
+    color_name: str | None = Field(None, description="厂商提供的颜色名称")
 
 
 class MergeStats(BaseModel):

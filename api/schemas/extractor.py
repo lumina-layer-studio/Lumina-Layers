@@ -139,8 +139,12 @@ class ConfirmPaletteRequest(BaseModel):
 
     Attributes:
         session_id: Extraction session ID. (提取会话 ID)
+        manufacturer: LUT / color DB manufacturer. (厂商)
+        type: LUT / color DB type. (类型)
         palette: User-confirmed palette entries. (用户确认的调色板数组)
     """
 
     session_id: str = Field(..., description="提取会话 ID")
+    manufacturer: str = Field("", description="厂商")
+    type: str = Field("", description="类型")
     palette: list[PaletteEntrySchema] = Field(..., min_length=1, description="用户确认的调色板数组")

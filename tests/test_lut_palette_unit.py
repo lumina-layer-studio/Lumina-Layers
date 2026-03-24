@@ -29,15 +29,22 @@ class TestDataModels:
 
     def test_palette_entry_creation(self):
         """PaletteEntry 基本创建和字段访问。"""
-        entry = PaletteEntry(color="Red", material="PLA Basic", hex_color="#DC143C")
+        entry = PaletteEntry(
+            color="Red",
+            material="PLA Basic",
+            hex_color="#DC143C",
+            color_name="Signal Red",
+        )
         assert entry.color == "Red"
         assert entry.material == "PLA Basic"
         assert entry.hex_color == "#DC143C"
+        assert entry.color_name == "Signal Red"
 
         # 默认值
         entry_default = PaletteEntry(color="Cyan")
         assert entry_default.material == "PLA Basic"
         assert entry_default.hex_color is None
+        assert entry_default.color_name is None
 
     def test_metadata_default_values(self):
         """LUTMetadata 默认值正确 (5, 0.08, 0.42, 10, 0, "Top2Bottom")。"""
@@ -48,7 +55,33 @@ class TestDataModels:
         assert meta.base_layers == 10
         assert meta.base_channel_idx == 0
         assert meta.layer_order == "Top2Bottom"
+        assert meta.manufacturer == ""
+        assert meta.type == ""
         assert meta.palette == []
+
+    def test_metadata_round_trip_preserves_colordb_fields(self):
+        """to_dict / from_dict 可往返保持新增 colordb 字段。"""
+        meta = LUTMetadata(
+            palette=[
+                PaletteEntry(
+                    color="White",
+                    material="PLA Basic",
+                    hex_color="#FFFFFF",
+                    color_name="Jade White",
+                ),
+            ],
+            manufacturer="Bambu Lab",
+            type="PLA Basic",
+            color_mode="4-Color (CMYW)",
+        )
+
+        round_tripped = LUTMetadata.from_dict(meta.to_dict())
+
+        assert round_tripped.manufacturer == "Bambu Lab"
+        assert round_tripped.type == "PLA Basic"
+        assert len(round_tripped.palette) == 1
+        assert round_tripped.palette[0].color == "White"
+        assert round_tripped.palette[0].color_name == "Jade White"
 
     def test_hex_color_format_validation(self):
         """非法 hex_color 格式处理 — PaletteEntry 在 dataclass 层面不做校验，接受任意字符串。"""
@@ -119,11 +152,13 @@ class TestLUTManager:
     def test_keyed_json_with_all_fields(self):
         """完整 Keyed JSON 加载（新对象格式），验证所有字段正确解析。"""
         palette = {
-            "White": {"material": "PLA Basic", "hex_color": "#FFFFFF"},
-            "Red": {"material": "PLA Silk", "hex_color": "#DC143C"},
+            "White": {"material": "PLA Basic", "hex_color": "#FFFFFF", "color_name": "Jade White"},
+            "Red": {"material": "PLA Silk", "hex_color": "#DC143C", "color_name": "Ruby Red"},
         }
         data = {
             "name": "TestLUT",
+            "manufacturer": "Bambu Lab",
+            "type": "PLA Basic",
             "max_color_layers": 6,
             "layer_height_mm": 0.10,
             "line_width_mm": 0.50,
@@ -149,6 +184,9 @@ class TestLUTManager:
             assert len(metadata.palette) == 2
             assert metadata.palette[0].color == "White"
             assert metadata.palette[1].hex_color == "#DC143C"
+            assert metadata.palette[0].color_name == "Jade White"
+            assert metadata.manufacturer == "Bambu Lab"
+            assert metadata.type == "PLA Basic"
             assert metadata.max_color_layers == 6
             assert metadata.layer_height_mm == pytest.approx(0.10)
             assert metadata.line_width_mm == pytest.approx(0.50)
@@ -358,9 +396,10 @@ class TestAPISchemas:
             lut_download_url="/api/files/456",
             warp_view_url="",
             lut_preview_url="",
-            default_palette=[{"color": "Red", "material": "PLA", "hex_color": "#FF0000"}],
+            default_palette=[{"color": "Red", "material": "PLA", "hex_color": "#FF0000", "color_name": "Signal Red"}],
         )
         assert len(resp2.default_palette) == 1
+        assert resp2.default_palette[0].color_name == "Signal Red"
 
     def test_confirm_palette_saves_to_session(self):
         """confirm-palette 端点保存调色板到 session — 跳过（需要运行 FastAPI 应用）。"""
@@ -397,7 +436,7 @@ class TestAPISchemas:
             name="TestLUT2",
             color_mode="8-Color Max",
             color_count=2738,
-            palette=[PaletteEntrySchema(color="White", material="PLA Basic", hex_color="#FFFFFF")],
+            palette=[PaletteEntrySchema(color="White", material="PLA Basic", hex_color="#FFFFFF", color_name="Jade White")],
             max_color_layers=6,
             layer_height_mm=0.10,
             line_width_mm=0.50,
@@ -407,6 +446,7 @@ class TestAPISchemas:
         )
         assert len(resp2.palette) == 1
         assert resp2.palette[0].color == "White"
+        assert resp2.palette[0].color_name == "Jade White"
         assert resp2.max_color_layers == 6
 
     def test_merge_response_contains_warnings(self):

@@ -60,6 +60,18 @@ function resetExtractorStore(): void {
     lut_preview_url: null,
     manualFixLoading: false,
     manualFixError: null,
+    page1Extracted: false,
+    page2Extracted: false,
+    mergeLoading: false,
+    mergeError: null,
+    page1Extracted_5c: false,
+    page2Extracted_5c: false,
+    manufacturer: "",
+    type: "",
+    defaultPalette: [],
+    paletteConfirmed: false,
+    paletteConfirmLoading: false,
+    paletteConfirmError: null,
   });
 }
 
@@ -221,5 +233,44 @@ describe("ExtractorPanel 单元测试", () => {
     render(<ExtractorPanel />);
 
     expect(screen.queryByTestId("error-message")).not.toBeInTheDocument();
+  });
+
+  it("renders colordb metadata inputs and updates store state", async () => {
+    const ExtractorPanel = (await import("../components/ExtractorPanel")).default;
+
+    useExtractorStore.setState({
+      manufacturer: "Bambu Lab",
+      type: "PLA Basic",
+      defaultPalette: [
+        {
+          color: "White",
+          material: "PLA",
+          hex_color: "#FFFFFF",
+          color_name: "Jade White",
+        },
+      ],
+      paletteConfirmed: false,
+    });
+
+    render(<ExtractorPanel />);
+
+    const section = screen.getByTestId("palette-confirm-section");
+    expect(section).toBeInTheDocument();
+    expect(screen.getByText("White")).toBeInTheDocument();
+
+    const textboxes = within(section).getAllByRole("textbox");
+    expect(textboxes).toHaveLength(3);
+    expect(textboxes[0]).toHaveValue("Bambu Lab");
+    expect(textboxes[1]).toHaveValue("PLA Basic");
+    expect(textboxes[2]).toHaveValue("Jade White");
+
+    fireEvent.change(textboxes[0], { target: { value: "Prusa" } });
+    fireEvent.change(textboxes[1], { target: { value: "PETG" } });
+    fireEvent.change(textboxes[2], { target: { value: "Pearl White" } });
+
+    const state = useExtractorStore.getState();
+    expect(state.manufacturer).toBe("Prusa");
+    expect(state.type).toBe("PETG");
+    expect(state.defaultPalette[0].color_name).toBe("Pearl White");
   });
 });

@@ -35,6 +35,9 @@ const pageOptions = Object.values(ExtractorPage).map((v) => ({
   value: v,
 }));
 
+const textInputClass =
+  "min-h-10 w-full rounded-2xl border border-slate-200/80 bg-white/90 px-3 py-2 text-sm text-slate-800 outline-none shadow-[var(--shadow-control)] focus:border-blue-400 focus:ring-4 focus:ring-[var(--focus-ring)] dark:border-slate-700/80 dark:bg-slate-900 dark:text-slate-100";
+
 export default function ExtractorPanel() {
   const { t } = useI18n();
   const {
@@ -58,6 +61,8 @@ export default function ExtractorPanel() {
     page2Extracted_5c,
     mergeLoading,
     mergeError,
+    manufacturer,
+    type: metadataType,
     defaultPalette,
     paletteConfirmed,
     paletteConfirmLoading,
@@ -70,6 +75,8 @@ export default function ExtractorPanel() {
     setZoom,
     setDistortion,
     setVignetteCorrection,
+    setManufacturer,
+    setType,
     submitExtract,
     submitMerge,
     clearCornerPoints,
@@ -214,7 +221,29 @@ export default function ExtractorPanel() {
           <section data-testid="palette-confirm-section" className={`${sectionCardClass} flex flex-col gap-3`}>
             <div>
               <h3 className="text-base font-semibold text-slate-900 dark:text-slate-50">{t("ext_palette_title")}</h3>
-              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{t("ext_material_type_label")}</p>
+              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{t("ext_palette_metadata_hint")}</p>
+            </div>
+            <div className="grid gap-3 lg:grid-cols-2">
+              <label className="flex flex-col gap-1">
+                <span className="text-sm font-medium text-slate-700 dark:text-slate-200">
+                  {t("ext_manufacturer_label")}
+                </span>
+                <input
+                  className={textInputClass}
+                  value={manufacturer}
+                  onChange={(e) => setManufacturer(e.target.value)}
+                />
+              </label>
+              <label className="flex flex-col gap-1">
+                <span className="text-sm font-medium text-slate-700 dark:text-slate-200">
+                  {t("ext_type_label")}
+                </span>
+                <input
+                  className={textInputClass}
+                  value={metadataType}
+                  onChange={(e) => setType(e.target.value)}
+                />
+              </label>
             </div>
             <Dropdown
               label={t("ext_material_type_label")}
@@ -224,18 +253,37 @@ export default function ExtractorPanel() {
                 defaultPalette.forEach((_, i) => updatePaletteEntry(i, { material: mat }));
               }}
             />
-            <div className="flex flex-col gap-2">
+            <div className="flex flex-col gap-3">
               {defaultPalette.map((entry, idx) => (
-                <div key={idx} className="flex items-center gap-3 rounded-[22px] border border-slate-200/80 bg-white/55 px-3 py-2 dark:border-slate-700/80 dark:bg-slate-900/55">
-                  <span
-                    className="h-5 w-5 shrink-0 rounded-xl border border-slate-300/80 dark:border-slate-600/80"
-                    style={{ backgroundColor: entry.hex_color || "#ccc" }}
-                  />
-                  <input
-                    className="min-h-10 flex-1 rounded-2xl border border-slate-200/80 bg-white/90 px-3 py-2 text-sm text-slate-800 outline-none shadow-[var(--shadow-control)] focus:border-blue-400 focus:ring-4 focus:ring-[var(--focus-ring)] dark:border-slate-700/80 dark:bg-slate-900 dark:text-slate-100"
-                    value={entry.color}
-                    onChange={(e) => updatePaletteEntry(idx, { color: e.target.value })}
-                  />
+                <div
+                  key={`${entry.color}-${idx}`}
+                  className="grid gap-3 rounded-[22px] border border-slate-200/80 bg-white/55 px-3 py-3 dark:border-slate-700/80 dark:bg-slate-900/55 sm:grid-cols-[auto,1fr]"
+                >
+                  <div className="flex items-center gap-3">
+                    <span
+                      className="h-5 w-5 shrink-0 rounded-xl border border-slate-300/80 dark:border-slate-600/80"
+                      style={{ backgroundColor: entry.hex_color || "#ccc" }}
+                    />
+                    <div className="flex flex-col">
+                      <span className="text-xs uppercase tracking-[0.18em] text-slate-400 dark:text-slate-500">
+                        {t("ext_palette_internal_color_label")}
+                      </span>
+                      <span className="text-sm font-medium text-slate-700 dark:text-slate-200">
+                        {entry.color}
+                      </span>
+                    </div>
+                  </div>
+                  <label className="flex flex-col gap-1">
+                    <span className="text-xs font-medium text-slate-500 dark:text-slate-400">
+                      {t("ext_palette_color_name_label")}
+                    </span>
+                    <input
+                      className={textInputClass}
+                      value={entry.color_name ?? ""}
+                      placeholder={entry.color}
+                      onChange={(e) => updatePaletteEntry(idx, { color_name: e.target.value })}
+                    />
+                  </label>
                 </div>
               ))}
             </div>

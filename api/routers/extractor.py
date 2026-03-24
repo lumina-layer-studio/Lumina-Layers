@@ -59,8 +59,59 @@ def _build_default_palette(color_mode: str) -> list[dict]:
         if i in preview:
             r, g, b = preview[i][:3]
             hex_color = f"#{r:02x}{g:02x}{b:02x}"
-        palette.append({"color": slot_name, "material": "PLA Basic", "hex_color": hex_color})
+        palette.append(
+            {
+                "color": slot_name,
+                "material": "PLA Basic",
+                "hex_color": hex_color,
+                "color_name": slot_name,
+            }
+        )
     return palette
+
+
+def _build_merged_metadata(
+    primary: LUTMetadata,
+    secondary: LUTMetadata,
+    color_mode: str,
+    output_path: str,
+    color_count: int,
+) -> LUTMetadata:
+    """Build merged metadata while preserving user-entered fields when available.
+    构建合并后的元数据，尽量保留用户填写过的字段。
+    """
+    source = primary if primary.palette else secondary
+    manufacturer = primary.manufacturer or secondary.manufacturer
+    lut_type = primary.type or secondary.type
+
+    if source.palette:
+        return LUTMetadata(
+            palette=[
+                PaletteEntry(
+                    color=entry.color,
+                    material=entry.material,
+                    hex_color=entry.hex_color,
+                    color_name=entry.color_name,
+                )
+                for entry in source.palette
+            ],
+            manufacturer=manufacturer,
+            type=lut_type,
+            color_mode=color_mode,
+            max_color_layers=source.max_color_layers,
+            layer_height_mm=source.layer_height_mm,
+            line_width_mm=source.line_width_mm,
+            base_layers=source.base_layers,
+            base_channel_idx=source.base_channel_idx,
+            layer_order=source.layer_order,
+        )
+
+    metadata = LUTManager.infer_default_metadata(
+        "lumina_lut", output_path, color_count, color_mode=color_mode
+    )
+    metadata.manufacturer = manufacturer
+    metadata.type = lut_type
+    return metadata
 
 
 @router.post("/extract")
@@ -268,9 +319,8 @@ def extractor_merge_5color_extended(
         else:
             merged_stacks = np.zeros((len(merged_rgb), 0), dtype=np.int32)
 
-        # Use metadata from first page, update for merged result
-        metadata = LUTManager.infer_default_metadata(
-            "lumina_lut", LUT_FILE_PATH, len(merged_rgb), color_mode="5-Color Extended"
+        metadata = _build_merged_metadata(
+            meta1, meta2, "5-Color Extended", LUT_FILE_PATH, len(merged_rgb)
         )
         LUTManager.save_keyed_json(LUT_FILE_PATH, merged_rgb, merged_stacks, metadata)
     except Exception as e:
@@ -330,8 +380,8 @@ def extractor_merge_8color(
         else:
             merged_stacks = np.zeros((len(merged_rgb), 0), dtype=np.int32)
 
-        metadata = LUTManager.infer_default_metadata(
-            "lumina_lut", LUT_FILE_PATH, len(merged_rgb), color_mode="8-Color Max"
+        metadata = _build_merged_metadata(
+            meta1, meta2, "8-Color Max", LUT_FILE_PATH, len(merged_rgb)
         )
         LUTManager.save_keyed_json(LUT_FILE_PATH, merged_rgb, merged_stacks, metadata)
     except Exception as e:
@@ -382,9 +432,24 @@ def confirm_palette(
     if session_data is None:
         raise HTTPException(status_code=404, detail=f"Session {request.session_id} not found")
 
+    manufacturer = request.manufacturer.strip()
+    lut_type = request.type.strip()
     palette_entries = [
-        PaletteEntry(color=e.color.strip(), material=e.material, hex_color=e.hex_color) for e in request.palette
+        PaletteEntry(
+            color=e.color.strip(),
+            material=e.material.strip() if e.material else "PLA Basic",
+            hex_color=e.hex_color,
+            color_name=e.color_name.strip() if e.color_name and e.color_name.strip() else None,
+        )
+        for e in request.palette
     ]
+
+    metadata = LUTMetadata(
+        palette=palette_entries,
+        manufacturer=manufacturer,
+        type=lut_type,
+        color_mode=session_data.get("color_mode"),
+    )
 
     # Persist palette to the LUT JSON file on disk
     lut_path = session_data.get("lut_path")
@@ -393,14 +458,18 @@ def confirm_palette(
         try:
             rgb, stacks, existing_metadata = LUTManager.load_lut_with_metadata(lut_path)
             existing_metadata.palette = palette_entries
+            existing_metadata.manufacturer = manufacturer
+            existing_metadata.type = lut_type
+            if not existing_metadata.color_mode and session_data.get("color_mode"):
+                existing_metadata.color_mode = session_data["color_mode"]
             if stacks is None:
                 stacks = np.zeros((len(rgb), 0), dtype=np.int32)
             LUTManager.save_keyed_json(lut_path, rgb, stacks, existing_metadata)
+            metadata = existing_metadata
         except Exception as e:
             persist_warning = f"调色板已确认，但持久化到磁盘失败: {e}"
             print(f"[CONFIRM_PALETTE] Failed to persist palette to {lut_path}: {e}")
 
-    metadata = LUTMetadata(palette=palette_entries)
     store.put(request.session_id, "lut_metadata", metadata)
 
     if persist_warning:

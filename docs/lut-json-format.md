@@ -11,6 +11,8 @@ LUT JSON 文件采用 Keyed JSON 格式，包含以下顶层字段：
 ```json
 {
   "palette": { ... },
+  "manufacturer": "Bambu Lab",
+  "type": "PLA Basic",
   "max_color_layers": 5,
   "layer_height_mm": 0.08,
   "line_width_mm": 0.42,
@@ -36,19 +38,23 @@ LUT JSON 文件采用 Keyed JSON 格式，包含以下顶层字段：
 "palette": {
   "White": {
     "material": "PLA Basic",
-    "hex_color": "#ffffff"
+    "hex_color": "#ffffff",
+    "color_name": "Jade White"
   },
   "Cyan": {
     "material": "PLA Basic",
-    "hex_color": "#0086d6"
+    "hex_color": "#0086d6",
+    "color_name": "Ocean Cyan"
   },
   "Magenta": {
     "material": "PLA Basic",
-    "hex_color": "#ec008c"
+    "hex_color": "#ec008c",
+    "color_name": "Rose Magenta"
   },
   "Yellow": {
     "material": "PLA Basic",
-    "hex_color": "#f4ee2a"
+    "hex_color": "#f4ee2a",
+    "color_name": "Sun Yellow"
   }
 }
 ```
@@ -57,13 +63,39 @@ LUT JSON 文件采用 Keyed JSON 格式，包含以下顶层字段：
 
 - **`material`** (必需, string): 材料名称，如 "PLA Basic"、"PETG" 等
 - **`hex_color`** (可选, string): 十六进制颜色值，格式为 `#RRGGBB`，用于 UI 预览和切片器集成
+- **`color_name`** (可选, string | null): 厂商对该颜色的命名，用于展示和记录，不参与配方解析
 
 **注意**: 
 - 颜色名称（对象键）必须非空且唯一
-- 颜色名称会在 `entries` 的 `recipe` 字段中引用
+- 颜色名称（对象键）会在 `entries` 的 `recipe` 字段中引用，是内部配方键
+- `color_name` 仅用于存储厂商命名，不会替代 `recipe` 中引用的内部键
 - 支持特殊颜色名 "Air" 表示空气层（无材料）
 
-### 2. `max_color_layers` (必需)
+### 2. `manufacturer` (可选)
+
+LUT / colordb 的厂商名称。
+
+**类型**: `string`  
+**默认值**: `""`
+
+**示例**:
+```json
+"manufacturer": "Bambu Lab"
+```
+
+### 3. `type` (可选)
+
+LUT / colordb 的类型。
+
+**类型**: `string`  
+**默认值**: `""`
+
+**示例**:
+```json
+"type": "PLA Basic"
+```
+
+### 4. `max_color_layers` (必需)
 
 配方中最大颜色层数。
 
@@ -76,7 +108,7 @@ LUT JSON 文件采用 Keyed JSON 格式，包含以下顶层字段：
 "max_color_layers": 5
 ```
 
-### 3. `layer_height_mm` (必需)
+### 5. `layer_height_mm` (必需)
 
 单层高度，单位为毫米。
 
@@ -89,7 +121,7 @@ LUT JSON 文件采用 Keyed JSON 格式，包含以下顶层字段：
 "layer_height_mm": 0.08
 ```
 
-### 4. `line_width_mm` (必需)
+### 6. `line_width_mm` (必需)
 
 挤出线宽，单位为毫米。
 
@@ -102,7 +134,7 @@ LUT JSON 文件采用 Keyed JSON 格式，包含以下顶层字段：
 "line_width_mm": 0.42
 ```
 
-### 5. `base_layers` (必需)
+### 7. `base_layers` (必需)
 
 底板层数，用于模型底部支撑。
 
@@ -115,7 +147,7 @@ LUT JSON 文件采用 Keyed JSON 格式，包含以下顶层字段：
 "base_layers": 10
 ```
 
-### 6. `base_channel_idx` (必需)
+### 8. `base_channel_idx` (必需)
 
 底板使用的颜色通道索引，对应 `palette` 中的颜色顺序（从 0 开始）。
 
@@ -128,7 +160,7 @@ LUT JSON 文件采用 Keyed JSON 格式，包含以下顶层字段：
 "base_channel_idx": 0
 ```
 
-### 7. `layer_order` (必需)
+### 9. `layer_order` (必需)
 
 打印层顺序。
 
@@ -142,7 +174,7 @@ LUT JSON 文件采用 Keyed JSON 格式，包含以下顶层字段：
 "layer_order": "Top2Bottom"
 ```
 
-### 8. `color_mode` (可选)
+### 10. `color_mode` (可选)
 
 颜色模式标识符，用于标识 LUT 的颜色系统类型。
 
@@ -162,7 +194,7 @@ LUT JSON 文件采用 Keyed JSON 格式，包含以下顶层字段：
 "color_mode": "4-Color (CMYW)"
 ```
 
-### 9. `name` (必需)
+### 11. `name` (必需)
 
 LUT 名称，通常从文件名自动生成。
 
@@ -173,7 +205,7 @@ LUT 名称，通常从文件名自动生成。
 "name": "lumina_lut"
 ```
 
-### 10. `entries` (必需)
+### 12. `entries` (必需)
 
 颜色条目数组，每个条目包含一个可打印颜色及其配方。
 
@@ -227,6 +259,12 @@ LUT 名称，通常从文件名自动生成。
 - **`source`** (可选, string): 来源 LUT 名称，用于合并 LUT 时标识条目来源
   - 仅在合并 LUT 中出现
   - 示例: `"CMYW_Page1"`, `"Custom_LUT"`
+
+## 兼容性
+
+- 旧版 LUT / colordb 即使没有 `manufacturer`、`type`、`palette.*.color_name` 也可以正常加载
+- 缺失 `manufacturer` 或 `type` 时，系统按空字符串处理
+- 缺失 `color_name` 时，系统按 `null` 处理，前端可继续让用户补充厂商命名
 
 ## 颜色模式与条目数量
 

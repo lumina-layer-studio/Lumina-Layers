@@ -4,7 +4,13 @@ import {
   ExtractorColorMode as ExtractorColorModeEnum,
   ExtractorPage as ExtractorPageEnum,
 } from "../api/types";
-import { extractColors, manualFixCell, mergeEightColor, mergeFiveColorExtended, confirmPalette } from "../api/extractor";
+import {
+  confirmPalette,
+  extractColors,
+  manualFixCell,
+  mergeEightColor,
+  mergeFiveColorExtended,
+} from "../api/extractor";
 import type { ExtractorPaletteEntry } from "../api/types";
 import { clampValue } from "./converterStore";
 
@@ -56,6 +62,8 @@ export interface ExtractorState {
   page2Extracted_5c: boolean;
 
   // 调色板确认
+  manufacturer: string;
+  type: string;
   defaultPalette: ExtractorPaletteEntry[];
   paletteConfirmed: boolean;
   paletteConfirmLoading: boolean;
@@ -75,6 +83,8 @@ export interface ExtractorActions {
   setZoom: (value: number) => void;
   setDistortion: (value: number) => void;
   setVignetteCorrection: (value: boolean) => void;
+  setManufacturer: (value: string) => void;
+  setType: (value: string) => void;
   submitExtract: () => Promise<void>;
   submitManualFix: (row: number, col: number, color: string) => Promise<void>;
   submitMerge: () => Promise<void>;
@@ -113,6 +123,8 @@ const DEFAULT_STATE: ExtractorState = {
   mergeError: null,
   page1Extracted_5c: false,
   page2Extracted_5c: false,
+  manufacturer: "",
+  type: "",
   defaultPalette: [],
   paletteConfirmed: false,
   paletteConfirmLoading: false,
@@ -143,6 +155,9 @@ export const useExtractorStore = create<ExtractorState & ExtractorActions>(
           lut_download_url: null,
           warp_view_url: null,
           lut_preview_url: null,
+          defaultPalette: [],
+          paletteConfirmed: false,
+          paletteConfirmError: null,
         });
         return;
       }
@@ -170,6 +185,9 @@ export const useExtractorStore = create<ExtractorState & ExtractorActions>(
         lut_download_url: null,
         warp_view_url: null,
         lut_preview_url: null,
+        defaultPalette: [],
+        paletteConfirmed: false,
+        paletteConfirmError: null,
       });
     },
 
@@ -181,6 +199,9 @@ export const useExtractorStore = create<ExtractorState & ExtractorActions>(
       page1Extracted_5c: false,
       page2Extracted_5c: false,
       mergeError: null,
+      defaultPalette: [],
+      paletteConfirmed: false,
+      paletteConfirmError: null,
     }),
 
     setPage: (page: ExtractorPage) => set({ page }),
@@ -207,6 +228,10 @@ export const useExtractorStore = create<ExtractorState & ExtractorActions>(
 
     setVignetteCorrection: (value: boolean) =>
       set({ vignette_correction: value }),
+
+    setManufacturer: (value: string) => set({ manufacturer: value }),
+
+    setType: (value: string) => set({ type: value }),
 
     submitExtract: async () => {
       const state = get();
@@ -317,6 +342,15 @@ export const useExtractorStore = create<ExtractorState & ExtractorActions>(
           lut_download_url: response.lut_download_url
             ? `${BASE}${response.lut_download_url}`
             : null,
+          warp_view_url: response.warp_view_url
+            ? `${BASE}${response.warp_view_url}`
+            : null,
+          lut_preview_url: response.lut_preview_url
+            ? `${BASE}${response.lut_preview_url}`
+            : null,
+          defaultPalette: response.default_palette ?? [],
+          paletteConfirmed: false,
+          paletteConfirmError: null,
           mergeLoading: false,
         });
       } catch (err) {
@@ -345,7 +379,15 @@ export const useExtractorStore = create<ExtractorState & ExtractorActions>(
 
       set({ paletteConfirmLoading: true, paletteConfirmError: null });
       try {
-        await confirmPalette(state.session_id, state.defaultPalette);
+        await confirmPalette({
+          session_id: state.session_id,
+          manufacturer: state.manufacturer.trim(),
+          type: state.type.trim(),
+          palette: state.defaultPalette.map((entry) => ({
+            ...entry,
+            color_name: entry.color_name?.trim() || null,
+          })),
+        });
         set({ paletteConfirmed: true, paletteConfirmLoading: false });
       } catch (err) {
         set({

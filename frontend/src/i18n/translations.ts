@@ -1550,6 +1550,26 @@ export const translations: Record<string, Record<"zh" | "en", string>> = {
     zh: "调色板确认",
     en: "Palette Confirmation",
   },
+  ext_palette_metadata_hint: {
+    zh: "填写厂商、类型，并为每个颜色记录厂商命名",
+    en: "Set manufacturer, type, and vendor color names for each entry",
+  },
+  ext_manufacturer_label: {
+    zh: "厂商",
+    en: "Manufacturer",
+  },
+  ext_type_label: {
+    zh: "类型",
+    en: "Type",
+  },
+  ext_palette_internal_color_label: {
+    zh: "内部通道",
+    en: "Internal Slot",
+  },
+  ext_palette_color_name_label: {
+    zh: "厂商颜色名称",
+    en: "Vendor Color Name",
+  },
   ext_confirm_palette_btn: {
     zh: "确认调色板",
     en: "Confirm Palette",

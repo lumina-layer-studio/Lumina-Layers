@@ -240,7 +240,15 @@ export enum ExtractorPage {
 export interface ExtractorPaletteEntry {
   color: string;
   material: string;
-  hex_color: string;
+  hex_color: string | null;
+  color_name: string | null;
+}
+
+export interface ConfirmPaletteRequest {
+  session_id: string;
+  manufacturer: string;
+  type: string;
+  palette: ExtractorPaletteEntry[];
 }
 
 export interface ExtractResponse {

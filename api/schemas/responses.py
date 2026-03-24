@@ -9,6 +9,8 @@ from typing import Optional
 
 from pydantic import BaseModel, Field
 
+from api.schemas.lut import PaletteEntrySchema
+
 
 class CalibrationResponse(BaseModel):
     """校准板生成响应。"""
@@ -131,9 +133,9 @@ class ExtractResponse(BaseModel):
     lut_download_url: str
     warp_view_url: str
     lut_preview_url: str
-    default_palette: list[dict] = Field(
+    default_palette: list[PaletteEntrySchema] = Field(
         default_factory=list,
-        description="默认调色板数组，每项含 color、material、hex_color",
+        description="默认调色板数组，每项含 color、material、hex_color、color_name",
     )
 
 

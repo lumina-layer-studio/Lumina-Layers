@@ -1,4 +1,4 @@
-import { describe, it, vi, beforeEach } from "vitest";
+import { describe, it, vi, beforeEach, expect } from "vitest";
 import * as fc from "fast-check";
 import { useExtractorStore } from "../stores/extractorStore";
 import { useConverterStore } from "../stores/converterStore";
@@ -45,6 +45,18 @@ function resetExtractorStore(): void {
     lut_preview_url: null,
     manualFixLoading: false,
     manualFixError: null,
+    page1Extracted: false,
+    page2Extracted: false,
+    mergeLoading: false,
+    mergeError: null,
+    page1Extracted_5c: false,
+    page2Extracted_5c: false,
+    manufacturer: "",
+    type: "",
+    defaultPalette: [],
+    paletteConfirmed: false,
+    paletteConfirmLoading: false,
+    paletteConfirmError: null,
   });
 }
 
@@ -72,6 +84,18 @@ function snapshotExtractorState() {
     lut_preview_url: s.lut_preview_url,
     manualFixLoading: s.manualFixLoading,
     manualFixError: s.manualFixError,
+    page1Extracted: s.page1Extracted,
+    page2Extracted: s.page2Extracted,
+    mergeLoading: s.mergeLoading,
+    mergeError: s.mergeError,
+    page1Extracted_5c: s.page1Extracted_5c,
+    page2Extracted_5c: s.page2Extracted_5c,
+    manufacturer: s.manufacturer,
+    type: s.type,
+    defaultPalette: s.defaultPalette,
+    paletteConfirmed: s.paletteConfirmed,
+    paletteConfirmLoading: s.paletteConfirmLoading,
+    paletteConfirmError: s.paletteConfirmError,
   };
 }
 
@@ -540,5 +564,45 @@ describe("Feature: extractor-calibration-tab, Property 10: 标签页切换状态
       ),
       { numRuns: 100 }
     );
+  });
+});
+
+describe("Extractor metadata state", () => {
+  it("setManufacturer and setType update colordb metadata fields", () => {
+    const store = useExtractorStore.getState();
+
+    store.setManufacturer("Bambu Lab");
+    store.setType("PLA Basic");
+
+    const state = useExtractorStore.getState();
+    expect(state.manufacturer).toBe("Bambu Lab");
+    expect(state.type).toBe("PLA Basic");
+  });
+
+  it("setImageFile clears stale palette confirmation state but keeps metadata fields", () => {
+    useExtractorStore.setState({
+      manufacturer: "Bambu Lab",
+      type: "PLA Basic",
+      defaultPalette: [
+        {
+          color: "White",
+          material: "PLA",
+          hex_color: "#FFFFFF",
+          color_name: "Jade White",
+        },
+      ],
+      paletteConfirmed: true,
+      paletteConfirmError: "stale",
+    });
+
+    const file = new File(["test"], "page-2.png", { type: "image/png" });
+    useExtractorStore.getState().setImageFile(file);
+
+    const state = useExtractorStore.getState();
+    expect(state.manufacturer).toBe("Bambu Lab");
+    expect(state.type).toBe("PLA Basic");
+    expect(state.defaultPalette).toEqual([]);
+    expect(state.paletteConfirmed).toBe(false);
+    expect(state.paletteConfirmError).toBeNull();
   });
 });

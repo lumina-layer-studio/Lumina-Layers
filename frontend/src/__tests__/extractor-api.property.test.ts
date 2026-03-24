@@ -7,13 +7,15 @@ import type { ExtractResponse } from "../api/types";
 // ========== Mock API module ==========
 
 vi.mock("../api/extractor", () => ({
+  confirmPalette: vi.fn(),
   extractColors: vi.fn(),
   manualFixCell: vi.fn(),
 }));
 
-import { extractColors } from "../api/extractor";
+import { confirmPalette, extractColors } from "../api/extractor";
 
 const mockedExtractColors = vi.mocked(extractColors);
+const mockedConfirmPalette = vi.mocked(confirmPalette);
 
 // ========== Mock browser APIs ==========
 
@@ -49,6 +51,18 @@ function resetExtractorStore(): void {
     lut_preview_url: null,
     manualFixLoading: false,
     manualFixError: null,
+    page1Extracted: false,
+    page2Extracted: false,
+    mergeLoading: false,
+    mergeError: null,
+    page1Extracted_5c: false,
+    page2Extracted_5c: false,
+    manufacturer: "",
+    type: "",
+    defaultPalette: [],
+    paletteConfirmed: false,
+    paletteConfirmLoading: false,
+    paletteConfirmError: null,
   });
 }
 
@@ -90,6 +104,14 @@ const arbExtractResponse = fc.record({
   lut_download_url: fc.string({ minLength: 1, maxLength: 80 }),
   warp_view_url: fc.string({ minLength: 1, maxLength: 80 }),
   lut_preview_url: fc.string({ minLength: 1, maxLength: 80 }),
+  default_palette: fc.constant([]),
+});
+
+const arbPaletteEntry = fc.record({
+  color: fc.string({ minLength: 1, maxLength: 16 }),
+  material: fc.string({ minLength: 1, maxLength: 16 }),
+  hex_color: fc.option(fc.constantFrom("#FFFFFF", "#000000", "#FF0000"), { nil: null }),
+  color_name: fc.option(fc.string({ minLength: 1, maxLength: 20 }), { nil: null }),
 });
 
 // ========== Tests ==========
@@ -133,6 +155,7 @@ describe("Feature: extractor-calibration-tab, Property 7: API 请求载荷与 St
           lut_download_url: "/dummy.npy",
           warp_view_url: "/dummy_warp.png",
           lut_preview_url: "/dummy_preview.png",
+          default_palette: [],
         });
 
         // Call submitExtract
@@ -154,6 +177,53 @@ describe("Feature: extractor-calibration-tab, Property 7: API 请求载荷与 St
         expect(calledParams.vignette_correction).toBe(stateInput.vignette_correction);
       }),
       { numRuns: 100 }
+    );
+  });
+});
+
+describe("Feature: extractor-calibration-tab, Property 11: confirm-palette 请求载荷与 Store 状态一致性", () => {
+  it("For any valid metadata and palette, submitConfirmPalette sends confirmPalette payload matching the store state", async () => {
+    await fc.assert(
+      fc.asyncProperty(
+        fc.string({ maxLength: 20 }),
+        fc.string({ maxLength: 20 }),
+        fc.array(arbPaletteEntry, { minLength: 1, maxLength: 4 }),
+        async (manufacturer, type, palette) => {
+          resetExtractorStore();
+          vi.clearAllMocks();
+
+          useExtractorStore.setState({
+            session_id: "session-1",
+            manufacturer,
+            type,
+            defaultPalette: palette,
+          });
+
+          mockedConfirmPalette.mockResolvedValueOnce({
+            status: "ok",
+            message: "confirmed",
+          });
+
+          await useExtractorStore.getState().submitConfirmPalette();
+
+          expect(mockedConfirmPalette).toHaveBeenCalledTimes(1);
+          expect(mockedConfirmPalette).toHaveBeenCalledWith({
+            session_id: "session-1",
+            manufacturer: manufacturer.trim(),
+            type: type.trim(),
+            palette: palette.map((entry) => ({
+              ...entry,
+              color_name: entry.color_name?.trim() || null,
+            })),
+          });
+
+          const state = useExtractorStore.getState();
+          expect(state.paletteConfirmed).toBe(true);
+          expect(state.paletteConfirmLoading).toBe(false);
+          expect(state.paletteConfirmError).toBeNull();
+        }
+      ),
+      { numRuns: 50 }
     );
   });
 });

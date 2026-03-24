@@ -511,42 +511,7 @@ class LUTManager:
         if isinstance(data, list):
             return cls._load_keyed_json_flat_list(data, display_name, file_path)
 
-        # Parse palette — support both object and legacy array format
-        palette_raw = data.get("palette", {})
-        palette: list[PaletteEntry] = []
-
-        if isinstance(palette_raw, dict):
-            # 新格式: {"White": {"material": "PLA Basic", "hex_color": "#FFF"}, ...}
-            for color_name, props in palette_raw.items():
-                if isinstance(props, dict):
-                    palette.append(PaletteEntry(
-                        color=str(color_name),
-                        material=str(props.get("material", "PLA Basic")),
-                        hex_color=props.get("hex_color"),
-                    ))
-        elif isinstance(palette_raw, list):
-            # 旧格式兼容: [{"color": "White", "material": "PLA Basic"}, ...]
-            for item in palette_raw:
-                if isinstance(item, dict) and "color" in item and "material" in item:
-                    palette.append(PaletteEntry(
-                        color=str(item["color"]),
-                        material=str(item["material"]),
-                        hex_color=item.get("hex_color"),
-                    ))
-                else:
-                    print(f"[WARNING] Skipping invalid palette entry: {item}")
-
-        # Build metadata
-        metadata = LUTMetadata(
-            palette=palette,
-            color_mode=data.get("color_mode"),
-            max_color_layers=int(data.get("max_color_layers", PrinterConfig.COLOR_LAYERS)),
-            layer_height_mm=float(data.get("layer_height_mm", PrinterConfig.LAYER_HEIGHT)),
-            line_width_mm=float(data.get("line_width_mm", PrinterConfig.NOZZLE_WIDTH)),
-            base_layers=int(data.get("base_layers", 10)),
-            base_channel_idx=int(data.get("base_channel_idx", 0)),
-            layer_order=str(data.get("layer_order", "Top2Bottom")),
-        )
+        metadata = LUTMetadata.from_dict(data)
 
         # If palette is empty, infer defaults
         if not metadata.palette:

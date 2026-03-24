@@ -1,5 +1,9 @@
 import apiClient from "./client";
-import type { ExtractResponse, ManualFixResponse, ExtractorPaletteEntry } from "./types";
+import type {
+  ConfirmPaletteRequest,
+  ExtractResponse,
+  ManualFixResponse,
+} from "./types";
 
 /** 提取颜色 - multipart/form-data */
 export async function extractColors(
@@ -69,12 +73,11 @@ export async function mergeFiveColorExtended(): Promise<ExtractResponse> {
 
 /** 确认调色板 */
 export async function confirmPalette(
-  sessionId: string,
-  palette: ExtractorPaletteEntry[]
+  payload: ConfirmPaletteRequest
 ): Promise<{ status: string; message: string }> {
   const response = await apiClient.post<{ status: string; message: string }>(
     "/extractor/confirm-palette",
-    { session_id: sessionId, palette }
+    payload
   );
   return response.data;
 }

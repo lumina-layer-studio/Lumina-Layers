@@ -123,6 +123,58 @@ class TestMerge5ColorExtendedSuccess:
             np.testing.assert_array_equal(merged_rgb[:50], lut1)
             np.testing.assert_array_equal(merged_rgb[50:], lut2)
 
+    def test_merge_preserves_colordb_metadata_from_temp_pages(self) -> None:
+        """Merged LUT should preserve manufacturer, type, and palette color_name metadata."""
+        from utils.lut_manager import LUTManager
+        from config import LUTMetadata, PaletteEntry
+
+        lut1 = np.random.randint(0, 256, (20, 3), dtype=np.uint8)
+        lut2 = np.random.randint(0, 256, (30, 3), dtype=np.uint8)
+        metadata = LUTMetadata(
+            palette=[
+                PaletteEntry(color="White", material="PLA Basic", color_name="Jade White"),
+                PaletteEntry(color="Cyan", material="PLA Basic", color_name="Ocean Cyan"),
+                PaletteEntry(color="Magenta", material="PLA Basic", color_name="Rose Magenta"),
+                PaletteEntry(color="Yellow", material="PLA Basic", color_name="Sun Yellow"),
+                PaletteEntry(color="Black", material="PLA Basic", color_name="Carbon Black"),
+            ],
+            manufacturer="Bambu Lab",
+            type="PLA Basic",
+        )
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            LUTManager.save_keyed_json(
+                _real_path_join(tmpdir, "temp_5c_ext_page_1.json"),
+                lut1,
+                np.zeros((20, 5), dtype=np.int32),
+                metadata,
+            )
+            LUTManager.save_keyed_json(
+                _real_path_join(tmpdir, "temp_5c_ext_page_2.json"),
+                lut2,
+                np.zeros((30, 5), dtype=np.int32),
+                metadata,
+            )
+            merged_path = _real_path_join(tmpdir, "lumina_lut.json")
+
+            with (
+                patch("api.routers.extractor.os.path.join", side_effect=_make_join_redirector(tmpdir)),
+                patch("config.LUT_FILE_PATH", merged_path),
+            ):
+                response = client.post("/api/extractor/merge-5color-extended")
+
+            assert response.status_code == 200
+            _, _, merged_meta = LUTManager.load_lut_with_metadata(merged_path)
+            assert merged_meta.manufacturer == "Bambu Lab"
+            assert merged_meta.type == "PLA Basic"
+            assert [entry.color_name for entry in merged_meta.palette] == [
+                "Jade White",
+                "Ocean Cyan",
+                "Rose Magenta",
+                "Sun Yellow",
+                "Carbon Black",
+            ]
+
 
 # =========================================================================
 # 2. merge-5color-extended endpoint — missing temp files → HTTP 400

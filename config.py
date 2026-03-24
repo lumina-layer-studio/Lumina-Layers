@@ -719,10 +719,12 @@ class PaletteEntry:
         color (str): Color name, e.g. "Red", "Cyan". (颜色名称)
         material (str): Material name. (材料名称)
         hex_color (Optional[str]): Hex color value, e.g. "#FF0000". (十六进制颜色值)
+        color_name (Optional[str]): Manufacturer-provided display name. (厂商提供的颜色名称)
     """
     color: str
     material: str = "PLA Basic"
     hex_color: Optional[str] = None
+    color_name: Optional[str] = None
 
 
 @dataclass
@@ -732,6 +734,8 @@ class LUTMetadata:
 
     Attributes:
         palette (list[PaletteEntry]): Palette entries. (调色板条目列表)
+        manufacturer (str): LUT / color DB manufacturer. (厂商名称)
+        type (str): LUT / color DB type. (类型)
         color_mode (Optional[str]): Color mode identifier, e.g. "4-Color (RYBW)". (颜色模式标识)
         max_color_layers (int): Max color layers in recipe. (最大颜色层数)
         layer_height_mm (float): Layer height in mm. (层高，毫米)
@@ -741,6 +745,8 @@ class LUTMetadata:
         layer_order (str): Print order, "Top2Bottom" or "Bottom2Top". (打印顺序)
     """
     palette: list[PaletteEntry] = field(default_factory=list)
+    manufacturer: str = ""
+    type: str = ""
     color_mode: Optional[str] = None
     max_color_layers: int = 5
     layer_height_mm: float = 0.08
@@ -761,10 +767,14 @@ class LUTMetadata:
             entry: dict = {"material": e.material}
             if e.hex_color is not None:
                 entry["hex_color"] = e.hex_color
+            if e.color_name is not None:
+                entry["color_name"] = e.color_name
             palette_obj[e.color] = entry
 
         d = {
             "palette": palette_obj,
+            "manufacturer": self.manufacturer,
+            "type": self.type,
             "max_color_layers": self.max_color_layers,
             "layer_height_mm": self.layer_height_mm,
             "line_width_mm": self.line_width_mm,
@@ -798,6 +808,7 @@ class LUTMetadata:
                         color=str(color_name),
                         material=str(props.get("material", "PLA Basic")),
                         hex_color=props.get("hex_color"),
+                        color_name=props.get("color_name"),
                     ))
         elif isinstance(palette_raw, list):
             # 旧格式兼容: [{"color": "White", "material": "PLA Basic"}, ...]
@@ -807,10 +818,13 @@ class LUTMetadata:
                         color=str(item["color"]),
                         material=str(item["material"]),
                         hex_color=item.get("hex_color"),
+                        color_name=item.get("color_name"),
                     ))
 
         return cls(
             palette=palette,
+            manufacturer=str(data.get("manufacturer", "") or ""),
+            type=str(data.get("type", "") or ""),
             color_mode=data.get("color_mode"),
             max_color_layers=int(data.get("max_color_layers", 5)),
             layer_height_mm=float(data.get("layer_height_mm", 0.08)),

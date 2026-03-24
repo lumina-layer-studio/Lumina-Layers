@@ -20,11 +20,12 @@ import os
 import numpy as np
 import time
 import trimesh
-from svgelements import SVG, Path, Shape
+from svgelements import SVG, Path, Shape, Move, Line, Close, CubicBezier, QuadraticBezier
 from shapely.geometry import Polygon, MultiPolygon
 from shapely import affinity
 from shapely.ops import unary_union
 from shapely.strtree import STRtree
+from shapely.validation import make_valid
 
 from config import PrinterConfig, ColorSystem
 
@@ -377,7 +378,7 @@ class VectorProcessor:
 
             if clipped is not None and not clipped.is_empty:
                 if not clipped.is_valid:
-                    clipped = clipped.buffer(0)
+                    clipped = make_valid(clipped)
                 if not clipped.is_empty:
                     result.append(
                         {
@@ -607,30 +608,128 @@ class VectorProcessor:
             raise ValueError(f"Failed to parse SVG: {e}")
 
         def _sample_path_to_polygon(path_obj):
-            path_len = path_obj.length()
-            if path_len == 0:
-                return None
-
-            # Adaptive sampling: coarser for larger precision settings.
             sample_step_svg = max(0.5, min(4.0, self.sampling_precision * 20.0))
-            num_points = max(10, min(int(path_len / sample_step_svg), 1200))
-            t_vals = np.linspace(0, 1, num_points)
-            pts = [path_obj.point(t) for t in t_vals]
+            max_total_points = 4000
 
-            if len(pts) < 3:
+            try:
+                segments = list(path_obj.segments())
+            except Exception:
+                segments = None
+
+            if segments and len(segments) > 1:
+                coords = _sample_segments(segments, sample_step_svg, max_total_points)
+            else:
+                coords = _sample_parametric(path_obj, sample_step_svg, max_total_points)
+
+            if len(coords) < 3:
                 return None
 
-            poly = Polygon([(p.x, p.y) for p in pts])
+            poly = Polygon(coords)
             if not poly.is_valid:
-                poly = poly.buffer(0)
+                poly = make_valid(poly)
+                if poly.geom_type == "GeometryCollection":
+                    polys = [g for g in poly.geoms if hasattr(g, "exterior") and not g.is_empty]
+                    if not polys:
+                        return None
+                    poly = max(polys, key=lambda p: p.area) if len(polys) > 1 else polys[0]
 
             if poly.is_valid and not poly.is_empty:
                 return poly
             return None
 
+        def _sample_segments(segments, step, max_points):
+            """Per-segment vectorized sampling.
+            直线段仅取起点；贝塞尔曲线用 numpy 向量化 Bernstein 多项式求值，
+            避免逐点调用 seg.point(t) 的 Python 循环开销。
+            """
+            seg_info = []
+            for seg in segments:
+                if isinstance(seg, Move):
+                    continue
+                if isinstance(seg, (Line, Close)):
+                    dx = seg.end.x - seg.start.x
+                    dy = seg.end.y - seg.start.y
+                    seg_info.append((seg, (dx * dx + dy * dy) ** 0.5, "line"))
+                elif isinstance(seg, CubicBezier):
+                    dx_c = (abs(seg.start.x - seg.control1.x)
+                            + abs(seg.control1.x - seg.control2.x)
+                            + abs(seg.control2.x - seg.end.x))
+                    dy_c = (abs(seg.start.y - seg.control1.y)
+                            + abs(seg.control1.y - seg.control2.y)
+                            + abs(seg.control2.y - seg.end.y))
+                    dx_d = seg.end.x - seg.start.x
+                    dy_d = seg.end.y - seg.start.y
+                    chord = (dx_d * dx_d + dy_d * dy_d) ** 0.5
+                    ctrl = (dx_c * dx_c + dy_c * dy_c) ** 0.5
+                    seg_info.append((seg, max((chord + ctrl) * 0.5, 0.01), "cubic"))
+                elif isinstance(seg, QuadraticBezier):
+                    dx_d = seg.end.x - seg.start.x
+                    dy_d = seg.end.y - seg.start.y
+                    chord = (dx_d * dx_d + dy_d * dy_d) ** 0.5
+                    dx_c = abs(seg.start.x - seg.control.x) + abs(seg.control.x - seg.end.x)
+                    dy_c = abs(seg.start.y - seg.control.y) + abs(seg.control.y - seg.end.y)
+                    ctrl = (dx_c * dx_c + dy_c * dy_c) ** 0.5
+                    seg_info.append((seg, max((chord + ctrl) * 0.5, 0.01), "quad"))
+                else:
+                    try:
+                        sl = seg.length()
+                    except Exception:
+                        sl = 0
+                    if sl > 0:
+                        seg_info.append((seg, sl, "other"))
+
+            if not seg_info:
+                return []
+
+            total_len = sum(d[1] for d in seg_info)
+            if total_len == 0:
+                return []
+
+            budget = min(max(20, int(total_len / step)), max_points)
+            coords = []
+            for seg, sl, kind in seg_info:
+                if kind == "line":
+                    coords.append((seg.start.x, seg.start.y))
+                elif kind == "cubic":
+                    n = max(2, int(round(budget * sl / total_len)))
+                    t = np.linspace(0, 1, n, endpoint=False)
+                    t1 = 1.0 - t
+                    xs = t1**3 * seg.start.x + 3 * t1**2 * t * seg.control1.x + 3 * t1 * t**2 * seg.control2.x + t**3 * seg.end.x
+                    ys = t1**3 * seg.start.y + 3 * t1**2 * t * seg.control1.y + 3 * t1 * t**2 * seg.control2.y + t**3 * seg.end.y
+                    coords.extend(zip(xs.tolist(), ys.tolist()))
+                elif kind == "quad":
+                    n = max(2, int(round(budget * sl / total_len)))
+                    t = np.linspace(0, 1, n, endpoint=False)
+                    t1 = 1.0 - t
+                    xs = t1**2 * seg.start.x + 2 * t1 * t * seg.control.x + t**2 * seg.end.x
+                    ys = t1**2 * seg.start.y + 2 * t1 * t * seg.control.y + t**2 * seg.end.y
+                    coords.extend(zip(xs.tolist(), ys.tolist()))
+                else:
+                    n = max(2, int(round(budget * sl / total_len)))
+                    for tv in np.linspace(0, 1, n, endpoint=False):
+                        pt = seg.point(tv)
+                        coords.append((pt.x, pt.y))
+
+            return coords
+
+        def _sample_parametric(path_obj, step, max_points):
+            """Fallback: uniform t-parameter sampling across the whole path."""
+            try:
+                path_len = path_obj.length()
+            except Exception:
+                return []
+            if path_len == 0:
+                return []
+            num_points = max(10, min(int(path_len / step), max_points))
+            t_vals = np.linspace(0, 1, num_points)
+            pts = [path_obj.point(t) for t in t_vals]
+            return [(p.x, p.y) for p in pts]
+
         raw_shapes = []
         skipped_types = {}
         stroke_only_count = 0
+        skipped_gradient_count = 0
+        skipped_polygon_count = 0
         print("[VECTOR] Parsing SVG geometry...")
 
         for element in svg.elements():
@@ -652,11 +751,21 @@ class VectorProcessor:
                 except Exception:
                     continue
 
+            rgb = None
             if has_fill:
-                rgb = (element.fill.red, element.fill.green, element.fill.blue)
-            else:
-                rgb = (element.stroke.red, element.stroke.green, element.stroke.blue)
-                stroke_only_count += 1
+                try:
+                    rgb = (element.fill.red, element.fill.green, element.fill.blue)
+                except (AttributeError, TypeError, ValueError):
+                    rgb = None
+            if rgb is None and has_stroke:
+                try:
+                    rgb = (element.stroke.red, element.stroke.green, element.stroke.blue)
+                    stroke_only_count += 1
+                except (AttributeError, TypeError, ValueError):
+                    rgb = None
+            if rgb is None:
+                skipped_gradient_count += 1
+                continue
 
             try:
                 subpaths = list(element.as_subpaths())
@@ -685,7 +794,7 @@ class VectorProcessor:
                         pass
                 if combined is not None and not combined.is_empty:
                     if not combined.is_valid:
-                        combined = combined.buffer(0)
+                        combined = make_valid(combined)
                     result_poly = combined if not combined.is_empty else None
                 else:
                     result_poly = None
@@ -696,9 +805,10 @@ class VectorProcessor:
                 try:
                     result_poly = _sample_path_to_polygon(element)
                 except Exception:
-                    continue
+                    pass
 
             if result_poly is None:
+                skipped_polygon_count += 1
                 continue
 
             if not has_fill and has_stroke:
@@ -716,6 +826,11 @@ class VectorProcessor:
             print(f"[VECTOR] Skipped non-path elements: {skipped_types}")
         if stroke_only_count > 0:
             print(f"[VECTOR] Converted {stroke_only_count} stroke-only elements to filled polygons")
+        if skipped_gradient_count > 0:
+            print(f"[VECTOR] Skipped {skipped_gradient_count} elements with gradient/unresolvable fills")
+        if skipped_polygon_count > 0:
+            print(f"[VECTOR] Skipped {skipped_polygon_count} elements (invalid polygon after sampling)")
+        print(f"[VECTOR] Successfully parsed {len(raw_shapes)} shapes from SVG")
         if not raw_shapes:
             raise ValueError("No valid shapes found in SVG")
 
@@ -768,7 +883,7 @@ class VectorProcessor:
                     pass
 
             if not shifted.is_valid:
-                shifted = shifted.buffer(0)
+                shifted = make_valid(shifted)
 
             if shifted.is_empty or shifted.area <= min_area_svg:
                 continue

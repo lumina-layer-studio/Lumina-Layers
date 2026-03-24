@@ -142,6 +142,7 @@ def convert_image_to_3d(image_path, lut_path, target_width_mm, spacer_thick,
     """
     ctx = {k: v for k, v in locals().items() if k != 'progress'}
     ctx['progress'] = progress
+    ctx['need_2d_preview'] = False
     ctx = run_raster_pipeline(ctx)
     if ctx.get('error'):
         return None, None, None, ctx['error'], None

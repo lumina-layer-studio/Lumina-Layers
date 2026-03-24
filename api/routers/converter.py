@@ -260,17 +260,22 @@ async def convert_preview(
     文件上传和 session/registry 操作在主线程完成。
     CPU 密集型预览生成卸载到工作进程池。
     """
+    _api_t0 = time.perf_counter()
+
     # Resolve LUT path
     lut_path = LUTManager.get_lut_path(lut_name)
     if lut_path is None:
         raise HTTPException(status_code=404, detail=f"LUT not found: {lut_name}")
 
     # 1. File upload (I/O, main thread)
+    _t = time.perf_counter()
     temp_path = await ensure_png_tempfile(image)
+    _t_upload = time.perf_counter() - _t
 
     # 2. CPU computation offloaded to process pool (only paths and scalars)
     try:
         print(f"[API convert_preview] hue_weight={hue_weight}, lut_name={lut_name}, color_mode={color_mode}")
+        _t = time.perf_counter()
         result = await pool.submit(
             worker_generate_preview,
             temp_path,
@@ -286,6 +291,7 @@ async def convert_preview(
             hue_weight,
             chroma_gate,
         )
+        _t_worker = time.perf_counter() - _t
     except asyncio.TimeoutError:
         raise HTTPException(status_code=504, detail="Preview generation timed out")
     except Exception as e:
@@ -299,8 +305,10 @@ async def convert_preview(
         raise HTTPException(status_code=500, detail=result["status_msg"] or "Preview generation failed")
 
     # Load cache_data from disk (worker serialized to .pkl)
+    _t = time.perf_counter()
     with open(result["cache_data_path"], "rb") as f:
         cache_data = pickle.load(f)
+    _t_pickle_load = time.perf_counter() - _t
 
     # Load preview image from disk (worker saved as .png)
     preview_img = Image.open(result["preview_png_path"])
@@ -329,6 +337,7 @@ async def convert_preview(
     preview_id = registry.register_bytes(session_id, preview_bytes, "preview.png")
 
     # Generate segmented GLB (one Mesh per color)
+    _t = time.perf_counter()
     preview_glb_url: str | None = None
     try:
         glb_path = generate_segmented_glb(cache_data)
@@ -338,8 +347,10 @@ async def convert_preview(
     except Exception as e:
         # Non-fatal: log and continue without GLB
         print(f"[API] Segmented GLB generation failed (non-fatal): {e}")
+    _t_glb = time.perf_counter() - _t
 
     # Build palette with quantized_hex, matched_hex, pixel_count, percentage
+    _t = time.perf_counter()
     raw_palette: list[dict] = cache_data.get("color_palette", []) if cache_data else []
     quantized_image = cache_data.get("quantized_image") if cache_data else None
     matched_rgb_arr = cache_data.get("matched_rgb") if cache_data else None
@@ -347,23 +358,36 @@ async def convert_preview(
 
     palette: list[dict] = []
     if raw_palette and matched_rgb_arr is not None and mask_solid_arr is not None:
-        # Build a matched_hex -> quantized_hex lookup from pixel data
         matched_to_quantized: dict[str, str] = {}
         if quantized_image is not None:
             solid_mask = mask_solid_arr
             q_pixels = quantized_image[solid_mask]  # (N, 3)
             m_pixels = matched_rgb_arr[solid_mask]  # (N, 3)
-            # For each matched color, find the most common quantized color
-            for entry in raw_palette:
-                m_hex = entry["hex"]  # '#rrggbb'
-                m_rgb = entry["color"]  # (R, G, B)
-                color_mask = np.all(m_pixels == np.array(m_rgb, dtype=np.uint8), axis=1)
-                if np.any(color_mask):
-                    q_subset = q_pixels[color_mask]
-                    unique_q, q_counts = np.unique(q_subset, axis=0, return_counts=True)
-                    dominant_q = unique_q[np.argmax(q_counts)]
-                    r, g, b = int(dominant_q[0]), int(dominant_q[1]), int(dominant_q[2])
-                    matched_to_quantized[m_hex] = f"#{r:02x}{g:02x}{b:02x}"
+
+            # Vectorized: encode RGB triplets as uint32 scalars, find dominant
+            # quantized color per matched color in a single np.unique pass.
+            m_enc = (m_pixels[:, 0].astype(np.uint32) << 16) | \
+                    (m_pixels[:, 1].astype(np.uint32) << 8) | \
+                    m_pixels[:, 2].astype(np.uint32)
+            q_enc = (q_pixels[:, 0].astype(np.uint32) << 16) | \
+                    (q_pixels[:, 1].astype(np.uint32) << 8) | \
+                    q_pixels[:, 2].astype(np.uint32)
+
+            pair_key = m_enc.astype(np.uint64) * (1 << 24) + q_enc.astype(np.uint64)
+            unique_keys, counts = np.unique(pair_key, return_counts=True)
+
+            u_m = (unique_keys >> 24).astype(np.uint32)
+            u_q = (unique_keys & 0xFFFFFF).astype(np.uint32)
+
+            order = np.lexsort((-counts, u_m))
+            sorted_m = u_m[order]
+            sorted_q = u_q[order]
+            _, first_idx = np.unique(sorted_m, return_index=True)
+
+            for mk, qk in zip(sorted_m[first_idx], sorted_q[first_idx]):
+                m_hex = f"#{(mk >> 16) & 0xFF:02x}{(mk >> 8) & 0xFF:02x}{mk & 0xFF:02x}"
+                q_hex = f"#{(qk >> 16) & 0xFF:02x}{(qk >> 8) & 0xFF:02x}{qk & 0xFF:02x}"
+                matched_to_quantized[m_hex] = q_hex
 
         for entry in raw_palette:
             m_hex = entry["hex"]  # '#rrggbb'
@@ -384,10 +408,20 @@ async def convert_preview(
             "height": cache_data.get("target_h", 0),
         }
 
+    _t_palette = time.perf_counter() - _t
+
     # Extract color contours from cache (generated by generate_segmented_glb)
     contours_data: dict[str, list[list[list[float]]]] | None = None
     if cache_data and "color_contours" in cache_data:
         contours_data = cache_data["color_contours"]
+
+    _t_api_total = time.perf_counter() - _api_t0
+    print(f"\n{'=' * 60}")
+    print(f"[API PREVIEW] Total endpoint time: {_t_api_total:.2f}s")
+    print(f"  upload={_t_upload:.2f}s, worker={_t_worker:.2f}s, "
+          f"pickle_load={_t_pickle_load:.2f}s")
+    print(f"  segmented_glb={_t_glb:.2f}s, palette={_t_palette:.2f}s")
+    print(f"{'=' * 60}")
 
     return PreviewResponse(
         session_id=session_id,

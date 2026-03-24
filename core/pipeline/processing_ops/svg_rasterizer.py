@@ -9,6 +9,7 @@ Extracted from LuminaImageProcessor._load_svg.
 """
 
 import os
+import time
 import numpy as np
 import cv2
 
@@ -109,9 +110,12 @@ def rasterize_svg(svg_path: str, target_width_mm: float, pixels_per_mm: float = 
         cache_key = None
 
     print(f"[SVG] Rasterizing: {svg_path}")
+    _t0_total = time.perf_counter()
 
     # 1. 读取 SVG
+    _t0 = time.perf_counter()
     drawing = svg2rlg(svg_path)
+    _t_parse = time.perf_counter() - _t0
 
     # --- Fix svglib px→pt coordinate mismatch ---
     # svglib converts SVG width/height from px to pt (×0.75) but keeps
@@ -152,33 +156,23 @@ def rasterize_svg(svg_path: str, target_width_mm: float, pixels_per_mm: float = 
 
     # ================== 【终极方案】双重渲染差分法 ==================
     try:
-        # Pass 1: 白底渲染 (0xFFFFFF)
-        # 强制不使用透明通道，完全模拟打印在白纸上的效果
+        _t0 = time.perf_counter()
         pil_white = renderPM.drawToPIL(drawing, bg=0xFFFFFF, configPIL={"transparent": False})
-        arr_white = np.array(pil_white.convert("RGB"))  # 丢弃 Alpha，只看颜色
+        arr_white = np.array(pil_white.convert("RGB"))
+        _t_render_white = time.perf_counter() - _t0
 
-        # Pass 2: 黑底渲染 (0x000000)
-        # 强制不使用透明通道，完全模拟打印在黑纸上的效果
+        _t0 = time.perf_counter()
         pil_black = renderPM.drawToPIL(drawing, bg=0x000000, configPIL={"transparent": False})
         arr_black = np.array(pil_black.convert("RGB"))
+        _t_render_black = time.perf_counter() - _t0
 
-        # 计算差异 (Difference)
-        # diff = |白底图 - 黑底图|
-        # 如果像素是实心的，它挡住了背景，所以在白底和黑底上颜色一样 -> diff 为 0
-        # 如果像素是透明的，它透出了背景，所以在白底是白，黑底是黑 -> diff 很大
+        _t0 = time.perf_counter()
         diff = np.abs(arr_white.astype(int) - arr_black.astype(int))
         diff_sum = np.sum(diff, axis=2)
-
-        # 生成 Alpha 掩膜（严格阈值，保证下游色彩精度）
         alpha_mask = np.where(diff_sum < 10, 255, 0).astype(np.uint8)
-
-        # 合成最终图像
         r, g, b = cv2.split(arr_white)
         img_final = cv2.merge([r, g, b, alpha_mask])
 
-        # ── Content-aware pixel crop ──────────────────────────────────
-        # Use alpha mask to detect actual content bounds — more reliable
-        # than getBounds() for strokes, nested transforms, and text.
         BORDER = 2
         h_arr, w_arr = img_final.shape[:2]
         content_rows = np.any(alpha_mask > 0, axis=1)
@@ -193,14 +187,20 @@ def rasterize_svg(svg_path: str, target_width_mm: float, pixels_per_mm: float = 
             img_final = img_final[y_min : y_max + 1, x_min : x_max + 1]
         print(f"[SVG] Content-aware crop: {img_final.shape[1]}x{img_final.shape[0]} px")
 
-        # 若渲染时为保证质量而放大，缩回目标像素宽度
         if render_width_px > target_width_px and target_width_px > 0:
             scale_back = target_width_px / render_width_px
             out_w = max(1, round(img_final.shape[1] * scale_back))
             out_h = max(1, round(img_final.shape[0] * scale_back))
             img_final = cv2.resize(img_final, (out_w, out_h), interpolation=cv2.INTER_AREA)
             print(f"[SVG] Scaled to target: {out_w}x{out_h} px")
+        _t_postprocess = time.perf_counter() - _t0
 
+        _t_total = time.perf_counter() - _t0_total
+        print(
+            f"[SVG] Timing: parse={_t_parse:.2f}s, "
+            f"render_white={_t_render_white:.2f}s, render_black={_t_render_black:.2f}s, "
+            f"postprocess={_t_postprocess:.2f}s, total={_t_total:.2f}s"
+        )
         print(f"[SVG] Final resolution: {img_final.shape[1]}x{img_final.shape[0]} px")
         if cache_key is not None:
             _SVG_RASTER_CACHE[cache_key] = img_final.copy()

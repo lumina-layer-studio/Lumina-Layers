@@ -12,6 +12,7 @@ S11 — GLB 3D 预览导出。
 """
 
 import os
+import time
 from typing import Optional
 
 import cv2
@@ -253,25 +254,14 @@ def _build_color_voxel_mesh(
     if n_pixels == 0:
         return None
 
-    # Pre-allocate arrays for all cubes (8 verts, 12 faces each)
-    all_verts = np.empty((n_pixels * 8, 3), dtype=np.float64)
-    all_faces = np.empty((n_pixels * 12, 3), dtype=np.int64)
-    all_colors = np.empty((n_pixels * 12, 4), dtype=np.uint8)
-
-    cube_faces_template = np.array(
+    _FACE_TPL = np.array(
         [
-            [0, 2, 1],
-            [0, 3, 2],
-            [4, 5, 6],
-            [4, 6, 7],
-            [0, 1, 5],
-            [0, 5, 4],
-            [1, 2, 6],
-            [1, 6, 5],
-            [2, 3, 7],
-            [2, 7, 6],
-            [3, 0, 4],
-            [3, 4, 7],
+            [0, 2, 1], [0, 3, 2],
+            [4, 5, 6], [4, 6, 7],
+            [0, 1, 5], [0, 5, 4],
+            [1, 2, 6], [1, 6, 5],
+            [2, 3, 7], [2, 7, 6],
+            [3, 0, 4], [3, 4, 7],
         ],
         dtype=np.int64,
     )
@@ -284,24 +274,21 @@ def _build_color_voxel_mesh(
     z0 = np.zeros(n_pixels, dtype=np.float64)
     z1 = np.full(n_pixels, float(total_layers), dtype=np.float64)
 
-    # Vectorized vertex construction: 8 corners per pixel
-    for i, (vx0, vx1, vy0, vy1, vz0, vz1) in enumerate(zip(x0, x1, y0, y1, z0, z1)):
-        base = i * 8
-        all_verts[base : base + 8] = [
-            [vx0, vy0, vz0],
-            [vx1, vy0, vz0],
-            [vx1, vy1, vz0],
-            [vx0, vy1, vz0],
-            [vx0, vy0, vz1],
-            [vx1, vy0, vz1],
-            [vx1, vy1, vz1],
-            [vx0, vy1, vz1],
-        ]
-        face_base = i * 12
-        all_faces[face_base : face_base + 12] = cube_faces_template + base
-        all_colors[face_base : face_base + 12] = rgba
+    v = np.empty((n_pixels, 8, 3), dtype=np.float64)
+    v[:, 0, 0] = x0;  v[:, 0, 1] = y0;  v[:, 0, 2] = z0
+    v[:, 1, 0] = x1;  v[:, 1, 1] = y0;  v[:, 1, 2] = z0
+    v[:, 2, 0] = x1;  v[:, 2, 1] = y1;  v[:, 2, 2] = z0
+    v[:, 3, 0] = x0;  v[:, 3, 1] = y1;  v[:, 3, 2] = z0
+    v[:, 4, 0] = x0;  v[:, 4, 1] = y0;  v[:, 4, 2] = z1
+    v[:, 5, 0] = x1;  v[:, 5, 1] = y0;  v[:, 5, 2] = z1
+    v[:, 6, 0] = x1;  v[:, 6, 1] = y1;  v[:, 6, 2] = z1
+    v[:, 7, 0] = x0;  v[:, 7, 1] = y1;  v[:, 7, 2] = z1
 
-    mesh = trimesh.Trimesh(vertices=all_verts, faces=all_faces, process=False)
+    offsets = (np.arange(n_pixels, dtype=np.int64) * 8).reshape(-1, 1, 1)
+    all_faces = (_FACE_TPL.reshape(1, 12, 3) + offsets).reshape(-1, 3)
+    all_colors = np.broadcast_to(rgba, (n_pixels * 12, 4)).copy()
+
+    mesh = trimesh.Trimesh(vertices=v.reshape(-1, 3), faces=all_faces, process=False)
     mesh.visual.face_colors = all_colors
     return mesh
 
@@ -368,7 +355,10 @@ def generate_segmented_glb(cache: dict, max_meshes: int = 64) -> Optional[str]:
         return None
 
     try:
+        _glb_t0 = time.perf_counter()
+
         # 1. Downsample large images
+        _t = time.perf_counter()
         height, width = matched_rgb.shape[:2]
         total_pixels = width * height
         SIMPLIFY_THRESHOLD = 500_000
@@ -381,7 +371,7 @@ def generate_segmented_glb(cache: dict, max_meshes: int = 64) -> Optional[str]:
 
             new_h = height // scale_factor
             new_w = width // scale_factor
-            matched_rgb = cv2.resize(matched_rgb, (new_w, new_h), interpolation=cv2.INTER_AREA)
+            matched_rgb = cv2.resize(matched_rgb, (new_w, new_h), interpolation=cv2.INTER_NEAREST)
             mask_solid = cv2.resize(
                 mask_solid.astype(np.uint8),
                 (new_w, new_h),
@@ -391,8 +381,10 @@ def generate_segmented_glb(cache: dict, max_meshes: int = 64) -> Optional[str]:
             shrink = 0.0
         else:
             shrink = 0.0
+        _t_downsample = time.perf_counter() - _t
 
         # 2. Extract unique colors and pixel counts (solid pixels only)
+        _t = time.perf_counter()
         solid_pixels = matched_rgb[mask_solid]  # (N, 3)
         if len(solid_pixels) == 0:
             print("[SEGMENTED_GLB] No solid pixels, returning None")
@@ -406,8 +398,10 @@ def generate_segmented_glb(cache: dict, max_meshes: int = 64) -> Optional[str]:
         )
         n_unique = len(unique_colors)
         print(f"[SEGMENTED_GLB] Found {n_unique} unique colors")
+        _t_unique = time.perf_counter() - _t
 
         # 3. Merge low-frequency colors if exceeding max_meshes
+        _t = time.perf_counter()
         if n_unique > max_meshes:
             print(f"[SEGMENTED_GLB] Merging {n_unique} colors down to {max_meshes}")
             merged_colors = _merge_low_frequency_colors(unique_colors, pixel_counts, max_meshes)
@@ -423,10 +417,13 @@ def generate_segmented_glb(cache: dict, max_meshes: int = 64) -> Optional[str]:
             )
             matched_rgb = matched_rgb_work
             print(f"[SEGMENTED_GLB] After merge: {len(unique_colors)} colors")
+        _t_merge = time.perf_counter() - _t
 
-        # 4. Build per-color Meshes
+        # 4. Build per-color Meshes + Extract 2D contours (single pass)
+        _t = time.perf_counter()
         total_layers = 25
         scene = trimesh.Scene()
+        contours_data: dict[str, list[list[list[float]]]] = {}
 
         pixel_scale = target_width_mm / width if width > 0 else 0.42
         scale_transform = np.eye(4)
@@ -449,22 +446,38 @@ def generate_segmented_glb(cache: dict, max_meshes: int = 64) -> Optional[str]:
                 shrink,
                 rgba,
             )
-            if mesh is None:
-                continue
+            if mesh is not None:
+                mesh.apply_transform(scale_transform)
+                min_z = mesh.vertices[:, 2].min()
+                if min_z != 0.0:
+                    mesh.vertices[:, 2] -= min_z
+                scene.add_geometry(mesh, node_name=f"color_{hex_name}")
 
-            mesh.apply_transform(scale_transform)
+            # Reuse same color_match for contour extraction
+            mask_u8 = color_match.astype(np.uint8) * 255
+            cv_contours, _ = cv2.findContours(mask_u8, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            if cv_contours:
+                color_contour_list: list[list[list[float]]] = []
+                for cnt in cv_contours:
+                    if len(cnt) < 3:
+                        continue
+                    pts = cnt.squeeze(1).astype(float)
+                    world_pts = [
+                        [float(px * pixel_scale), float((height - py) * pixel_scale)]
+                        for px, py in pts
+                    ]
+                    color_contour_list.append(world_pts)
+                if color_contour_list:
+                    contours_data[hex_name] = color_contour_list
 
-            min_z = mesh.vertices[:, 2].min()
-            if min_z != 0.0:
-                mesh.vertices[:, 2] -= min_z
-
-            scene.add_geometry(mesh, node_name=f"color_{hex_name}")
+        _t_mesh_loop = time.perf_counter() - _t
 
         if len(scene.geometry) == 0:
             print("[SEGMENTED_GLB] No meshes generated")
             return None
 
         # 4.5 Build backing plate mesh
+        _t = time.perf_counter()
         backing_mesh = _build_color_voxel_mesh(
             mask_solid,
             height,
@@ -480,42 +493,23 @@ def generate_segmented_glb(cache: dict, max_meshes: int = 64) -> Optional[str]:
                 backing_mesh.vertices[:, 2] -= min_z
             scene.add_geometry(backing_mesh, node_name="backing_plate")
             print(f"[SEGMENTED_GLB] Backing plate added ({backing_mesh.vertices.shape[0]} vertices)")
-
-        # 5. Extract 2D contours for each color
-        contours_data: dict[str, list[list[list[float]]]] = {}
-        for color_rgb in unique_colors:
-            r, g, b = int(color_rgb[0]), int(color_rgb[1]), int(color_rgb[2])
-            hex_name = f"{r:02x}{g:02x}{b:02x}"
-
-            color_match = np.all(matched_rgb == color_rgb, axis=2) & mask_solid
-            mask_u8 = color_match.astype(np.uint8) * 255
-
-            cv_contours, _ = cv2.findContours(mask_u8, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-            if not cv_contours:
-                continue
-
-            color_contour_list: list[list[list[float]]] = []
-            for cnt in cv_contours:
-                if len(cnt) < 3:
-                    continue
-                pts = cnt.squeeze(1).astype(float)
-                world_pts: list[list[float]] = []
-                for px, py in pts:
-                    x_mm = float(px * pixel_scale)
-                    y_mm = float((height - py) * pixel_scale)
-                    world_pts.append([x_mm, y_mm])
-                color_contour_list.append(world_pts)
-
-            if color_contour_list:
-                contours_data[hex_name] = color_contour_list
+        _t_backing = time.perf_counter() - _t
 
         cache["color_contours"] = contours_data
         print(f"[SEGMENTED_GLB] Extracted contours for {len(contours_data)} colors")
 
         # 6. Export GLB
+        _t = time.perf_counter()
         glb_path = os.path.join(OUTPUT_DIR, "segmented_preview.glb")
         scene.export(glb_path)
+        _t_export = time.perf_counter() - _t
+
+        _t_glb_total = time.perf_counter() - _glb_t0
         print(f"[SEGMENTED_GLB] Exported {len(scene.geometry)} meshes -> {glb_path}")
+        print(f"[SEGMENTED_GLB] Timing: downsample={_t_downsample:.2f}s, "
+              f"unique={_t_unique:.2f}s, merge={_t_merge:.2f}s, "
+              f"mesh_loop={_t_mesh_loop:.2f}s, backing={_t_backing:.2f}s, "
+              f"export={_t_export:.2f}s, total={_t_glb_total:.2f}s")
         return glb_path
 
     except Exception as e:

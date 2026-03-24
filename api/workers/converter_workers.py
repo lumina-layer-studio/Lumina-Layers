@@ -96,7 +96,11 @@ def worker_generate_preview(
         "cache_data_path": None,
     }
 
+    import time as _time
+    _t_serial_start = _time.perf_counter()
+
     # Write preview image to a temp PNG file
+    _t = _time.perf_counter()
     if preview_img is not None:
         fd, png_path = tempfile.mkstemp(suffix=".png")
         os.close(fd)
@@ -105,14 +109,21 @@ def worker_generate_preview(
         else:
             preview_img.save(png_path)
         result["preview_png_path"] = png_path
+    _t_png = _time.perf_counter() - _t
 
     # Pickle cache data to a temp file
+    _t = _time.perf_counter()
     if cache_data is not None:
         fd, cache_path = tempfile.mkstemp(suffix=".pkl")
         os.close(fd)
         with open(cache_path, "wb") as f:
             pickle.dump(cache_data, f)
         result["cache_data_path"] = cache_path
+    _t_pkl = _time.perf_counter() - _t
+
+    print(f"[Worker preview] Serialization: png_save={_t_png:.2f}s, "
+          f"pickle_dump={_t_pkl:.2f}s, "
+          f"total={_time.perf_counter() - _t_serial_start:.2f}s")
 
     return result
 

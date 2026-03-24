@@ -311,7 +311,8 @@ class TestExtrudeGeometry:
 class TestParseSvgSubpaths:
 
     def test_split_multi_subpath_path_into_multiple_polygons(self, tmp_path):
-        """Single <path> with two subpaths should yield two polygons."""
+        """Single <path> with two non-overlapping subpaths should yield
+        one shape entry whose geometry covers both subpath areas."""
         svg_file = tmp_path / "multi_subpath.svg"
         svg_file.write_text(
             (
@@ -327,11 +328,10 @@ class TestParseSvgSubpaths:
         vp = _make_parse_only_processor()
         shapes, scale, bbox = vp._parse_svg(str(svg_file), target_width_mm=100.0)
 
-        assert len(shapes) == 2
-        areas = sorted(s["poly"].area for s in shapes)
-        assert abs(areas[0] - 10000.0) < 5.0
-        assert abs(areas[1] - 10000.0) < 5.0
-        assert all(s["color"] == (255, 0, 0) for s in shapes)
+        assert len(shapes) == 1
+        combined = shapes[0]["poly"]
+        assert abs(combined.area - 20000.0) < 100.0
+        assert shapes[0]["color"] == (255, 0, 0)
         assert scale > 0
         assert bbox[2] > 0
 

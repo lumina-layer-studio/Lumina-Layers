@@ -180,13 +180,18 @@ def run_preview_pipeline(ctx: dict) -> dict:
     Returns:
         更新后的 PipelineContext 字典
     """
+    pipeline_t0 = time.perf_counter()
+    step_timings = {}
+
     # ---- P01: Preview validation ----
     _report_progress(ctx, 0.0, "预览验证中... | Validating preview inputs...")
+    t0 = time.perf_counter()
     try:
         ctx = p01_preview_validation.run(ctx)
     except Exception as exc:
         ctx["error"] = f"[P01] {exc}"
         return ctx
+    step_timings["P01"] = time.perf_counter() - t0
 
     if ctx.get("error"):
         return ctx
@@ -194,6 +199,7 @@ def run_preview_pipeline(ctx: dict) -> dict:
     # ---- P02-P06 ----
     for module, label, prog_before, prog_after, optional in _PREVIEW_STEPS:
         _report_progress(ctx, prog_before, f"{label} 执行中...")
+        t0 = time.perf_counter()
         try:
             ctx = module.run(ctx)
         except Exception as exc:
@@ -203,9 +209,20 @@ def run_preview_pipeline(ctx: dict) -> dict:
                 ctx["error"] = f"[{label}] {exc}"
                 print(f"[COORDINATOR] Preview pipeline aborted at {label}: {exc}")
                 return ctx
+        step_timings[label] = time.perf_counter() - t0
         if ctx.get("error"):
             return ctx
         _report_progress(ctx, prog_after)
+
+    total_s = time.perf_counter() - pipeline_t0
+    print(f"\n{'=' * 60}")
+    print(f"[PREVIEW] P01-P06 completed in {total_s:.2f}s")
+    for label, elapsed in step_timings.items():
+        pct = elapsed / total_s * 100 if total_s > 0 else 0
+        print(f"  {label}: {elapsed:.2f}s ({pct:.1f}%)")
+    print(f"{'=' * 60}")
+    ctx["_preview_total_s"] = total_s
+    ctx["_preview_step_timings"] = step_timings
 
     return ctx
 
@@ -379,13 +396,15 @@ def _run_vector_branch(ctx: dict) -> dict:
             print(f"[COORDINATOR] Warning: Preview generation skipped: {e}")
         vector_timing["export_glb_s"] = time.perf_counter() - glb_t0
 
-        # 4. 2D preview from SVG
+        # 4. 2D preview from SVG (skip when caller doesn't need it)
         _report_progress(ctx, 0.90, "生成 2D 预览中... | Generating 2D preview...")
         preview_img = None
         preview_t0 = time.perf_counter()
+        need_2d_preview = ctx.get("need_2d_preview", True)
         skip_heavy_preview = os.getenv("LUMINA_VECTOR_SKIP_2D_PREVIEW", "0") == "1"
-        if skip_heavy_preview:
-            print("[COORDINATOR] Skipping SVG 2D preview due to LUMINA_VECTOR_SKIP_2D_PREVIEW=1")
+        if skip_heavy_preview or not need_2d_preview:
+            reason = "env flag" if skip_heavy_preview else "caller does not need it"
+            print(f"[COORDINATOR] Skipping SVG 2D preview ({reason})")
         elif HAS_SVG_LIB:
             preview_img = _generate_vector_2d_preview(vec_processor, image_path, target_width_mm, vector_replacements)
         else:

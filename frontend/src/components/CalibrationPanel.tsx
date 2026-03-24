@@ -47,12 +47,11 @@ export default function CalibrationPanel() {
     submitGenerate,
   } = useCalibrationStore();
 
-  const isEightColor = color_mode === CalibrationColorMode.EIGHT_COLOR;
-  const isFiveColorExt = color_mode === CalibrationColorMode.FIVE_COLOR_EXT;
-  const isSixColor = color_mode === CalibrationColorMode.SIX_COLOR || color_mode === CalibrationColorMode.SIX_COLOR_RYBW;
-  const blockSizeDisabled = isEightColor || isFiveColorExt;
-  const gapDisabled = isEightColor || isFiveColorExt;
-  const backingDisabled = isEightColor || isFiveColorExt || isSixColor;
+  const backingDisabled =
+    color_mode === CalibrationColorMode.EIGHT_COLOR ||
+    color_mode === CalibrationColorMode.FIVE_COLOR_EXT ||
+    color_mode === CalibrationColorMode.SIX_COLOR ||
+    color_mode === CalibrationColorMode.SIX_COLOR_RYBW;
 
   return (
     <motion.aside
@@ -92,7 +91,6 @@ export default function CalibrationPanel() {
               minInputWidthCh={8}
               unit="mm"
               onChange={setBlockSize}
-              disabled={blockSizeDisabled}
             />
 
             <Slider
@@ -105,7 +103,6 @@ export default function CalibrationPanel() {
               minInputWidthCh={8}
               unit="mm"
               onChange={setGap}
-              disabled={gapDisabled}
             />
 
             <Dropdown

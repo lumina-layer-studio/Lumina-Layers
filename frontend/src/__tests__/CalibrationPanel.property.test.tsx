@@ -41,42 +41,20 @@ const arbCalibrationColorMode = fc.constantFrom(
 );
 
 describe("Feature: calibration-swatch-config, Property 2: Block_Size and Gap sliders follow mode rules", () => {
-  it("Block_Size and Gap sliders are disabled only for extended batch modes", () => {
+  it("Block_Size and Gap sliders are always enabled regardless of color mode", () => {
     fc.assert(
       fc.property(arbCalibrationColorMode, (mode) => {
-        // Set the color mode in the store
         useCalibrationStore.setState({ color_mode: mode });
 
-        // Render the CalibrationPanel
         const { unmount } = render(<CalibrationPanel />);
 
-        // Query all sliders (input[type="range"])
         const sliders = screen.getAllByRole("slider");
 
-        // There should be at least 2 sliders: Block_Size and Gap
         expect(sliders.length).toBeGreaterThanOrEqual(2);
 
-        const shouldDisable =
-          mode === CalibrationColorMode.EIGHT_COLOR ||
-          mode === CalibrationColorMode.FIVE_COLOR_EXT;
+        expect(sliders[0]).not.toBeDisabled();
+        expect(sliders[1]).not.toBeDisabled();
 
-        // Block_Size slider (first) should follow mode-specific rules
-        const blockSizeSlider = sliders[0];
-        if (shouldDisable) {
-          expect(blockSizeSlider).toBeDisabled();
-        } else {
-          expect(blockSizeSlider).not.toBeDisabled();
-        }
-
-        // Gap slider (second) should follow mode-specific rules
-        const gapSlider = sliders[1];
-        if (shouldDisable) {
-          expect(gapSlider).toBeDisabled();
-        } else {
-          expect(gapSlider).not.toBeDisabled();
-        }
-
-        // Cleanup after each iteration
         unmount();
       }),
       { numRuns: 100 }

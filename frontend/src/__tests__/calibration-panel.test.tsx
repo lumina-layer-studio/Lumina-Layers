@@ -52,17 +52,16 @@ describe("CalibrationPanel", () => {
     expect(selects[1]).toHaveTextContent(BackingColor.WHITE);
   });
 
-  it("disables block_size, gap, and backing in 8-Color Max mode", () => {
+  it("disables only backing in 8-Color Max mode", () => {
     useCalibrationStore.setState({ color_mode: CalibrationColorMode.EIGHT_COLOR });
     render(<CalibrationPanel />);
 
     const sliders = screen.getAllByRole("slider");
     const selects = screen.getAllByRole("combobox");
 
-    // block_size slider disabled
-    expect(sliders[0]).toBeDisabled();
-    // gap slider disabled
-    expect(sliders[1]).toBeDisabled();
+    // block_size and gap sliders enabled
+    expect(sliders[0]).not.toBeDisabled();
+    expect(sliders[1]).not.toBeDisabled();
     // backing dropdown disabled
     expect(selects[1]).toBeDisabled();
   });

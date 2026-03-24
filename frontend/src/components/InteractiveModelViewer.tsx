@@ -297,6 +297,7 @@ function InteractiveModelViewer({
   const regionData = useConverterStore((s) => s.regionData);
   const previewPixelWidth = useConverterStore((s) => s.previewPixelWidth);
   const previewPixelHeight = useConverterStore((s) => s.previewPixelHeight);
+  const previewWidthMm = useConverterStore((s) => s.preview_width_mm);
 
   const handlePointerDown = useCallback(
     (event: PointerEvent) => {
@@ -317,24 +318,19 @@ function InteractiveModelViewer({
           colorHitRef.current = true;
 
           if (selectionMode === "current" || selectionMode === "region" || selectionMode === "multi-select") {
-            // 当前/局部区域/多选模式: 3D 点击 → region-detect
-            if (groupRef.current && modelBounds && previewPixelWidth && previewPixelHeight) {
-              // Use worldToLocal to correctly undo ALL group transforms
+            if (groupRef.current && previewPixelWidth && previewPixelHeight && previewWidthMm && previewWidthMm > 0) {
               const localPoint = groupRef.current.worldToLocal(intersects[0].point.clone());
-              const modelW = modelBounds.maxX - modelBounds.minX;
-              const modelH = modelBounds.maxY - modelBounds.minY;
-              if (modelW > 0 && modelH > 0) {
-                const normX = (localPoint.x - modelBounds.minX) / modelW;
-                const normY = 1 - (localPoint.y - modelBounds.minY) / modelH;
-                const pixelX = Math.round(normX * (previewPixelWidth - 1));
-                const pixelY = Math.round(normY * (previewPixelHeight - 1));
-                const clampedX = Math.max(0, Math.min(previewPixelWidth - 1, pixelX));
-                const clampedY = Math.max(0, Math.min(previewPixelHeight - 1, pixelY));
-                if (selectionMode === "multi-select") {
-                  detectAndAccumulateRegion(clampedX, clampedY);
-                } else {
-                  detectRegion(clampedX, clampedY);
-                }
+              const pixelScale = previewWidthMm / previewPixelWidth;
+              const originalX = localPoint.x + sceneCenter.x;
+              const originalY = localPoint.y + sceneCenter.y;
+              const pixelX = Math.floor(originalX / pixelScale);
+              const pixelY = Math.floor(previewPixelHeight - originalY / pixelScale);
+              const clampedX = Math.max(0, Math.min(previewPixelWidth - 1, pixelX));
+              const clampedY = Math.max(0, Math.min(previewPixelHeight - 1, pixelY));
+              if (selectionMode === "multi-select") {
+                detectAndAccumulateRegion(clampedX, clampedY);
+              } else {
+                detectRegion(clampedX, clampedY);
               }
             }
           } else {
@@ -346,7 +342,7 @@ function InteractiveModelViewer({
         }
       }
     },
-    [threeCtx.gl, threeCtx.camera, colorMeshes, selectedColor, onColorClick, selectionMode, detectRegion, detectAndAccumulateRegion, modelBounds, previewPixelWidth, previewPixelHeight, scaleX, scaleY],
+    [threeCtx.gl, threeCtx.camera, colorMeshes, selectedColor, onColorClick, selectionMode, detectRegion, detectAndAccumulateRegion, previewPixelWidth, previewPixelHeight, previewWidthMm, sceneCenter, scaleX, scaleY],
   );
 
   // Expose colorHitRef check so Scene3D's onPointerMissed can query it

@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Lumina Studio 2.0 — 开发环境启动器（Windows 优化版）
+"""Lumina Studio 2.0 — 开发环境启动器（跨平台）
 
 功能：
   - 一键启动 Backend (FastAPI :8000) + Frontend (Vite :5174)
   - 启动前自动清理残留端口和僵尸进程
-  - 使用 Windows Job Object 确保子进程随父进程终止
+  - Windows: Job Object 确保子进程随父进程终止
+  - Linux/WSL: start_new_session 隔离子进程组
   - 彩色日志输出，区分 Backend / Frontend
   - 优雅退出（Ctrl+C 或关闭窗口时自动清理所有子进程）
 
@@ -47,6 +48,9 @@ FRONTEND_PORT = 5174
 POLL_INTERVAL = 0.5
 SHUTDOWN_TIMEOUT = 5
 MAX_AUTO_RESTART = 3
+STARTUP_GRACE_PERIOD = 10
+
+_shutdown_event = threading.Event()
 
 # ── Windows Job Object 支持 ─────────────────────────────────
 
@@ -214,11 +218,14 @@ def find_npm() -> str:
     
     # 尝试在 PATH 中查找
     try:
+        if os.name == "nt":
+            which_cmd = ["where", "npm.cmd"]
+            kwargs = {"creationflags": subprocess.CREATE_NO_WINDOW}
+        else:
+            which_cmd = ["which", "npm"]
+            kwargs = {}
         result = subprocess.run(
-            ["where", "npm.cmd"],
-            capture_output=True,
-            text=True,
-            creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
+            which_cmd, capture_output=True, text=True, **kwargs,
         )
         if result.returncode == 0:
             paths = result.stdout.strip().splitlines()
@@ -258,15 +265,42 @@ def get_processes_using_port(port: int) -> List[int]:
                     if pid not in pids:
                         pids.append(pid)
         else:
-            # Linux/macOS: 使用 lsof
-            result = subprocess.run(
-                ["lsof", "-ti", f":{port}"],
-                capture_output=True,
-                text=True
-            )
-            for pid_str in result.stdout.strip().split():
-                if pid_str.isdigit():
-                    pids.append(int(pid_str))
+            # Linux/WSL: lsof → ss → fuser 级联查找，直到找到 PID
+            try:
+                result = subprocess.run(
+                    ["lsof", "-ti", f":{port}"],
+                    capture_output=True, text=True,
+                )
+                for pid_str in result.stdout.strip().split():
+                    if pid_str.isdigit():
+                        pids.append(int(pid_str))
+            except FileNotFoundError:
+                pass
+
+            if not pids:
+                try:
+                    result = subprocess.run(
+                        ["ss", "-tlnp", "sport", "=", f":{port}"],
+                        capture_output=True, text=True,
+                    )
+                    for m in re.finditer(r"pid=(\d+)", result.stdout):
+                        pid = int(m.group(1))
+                        if pid not in pids:
+                            pids.append(pid)
+                except FileNotFoundError:
+                    pass
+
+            if not pids:
+                try:
+                    result = subprocess.run(
+                        ["fuser", f"{port}/tcp"],
+                        capture_output=True, text=True,
+                    )
+                    for pid_str in result.stdout.strip().split():
+                        if pid_str.isdigit():
+                            pids.append(int(pid_str))
+                except FileNotFoundError:
+                    pass
     except Exception as e:
         log_err(f"获取端口 {port} 进程失败: {e}")
     return pids
@@ -286,13 +320,19 @@ def kill_process_tree(pid: int, force: bool = False) -> bool:
             )
             return result.returncode == 0
         else:
-            # Linux/macOS: 使用 pgid 终止进程组
+            sig = signal.SIGKILL if force else signal.SIGTERM
             try:
-                pgid = os.getpgid(pid)
-                os.killpg(pgid, signal.SIGKILL if force else signal.SIGTERM)
-                return True
-            except ProcessLookupError:
-                return True  # 进程已不存在
+                subprocess.run(
+                    ["pkill", f"-{int(sig)}", "-P", str(pid)],
+                    capture_output=True,
+                )
+            except FileNotFoundError:
+                pass
+            try:
+                os.kill(pid, sig)
+            except (ProcessLookupError, PermissionError):
+                pass
+            return True
     except Exception as e:
         log_err(f"终止进程 {pid} 失败: {e}")
         return False
@@ -332,10 +372,48 @@ def cleanup_residual_processes() -> None:
                         log_info(f"已终止残留后端进程 (PID: {pid})")
         except Exception:
             pass
+    else:
+        try:
+            result = subprocess.run(
+                ["pgrep", "-f", "api_server.py"],
+                capture_output=True, text=True,
+            )
+            for line in result.stdout.strip().splitlines():
+                pid_str = line.strip()
+                if pid_str.isdigit():
+                    pid = int(pid_str)
+                    if pid != os.getpid():
+                        kill_process_tree(pid, force=True)
+                        log_info(f"已终止残留后端进程 (PID: {pid})")
+        except FileNotFoundError:
+            pass
 
-    # 等待端口释放
-    time.sleep(0.5)
-    log_ok("清理完成")
+    # 等待端口释放（重试）
+    ports_to_check = [BACKEND_PORT, FRONTEND_PORT]
+    for attempt in range(6):
+        still_busy = [p for p in ports_to_check if is_port_in_use(p)]
+        if not still_busy:
+            break
+        if attempt == 0:
+            log_sys("等待端口释放...")
+        time.sleep(0.5)
+
+    if still_busy:
+        # 所有工具均未能清理，尝试 fuser -k 强杀
+        if os.name != "nt":
+            for p in still_busy:
+                try:
+                    subprocess.run(["fuser", "-k", f"{p}/tcp"], capture_output=True)
+                    log_info(f"已通过 fuser 强制释放端口 {p}")
+                except FileNotFoundError:
+                    pass
+            time.sleep(0.5)
+            still_busy = [p for p in still_busy if is_port_in_use(p)]
+
+    if still_busy:
+        log_err(f"端口 {', '.join(map(str, still_busy))} 仍被占用")
+    else:
+        log_ok("清理完成")
 
 
 # ── 进程管理 ──────────────────────────────────────────────
@@ -356,6 +434,7 @@ class ServiceProcess:
         self.proc: Optional[subprocess.Popen] = None
         self._reader_thread: Optional[threading.Thread] = None
         self._shutdown_event = threading.Event()
+        self._start_time: float = 0.0
 
     @classmethod
     def set_job_handle(cls, handle) -> None:
@@ -390,9 +469,10 @@ class ServiceProcess:
                 errors="replace",
                 bufsize=1,
                 creationflags=creationflags if os.name == "nt" else 0,
-                # 不使用 shell，避免额外的 cmd.exe 进程
+                start_new_session=(os.name != "nt"),
                 shell=False,
             )
+            self._start_time = time.monotonic()
 
             # 将进程加入 Job Object（Windows）
             if os.name == "nt" and self._job_handle and self.proc.pid:
@@ -413,18 +493,15 @@ class ServiceProcess:
             return False
 
     def _stream_output(self) -> None:
-        """实时转发子进程输出"""
+        """实时转发子进程输出，持续读取直到管道关闭"""
         if not self.proc or not self.proc.stdout:
             return
 
         try:
             for line in self.proc.stdout:
-                if self._shutdown_event.is_set():
-                    break
                 line = line.rstrip("\n")
                 if line:
                     _log(self.name, self.color, line)
-                    # 检测前端实际端口
                     if self.name == "Frontend" and not self.port_detected.is_set():
                         clean_line = re.sub(r'\x1b\[[0-9;]*[a-zA-Z]', '', line)
                         match = re.search(r"http://(?:localhost|127\.0\.0\.1|\[::1\]):(\d+)", clean_line)
@@ -432,7 +509,14 @@ class ServiceProcess:
                             self.actual_port = int(match.group(1))
                             self.port_detected.set()
         except (ValueError, OSError):
-            pass  # 进程已关闭
+            if not self._shutdown_event.is_set():
+                log_err(f"{self.name} 输出管道异常断开")
+
+        if self.proc and not self._shutdown_event.is_set():
+            ret = self.proc.poll()
+            if ret is not None and ret != 0:
+                _log(self.name, self.color,
+                     f"{C.RED}进程退出，退出码: {ret}{C.RESET}")
 
     def stop(self, timeout: int = SHUTDOWN_TIMEOUT) -> None:
         """优雅地停止服务进程"""
@@ -442,13 +526,14 @@ class ServiceProcess:
             return
 
         if self.proc.poll() is not None:
+            if self._reader_thread:
+                self._reader_thread.join(timeout=2)
             self.proc = None
             return
 
         _log(self.name, self.color, f"正在停止 (pid={self.proc.pid})...")
 
-        # 1. 尝试优雅终止（发送 Ctrl+Break 到进程组）
-        #    注意：CREATE_NEW_PROCESS_GROUP 会禁用 CTRL_C_EVENT(0)，必须用 CTRL_BREAK_EVENT(1)
+        # 1. 尝试优雅终止
         try:
             if os.name == "nt":
                 try:
@@ -457,10 +542,12 @@ class ServiceProcess:
                 except Exception:
                     pass
             else:
-                # Linux/macOS: 发送 SIGTERM 到进程组
+                # start_new_session=True 保证子进程是独立进程组组长，
+                # killpg(child_pid) 不会误杀父进程
                 try:
-                    pgid = os.getpgid(self.proc.pid)
-                    os.killpg(pgid, signal.SIGTERM)
+                    os.killpg(self.proc.pid, signal.SIGTERM)
+                except ProcessLookupError:
+                    pass
                 except OSError:
                     self.proc.terminate()
         except Exception:
@@ -470,6 +557,8 @@ class ServiceProcess:
         try:
             self.proc.wait(timeout=timeout)
             _log(self.name, self.color, "已停止")
+            if self._reader_thread:
+                self._reader_thread.join(timeout=2)
             self.proc = None
             return
         except subprocess.TimeoutExpired:
@@ -482,8 +571,9 @@ class ServiceProcess:
                 kill_process_tree(self.proc.pid, force=True)
             else:
                 try:
-                    pgid = os.getpgid(self.proc.pid)
-                    os.killpg(pgid, signal.SIGKILL)
+                    os.killpg(self.proc.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
                 except OSError:
                     self.proc.kill()
 
@@ -492,6 +582,8 @@ class ServiceProcess:
         except Exception as e:
             log_err(f"终止 {self.name} 失败: {e}")
 
+        if self._reader_thread:
+            self._reader_thread.join(timeout=2)
         self.proc = None
 
     @property
@@ -576,7 +668,10 @@ class DevManager:
         log_ok("重启完成")
 
     def check_health(self) -> bool:
-        """检查服务健康状况，返回是否全部健康"""
+        """检查服务健康状况，返回是否需要自动重启
+
+        启动失败（STARTUP_GRACE_PERIOD 内退出）不触发自动重启。
+        """
         if self._shutdown:
             return True
 
@@ -584,8 +679,18 @@ class DevManager:
         for svc in self.services:
             if svc.proc and not svc.alive:
                 ret = svc.proc.returncode
-                log_err(f"{svc.name} 意外退出 (code={ret})")
-                all_healthy = False
+                if svc._reader_thread:
+                    svc._reader_thread.join(timeout=2)
+                uptime = time.monotonic() - svc._start_time
+                if uptime < STARTUP_GRACE_PERIOD:
+                    log_err(
+                        f"{svc.name} 启动失败 (退出码={ret}，运行 {uptime:.1f}s)，"
+                        f"请检查上方错误日志"
+                    )
+                    svc.proc = None
+                else:
+                    log_err(f"{svc.name} 意外退出 (退出码={ret}，运行 {uptime:.1f}s)")
+                    all_healthy = False
 
         return all_healthy
 
@@ -623,7 +728,7 @@ def print_status(manager: DevManager):
 
 def input_listener(manager: DevManager):
     """监听用户输入命令"""
-    while True:
+    while not _shutdown_event.is_set():
         try:
             cmd = input().strip().lower()
         except (EOFError, KeyboardInterrupt):
@@ -637,28 +742,17 @@ def input_listener(manager: DevManager):
             cleanup_residual_processes()
         elif cmd in ("q", "quit", "exit"):
             log_sys("用户请求退出...")
-            manager.stop_all()
-            sys.exit(0)
+            _shutdown_event.set()
         elif cmd in ("h", "help", "?"):
             print_help()
 
 
 def setup_signal_handlers(manager: DevManager):
-    """设置信号处理器"""
+    """设置信号处理器（仅设置退出标志，由主循环负责清理）"""
     def signal_handler(signum, frame):
         sig_name = signal.Signals(signum).name if hasattr(signal, "Signals") else str(signum)
-        log_sys(f"收到信号 {sig_name}，正在清理...")
-        manager.stop_all()
-
-        # Windows: 终止 Job Object
-        if os.name == "nt":
-            try:
-                if ServiceProcess._job_handle:
-                    terminate_job(ServiceProcess._job_handle)
-            except Exception:
-                pass
-
-        sys.exit(0)
+        log_sys(f"收到信号 {sig_name}，正在退出...")
+        _shutdown_event.set()
 
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
@@ -740,14 +834,25 @@ def main():
         if frontend_svc.port_detected.wait(timeout=5.0):
             actual_frontend_port = frontend_svc.actual_port
 
-    # 打印启动信息
-    svc_names = " + ".join(svc.name for svc in manager.services)
-    log_ok(f"{svc_names} 已启动")
-    print(f"""
-{C.DIM}────────────────────────────────────────────{C.RESET}
-  Backend:  {C.CYAN}http://localhost:{BACKEND_PORT}{C.RESET}
-  Frontend: {C.BLUE}http://localhost:{actual_frontend_port}{C.RESET}
-{C.DIM}────────────────────────────────────────────{C.RESET}
+    # 打印启动信息（只显示实际启动的服务）
+    running = [svc for svc in manager.services if svc.alive]
+    failed = [svc for svc in manager.services if not svc.alive]
+
+    if running:
+        svc_names = " + ".join(svc.name for svc in running)
+        log_ok(f"{svc_names} 已启动")
+    for svc in failed:
+        log_err(f"{svc.name} 未能启动")
+
+    backend_up = any(s.name == "Backend" for s in running)
+    frontend_up = any(s.name == "Frontend" for s in running)
+
+    print(f"\n{C.DIM}────────────────────────────────────────────{C.RESET}")
+    if backend_up:
+        print(f"  Backend:  {C.CYAN}http://localhost:{BACKEND_PORT}{C.RESET}")
+    if frontend_up:
+        print(f"  Frontend: {C.BLUE}http://localhost:{actual_frontend_port}{C.RESET}")
+    print(f"""{C.DIM}────────────────────────────────────────────{C.RESET}
   {C.GREEN}r{C.RESET}=重启  {C.GREEN}s{C.RESET}=状态  {C.GREEN}k{C.RESET}=清理  {C.GREEN}q{C.RESET}=退出  {C.GREEN}h{C.RESET}=帮助
 {C.DIM}────────────────────────────────────────────{C.RESET}
 """)
@@ -758,22 +863,30 @@ def main():
 
     # 主循环：健康检查
     restart_count = 0
-    try:
-        while True:
-            if not manager.check_health():
-                restart_count += 1
-                if restart_count > MAX_AUTO_RESTART:
-                    log_err(f"已连续自动重启 {MAX_AUTO_RESTART} 次，停止重试。请检查服务日志。")
-                    log_sys("按 r 手动重启，或 q 退出")
-                else:
-                    log_sys(f"检测到服务异常，自动重启 ({restart_count}/{MAX_AUTO_RESTART})...")
-                    manager.restart_all()
+    while not _shutdown_event.is_set():
+        if not manager.check_health():
+            restart_count += 1
+            if restart_count > MAX_AUTO_RESTART:
+                log_err(f"已连续自动重启 {MAX_AUTO_RESTART} 次，停止重试。请检查服务日志。")
+                log_sys("按 r 手动重启，或 q 退出")
             else:
-                restart_count = 0
-            time.sleep(POLL_INTERVAL)
-    except KeyboardInterrupt:
-        log_sys("收到中断信号，正在退出...")
-        manager.stop_all()
+                log_sys(f"检测到服务异常，自动重启 ({restart_count}/{MAX_AUTO_RESTART})...")
+                manager.restart_all()
+        else:
+            restart_count = 0
+        _shutdown_event.wait(POLL_INTERVAL)
+
+    log_sys("正在退出...")
+    manager.stop_all()
+
+    if os.name == "nt" and ServiceProcess._job_handle:
+        try:
+            terminate_job(ServiceProcess._job_handle)
+        except Exception:
+            pass
+
+    # 强制退出，避免 input() 阻塞在 stdin 导致进程挂起
+    os._exit(0)
 
 
 if __name__ == "__main__":

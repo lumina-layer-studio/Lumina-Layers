@@ -10,8 +10,8 @@ export const translations: Record<string, Record<"zh" | "en", string>> = {
     en: "✨ Lumina Studio",
   },
   app_subtitle: {
-    zh: "多材料3D打印色彩系统 | v1.6.4",
-    en: "Multi-Material 3D Print Color System | v1.6.4",
+    zh: "多材料3D打印色彩系统 | v1.6.5",
+    en: "Multi-Material 3D Print Color System | v1.6.5",
   },
   lang_btn_zh: {
     zh: "🌐 中文",
@@ -1009,7 +1009,7 @@ export const translations: Record<string, Record<"zh" | "en", string>> = {
   // ==================== About Page Content ====================
   about_content: {
     zh: [
-      "## 🌟 Lumina Studio v1.6.4",
+      "## 🌟 Lumina Studio v1.6.5",
       "",
       "**多材料3D打印色彩系统**",
       "",
@@ -1042,7 +1042,7 @@ export const translations: Record<string, Record<"zh" | "en", string>> = {
       "- **K-Means 色彩量化**",
     ].join("\n"),
     en: [
-      "## 🌟 Lumina Studio v1.6.4",
+      "## 🌟 Lumina Studio v1.6.5",
       "",
       "**Multi-Material 3D Print Color System**",
       "",

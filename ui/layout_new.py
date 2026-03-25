@@ -2767,6 +2767,12 @@ def create_converter_tab_content(lang: str, lang_state=None, theme_state=None) -
 
         # ========== Fullscreen 3D Preview Overlay ==========
         with gr.Column(visible=False, elem_id="conv-3d-fullscreen-container") as conv_3d_fullscreen_col:
+            components['btn_conv_3d_back'] = gr.Button(
+                "✕ 返回",
+                variant="secondary",
+                size="sm",
+                elem_id="conv-3d-back-btn"
+            )
             conv_3d_fullscreen = gr.Model3D(
                 label="3D Fullscreen",
                 clear_color=[0.12, 0.12, 0.15, 1.0],
@@ -4614,6 +4620,12 @@ def create_converter_tab_content(lang: str, lang_state=None, theme_state=None) -
     )
 
     components['btn_conv_2d_back'].click(
+        fn=lambda: (gr.update(visible=False), gr.update(visible=False)),
+        inputs=[],
+        outputs=[components['col_conv_3d_fullscreen'], components['col_conv_2d_thumbnail']]
+    )
+
+    components['btn_conv_3d_back'].click(
         fn=lambda: (gr.update(visible=False), gr.update(visible=False)),
         inputs=[],
         outputs=[components['col_conv_3d_fullscreen'], components['col_conv_2d_thumbnail']]

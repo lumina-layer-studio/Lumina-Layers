@@ -6,6 +6,13 @@ All notable changes to Lumina Studio are documented in this file.
 
 ---
 
+## v1.6.5 (2026-03-25)
+
+### Improvements
+- Added a visible "✕ Back" button at the top-left corner of the fullscreen 3D preview, allowing users to easily exit fullscreen mode (previously, the only exit was hidden in the small 2D thumbnail at the bottom-right corner)
+
+---
+
 ## v1.6.4 (2026-03-12)
 
 ### Bug Fixes

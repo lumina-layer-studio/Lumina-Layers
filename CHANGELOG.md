@@ -6,6 +6,24 @@ All notable changes to Lumina Studio are documented in this file.
 
 ---
 
+## v1.6.5 (2026-03-25)
+
+### Improvements
+- Added a visible "✕ Back" button at the top-left corner of the fullscreen 3D preview, allowing users to easily exit fullscreen mode (previously, the only exit was hidden in the small 2D thumbnail at the bottom-right corner)
+
+---
+
+## v1.6.4 (2026-03-12)
+
+### Bug Fixes
+- Fixed SVG mode "separate backing plate" checkbox being ignored; backing plate was always exported as a separate object regardless of setting
+- Fixed SVG mode backing plate color appearing gray instead of white (Board slot now correctly falls back to white when not matched in color system)
+- Fixed SVG mode backing plate and adjacent color layer gaps/through-cracks: root cause was v1.6.3 geometry clipping independently calling `simplify()` on each shape, causing shared boundary coordinate misalignment; replaced with `set_precision(grid_size=1e-6)` to snap all shape vertices to the same precision grid, eliminating gaps at the source
+- Fixed converter page width/height linkage not triggering on the first manual Enter after flow "select image A -> generate -> remove -> select image B" (root cause: `lastValue` baseline was not synchronized after input remount)
+- Fixed manual width/height integer input being overwritten to decimal values (e.g. `240 -> 240.1`): linkage output is now normalized to integers and aligned with `step=1`
+
+---
+
 ## v1.6.3 (2026-03-08)
 
 ### Features

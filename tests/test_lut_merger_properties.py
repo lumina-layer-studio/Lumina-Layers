@@ -403,7 +403,7 @@ class TestNonStandardSizeDetection:
             result = detect_lut_color_mode(path)
             assert result == "Merged", f"Expected 'Merged' for .npz, got {result}"
 
-    @given(size=non_standard_sizes.filter(lambda x: x > 35 and (x < 900 or x > 2800)))
+    @given(size=non_standard_sizes.filter(lambda x: x > 36 and (x < 900 or x > 2800)))
     @settings(max_examples=100)
     def test_non_standard_npy_detected_as_merged(self, size):
         """For any .npy with non-standard color count (outside known ranges),

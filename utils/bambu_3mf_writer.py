@@ -587,7 +587,7 @@ class BambuStudio3MFWriter:
         
         header = ET.SubElement(config, 'header')
         ET.SubElement(header, 'header_item', attrib={'key': 'X-BBL-Client-Type', 'value': 'slicer'})
-        ET.SubElement(header, 'header_item', attrib={'key': 'X-BBL-Client-Version', 'value': 'Lumina-1.6.3'})
+        ET.SubElement(header, 'header_item', attrib={'key': 'X-BBL-Client-Version', 'value': 'Lumina-1.6.5'})
         
         tree = ET.ElementTree(config)
         ET.indent(tree, space='  ')
@@ -725,9 +725,13 @@ def export_scene_with_bambu_metadata(scene: trimesh.Scene, output_path: str,
                     name_to_color[slot_name] = tuple(preview_colors[mat_id][:3])
                     break
         
-        # Fallback: use gray if not found
+        # Fallback: "Board" is the SVG backing plate (always white); other
+        # unrecognised names fall back to gray.
         if slot_name not in name_to_color:
-            name_to_color[slot_name] = (200, 200, 200)
+            if slot_name == "Board" and 0 in preview_colors:
+                name_to_color[slot_name] = tuple(preview_colors[0][:3])
+            else:
+                name_to_color[slot_name] = (200, 200, 200)
     
     print(f"[BAMBU_3MF] Color mapping: {list(name_to_color.keys())}")
     

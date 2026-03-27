@@ -22,7 +22,7 @@ import time
 import trimesh
 from svgelements import SVG, Path, Shape
 from shapely.geometry import Polygon, MultiPolygon
-from shapely import affinity
+from shapely import affinity, set_precision
 from shapely.ops import unary_union
 from shapely.strtree import STRtree
 
@@ -77,6 +77,7 @@ class VectorProcessor:
         structure_mode: str = "Single-sided",
         color_replacements: dict = None,
         progress_fn=None,
+        separate_backing: bool = False,
     ) -> trimesh.Scene:
         """Convert an SVG file to a trimesh Scene ready for 3MF export.
 
@@ -86,6 +87,9 @@ class VectorProcessor:
             thickness_mm:     Backing (spacer) thickness in mm.
             structure_mode:   "Single-sided" or "Double-sided".
             color_replacements: Optional ``{hex: hex}`` replacement map.
+            separate_backing: If True, back plate is exported as a separate
+                              "Board" object; if False (default), it is merged
+                              into the first color slot (White).
 
         Returns:
             A ``trimesh.Scene`` with one geometry per material slot, sorted
@@ -225,10 +229,20 @@ class VectorProcessor:
                                        extrude_cache=extrude_cache)
             )
             if backing_meshes:
-                backing_name = "Board"
-                if backing_name not in meshes_by_slot:
-                    meshes_by_slot[backing_name] = {"meshes": [], "mat_id": 0}
-                meshes_by_slot[backing_name]["meshes"].extend(backing_meshes)
+                if separate_backing:
+                    # Export backing as a standalone "Board" object (mat_id=0 → White)
+                    backing_name = "Board"
+                    if backing_name not in meshes_by_slot:
+                        meshes_by_slot[backing_name] = {"meshes": [], "mat_id": 0}
+                    meshes_by_slot[backing_name]["meshes"].extend(backing_meshes)
+                    print(f"[VECTOR] Backing added as separate 'Board' object (white)")
+                else:
+                    # Merge backing into the first color slot (White, mat_id=0)
+                    white_slot = slot_names[0]
+                    if white_slot not in meshes_by_slot:
+                        meshes_by_slot[white_slot] = {"meshes": [], "mat_id": 0}
+                    meshes_by_slot[white_slot]["meshes"].extend(backing_meshes)
+                    print(f"[VECTOR] Backing merged into slot '{white_slot}' (mat_id=0)")
         stage_timings["backing_s"] = time.perf_counter() - t0
 
         # === Stage 7: Double-sided structure ===
@@ -682,17 +696,23 @@ class VectorProcessor:
             raise ValueError("Invalid geometry width (0)")
 
         scale_factor = target_width_mm / real_w
-        simplify_tol_svg = max(0.0, (self.sampling_precision / max(scale_factor, 1e-9)) * 0.5)
+        # Minimum area filter: discard slivers smaller than (0.25 * sampling_precision)^2 in model space.
         min_area_svg = max(0.0, (self.sampling_precision ** 2) / max(scale_factor ** 2, 1e-12) * 0.25)
+
+        # Precision grid size used for set_precision().
+        # All shapes snap to the same grid → shared boundaries are guaranteed to
+        # have identical coordinates, eliminating floating-point gaps between
+        # adjacent shapes in both the color layers and the backing silhouette.
+        # 1e-6 SVG units is sub-nanometre in model space for any realistic scale.
+        _SNAP_GRID = 1e-6
 
         final_shapes = []
         for item in raw_shapes:
             shifted = affinity.translate(item["poly"], xoff=-gx0, yoff=-gy0)
-            if simplify_tol_svg > 0.0:
-                try:
-                    shifted = shifted.simplify(simplify_tol_svg, preserve_topology=True)
-                except Exception:
-                    pass
+            try:
+                shifted = set_precision(shifted, grid_size=_SNAP_GRID)
+            except Exception:
+                pass
 
             if not shifted.is_valid:
                 shifted = shifted.buffer(0)

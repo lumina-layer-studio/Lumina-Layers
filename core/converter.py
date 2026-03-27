@@ -580,6 +580,7 @@ def convert_image_to_3d(image_path, lut_path, target_width_mm, spacer_thick,
                 thickness_mm=spacer_thick,
                 structure_mode=structure_mode,
                 color_replacements=vector_replacements,
+                separate_backing=separate_backing,
             )
             vector_timing["mesh_total_s"] = time.perf_counter() - mesh_t0
             if isinstance(getattr(vec_processor, "last_stage_timings", None), dict):
@@ -4112,7 +4113,7 @@ def detect_lut_color_mode(lut_path):
                 if total_colors >= 900 and total_colors < 1200:
                     print(f"[AUTO_DETECT] Detected 4-Color mode from .npz ({total_colors} colors)")
                     return "4-Color"
-                if total_colors >= 30 and total_colors <= 35:
+                if total_colors >= 30 and total_colors <= 36:
                     print(f"[AUTO_DETECT] Detected 2-Color BW mode from .npz ({total_colors} colors)")
                     return "BW (Black & White)"
             print(f"[AUTO_DETECT] Detected Merged LUT (.npz format)")
@@ -4138,8 +4139,8 @@ def detect_lut_color_mode(lut_path):
         
         print(f"[AUTO_DETECT] LUT shape: {lut_data.shape}, total colors: {total_colors}")
         
-        # 2色模式：32色 (2^5 = 32)
-        if total_colors >= 30 and total_colors <= 35:
+        # 2色模式：32色 (2^5 = 32), LUT is 6x6 grid = 36 entries
+        if total_colors >= 30 and total_colors <= 36:
             print(f"[AUTO_DETECT] Detected 2-Color BW mode (32 colors)")
             return "BW (Black & White)"
         

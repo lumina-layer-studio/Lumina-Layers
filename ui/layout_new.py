@@ -100,13 +100,23 @@ if hasattr(I18n, 'TEXTS'):
 DEBOUNCE_JS = """
 <script>
 (function () {
+  if (window.__luminaBlurTriggerInit) return;
+  window.__luminaBlurTriggerInit = true;
+
   function setupBlurTrigger() {
     var sliders = document.querySelectorAll('.compact-row input[type="number"]');
-    if (!sliders.length) return false;
+    if (!sliders.length) return 0;
+    var boundCount = 0;
     sliders.forEach(function (input) {
       if (input.__blur_bound) return;
       input.__blur_bound = true;
+      boundCount += 1;
       var lastValue = input.value;
+      // Programmatic updates (e.g. selecting another image) may change value
+      // without touching this closure; refresh baseline on user focus.
+      input.addEventListener('focus', function () {
+        lastValue = input.value;
+      });
       // 捕获阶段拦截所有 input 事件，阻止 Gradio 立即处理
       input.addEventListener('input', function (e) {
         if (input.__dispatching) return;
@@ -135,13 +145,13 @@ DEBOUNCE_JS = """
         }
       });
     });
-    return true;
+    return boundCount;
   }
 
   function init() {
-    if (setupBlurTrigger()) return;
+    setupBlurTrigger();
     var observer = new MutationObserver(function () {
-      if (setupBlurTrigger()) observer.disconnect();
+      setupBlurTrigger();
     });
     observer.observe(document.body, { childList: true, subtree: true });
   }
@@ -903,7 +913,7 @@ def calc_height_from_width(width, img):
         return 0
     
     ratio = h_px / w_px
-    return round(width * ratio, 1)
+    return int(round(width * ratio))
 
 
 def calc_width_from_height(height, img):
@@ -925,7 +935,7 @@ def calc_width_from_height(height, img):
         return 0
     
     ratio = w_px / h_px
-    return round(height * ratio, 1)
+    return int(round(height * ratio))
 
 
 def init_dims(img):
@@ -943,7 +953,7 @@ def init_dims(img):
     
     w_px, h_px = size
     default_w = 60
-    default_h = round(default_w * (h_px / w_px), 1)
+    default_h = int(round(default_w * (h_px / w_px)))
     return default_w, default_h
 
 
@@ -2757,6 +2767,12 @@ def create_converter_tab_content(lang: str, lang_state=None, theme_state=None) -
 
         # ========== Fullscreen 3D Preview Overlay ==========
         with gr.Column(visible=False, elem_id="conv-3d-fullscreen-container") as conv_3d_fullscreen_col:
+            components['btn_conv_3d_back'] = gr.Button(
+                "✕ 返回",
+                variant="secondary",
+                size="sm",
+                elem_id="conv-3d-back-btn"
+            )
             conv_3d_fullscreen = gr.Model3D(
                 label="3D Fullscreen",
                 clear_color=[0.12, 0.12, 0.15, 1.0],
@@ -4604,6 +4620,12 @@ def create_converter_tab_content(lang: str, lang_state=None, theme_state=None) -
     )
 
     components['btn_conv_2d_back'].click(
+        fn=lambda: (gr.update(visible=False), gr.update(visible=False)),
+        inputs=[],
+        outputs=[components['col_conv_3d_fullscreen'], components['col_conv_2d_thumbnail']]
+    )
+
+    components['btn_conv_3d_back'].click(
         fn=lambda: (gr.update(visible=False), gr.update(visible=False)),
         inputs=[],
         outputs=[components['col_conv_3d_fullscreen'], components['col_conv_2d_thumbnail']]

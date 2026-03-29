@@ -6,6 +6,14 @@ All notable changes to Lumina Studio are documented in this file.
 
 ---
 
+## v1.6.7 (2026-03-29)
+
+### Bug Fixes
+- **fix(lut)**: Fixed critical bug where 6-Color RYBWGK LUT users (e.g. 瑞贝思) received wrong filament color assignments in BambuStudio AMS — the 3MF was hard-coded with CMYWGK slot preview colors (Cyan/Magenta/Green/Yellow) instead of the actual calibrated filament colors (Red/Yellow/Blue/Green), causing users to load the wrong filament in each slot and producing incorrect print results
+- **fix(lut)**: Preview colors in generated 3MF files now derive from the LUT's own pure-color calibration entries (`(i,i,i,i,i)` stacks) rather than the static `ColorSystem` defaults, making them accurate for any 4-Color, 6-Color, or 8-Color calibration regardless of filament brand or color variant
+
+---
+
 ## v1.6.6 (2026-03-29)
 
 ### Bug Fixes

@@ -6,6 +6,20 @@ All notable changes to Lumina Studio are documented in this file.
 
 ---
 
+## v1.6.6 (2026-03-29)
+
+### Bug Fixes
+- **fix(lut)**: Fixed 6-Color LUTs with generic filenames (e.g. `lumina_lut (8).npy`) being misidentified as 4-Color mode, causing incorrect layer stacking and inverted print output
+- **fix(lut)**: Fixed 6-Color RYBWGK LUTs with "RYBW" in filename being misidentified as 4-Color mode due to keyword matching taking precedence over file size detection
+- **fix(recipe)**: Fixed color recipe report displaying bottom-to-top and top-to-bottom layer indices in reversed order
+
+### Improvements
+- **feat(ui)**: Added filament color dot badges next to LUT dropdown in both Gradio and React frontends — shows actual filament colors for the detected mode (4/6/8-Color, Merged, BW)
+- **fix(ui)**: Updated color dot values to match actual filament hex values from config (Magenta `#EC008C`, Red `#DC143C`, etc.)
+- **refactor(lut)**: Reordered `infer_color_mode` detection priority: explicit numeric keywords → file size → color-system keywords, preventing RYBWGK from matching RYBW (4-Color)
+
+---
+
 ## v1.6.5 (2026-03-25)
 
 ### Improvements

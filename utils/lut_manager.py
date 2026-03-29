@@ -111,24 +111,40 @@ class LUTManager:
         if file_path.lower().endswith(".npz"):
             return "Merged"
 
-        # 按关键词匹配（优先级从高到低）
+        # ── 第一优先：明确数字关键词（不存在跨模式歧义）──────────────────
         if "8色" in combined or "8-COLOR" in combined or "8COLOR" in combined:
             return "8-Color Max"
         if "6色" in combined or "6-COLOR" in combined or "6COLOR" in combined:
             return "6-Color (Smart 1296)"
-        # CMYW/RYBW 必须在 BW 之前检测，避免 "RYBW" 中的 "BW" 误匹配
+        if "4色" in combined or "4-COLOR" in combined or "4COLOR" in combined:
+            return "4-Color"
+        if "黑白" in combined or "B&W" in combined:
+            return "BW (Black & White)"
+        if re.search(r"(?<![A-Z])BW(?![A-Z])", combined):
+            return "BW (Black & White)"
+
+        # ── 第二优先：文件大小（比颜色系关键词更可靠）──────────────────
+        # RYBW / CMYW 同时出现在 4-色（RYBW/CMYW）和 6-色（RYBWGK/CMYWGK）文件名中，
+        # 必须先用文件大小消歧，再用颜色系关键词。
+        if file_path and os.path.exists(file_path) and file_path.lower().endswith(".npy"):
+            try:
+                import numpy as np
+                total_colors = np.load(file_path).reshape(-1, 3).shape[0]
+                if total_colors >= 2600:
+                    return "8-Color Max"
+                if total_colors >= 1200:
+                    return "6-Color (Smart 1296)"
+                if total_colors <= 36:
+                    return "BW (Black & White)"
+                # total_colors in 37..1199 → 4-Color，继续往下用关键词区分子类型
+            except Exception:
+                pass
+
+        # ── 第三优先：颜色系关键词（仅在确认为 4-色时区分子类型）────────
         if "CMYW" in combined or "青品黄" in combined:
             return "4-Color"
         if "RYBW" in combined or "红黄蓝" in combined:
             return "4-Color"
-        if "4色" in combined or "4-COLOR" in combined or "4COLOR" in combined:
-            return "4-Color"
-        # BW 单独检测：排除 RYBW/CMYW 已匹配的情况
-        if "黑白" in combined or "B&W" in combined:
-            return "BW (Black & White)"
-        # 仅匹配独立的 "BW"（前后非字母），避免 RYBW 误匹配
-        if re.search(r"(?<![A-Z])BW(?![A-Z])", combined):
-            return "BW (Black & White)"
 
         # 默认回退为 4-Color
         return "4-Color"

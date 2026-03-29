@@ -55,7 +55,7 @@
 
 ## Project Status
 
-**Current Version**: v1.6.5  
+**Current Version**: v1.6.6  
 **License**: GNU GPL v3.0 (with Commercial Use & "Street Vendor" Support)  
 **Nature**: Non-profit independent implementation, open-source community project
 

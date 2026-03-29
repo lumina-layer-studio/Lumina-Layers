@@ -139,13 +139,14 @@ class ColorRecipeLogger:
             pixel_count: Number of pixels with this color
         """
         # Get stacking recipe
-        # Note: self.ref_stacks already stores stacks in bottom-to-top order
-        # (after the reversed() conversion in _load_lut)
+        # Note: self.ref_stacks stores stacks in top-to-bottom order
+        # (after the reversed() conversion in _load_lut: bottom-to-top → top-to-bottom)
+        # stack[0] = viewing surface (顶/观赏面), stack[4] = backing (底/背板)
         stack = self.ref_stacks[lut_index]
         
-        # Convert stack to color names (stack is already bottom-to-top)
-        stack_names_bottom_to_top = [self._get_color_name(int(mat_id)) for mat_id in stack]
-        stack_names_top_to_bottom = list(reversed(stack_names_bottom_to_top))
+        # Convert stack to color names (stack is top-to-bottom: index 0 = viewing surface)
+        stack_names_top_to_bottom = [self._get_color_name(int(mat_id)) for mat_id in stack]
+        stack_names_bottom_to_top = list(reversed(stack_names_top_to_bottom))
         
         mapping = {
             'original_rgb': original_rgb,
@@ -224,14 +225,14 @@ class ColorRecipeLogger:
             lines.append(f"    堆叠配方 (底→顶) / Stack Recipe (Bottom→Top):")
             stack_str = " -> ".join(mapping['stack_names_bottom_to_top'])
             lines.append(f"      {stack_str}")
-            lines.append(f"      索引 / Indices: {mapping['stack_indices']}")
+            lines.append(f"      索引 / Indices: {list(reversed(mapping['stack_indices']))}")
             lines.append(f"")
             
             # Stacking recipe (top to bottom)
             lines.append(f"    堆叠配方 (顶→底) / Stack Recipe (Top→Bottom):")
             stack_str = " -> ".join(mapping['stack_names_top_to_bottom'])
             lines.append(f"      {stack_str}")
-            lines.append(f"      索引 / Indices: {list(reversed(mapping['stack_indices']))}")
+            lines.append(f"      索引 / Indices: {mapping['stack_indices']}")
             lines.append("")
             lines.append("-" * 80)
             lines.append("")

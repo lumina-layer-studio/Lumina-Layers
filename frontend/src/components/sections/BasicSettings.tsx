@@ -13,6 +13,7 @@ import RadioGroup from "../ui/RadioGroup";
 import { CropModal } from "../ui/CropModal";
 import type { CropData } from "../ui/CropModal";
 import { useI18n } from "../../i18n/context";
+import ColorModeBadge from "../ui/ColorModeBadge";
 
 export default function BasicSettings() {
   const { t } = useI18n();
@@ -139,9 +140,10 @@ export default function BasicSettings() {
         placeholder={t("basic_lut_placeholder")}
       />
 
-      {lut_name && (
-        <div className="text-xs text-gray-500 -mt-2 px-1">
-          {t("basic_color_mode_label")}: {color_mode}
+      {lut_name && color_mode && (
+        <div className="flex items-center gap-1.5 -mt-2 px-1">
+          <span className="text-xs text-gray-500">{t("basic_color_mode_label")}:</span>
+          <ColorModeBadge mode={color_mode} />
         </div>
       )}
 

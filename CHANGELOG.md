@@ -6,6 +6,46 @@ All notable changes to Lumina Studio are documented in this file.
 
 ---
 
+## v1.6.7 (2026-03-29)
+
+### Bug Fixes
+- **fix(lut)**: Fixed critical bug where 6-Color RYBWGK LUT users (e.g. 瑞贝思) received wrong filament color assignments in BambuStudio AMS — the 3MF was hard-coded with CMYWGK slot preview colors (Cyan/Magenta/Green/Yellow) instead of the actual calibrated filament colors (Red/Yellow/Blue/Green), causing users to load the wrong filament in each slot and producing incorrect print results
+- **fix(lut)**: Preview colors in generated 3MF files now derive from the LUT's own pure-color calibration entries (`(i,i,i,i,i)` stacks) rather than the static `ColorSystem` defaults, making them accurate for any 4-Color, 6-Color, or 8-Color calibration regardless of filament brand or color variant
+
+---
+
+## v1.6.6 (2026-03-29)
+
+### Bug Fixes
+- **fix(lut)**: Fixed 6-Color LUTs with generic filenames (e.g. `lumina_lut (8).npy`) being misidentified as 4-Color mode, causing incorrect layer stacking and inverted print output
+- **fix(lut)**: Fixed 6-Color RYBWGK LUTs with "RYBW" in filename being misidentified as 4-Color mode due to keyword matching taking precedence over file size detection
+- **fix(recipe)**: Fixed color recipe report displaying bottom-to-top and top-to-bottom layer indices in reversed order
+
+### Improvements
+- **feat(ui)**: Added filament color dot badges next to LUT dropdown in both Gradio and React frontends — shows actual filament colors for the detected mode (4/6/8-Color, Merged, BW)
+- **fix(ui)**: Updated color dot values to match actual filament hex values from config (Magenta `#EC008C`, Red `#DC143C`, etc.)
+- **refactor(lut)**: Reordered `infer_color_mode` detection priority: explicit numeric keywords → file size → color-system keywords, preventing RYBWGK from matching RYBW (4-Color)
+
+---
+
+## v1.6.5 (2026-03-25)
+
+### Improvements
+- Added a visible "✕ Back" button at the top-left corner of the fullscreen 3D preview, allowing users to easily exit fullscreen mode (previously, the only exit was hidden in the small 2D thumbnail at the bottom-right corner)
+
+---
+
+## v1.6.4 (2026-03-12)
+
+### Bug Fixes
+- Fixed SVG mode "separate backing plate" checkbox being ignored; backing plate was always exported as a separate object regardless of setting
+- Fixed SVG mode backing plate color appearing gray instead of white (Board slot now correctly falls back to white when not matched in color system)
+- Fixed SVG mode backing plate and adjacent color layer gaps/through-cracks: root cause was v1.6.3 geometry clipping independently calling `simplify()` on each shape, causing shared boundary coordinate misalignment; replaced with `set_precision(grid_size=1e-6)` to snap all shape vertices to the same precision grid, eliminating gaps at the source
+- Fixed converter page width/height linkage not triggering on the first manual Enter after flow "select image A -> generate -> remove -> select image B" (root cause: `lastValue` baseline was not synchronized after input remount)
+- Fixed manual width/height integer input being overwritten to decimal values (e.g. `240 -> 240.1`): linkage output is now normalized to integers and aligned with `step=1`
+
+---
+
 ## v1.6.3 (2026-03-08)
 
 ### Features

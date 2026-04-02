@@ -37,6 +37,49 @@ def _build_full_color_region_mask(cache, selected_color: str):
 # LUT Management Callbacks
 # ═══════════════════════════════════════════════════════════════
 
+_MODE_DOTS = {
+    "8-Color":          ["#C12E1F","#F4EE2A","#0064F0","#EC008C","#0086D6","#F0F0F0","#00AE42","#111111"],
+    "6-Color-CMYWGK":   ["#00AE42","#111111","#0086D6","#EC008C","#F4EE2A","#F0F0F0"],
+    "6-Color-RYBWGK":   ["#00AE42","#111111","#DC143C","#FFE600","#0064F0","#F0F0F0"],
+    "6-Color":          ["#00AE42","#111111","#DC143C","#FFE600","#0064F0","#F0F0F0"],
+    "5-Color Extended": ["#DC143C","#FFE600","#0064F0","#F0F0F0","#111111"],
+    "BW":               ["#F0F0F0","#111111"],
+    "4-Color-CMYW":     ["#0086D6","#EC008C","#F4EE2A","#F0F0F0"],
+    "4-Color":          ["#DC143C","#FFE600","#0064F0","#F0F0F0"],
+}
+
+def _resolve_mode_key(mode: str) -> str:
+    if mode == "Merged":         return "Merged"
+    if mode.startswith("8-Color"): return "8-Color"
+    if "CMYWGK" in mode:         return "6-Color-CMYWGK"
+    if "RYBWGK" in mode:         return "6-Color-RYBWGK"
+    if mode.startswith("6-Color"): return "6-Color"
+    if "5-Color Extended" in mode: return "5-Color Extended"
+    if mode.startswith("BW"):    return "BW"
+    if "CMYW" in mode:           return "4-Color-CMYW"
+    return "4-Color"
+
+def _color_mode_html(mode: str) -> str:
+    """Return an HTML snippet with colored dots + label for the given color mode."""
+    key = _resolve_mode_key(mode)
+    dot_style = ("display:inline-block;width:10px;height:10px;border-radius:50%;"
+                 "margin:0 1px;vertical-align:middle;"
+                 "box-shadow:inset 0 0 0 1px rgba(128,128,128,0.4)")
+    if key == "Merged":
+        dots_html = (
+            f'<span style="{dot_style};background:conic-gradient('
+            '#E53935,#FDD835,#43A047,#1E88E5,#9C27B0,#E91E63,#E53935)"></span>'
+        )
+        label = "Merged"
+    else:
+        colors = _MODE_DOTS.get(key, _MODE_DOTS["4-Color"])
+        dots_html = "".join(
+            f'<span style="{dot_style};background:{c}"></span>' for c in colors
+        )
+        label = mode.split("(")[0].strip() if "Color" in mode else key
+    return f'{dots_html} <span style="font-size:0.8em;color:#aaa">{label}</span>'
+
+
 def on_lut_select(display_name):
     """
     When user selects LUT from dropdown
@@ -50,7 +93,10 @@ def on_lut_select(display_name):
     lut_path = LUTManager.get_lut_path(display_name)
     
     if lut_path:
-        return lut_path, f"[OK] Selected: {display_name}"
+        color_mode = LUTManager.infer_color_mode(display_name, lut_path)
+        badge = _color_mode_html(color_mode)
+        status = f"[OK] Selected: {display_name}<br>{badge}"
+        return lut_path, status
     else:
         return None, f"[ERROR] File not found: {display_name}"
 

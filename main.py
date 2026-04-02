@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """
 ╔═══════════════════════════════════════════════════════════════════════════════╗
-║                          LUMINA STUDIO v1.6.3                                 ║
+║                          LUMINA STUDIO v1.6.7                                 ║
 ║                    Multi-Material 3D Print Color System                       ║
 ╠═══════════════════════════════════════════════════════════════════════════════╣
 ║  Copyright (C) 2025 Lumina Studio Contributors                                ║

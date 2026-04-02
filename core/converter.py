@@ -461,6 +461,49 @@ def _save_debug_preview(debug_data, material_matrix, mask_solid, image_path, mod
     print(f"[DEBUG_PREVIEW] This is the EXACT image the vectorizer sees before meshing")
 
 
+# ========== LUT Slot Color Derivation ==========
+
+def _get_actual_lut_slot_colors(processor) -> dict:
+    """Derive the actual measured color for each slot from the LUT's pure-color entries.
+
+    For a 6-Color Smart-1296 LUT, the pure-color stack for slot *i* is the entry
+    where all 5 layers equal *i* (top-to-bottom convention: ``(i, i, i, i, i)``).
+    The corresponding ``lut_rgb`` value is the physical color actually measured
+    from the calibration board for that slot.
+
+    This is used to override the hard-coded ``ColorSystem.SIX_COLOR`` preview
+    colours (CMYWGK) with the real filament colours so BambuStudio's AMS panel
+    shows the correct colour and the user loads the right filament in each slot.
+
+    Args:
+        processor: A ``LuminaImageProcessor`` instance whose ``ref_stacks`` and
+                   ``lut_rgb`` attributes have already been populated.
+
+    Returns:
+        ``{slot_id: (r, g, b)}`` for every slot whose pure-colour entry is found.
+        Returns an empty dict if the data is unavailable or the stack depth < 5.
+    """
+    try:
+        ref_stacks = np.asarray(processor.ref_stacks)  # (N, 5), top-to-bottom
+        lut_rgb    = np.asarray(processor.lut_rgb)     # (N, 3)
+    except (AttributeError, TypeError):
+        return {}
+
+    if ref_stacks.ndim != 2 or ref_stacks.shape[1] < 5 or len(lut_rgb) == 0:
+        return {}
+
+    num_slots = int(ref_stacks.max()) + 1
+    slot_colors: dict = {}
+    for slot_id in range(num_slots):
+        pure_mask = np.all(ref_stacks == slot_id, axis=1)
+        if np.any(pure_mask):
+            idx = int(np.argmax(pure_mask))
+            rgb = lut_rgb[idx]
+            slot_colors[slot_id] = (int(rgb[0]), int(rgb[1]), int(rgb[2]))
+
+    return slot_colors
+
+
 # ========== Main Conversion Function ==========
 
 def convert_image_to_3d(image_path, lut_path, target_width_mm, spacer_thick,
@@ -580,6 +623,7 @@ def convert_image_to_3d(image_path, lut_path, target_width_mm, spacer_thick,
                 thickness_mm=spacer_thick,
                 structure_mode=structure_mode,
                 color_replacements=vector_replacements,
+                separate_backing=separate_backing,
             )
             vector_timing["mesh_total_s"] = time.perf_counter() - mesh_t0
             if isinstance(getattr(vec_processor, "last_stage_timings", None), dict):
@@ -829,7 +873,24 @@ def convert_image_to_3d(image_path, lut_path, target_width_mm, spacer_thick,
     pixel_scale = result['pixel_scale']
     mode_info = result['mode_info']
     debug_data = result.get('debug_data', None)
-    
+
+    # Override preview_colors with actual per-slot measured colors from the LUT.
+    # ColorSystem.SIX_COLOR always uses CMYWGK defaults, but a RYBWGK user
+    # (e.g. 瑞贝思) has different filaments in each slot.  Using the hardcoded
+    # CMYWGK colours causes BambuStudio AMS to display the wrong colour for each
+    # slot, leading the user to load the wrong filament → wrong print result.
+    # We derive the true colour from the LUT's own pure-colour entries instead.
+    if hasattr(processor, 'ref_stacks') and processor.ref_stacks is not None:
+        actual_slot_colors = _get_actual_lut_slot_colors(processor)
+        if actual_slot_colors:
+            preview_colors = dict(preview_colors)  # local copy; don't mutate shared config
+            for slot_id, rgb in actual_slot_colors.items():
+                preview_colors[slot_id] = [rgb[0], rgb[1], rgb[2], 255]
+            print(f"[CONVERTER] LUT slot colors derived from calibration data:")
+            for sid in sorted(preview_colors):
+                c = preview_colors[sid]
+                print(f"[CONVERTER]   slot{sid}: #{c[0]:02x}{c[1]:02x}{c[2]:02x}")
+
     # Apply color replacements if provided
     # Also convert API-format replacement_regions (without masks) into color_replacements
     effective_color_replacements = _normalize_color_replacements_input(color_replacements)
@@ -4112,7 +4173,7 @@ def detect_lut_color_mode(lut_path):
                 if total_colors >= 900 and total_colors < 1200:
                     print(f"[AUTO_DETECT] Detected 4-Color mode from .npz ({total_colors} colors)")
                     return "4-Color"
-                if total_colors >= 30 and total_colors <= 35:
+                if total_colors >= 30 and total_colors <= 36:
                     print(f"[AUTO_DETECT] Detected 2-Color BW mode from .npz ({total_colors} colors)")
                     return "BW (Black & White)"
             print(f"[AUTO_DETECT] Detected Merged LUT (.npz format)")
@@ -4138,8 +4199,8 @@ def detect_lut_color_mode(lut_path):
         
         print(f"[AUTO_DETECT] LUT shape: {lut_data.shape}, total colors: {total_colors}")
         
-        # 2色模式：32色 (2^5 = 32)
-        if total_colors >= 30 and total_colors <= 35:
+        # 2色模式：32色 (2^5 = 32), LUT is 6x6 grid = 36 entries
+        if total_colors >= 30 and total_colors <= 36:
             print(f"[AUTO_DETECT] Detected 2-Color BW mode (32 colors)")
             return "BW (Black & White)"
         

@@ -363,6 +363,32 @@ div#confirm-crop-hidden-btn {
     display: none !important;
 }
 
+#conv-3d-back-btn {
+    position: absolute !important;
+    top: 16px !important;
+    left: 16px !important;
+    z-index: 10010 !important;
+    width: auto !important;
+    min-width: unset !important;
+    height: 36px !important;
+    padding: 0 14px !important;
+    font-size: 14px !important;
+    font-weight: 500 !important;
+    background: rgba(30, 30, 50, 0.75) !important;
+    color: #e0e0e0 !important;
+    border: 1px solid rgba(255, 255, 255, 0.15) !important;
+    border-radius: 8px !important;
+    backdrop-filter: blur(8px) !important;
+    cursor: pointer !important;
+    transition: background 0.2s, border-color 0.2s !important;
+}
+
+#conv-3d-back-btn:hover {
+    background: rgba(60, 60, 100, 0.9) !important;
+    border-color: rgba(255, 255, 255, 0.35) !important;
+    color: #ffffff !important;
+}
+
 /* Floating 2D Thumbnail in fullscreen 3D mode - bottom right corner */
 #conv-2d-thumbnail-container {
     position: fixed !important;

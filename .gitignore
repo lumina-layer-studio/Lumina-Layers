@@ -281,3 +281,6 @@ assets/temp_*.npy
 # Local temporary files
 .trae/
 OPTIMIZATION_LOG.md
+
+# Claude Code
+.claude/

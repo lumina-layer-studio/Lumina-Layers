@@ -659,38 +659,6 @@ HEADER_CSS = """
 #conv-bed-size-dropdown ul {
     font-size: 12px !important;
 }
-
-/* Custom tab bar that matches the original Gradio tab styling */
-.custom-tab-bar {
-    gap: 0 !important;
-    align-items: flex-end !important;
-    border-bottom: 1px solid var(--border-color-primary, #d1d5db) !important;
-    margin-bottom: 10px !important;
-}
-
-.custom-tab-bar .custom-tab-btn {
-    background: transparent !important;
-    border: none !important;
-    box-shadow: none !important;
-    margin-bottom: -1px !important;
-}
-
-.custom-tab-bar .custom-tab-btn:not(.selected) {
-    color: var(--body-text-color, #374151) !important;
-}
-
-#tab-content-calibration,
-#tab-content-extractor,
-#tab-content-advanced,
-#tab-content-merge,
-#tab-content-5color,
-#tab-content-about {
-    display: none;
-}
-
-#tab-content-converter {
-    display: block;
-}
 """
 
 # [新增/修改] LUT 色块网格样式
@@ -882,58 +850,6 @@ FIVECOLOR_CLICK_JS = """
     });
     
     console.log('[5-Color] Global click handler installed');
-})();
-</script>
-"""
-
-CUSTOM_TAB_HEAD_JS = """
-<script>
-(function() {
-    if (window.__luminaCustomTabInit) return;
-    window.__luminaCustomTabInit = true;
-
-    const tabs = [
-        { key: "converter", buttonId: "tab-btn-converter", contentId: "tab-content-converter" },
-        { key: "calibration", buttonId: "tab-btn-calibration", contentId: "tab-content-calibration" },
-        { key: "extractor", buttonId: "tab-btn-extractor", contentId: "tab-content-extractor" },
-        { key: "advanced", buttonId: "tab-btn-advanced", contentId: "tab-content-advanced" },
-        { key: "merge", buttonId: "tab-btn-merge", contentId: "tab-content-merge" },
-        { key: "5color", buttonId: "tab-btn-5color", contentId: "tab-content-5color" },
-        { key: "about", buttonId: "tab-btn-about", contentId: "tab-content-about" }
-    ];
-
-    window.luminaSwitchTab = function(activeKey) {
-        tabs.forEach(function(tab) {
-            var button = document.getElementById(tab.buttonId);
-            var content = document.getElementById(tab.contentId);
-            var isActive = tab.key === activeKey;
-            if (button) {
-                button.classList.toggle("selected", isActive);
-            }
-            if (content) {
-                content.style.display = isActive ? "block" : "none";
-            }
-        });
-    };
-
-    function initTabs(attempt) {
-        var mounted = tabs.every(function(tab) {
-            return document.getElementById(tab.buttonId) && document.getElementById(tab.contentId);
-        });
-        if (!mounted && (attempt || 0) < 60) {
-            window.requestAnimationFrame(function() {
-                initTabs((attempt || 0) + 1);
-            });
-            return;
-        }
-        window.luminaSwitchTab("converter");
-    }
-
-    if (document.readyState === "loading") {
-        document.addEventListener("DOMContentLoaded", initTabs, { once: true });
-    } else {
-        setTimeout(initTabs, 0);
-    }
 })();
 </script>
 """
@@ -1278,126 +1194,202 @@ def create_app():
                     elem_id="theme-btn"
                 )
         
-        components = {}
+        # Global scripts for crop modal - using a different approach for Gradio 4.20.0
+        # Store script in a hidden element and execute it
+        gr.HTML("""
+<div id="crop-scripts-loader" style="display:none;">
+<textarea id="crop-script-content" style="display:none;">
+window.cropper = null;
+window.originalImageData = null;
 
+function hideCropHelperComponents() {
+    ['crop-data-json', 'use-original-hidden-btn', 'confirm-crop-hidden-btn'].forEach(function(id) {
+        var el = document.getElementById(id);
+        if (el) {
+            el.style.cssText = 'position:absolute!important;left:-9999px!important;top:-9999px!important;width:1px!important;height:1px!important;overflow:hidden!important;opacity:0!important;visibility:hidden!important;';
+        }
+    });
+}
+document.addEventListener('DOMContentLoaded', function() { setTimeout(hideCropHelperComponents, 500); });
+setInterval(hideCropHelperComponents, 2000);
+
+window.updateCropDataJson = function(x, y, w, h) {
+    var jsonData = JSON.stringify({x: x, y: y, w: w, h: h});
+    var container = document.getElementById('crop-data-json');
+    if (!container) {
+        console.error('crop-data-json element not found');
+        return;
+    }
+    var textarea = container.querySelector('textarea');
+    if (textarea) {
+        textarea.value = jsonData;
+        textarea.dispatchEvent(new Event('input', { bubbles: true }));
+        textarea.dispatchEvent(new Event('change', { bubbles: true }));
+        console.log('Updated crop data JSON:', jsonData);
+    } else {
+        console.error('textarea not found in crop-data-json');
+    }
+};
+
+window.clickGradioButton = function(elemId) {
+    var elem = document.getElementById(elemId);
+    if (!elem) {
+        console.error('clickGradioButton: element not found:', elemId);
+        return;
+    }
+    var btn = elem.querySelector('button') || elem;
+    if (btn && btn.tagName === 'BUTTON') {
+        btn.click();
+        console.log('Clicked button:', elemId);
+    } else {
+        console.error('Button element not found for:', elemId);
+    }
+};
+
+window.openCropModal = function(imageSrc, width, height) {
+    console.log('openCropModal called:', imageSrc ? imageSrc.substring(0, 50) + '...' : 'null', width, height);
+    window.originalImageData = { src: imageSrc, width: width, height: height };
+    
+    var origSizeEl = document.getElementById('crop-original-size');
+    if (origSizeEl) {
+        var prefix = origSizeEl.dataset.prefix || 'Size';
+        origSizeEl.textContent = prefix + ': ' + width + ' × ' + height + ' px';
+    }
+    
+    var img = document.getElementById('crop-image');
+    if (!img) { console.error('crop-image element not found'); return; }
+    img.src = imageSrc;
+    
+    var overlay = document.getElementById('crop-modal-overlay');
+    if (overlay) overlay.style.display = 'flex';
+    
+    img.onload = function() {
+        if (window.cropper) window.cropper.destroy();
+        window.cropper = new Cropper(img, {
+            viewMode: 1, dragMode: 'crop', autoCropArea: 1, responsive: true,
+            crop: function(event) {
+                var data = event.detail;
+                var cropX = document.getElementById('crop-x');
+                var cropY = document.getElementById('crop-y');
+                var cropW = document.getElementById('crop-width');
+                var cropH = document.getElementById('crop-height');
+                var selSize = document.getElementById('crop-selection-size');
+                if (cropX) cropX.value = Math.round(data.x);
+                if (cropY) cropY.value = Math.round(data.y);
+                if (cropW) cropW.value = Math.round(data.width);
+                if (cropH) cropH.value = Math.round(data.height);
+                if (selSize) {
+                    var prefix = selSize.dataset.prefix || 'Selection';
+                    selSize.textContent = prefix + ': ' + Math.round(data.width) + ' × ' + Math.round(data.height) + ' px';
+                }
+            }
+        });
+    };
+};
+
+window.closeCropModal = function() {
+    var overlay = document.getElementById('crop-modal-overlay');
+    if (overlay) overlay.style.display = 'none';
+    if (window.cropper) { window.cropper.destroy(); window.cropper = null; }
+};
+
+window.updateCropperFromInputs = function() {
+    if (!window.cropper) return;
+    window.cropper.setData({
+        x: parseInt(document.getElementById('crop-x').value) || 0,
+        y: parseInt(document.getElementById('crop-y').value) || 0,
+        width: parseInt(document.getElementById('crop-width').value) || 100,
+        height: parseInt(document.getElementById('crop-height').value) || 100
+    });
+};
+
+window.useOriginalImage = function() {
+    if (!window.originalImageData) return;
+    window.updateCropDataJson(0, 0, window.originalImageData.width, window.originalImageData.height);
+    window.closeCropModal();
+    setTimeout(function() { window.clickGradioButton('use-original-hidden-btn'); }, 100);
+};
+
+window.confirmCrop = function() {
+    if (!window.cropper) return;
+    var data = window.cropper.getData(true);
+    console.log('confirmCrop data:', data);
+    window.updateCropDataJson(Math.round(data.x), Math.round(data.y), Math.round(data.width), Math.round(data.height));
+    window.closeCropModal();
+    setTimeout(function() { window.clickGradioButton('confirm-crop-hidden-btn'); }, 100);
+};
+
+window.setCropRatio = function(ratio, btn) {
+    if (!window.cropper) return;
+    document.querySelectorAll('.crop-ratio-btn').forEach(function(b) { b.classList.remove('active'); });
+    if (btn) btn.classList.add('active');
+    window.cropper.setAspectRatio(ratio);
+};
+
+console.log('[CROP] Global scripts loaded, openCropModal:', typeof window.openCropModal);
+</textarea>
+</div>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.1/cropper.min.css">
+<img src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.7.1/jquery.min.js" onerror="
+  var s1 = document.createElement('script');
+  s1.src = 'https://cdnjs.cloudflare.com/ajax/libs/jquery/3.7.1/jquery.min.js';
+  s1.onload = function() {
+    var s2 = document.createElement('script');
+    s2.src = 'https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.1/cropper.min.js';
+    s2.onload = function() {
+      var content = document.getElementById('crop-script-content');
+      if (content) {
+        var s3 = document.createElement('script');
+        s3.textContent = content.value;
+        document.head.appendChild(s3);
+      }
+    };
+    document.head.appendChild(s2);
+  };
+  document.head.appendChild(s1);
+" style="display:none;">
+""")
+        
         tab_components = {}
-        with gr.Row(elem_classes=["custom-tab-bar", "tab-nav"]):
-            tab_components['tab_converter'] = gr.Button(
-                value=I18n.get('tab_converter', "zh"),
-                elem_id="tab-btn-converter",
-                elem_classes=["custom-tab-btn", "selected"],
-            )
-            tab_components['tab_calibration'] = gr.Button(
-                value=I18n.get('tab_calibration', "zh"),
-                elem_id="tab-btn-calibration",
-                elem_classes=["custom-tab-btn"],
-            )
-            tab_components['tab_extractor'] = gr.Button(
-                value=I18n.get('tab_extractor', "zh"),
-                elem_id="tab-btn-extractor",
-                elem_classes=["custom-tab-btn"],
-            )
-            tab_components['tab_advanced'] = gr.Button(
-                value="🔬 高级 | Advanced",
-                elem_id="tab-btn-advanced",
-                elem_classes=["custom-tab-btn"],
-            )
-            tab_components['tab_merge'] = gr.Button(
-                value=I18n.get('tab_merge', "zh"),
-                elem_id="tab-btn-merge",
-                elem_classes=["custom-tab-btn"],
-            )
-            tab_components['tab_5color'] = gr.Button(
-                value="🎨 配色查询 | Color Query",
-                elem_id="tab-btn-5color",
-                elem_classes=["custom-tab-btn"],
-            )
-            tab_components['tab_about'] = gr.Button(
-                value=I18n.get('tab_about', "zh"),
-                elem_id="tab-btn-about",
-                elem_classes=["custom-tab-btn"],
-            )
+        with gr.Tabs() as tabs:
+            components = {}
 
-        tab_content_columns = {}
-
-        with gr.Column(visible=True, elem_id="tab-content-converter") as tab_content_converter:
-            conv_components = create_converter_tab_content("zh", lang_state, theme_state)
-            components.update(conv_components)
-        tab_content_columns["tab_converter"] = tab_content_converter
-
-        with gr.Column(visible=True, elem_id="tab-content-calibration") as tab_content_calibration:
-            cal_components = create_calibration_tab_content("zh")
-            components.update(cal_components)
-        tab_content_columns["tab_calibration"] = tab_content_calibration
-
-        with gr.Column(visible=True, elem_id="tab-content-extractor") as tab_content_extractor:
-            ext_components = create_extractor_tab_content("zh")
-            components.update(ext_components)
-        tab_content_columns["tab_extractor"] = tab_content_extractor
-
-        with gr.Column(visible=True, elem_id="tab-content-advanced") as tab_content_advanced:
-            advanced_components = create_advanced_tab_content("zh")
-            components.update(advanced_components)
-        tab_content_columns["tab_advanced"] = tab_content_advanced
-
-        with gr.Column(visible=True, elem_id="tab-content-merge") as tab_content_merge:
-            merge_components = create_merge_tab_content("zh")
-            components.update(merge_components)
-        tab_content_columns["tab_merge"] = tab_content_merge
-
-        with gr.Column(visible=True, elem_id="tab-content-5color") as tab_content_5color:
-            from ui.fivecolor_tab_v2 import create_5color_tab_v2
-            create_5color_tab_v2("zh")
-        tab_content_columns["tab_5color"] = tab_content_5color
-
-        with gr.Column(visible=True, elem_id="tab-content-about") as tab_content_about:
-            about_components = create_about_tab_content("zh")
-            components.update(about_components)
-        tab_content_columns["tab_about"] = tab_content_about
-
-        tab_components['tab_converter'].click(
-            fn=None,
-            inputs=None,
-            outputs=None,
-            js="() => { window.luminaSwitchTab && window.luminaSwitchTab('converter'); }",
-        )
-        tab_components['tab_calibration'].click(
-            fn=None,
-            inputs=None,
-            outputs=None,
-            js="() => { window.luminaSwitchTab && window.luminaSwitchTab('calibration'); }",
-        )
-        tab_components['tab_extractor'].click(
-            fn=None,
-            inputs=None,
-            outputs=None,
-            js="() => { window.luminaSwitchTab && window.luminaSwitchTab('extractor'); }",
-        )
-        tab_components['tab_advanced'].click(
-            fn=None,
-            inputs=None,
-            outputs=None,
-            js="() => { window.luminaSwitchTab && window.luminaSwitchTab('advanced'); }",
-        )
-        tab_components['tab_merge'].click(
-            fn=None,
-            inputs=None,
-            outputs=None,
-            js="() => { window.luminaSwitchTab && window.luminaSwitchTab('merge'); }",
-        )
-        tab_components['tab_5color'].click(
-            fn=None,
-            inputs=None,
-            outputs=None,
-            js="() => { window.luminaSwitchTab && window.luminaSwitchTab('5color'); }",
-        )
-        tab_components['tab_about'].click(
-            fn=None,
-            inputs=None,
-            outputs=None,
-            js="() => { window.luminaSwitchTab && window.luminaSwitchTab('about'); }",
-        )
-
+            # Converter tab
+            with gr.TabItem(label=I18n.get('tab_converter', "zh"), id=0) as tab_conv:
+                conv_components = create_converter_tab_content("zh", lang_state, theme_state)
+                components.update(conv_components)
+            tab_components['tab_converter'] = tab_conv
+            
+            with gr.TabItem(label=I18n.get('tab_calibration', "zh"), id=1) as tab_cal:
+                cal_components = create_calibration_tab_content("zh")
+                components.update(cal_components)
+            tab_components['tab_calibration'] = tab_cal
+            
+            with gr.TabItem(label=I18n.get('tab_extractor', "zh"), id=2) as tab_ext:
+                ext_components = create_extractor_tab_content("zh")
+                components.update(ext_components)
+            tab_components['tab_extractor'] = tab_ext
+            
+            with gr.TabItem(label="🔬 高级 | Advanced", id=3) as tab_advanced:
+                advanced_components = create_advanced_tab_content("zh")
+                components.update(advanced_components)
+            tab_components['tab_advanced'] = tab_advanced
+            
+            with gr.TabItem(label=I18n.get('tab_merge', "zh"), id=4) as tab_merge:
+                merge_components = create_merge_tab_content("zh")
+                components.update(merge_components)
+            tab_components['tab_merge'] = tab_merge
+            
+            with gr.TabItem(label="🎨 配色查询 | Color Query", id=5) as tab_5color:
+                from ui.fivecolor_tab_v2 import create_5color_tab_v2
+                create_5color_tab_v2("zh")
+            tab_components['tab_5color'] = tab_5color
+            
+            with gr.TabItem(label=I18n.get('tab_about', "zh"), id=6) as tab_about:
+                about_components = create_about_tab_content("zh")
+                components.update(about_components)
+            tab_components['tab_about'] = tab_about
+        
         footer_html = gr.HTML(
             value=_get_footer_html("zh"),
             elem_id="footer"
@@ -1413,12 +1405,12 @@ def create_app():
             updates.append(gr.update(value=_get_header_html(new_lang)))
             stats = Stats.get_all()
             updates.append(gr.update(value=_get_stats_html(new_lang, stats)))
-            updates.append(gr.update(value=I18n.get('tab_converter', new_lang)))
-            updates.append(gr.update(value=I18n.get('tab_calibration', new_lang)))
-            updates.append(gr.update(value=I18n.get('tab_extractor', new_lang)))
-            updates.append(gr.update(value="🔬 高级 | Advanced" if new_lang == "zh" else "🔬 Advanced"))
-            updates.append(gr.update(value=I18n.get('tab_merge', new_lang)))
-            updates.append(gr.update(value=I18n.get('tab_about', new_lang)))
+            updates.append(gr.update(label=I18n.get('tab_converter', new_lang)))
+            updates.append(gr.update(label=I18n.get('tab_calibration', new_lang)))
+            updates.append(gr.update(label=I18n.get('tab_extractor', new_lang)))
+            updates.append(gr.update(label="🔬 高级 | Advanced" if new_lang == "zh" else "🔬 Advanced"))
+            updates.append(gr.update(label=I18n.get('tab_merge', new_lang)))
+            updates.append(gr.update(label=I18n.get('tab_about', new_lang)))
             updates.extend(_get_all_component_updates(new_lang, components))
             updates.append(gr.update(value=_get_footer_html(new_lang)))
             updates.append(new_lang)
@@ -5175,3 +5167,4 @@ def _format_bytes(size_bytes: int) -> str:
             return f"{size_bytes:.1f} {unit}"
         size_bytes /= 1024
     return f"{size_bytes:.1f} TB"
+

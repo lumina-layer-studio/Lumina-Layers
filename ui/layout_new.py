@@ -673,6 +673,19 @@ HEADER_CSS = """
     border: none !important;
     box-shadow: none !important;
     margin-bottom: -1px !important;
+    border-radius: 10px !important;
+    padding: 8px 16px !important;
+    transition: background 0.2s, color 0.2s !important;
+}
+
+.custom-tab-bar .custom-tab-btn:hover {
+    background: var(--background-fill-secondary, rgba(240,240,245,0.6)) !important;
+}
+
+.custom-tab-bar .custom-tab-btn.selected {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
+    color: #fff !important;
+    box-shadow: 0 2px 6px rgba(102, 126, 234, 0.3) !important;
 }
 
 .custom-tab-bar .custom-tab-btn:not(.selected) {
@@ -1298,7 +1311,7 @@ def create_app():
                 elem_classes=["custom-tab-btn"],
             )
             tab_components['tab_advanced'] = gr.Button(
-                value="🔬 高级 | Advanced",
+                value="🔬 高级",
                 elem_id="tab-btn-advanced",
                 elem_classes=["custom-tab-btn"],
             )
@@ -1308,7 +1321,7 @@ def create_app():
                 elem_classes=["custom-tab-btn"],
             )
             tab_components['tab_5color'] = gr.Button(
-                value="🎨 配色查询 | Color Query",
+                value="🎨 配色查询",
                 elem_id="tab-btn-5color",
                 elem_classes=["custom-tab-btn"],
             )
@@ -1318,42 +1331,33 @@ def create_app():
                 elem_classes=["custom-tab-btn"],
             )
 
-        tab_content_columns = {}
-
-        with gr.Column(visible=True, elem_id="tab-content-converter") as tab_content_converter:
+        with gr.Column(visible=True, elem_id="tab-content-converter"):
             conv_components = create_converter_tab_content("zh", lang_state, theme_state)
             components.update(conv_components)
-        tab_content_columns["tab_converter"] = tab_content_converter
 
-        with gr.Column(visible=True, elem_id="tab-content-calibration") as tab_content_calibration:
+        with gr.Column(visible=True, elem_id="tab-content-calibration"):
             cal_components = create_calibration_tab_content("zh")
             components.update(cal_components)
-        tab_content_columns["tab_calibration"] = tab_content_calibration
 
-        with gr.Column(visible=True, elem_id="tab-content-extractor") as tab_content_extractor:
+        with gr.Column(visible=True, elem_id="tab-content-extractor"):
             ext_components = create_extractor_tab_content("zh")
             components.update(ext_components)
-        tab_content_columns["tab_extractor"] = tab_content_extractor
 
-        with gr.Column(visible=True, elem_id="tab-content-advanced") as tab_content_advanced:
+        with gr.Column(visible=True, elem_id="tab-content-advanced"):
             advanced_components = create_advanced_tab_content("zh")
             components.update(advanced_components)
-        tab_content_columns["tab_advanced"] = tab_content_advanced
 
-        with gr.Column(visible=True, elem_id="tab-content-merge") as tab_content_merge:
+        with gr.Column(visible=True, elem_id="tab-content-merge"):
             merge_components = create_merge_tab_content("zh")
             components.update(merge_components)
-        tab_content_columns["tab_merge"] = tab_content_merge
 
-        with gr.Column(visible=True, elem_id="tab-content-5color") as tab_content_5color:
+        with gr.Column(visible=True, elem_id="tab-content-5color"):
             from ui.fivecolor_tab_v2 import create_5color_tab_v2
             create_5color_tab_v2("zh")
-        tab_content_columns["tab_5color"] = tab_content_5color
 
-        with gr.Column(visible=True, elem_id="tab-content-about") as tab_content_about:
+        with gr.Column(visible=True, elem_id="tab-content-about"):
             about_components = create_about_tab_content("zh")
             components.update(about_components)
-        tab_content_columns["tab_about"] = tab_content_about
 
         tab_components['tab_converter'].click(
             fn=None,
@@ -1416,8 +1420,9 @@ def create_app():
             updates.append(gr.update(value=I18n.get('tab_converter', new_lang)))
             updates.append(gr.update(value=I18n.get('tab_calibration', new_lang)))
             updates.append(gr.update(value=I18n.get('tab_extractor', new_lang)))
-            updates.append(gr.update(value="🔬 高级 | Advanced" if new_lang == "zh" else "🔬 Advanced"))
+            updates.append(gr.update(value="🔬 高级" if new_lang == "zh" else "🔬 Advanced"))
             updates.append(gr.update(value=I18n.get('tab_merge', new_lang)))
+            updates.append(gr.update(value="🎨 配色查询" if new_lang == "zh" else "🎨 Color Query"))
             updates.append(gr.update(value=I18n.get('tab_about', new_lang)))
             updates.extend(_get_all_component_updates(new_lang, components))
             updates.append(gr.update(value=_get_footer_html(new_lang)))
@@ -1434,6 +1439,7 @@ def create_app():
             tab_components['tab_extractor'],
             tab_components['tab_advanced'],
             tab_components['tab_merge'],
+            tab_components['tab_5color'],
             tab_components['tab_about'],
         ]
         output_list.extend(_get_component_list(components))

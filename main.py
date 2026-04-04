@@ -184,15 +184,16 @@ def get_platform_head_js() -> str:
 
     macOS browsers can freeze when Babylon's Model3D widgets use WebGPU and the
     Gradio tab containing them is hidden. Force WebGL fallback on macOS.
+    Detection is done client-side so remote clients are handled correctly.
     """
-    if sys.platform != "darwin":
-        return ""
-
     return """
 <script>
 (function() {
     if (window.__luminaWebGPUFallbackApplied) return;
     window.__luminaWebGPUFallbackApplied = true;
+    var isMac = /Mac|iPhone|iPad|iPod/.test(navigator.platform || '') ||
+                (navigator.userAgent && /Macintosh/.test(navigator.userAgent));
+    if (!isMac) return;
     try {
         Object.defineProperty(Navigator.prototype, 'gpu', {
             configurable: true,
@@ -253,7 +254,7 @@ if __name__ == "__main__":
         app = create_app()
 
         try:
-            from ui.layout_new import HEADER_CSS, FIVECOLOR_CLICK_JS, CUSTOM_TAB_HEAD_JS
+            from ui.layout_new import HEADER_CSS, DEBOUNCE_JS, FIVECOLOR_CLICK_JS, CUSTOM_TAB_HEAD_JS
             # Import crop extension for head JS injection
             from ui.crop_extension import get_crop_head_js
             
@@ -276,7 +277,7 @@ if __name__ == "__main__":
                 favicon_path=icon_path,
                 css=CUSTOM_CSS + HEADER_CSS,
                 theme=gr.themes.Soft(),
-                head=get_platform_head_js() + get_crop_head_js() + FIVECOLOR_CLICK_JS + CUSTOM_TAB_HEAD_JS
+                head=get_platform_head_js() + get_crop_head_js() + DEBOUNCE_JS + FIVECOLOR_CLICK_JS + CUSTOM_TAB_HEAD_JS
             )
         except Exception as e:
             print(f"❌ Failed to launch Gradio app: {e}")

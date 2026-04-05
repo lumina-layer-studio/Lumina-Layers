@@ -27,8 +27,12 @@ jobs:
           fetch-depth: 0
           fetch-tags: true
 
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
       - name: Get Version and Hash
-        id: vars
         shell: bash
         run: |
           VERSION=$(date +%Y%m%d)

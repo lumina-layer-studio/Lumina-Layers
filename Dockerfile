@@ -20,8 +20,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy uv binaries from upstream image instead of curl installer
-COPY --from=uv /uv /usr/local/bin/uv
-COPY --from=uv /uvx /usr/local/bin/uvx
+COPY --from=uv /usr/local/bin /usr/local/bin/uvx /bin/
 
 # Keep Python behavior deterministic in containers
 ENV PYTHONUNBUFFERED=1

@@ -2,9 +2,9 @@ name: Build and Package Lumina Layers
 
 on:
   push:
-    branches: [ main ]
+    branches: [main]
   pull_request:
-    branches: [ main ]
+    branches: [main]
   workflow_dispatch:
 
 jobs:
@@ -12,85 +12,88 @@ jobs:
     runs-on: windows-latest
 
     steps:
-    - name: Checkout Code
-      uses: actions/checkout@v4
-      with:
-        fetch-depth: 0
-        fetch-tags: true
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
 
-    - name: Get Version and Hash
-      id: vars
-      shell: bash
-      run: |
-        # 使用当前日期作为版本号 (格式: YYYYMMDD)
-        VERSION=$(date +%Y%m%d)
-        
-        # 获取 7 位短 Hash
-        SHORT_SHA=$(git rev-parse --short=7 HEAD | cut -c1-7 || echo "0000000")
-        
-        # 组合完整名称
-        FULL_NAME="Lumina-Layers-preview-$VERSION-$SHORT_SHA"
-        
-        echo "VERSION=$VERSION" >> $GITHUB_ENV
-        echo "SHORT_SHA=$SHORT_SHA" >> $GITHUB_ENV
-        echo "FULL_NAME=$FULL_NAME" >> $GITHUB_ENV
-        echo "full_name=$FULL_NAME" >> $GITHUB_OUTPUT
+      - name: Get Version and Hash
+        id: vars
+        shell: bash
+        run: |
+          # 使用当前日期作为版本号 (格式: YYYYMMDD)
+          VERSION=$(date +%Y%m%d)
 
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install pyinstaller
-        pip install -r requirements.txt
+          # 获取 7 位短 Hash
+          SHORT_SHA=$(git rev-parse --short=7 HEAD | cut -c1-7 || echo "0000000")
 
-    - name: Package with PyInstaller
-      shell: pwsh
-      run: |
-        # 确保生成的 exe 文件名符合要求
-        pyinstaller --noconfirm --onefile `
-          --icon="icon.ico" `
-          --add-data "icon.ico;." `
-          --add-data "bambu_config_template.json;." `
-          --add-data "assets;assets" `
-          --collect-all "gradio" `
-          --collect-all "safehttpx" `
-          --collect-all "groovy" `
-          --collect-all "gradio_client" `
-          --collect-all "uvicorn" `
-          --name "${{ env.FULL_NAME }}" `
-          main.py
+          # 组合完整名称
+          FULL_NAME="Lumina-Layers-preview-$VERSION-$SHORT_SHA"
 
-    - name: Prepare Artifact Directory
-      shell: pwsh
-      run: |
-        # 创建一个以 FULL_NAME 命名的文件夹，上传后下载到的 zip 也会是该名称
-        $targetDir = "${{ env.FULL_NAME }}"
-        New-Item -ItemType Directory -Path "$targetDir" -Force
-        
-        # 确认 exe 文件是否存在并移动
-        if (Test-Path "dist/${{ env.FULL_NAME }}.exe") {
-            Move-Item "dist/${{ env.FULL_NAME }}.exe" -Destination "$targetDir/"
-        } else {
-            Write-Error "Executable not found at dist/${{ env.FULL_NAME }}.exe"
-            exit 1
-        }
-        
-        # 复制外部数据文件夹
-        if (Test-Path "icon.ico") {
-            Copy-Item -Path "icon.ico" -Destination "$targetDir/"
-        }
-        if (Test-Path "bambu_config_template.json") {
-            Copy-Item -Path "bambu_config_template.json" -Destination "$targetDir/"
-        }
-        if (Test-Path "assets") {
-            Copy-Item -Path "assets" -Destination "$targetDir/assets" -Recurse
-        }
-        if (Test-Path "lut-npy预设") {
-            Copy-Item -Path "lut-npy预设" -Destination "$targetDir/lut-npy预设" -Recurse
-        }
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+          echo "SHORT_SHA=$SHORT_SHA" >> $GITHUB_ENV
+          echo "FULL_NAME=$FULL_NAME" >> $GITHUB_ENV
+          echo "full_name=$FULL_NAME" >> $GITHUB_OUTPUT
 
-    - name: Upload Artifact
-      uses: actions/upload-artifact@v4
-      with:
-        # 这个 name 参数决定了生成的 zip 文件名
-        name: ${{ env.FULL_NAME }}
-        path: ${{ env.FULL_NAME }}/
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          python-version-file: .python-version
+          enable-cache: true
+
+      - name: Sync dependencies
+        run: uv sync --frozen --no-dev
+
+      - name: Package with PyInstaller
+        shell: pwsh
+        run: |
+          # 确保生成的 exe 文件名符合要求
+          uv run --with pyinstaller pyinstaller --noconfirm --onefile `
+            --icon="icon.ico" `
+            --add-data "icon.ico;." `
+            --add-data "bambu_config_template.json;." `
+            --add-data "assets;assets" `
+            --collect-all "gradio" `
+            --collect-all "safehttpx" `
+            --collect-all "groovy" `
+            --collect-all "gradio_client" `
+            --collect-all "uvicorn" `
+            --name "${{ env.FULL_NAME }}" `
+            main.py
+
+      - name: Prepare Artifact Directory
+        shell: pwsh
+        run: |
+          # 创建一个以 FULL_NAME 命名的文件夹，上传后下载到的 zip 也会是该名称
+          $targetDir = "${{ env.FULL_NAME }}"
+          New-Item -ItemType Directory -Path "$targetDir" -Force
+
+          # 确认 exe 文件是否存在并移动
+          if (Test-Path "dist/${{ env.FULL_NAME }}.exe") {
+              Move-Item "dist/${{ env.FULL_NAME }}.exe" -Destination "$targetDir/"
+          } else {
+              Write-Error "Executable not found at dist/${{ env.FULL_NAME }}.exe"
+              exit 1
+          }
+
+          # 复制外部数据文件夹
+          if (Test-Path "icon.ico") {
+              Copy-Item -Path "icon.ico" -Destination "$targetDir/"
+          }
+          if (Test-Path "bambu_config_template.json") {
+              Copy-Item -Path "bambu_config_template.json" -Destination "$targetDir/"
+          }
+          if (Test-Path "assets") {
+              Copy-Item -Path "assets" -Destination "$targetDir/assets" -Recurse
+          }
+          if (Test-Path "lut-npy预设") {
+              Copy-Item -Path "lut-npy预设" -Destination "$targetDir/lut-npy预设" -Recurse
+          }
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          # 这个 name 参数决定了生成的 zip 文件名
+          name: ${{ env.FULL_NAME }}
+          path: ${{ env.FULL_NAME }}/

@@ -1,13 +1,17 @@
-# Use an official Python runtime as a parent image
-FROM python:3.13-slim
+ARG BASE_UV_IMAGE=ghcr.io/astral-sh/uv:debian-slim
+ARG BASE_PYTHON_IMAGE=python:3.13-slim
+
+FROM ${BASE_UV_IMAGE} AS uv
+
+FROM ${BASE_PYTHON_IMAGE}
 
 # Set the working directory in the container
 WORKDIR /app
 
-# Install system dependencies required for pycairo and opencv
-# libcairo2-dev, pkg-config -> for pycairo
-# libgl1, libglib2.0-0 -> for opencv-python
-RUN apt-get update && apt-get install -y \
+# Runtime + build deps:
+# - libgl1/libglib2.0-0: opencv-python runtime
+# - gcc/pkg-config/libcairo2-dev: native build dependencies used by some wheels
+RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     pkg-config \
     libcairo2-dev \
@@ -15,21 +19,27 @@ RUN apt-get update && apt-get install -y \
     libglib2.0-0 \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy the requirements file into the container at /app
-COPY requirements.txt /app/
+# Copy uv binaries from upstream image instead of curl installer
+COPY --from=uv /usr/local/bin /usr/local/bin/uvx /bin/
 
-# Install any needed packages specified in requirements.txt
-RUN pip install --no-cache-dir -r requirements.txt
-
-# Copy the rest of the application code
-COPY . /app/
-
-# Expose the port Gradio runs on
-EXPOSE 7860
-
-# Define environment variable to ensure output is flushed
+# Keep Python behavior deterministic in containers
 ENV PYTHONUNBUFFERED=1
 ENV LUMINA_HOST=0.0.0.0
+ENV UV_LINK_MODE=copy
+ENV UV_PYTHON_DOWNLOADS=never
 
-# Run the application
+# Install dependencies first for better layer cache hit ratio
+COPY pyproject.toml uv.lock ./
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --frozen --no-dev
+
+# Copy application sources
+COPY . .
+
+# Use the synced virtualenv by default
+ENV PATH="/app/.venv/bin:${PATH}"
+
+# Expose Gradio port
+EXPOSE 7860
+
 CMD ["python", "main.py"]

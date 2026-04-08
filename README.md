@@ -81,6 +81,7 @@
 **Nature**: Non-profit independent implementation, open-source community project
 
 ---
+
 Inspiration and Technical Statements
 
 ### Acknowledgements to Pioneers
@@ -97,7 +98,7 @@ This project owes its existence to the open sharing of the following technologie
 
 Traditional tools rely on theoretical calculations (such as TD1/TD0 transmission distance values), but these parameters are highly susceptible to failure due to various objective factors.
 
- **Lumina Studio employs an exhaustive search approach:**
+**Lumina Studio employs an exhaustive search approach:**
 
 1. Print a 1024-color physical calibration board (4 colors x 5 layers, full permutation)
 
@@ -125,8 +126,7 @@ Lumina Studio will continue to operate on an open-source, collaborative, and non
 
 Lumina Studio did not refer to any patent applications because such patents usually only contain specifications and the technical code is not disclosed in the short term. Blindly referring to these patents would affect its own development process.
 
-**Special thanks to the HueForge team for their support and understanding of open source!**  **
----
+## **Special thanks to the HueForge team for their support and understanding of open source!** \*\*
 
 ## Open Ecosystem
 
@@ -157,6 +157,7 @@ All calibration presets (`.npy` files) are **completely free and open**, adherin
 **To individual creators, street vendors, and small businesses**:
 
 GPL permits and encourages commercial use. We specifically support you to earn a living through your craft. You do **NOT** need to ask for additional permission to:
+
 - Use this software to generate models
 - Sell physical prints (keychains, reliefs, etc.)
 - Sell at night markets, fairs, or personal online shops
@@ -171,7 +172,7 @@ Lumina Studio v1.5.4 integrates three major modules into a unified interface:
 
 Generates precision calibration boards to physically test filament mixing.
 
-- **Multiple Color Systems**: 
+- **Multiple Color Systems**:
   - **4-Color (CMYW/RYBW)**: 1024 colors (4 base filaments × 5 layers)
   - **6-Color**: 1296 colors (6 base filaments × 3 layers) - Extended color gamut
   - **8-Color**: 2738 colors (8 base filaments × 2 pages) - Professional wide gamut
@@ -189,7 +190,7 @@ Generates precision calibration boards to physically test filament mixing.
 Digitizes the physical reality of your printer.
 
 - **Computer Vision**: Perspective warp + lens distortion correction for automatic grid alignment
-- **Multi-Mode Support**: 
+- **Multi-Mode Support**:
   - 4-Color (CMYW/RYBW): Standard calibration
   - 6-Color: Extended palette extraction
   - 8-Color: Two-page extraction with manual correction support
@@ -268,35 +269,73 @@ For detailed version history, see [CHANGELOG.md](CHANGELOG.md) / [CHANGELOG_CN.m
 
 ## Installation
 
-### Clone the repository
+### Option 1: Docker Image (Recommended)
+
+```bash
+docker run -p 7860:7860 ghcr.io/movibale/lumina-layers:latest
+```
+
+Open your browser to `http://localhost:7860`.
+
+### Option 2: Build Docker Image
+
+Using Docker is the easiest way to run Lumina Studio without worrying about system-level dependencies (like `cairo` or `pkg-config`).
+
+1.**Clone the repository**:
 
 ```bash
 git clone https://github.com/MOVIBALE/Lumina-Layers.git
 cd Lumina-Layers
 ```
 
-### Option 1: Docker (Recommended)
+2.**Build the image**:
 
-Using Docker is the easiest way to run Lumina Studio without worrying about system-level dependencies (like `cairo` or `pkg-config`).
+```bash
+  docker build -t lumina-layers .
+```
 
-1. **Build the image**:
-   ```bash
-   docker build -t lumina-layers .
-   ```
+3.**Run the container**:
 
-2. **Run the container**:
-   ```bash
-   docker run -p 7860:7860 lumina-layers
-   ```
+```bash
+docker run -p 7860:7860 lumina-layers
+```
 
-3. Open your browser to `http://localhost:7860`.
+4.Open your browser to `http://localhost:7860`.
 
-### Option 2: Local Installation
+### Option 3: Local Installation
 
 **Core dependencies** (required):
+
+1.**Clone the repository**:
+
 ```bash
-pip install -r requirements.txt
+git clone https://github.com/MOVIBALE/Lumina-Layers.git
+cd Lumina-Layers
 ```
+
+2.**Install uv**:
+
+[uv](https://docs.astral.sh/uv/installation/)
+
+```bash
+pip install uv
+```
+
+Or follow the [Installation methods](https://docs.astral.sh/uv/getting-started/installation/#installation-methods)
+
+3.**Install dependencies**:
+
+```bash
+uv sync --frozen --no-dev
+```
+
+4.**Run the application**:
+
+```bash
+uv run main.py
+```
+
+Open your browser to `http://localhost:7860`.
 
 ---
 
@@ -331,13 +370,13 @@ This launches the web interface with all three modules in tabs.
 - Layer height: 0.08mm (color layers), backing can use 0.2mm
 - Filament slots must match your selected mode
 
-| Mode | Total Colors | Filament Slots |
-|------|--------------|----------------|
-| 4-Color RYBW | 1024 | White, Red, Yellow, Blue |
-| 4-Color CMYW | 1024 | White, Cyan, Magenta, Yellow |
-| 6-Color | 1296 | White, Cyan, Magenta, Yellow, Lime, Black |
-| 8-Color | 2738 | White, Cyan, Magenta, Yellow, Lime, Black (+ 2 more) |
-| BW | 32 | Black, White |
+| Mode         | Total Colors | Filament Slots                                       |
+| ------------ | ------------ | ---------------------------------------------------- |
+| 4-Color RYBW | 1024         | White, Red, Yellow, Blue                             |
+| 4-Color CMYW | 1024         | White, Cyan, Magenta, Yellow                         |
+| 6-Color      | 1296         | White, Cyan, Magenta, Yellow, Lime, Black            |
+| 8-Color      | 2738         | White, Cyan, Magenta, Yellow, Lime, Black (+ 2 more) |
+| BW           | 32           | Black, White                                         |
 
 ---
 
@@ -349,16 +388,16 @@ This launches the web interface with all three modules in tabs.
 4. Upload your photo
 5. Click the four corner blocks in order (colors vary by mode):
 
-| Mode | ⬜ White Top-Left | Top-Right | Bottom-Right | Bottom-Left |
-|------|------------------|-----------|--------------|-------------|
-| 4-Color RYBW | ⬜ White | Red | Blue | Yellow |
-| 4-Color CMYW | ⬜ White | Cyan | Magenta | Yellow |
-| 6-Color | ⬜ White | Cyan | Magenta | Yellow |
-| 8-Color | ⬜ White | Yellow | Black | Cyan |
-| BW | ⬜ White | Black | Black | Black |
+| Mode         | ⬜ White Top-Left | Top-Right | Bottom-Right | Bottom-Left |
+| ------------ | ----------------- | --------- | ------------ | ----------- |
+| 4-Color RYBW | ⬜ White          | Red       | Blue         | Yellow      |
+| 4-Color CMYW | ⬜ White          | Cyan      | Magenta      | Yellow      |
+| 6-Color      | ⬜ White          | Cyan      | Magenta      | Yellow      |
+| 8-Color      | ⬜ White          | Yellow    | Black        | Cyan        |
+| BW           | ⬜ White          | Black     | Black        | Black       |
 
 6. Adjust correction sliders if needed (white balance OFF by default, vignette, distortion)
-7. Click **Extract** 
+7. Click **Extract**
 8. **For 8-Color Mode Only**:
    - After extracting Page 1, you can click any color cell to manually correct it
    - Extract Page 2 with the same process
@@ -397,14 +436,14 @@ This launches the web interface with all three modules in tabs.
 
 ## Technical Stack
 
-| Component | Technology |
-|-----------|------------|
-| Core Logic | Python (NumPy for voxel manipulation) |
-| Geometry Engine | Trimesh (Mesh generation & Export) |
-| UI Framework | Gradio 4.0+ |
-| Vision Stack | OpenCV (Perspective & Color Extraction) |
-| Color Matching | SciPy KDTree |
-| 3D Preview | Gradio Model3D (GLB format) |
+| Component       | Technology                              |
+| --------------- | --------------------------------------- |
+| Core Logic      | Python (NumPy for voxel manipulation)   |
+| Geometry Engine | Trimesh (Mesh generation & Export)      |
+| UI Framework    | Gradio 4.0+                             |
+| Vision Stack    | OpenCV (Perspective & Color Extraction) |
+| Color Matching  | SciPy KDTree                            |
+| 3D Preview      | Gradio Model3D (GLB format)             |
 
 ---
 
@@ -413,11 +452,13 @@ This launches the web interface with all three modules in tabs.
 ### Why Calibration Matters
 
 Theoretical TD values assume:
+
 - Perfectly consistent filament dye concentration
 - Identical nozzle temperatures across all materials
 - Uniform layer adhesion
 
 In reality, these vary significantly between:
+
 - Different filament brands/batches
 - Printer models and nozzle designs
 - Environmental humidity and temperature

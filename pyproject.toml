@@ -1,0 +1,44 @@
+[project]
+name = "lumina-layers"
+description = "A physics-based multi-material FDM color system"
+readme = "README.md"
+requires-python = ">=3.13"
+dynamic = ["version"]
+dependencies = [
+    "colormath>=3.0.0",
+    "fastapi>=0.135.3",
+    "gradio>=6.0.0",
+    "httpx>=0.28.1",
+    "lxml>=6.0.2",
+    "mapbox-earcut>=2.0.0",
+    "networkx>=3.6.1",
+    "numba>=0.65.0",
+    "numpy>=2.4.4",
+    "opencv-python>=4.13.0.92",
+    "pillow>=12.2.0",
+    "pillow-heif>=0.18.0",
+    "pystray>=0.19.5",
+    "python-multipart>=0.0.24",
+    "pytz>=2026.1.post1",
+    "reportlab>=4.4.10",
+    "scipy>=1.17.1",
+    "shapely>=2.0.0",
+    "svgelements>=1.9.0",
+    "svglib>=1.6.0",
+    "trimesh>=4.0.0",
+    "uvicorn>=0.44.0",
+]
+
+
+[build-system]
+requires = ["hatchling", "uv-dynamic-versioning"]
+build-backend = "hatchling.build"
+
+[tool.hatch.version]
+source = "uv-dynamic-versioning"
+
+[tool.uv-dynamic-versioning]
+fallback-version = "0.1.0"
+
+[tool.uv]
+package = false

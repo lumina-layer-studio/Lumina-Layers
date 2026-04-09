@@ -741,7 +741,7 @@ def convert_image_to_3d(image_path, lut_path, target_width_mm, spacer_thick,
                                 repl_arr = np.array(repl_color, dtype=np.uint8)
                                 
                                 # Calculate color distance for all solid pixels
-                                # Use a generous threshold to handle anti-aliasing and color variations
+                                # Use a generous threshold to handle antialiasing and color variations
                                 diff = np.abs(rgb_data.astype(int) - orig_arr.astype(int))
                                 distance = np.sum(diff, axis=2)
                                 
@@ -944,7 +944,7 @@ def convert_image_to_3d(image_path, lut_path, target_width_mm, spacer_thick,
         )
     
     print(f"[CONVERTER] Image processed: {target_w}×{target_h}px, scale={pixel_scale}mm/px")
-    
+
     # Step 2: Save Debug Preview (High-Fidelity mode only)
     if debug_data is not None and mode_info['mode'] == ModelingMode.HIGH_FIDELITY:
         try:
@@ -987,15 +987,15 @@ def convert_image_to_3d(image_path, lut_path, target_width_mm, spacer_thick,
         # Face-up: backing on print bed, viewing surface on top.
         # Base stacks have air at index 0 so their viewing surface sits 1 Z
         # below extended stacks, keeping ≤4 materials per Z layer.
-        if "5-Color Extended" in color_mode:
-            print(f"[CONVERTER] 5-Color Extended: forcing single-sided face-up")
-            structure_mode = "单面"
+        if "5-Color Extended" in color_mode: # COATING UPDATE
+            '''print(f"[CONVERTER] 5-Color Extended: forcing single-sided face-up")
+            structure_mode = "单面"'''
             if enable_relief:
                 print(f"[CONVERTER] 5-Color Extended: 2.5D relief mode disabled (incompatible)")
                 enable_relief = False
-            full_matrix, backing_metadata = _build_voxel_matrix_faceup(
+            """full_matrix, backing_metadata = _build_voxel_matrix_faceup(
                 material_matrix, mask_solid, spacer_thick, backing_color_id
-            )
+            )"""
         # ========== Cloisonné (掐丝珐琅) Mode ==========
         elif enable_cloisonne:
             print(f"[CONVERTER] 🎨 Cloisonné Mode ENABLED")
@@ -1286,20 +1286,35 @@ def convert_image_to_3d(image_path, lut_path, target_width_mm, spacer_thick,
                 print(f"[CONVERTER] Loop added successfully")
         except Exception as e:
             print(f"[CONVERTER] Loop creation failed: {e}")
-    
-    # ========== Step 7.4: Generate Coating Mesh (透明镀层) ==========
+
+    # ========== Step 7.4: Merge Coating into Voxel Matrix (内外合并版) ==========
     if enable_coating:
         try:
-            coating_layers = max(1, int(round(coating_height_mm / PrinterConfig.LAYER_HEIGHT)))
-            print(f"[CONVERTER] 🪟 Generating coating: height={coating_height_mm}mm ({coating_layers} layers), bottom side")
+            COATING_PLACEHOLDER = -4  # LUT里用这个
+            COATING_SLOT = 0  # coating材料（白）
 
-            # Determine coating coverage area
+            coating_layers = max(1, int(round(coating_height_mm / PrinterConfig.LAYER_HEIGHT)))
+            print(f"[CONVERTER] 🪟 Merging coating (internal + external): {coating_layers} layers")
+
+            # ========================
+            # ① 处理内部 coating（来自 LUT -4）
+            # ========================
+            internal_mask = ~(full_matrix[:1] == COATING_PLACEHOLDER)
+
+            if np.any(internal_mask):
+                count = int(np.sum(internal_mask))
+                print(f"[CONVERTER] Internal coating voxels: {count}")
+                # full_matrix[internal_mask] = COATING_SLOT
+            else:
+                print("[CONVERTER] No internal coating found")
+
+            # ========================
+            # ② 构建外部 coating（底部）
+            # ========================
             coating_mask = mask_solid.copy()
-            
-            # [FIX] If outline is enabled, extend coating to cover outline area as well
+
             if enable_outline:
                 print(f"[CONVERTER] 🔲 Extending coating to cover outline area (width={outline_width}mm)")
-                # Dilate mask to include outline area
                 outline_width_px = max(1, int(round(outline_width / pixel_scale)))
                 kernel = np.ones((3, 3), np.uint8)
                 mask_uint8 = mask_solid.astype(np.uint8) * 255
@@ -1311,7 +1326,10 @@ def convert_image_to_3d(image_path, lut_path, target_width_mm, spacer_thick,
             coating_slice = np.where(coating_mask, 0, -1).astype(int)
             coating_matrix[:] = coating_slice[np.newaxis, :, :]
 
-            coating_mesh = mesher.generate_mesh(coating_matrix, 0, target_h)
+            coating_block = np.concatenate([coating_matrix, internal_mask],axis=0)
+
+            print(f"[CONVERTER] ✅ Coating merged into full_matrix (total layers now {full_matrix.shape[0]})")
+            coating_mesh = mesher.generate_mesh(coating_block, 0, target_h)
             if coating_mesh and len(coating_mesh.vertices) > 0:
                 # Transform XY same as model, Z same layer height
                 coat_transform = np.eye(4)
@@ -1319,7 +1337,7 @@ def convert_image_to_3d(image_path, lut_path, target_width_mm, spacer_thick,
                 coat_transform[1, 1] = pixel_scale
                 coat_transform[2, 2] = PrinterConfig.LAYER_HEIGHT
                 # Shift down so coating sits below the model (Z < 0)
-                coat_transform[2, 3] = -coating_layers * PrinterConfig.LAYER_HEIGHT
+                coat_transform[2, 3] = -coating_layers * PrinterConfig.LAYER_HEIGHT #COATING UPDATE: COATING POSITION
                 coating_mesh.apply_transform(coat_transform)
                 coating_mesh.visual.face_colors = [200, 200, 200, 80]  # Semi-transparent grey
                 coating_name = "Coating"
@@ -1333,6 +1351,7 @@ def convert_image_to_3d(image_path, lut_path, target_width_mm, spacer_thick,
             print(f"[CONVERTER] Coating generation failed: {e}")
             import traceback
             traceback.print_exc()
+
 
     # ========== Step 7.5: Generate Outline Mesh ==========
     outline_added = False
@@ -1382,8 +1401,14 @@ def convert_image_to_3d(image_path, lut_path, target_width_mm, spacer_thick,
     is_single_sided = "单面" in structure_mode or "Single" in structure_mode
     is_5color = "5-Color Extended" in color_mode
 
+    if is_5color and enable_coating:
+        global_z_fix = coating_layers
+
+        for geom_name in list(scene.geometry.keys()):
+            scene.geometry[geom_name].vertices[:, 2] += global_z_fix
+
     # 5-Color 高保真：体素 Z 与 BambuStudio 显示约定相反，需 Z 翻转使顶面（观看面）朝上
-    if is_5color:
+    if is_5color and False: # COATING UPDATE
         max_z = max(
             g.vertices[:, 2].max()
             for g in scene.geometry.values()
@@ -1411,7 +1436,7 @@ def convert_image_to_3d(image_path, lut_path, target_width_mm, spacer_thick,
             scene.geometry[geom_name].apply_transform(mirror_transform)
 
     # 5-Color 高保真：单面 X 镜像后左右仍反，再补一次 X 镜像使左右正确
-    if is_5color:
+    if is_5color and False: # COATING UPDATE
         model_width_mm = target_w * pixel_scale
         x_mirror_again = np.array([
             [-1, 0, 0, model_width_mm],

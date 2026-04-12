@@ -1239,18 +1239,30 @@ def _update_lut_grid(lut_path, lang, palette_mode="swatch"):
     return generate_lut_grid_html(lut_path, lang)
 
 
-def _detect_and_enforce_structure(lut_path):
+def _structure_relief_for_5color_extended(enable_coating):
+    """5C: 2.5D always off. Double-sided only when COATING is on."""
+    relief = gr.update(value=False, interactive=False)
+    if enable_coating:
+        return gr.update(interactive=True), relief
+    return gr.update(
+        value=I18n.get('conv_structure_single', 'en'),
+        interactive=False,
+    ), relief
+
+
+def _detect_and_enforce_structure(lut_path, enable_coating=False):
     """Detect color mode from LUT, and enforce structure constraints for 5-Color Extended.
 
     Returns (color_mode_update, structure_update, relief_update) for three component outputs.
     """
     mode = detect_lut_color_mode(lut_path)
     if mode and "5-Color Extended" in mode:
-        gr.Info("5-Color Extended 模式：自动切换为单面模式，2.5D 浮雕不可用")
-        return mode, gr.update(
-            value=I18n.get('conv_structure_single', 'en'),
-            interactive=False,
-        ), gr.update(value=False, interactive=False)
+        if enable_coating:
+            gr.Info("5-Color Extended：已启用 COATING 时可选择双面；2.5D 浮雕不可用")
+        else:
+            gr.Info("5-Color Extended：未启用 COATING 时仅支持单面；2.5D 浮雕不可用")
+        struct_u, rel_u = _structure_relief_for_5color_extended(enable_coating)
+        return mode, struct_u, rel_u
     if mode:
         return mode, gr.update(interactive=True), gr.update(interactive=True)
     return gr.update(), gr.update(interactive=True), gr.update(interactive=True)
@@ -1532,7 +1544,7 @@ def create_app():
             outputs=[components['conv_lut_grid_view']]
         ).then(
             fn=_detect_and_enforce_structure,
-            inputs=[components['state_conv_lut_path']],
+            inputs=[components['state_conv_lut_path'], components['checkbox_conv_coating_enable']],
             outputs=[components['radio_conv_color_mode'], components['radio_conv_structure'], components['checkbox_conv_relief_mode']]
         )
 
@@ -3184,7 +3196,7 @@ def create_converter_tab_content(lang: str, lang_state=None, theme_state=None) -
             outputs=[conv_lut_grid_view]
     ).then(
             fn=_detect_and_enforce_structure,
-            inputs=[conv_lut_path],
+            inputs=[conv_lut_path, components['checkbox_conv_coating_enable']],
             outputs=[components['radio_conv_color_mode'], components['radio_conv_structure'], components['checkbox_conv_relief_mode']]
     )
 
@@ -3200,8 +3212,10 @@ def create_converter_tab_content(lang: str, lang_state=None, theme_state=None) -
             fn=lambda: gr.update(),
             outputs=[components['dropdown_conv_lut_dropdown']]
     ).then(
-            fn=lambda lut_file: _detect_and_enforce_structure(lut_file.name if lut_file else None),
-            inputs=[conv_lut_upload],
+            fn=lambda lut_file, enable_coating: _detect_and_enforce_structure(
+                lut_file.name if lut_file else None, enable_coating
+            ),
+            inputs=[conv_lut_upload, components['checkbox_conv_coating_enable']],
             outputs=[components['radio_conv_color_mode'], components['radio_conv_structure'], components['checkbox_conv_relief_mode']]
     )
     
@@ -3351,20 +3365,26 @@ def create_converter_tab_content(lang: str, lang_state=None, theme_state=None) -
         outputs=None
     )
 
-    def _on_color_mode_update_structure(color_mode):
-        """5-Color Extended requires single-sided face-up (max 4 materials per Z layer).
-        Also disables 2.5D relief mode which is incompatible with 5-Color Extended.
-        """
+    def _on_color_mode_update_structure(color_mode, enable_coating):
+        """5C: 2.5D off always; single-sided enforced unless COATING is on."""
         if color_mode and "5-Color Extended" in color_mode:
-            return gr.update(
-                value=I18n.get('conv_structure_single', 'en'),
-                interactive=False,
-            ), gr.update(value=False, interactive=False)
+            return _structure_relief_for_5color_extended(enable_coating)
         return gr.update(interactive=True), gr.update(interactive=True)
+
+    def _on_coating_change_for_5c(enable_coating, color_mode):
+        if color_mode and "5-Color Extended" in color_mode:
+            return _structure_relief_for_5color_extended(enable_coating)
+        return gr.update(), gr.update()
 
     components['radio_conv_color_mode'].change(
         fn=_on_color_mode_update_structure,
-        inputs=[components['radio_conv_color_mode']],
+        inputs=[components['radio_conv_color_mode'], components['checkbox_conv_coating_enable']],
+        outputs=[components['radio_conv_structure'], components['checkbox_conv_relief_mode']],
+    )
+
+    components['checkbox_conv_coating_enable'].change(
+        fn=_on_coating_change_for_5c,
+        inputs=[components['checkbox_conv_coating_enable'], components['radio_conv_color_mode']],
         outputs=[components['radio_conv_structure'], components['checkbox_conv_relief_mode']],
     )
 

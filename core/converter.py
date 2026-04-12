@@ -1291,20 +1291,26 @@ def convert_image_to_3d(image_path, lut_path, target_width_mm, spacer_thick,
     if enable_coating:
         try:
             COATING_PLACEHOLDER = -4  # LUT里用这个
-            COATING_SLOT = 0  # coating材料（白）
 
             coating_layers = max(1, int(round(coating_height_mm / PrinterConfig.LAYER_HEIGHT)))
             print(f"[CONVERTER] 🪟 Merging coating (internal + external): {coating_layers} layers")
 
+            # 与外部 outline 相同的 3×3；内部区 3×3 腐蚀 2 次（共缩两圈），边缘置 -1
+            kernel = np.ones((3, 3), np.uint8)
+            INTERNAL_ERODE_ITERATIONS = 2
+
             # ========================
             # ① 处理内部 coating（来自 LUT -4）
             # ========================
-            internal_mask = ~(full_matrix[:1] == COATING_PLACEHOLDER)
+            internal_placeholder = (full_matrix[0] == COATING_PLACEHOLDER)
+            internal_u8 = internal_placeholder.astype(np.uint8) * 255
+            internal_eroded = cv2.erode(internal_u8, kernel, iterations=INTERNAL_ERODE_ITERATIONS)
+            # generate_mesh(mat_id=0) 只体素化 ==0；外环为 -1 不参与镀层
+            internal_slice = np.where(internal_eroded > 0, 0, -1).astype(int)[np.newaxis, :, :]
 
-            if np.any(internal_mask):
-                count = int(np.sum(internal_mask))
-                print(f"[CONVERTER] Internal coating voxels: {count}")
-                # full_matrix[internal_mask] = COATING_SLOT
+            if np.any(internal_eroded):
+                count = int(np.sum(internal_eroded > 0))
+                print(f"[CONVERTER] Internal coating voxels (erode {INTERNAL_ERODE_ITERATIONS}x 3×3): {count}")
             else:
                 print("[CONVERTER] No internal coating found")
 
@@ -1316,7 +1322,6 @@ def convert_image_to_3d(image_path, lut_path, target_width_mm, spacer_thick,
             if enable_outline:
                 print(f"[CONVERTER] 🔲 Extending coating to cover outline area (width={outline_width}mm)")
                 outline_width_px = max(1, int(round(outline_width / pixel_scale)))
-                kernel = np.ones((3, 3), np.uint8)
                 mask_uint8 = mask_solid.astype(np.uint8) * 255
                 dilated_mask = cv2.dilate(mask_uint8, kernel, iterations=outline_width_px)
                 coating_mask = (dilated_mask > 0)
@@ -1326,7 +1331,7 @@ def convert_image_to_3d(image_path, lut_path, target_width_mm, spacer_thick,
             coating_slice = np.where(coating_mask, 0, -1).astype(int)
             coating_matrix[:] = coating_slice[np.newaxis, :, :]
 
-            coating_block = np.concatenate([coating_matrix, internal_mask],axis=0)
+            coating_block = np.concatenate([coating_matrix, internal_slice], axis=0)
 
             print(f"[CONVERTER] ✅ Coating merged into full_matrix (total layers now {full_matrix.shape[0]})")
             coating_mesh = mesher.generate_mesh(coating_block, 0, target_h)

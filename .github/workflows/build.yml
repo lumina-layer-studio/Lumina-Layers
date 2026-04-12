@@ -2,95 +2,191 @@ name: Build and Package Lumina Layers
 
 on:
   push:
-    branches: [ main ]
+    branches: [main]
   pull_request:
-    branches: [ main ]
+    branches: [main]
   workflow_dispatch:
 
 jobs:
   build:
-    runs-on: windows-latest
+    name: Build (${{ matrix.platform_suffix }})
+    runs-on: ${{ matrix.runs_on }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runs_on: windows-latest
+            platform_suffix: win
+          - runs_on: macos-latest
+            platform_suffix: mac
 
     steps:
-    - name: Checkout Code
-      uses: actions/checkout@v4
-      with:
-        fetch-depth: 0
-        fetch-tags: true
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
 
-    - name: Get Version and Hash
-      id: vars
-      shell: bash
-      run: |
-        # 使用当前日期作为版本号 (格式: YYYYMMDD)
-        VERSION=$(date +%Y%m%d)
-        
-        # 获取 7 位短 Hash
-        SHORT_SHA=$(git rev-parse --short=7 HEAD | cut -c1-7 || echo "0000000")
-        
-        # 组合完整名称
-        FULL_NAME="Lumina-Layers-preview-$VERSION-$SHORT_SHA"
-        
-        echo "VERSION=$VERSION" >> $GITHUB_ENV
-        echo "SHORT_SHA=$SHORT_SHA" >> $GITHUB_ENV
-        echo "FULL_NAME=$FULL_NAME" >> $GITHUB_ENV
-        echo "full_name=$FULL_NAME" >> $GITHUB_OUTPUT
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
 
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install pyinstaller
-        pip install -r requirements.txt
+      - name: Get Version and Hash
+        shell: bash
+        run: |
+          VERSION=$(date +%Y%m%d)
+          SHORT_SHA=$(git rev-parse --short=7 HEAD | cut -c1-7 || echo "0000000")
+          BASE_NAME="Lumina-Layers-preview-$VERSION-$SHORT_SHA"
+          ARTIFACT_NAME="${BASE_NAME}-${{ matrix.platform_suffix }}"
 
-    - name: Package with PyInstaller
-      shell: pwsh
-      run: |
-        # 确保生成的 exe 文件名符合要求
-        pyinstaller --noconfirm --onefile `
-          --icon="icon.ico" `
-          --add-data "icon.ico;." `
-          --add-data "bambu_config_template.json;." `
-          --add-data "assets;assets" `
-          --collect-all "gradio" `
-          --collect-all "safehttpx" `
-          --collect-all "groovy" `
-          --collect-all "gradio_client" `
-          --collect-all "uvicorn" `
-          --name "${{ env.FULL_NAME }}" `
-          main.py
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          echo "SHORT_SHA=$SHORT_SHA" >> "$GITHUB_ENV"
+          echo "BASE_NAME=$BASE_NAME" >> "$GITHUB_ENV"
+          echo "ARTIFACT_NAME=$ARTIFACT_NAME" >> "$GITHUB_ENV"
 
-    - name: Prepare Artifact Directory
-      shell: pwsh
-      run: |
-        # 创建一个以 FULL_NAME 命名的文件夹，上传后下载到的 zip 也会是该名称
-        $targetDir = "${{ env.FULL_NAME }}"
-        New-Item -ItemType Directory -Path "$targetDir" -Force
-        
-        # 确认 exe 文件是否存在并移动
-        if (Test-Path "dist/${{ env.FULL_NAME }}.exe") {
-            Move-Item "dist/${{ env.FULL_NAME }}.exe" -Destination "$targetDir/"
-        } else {
-            Write-Error "Executable not found at dist/${{ env.FULL_NAME }}.exe"
+      - name: Create virtual environment (Windows)
+        if: matrix.platform_suffix == 'win'
+        shell: pwsh
+        run: |
+          python -m venv .venv
+          .\.venv\Scripts\python.exe -m pip install --upgrade pip
+          .\.venv\Scripts\python.exe -m pip install pyinstaller
+          .\.venv\Scripts\python.exe -m pip install -r requirements.txt
+
+      - name: Create virtual environment (macOS)
+        if: matrix.platform_suffix == 'mac'
+        shell: bash
+        run: |
+          python -m venv .venv
+          ./.venv/bin/python -m pip install --upgrade pip
+          ./.venv/bin/python -m pip install pyinstaller
+          ./.venv/bin/python -m pip install -r requirements.txt
+
+      - name: Validate macOS icon asset
+        if: matrix.platform_suffix == 'mac'
+        shell: bash
+        run: |
+          test -f icon.icns
+
+      - name: Package Windows build
+        if: matrix.platform_suffix == 'win'
+        shell: pwsh
+        run: |
+          .\.venv\Scripts\python.exe -m PyInstaller --noconfirm --onefile `
+            --icon="icon.ico" `
+            --add-data "icon.ico;." `
+            --add-data "bambu_config_template.json;." `
+            --add-data "assets;assets" `
+            --collect-all "gradio" `
+            --collect-all "safehttpx" `
+            --collect-all "groovy" `
+            --collect-all "gradio_client" `
+            --collect-all "uvicorn" `
+            --name "${{ env.BASE_NAME }}" `
+            main.py
+
+      - name: Package macOS build
+        if: matrix.platform_suffix == 'mac'
+        shell: bash
+        run: |
+          ./.venv/bin/python -m PyInstaller --noconfirm --windowed \
+            --icon "icon.icns" \
+            --add-data "icon.ico:." \
+            --add-data "bambu_config_template.json:." \
+            --add-data "assets:assets" \
+            --add-data "lut-npy预设:lut-npy预设" \
+            --collect-all "gradio" \
+            --collect-all "safehttpx" \
+            --collect-all "groovy" \
+            --collect-all "gradio_client" \
+            --collect-all "uvicorn" \
+            --name "${BASE_NAME}" \
+            main.py
+
+      - name: Prepare Windows artifact directory
+        if: matrix.platform_suffix == 'win'
+        shell: pwsh
+        run: |
+          $targetDir = "${{ env.ARTIFACT_NAME }}"
+          New-Item -ItemType Directory -Path "$targetDir" -Force | Out-Null
+
+          $exePath = "dist/${{ env.BASE_NAME }}.exe"
+          if (Test-Path $exePath) {
+              Move-Item $exePath -Destination "$targetDir/"
+          } else {
+              Write-Error "Executable not found at $exePath"
+              exit 1
+          }
+
+          if (Test-Path "icon.ico") {
+              Copy-Item -Path "icon.ico" -Destination "$targetDir/"
+          }
+          if (Test-Path "bambu_config_template.json") {
+              Copy-Item -Path "bambu_config_template.json" -Destination "$targetDir/"
+          }
+          if (Test-Path "assets") {
+              Copy-Item -Path "assets" -Destination "$targetDir/assets" -Recurse
+          }
+          if (Test-Path "lut-npy预设") {
+              Copy-Item -Path "lut-npy预设" -Destination "$targetDir/lut-npy预设" -Recurse
+          }
+
+      - name: Prepare macOS artifact directory
+        if: matrix.platform_suffix == 'mac'
+        shell: bash
+        run: |
+          target_dir="${ARTIFACT_NAME}"
+          app_path="dist/${BASE_NAME}.app"
+
+          mkdir -p "$target_dir"
+          if [ ! -d "$app_path" ]; then
+            echo "App bundle not found at $app_path" >&2
             exit 1
-        }
-        
-        # 复制外部数据文件夹
-        if (Test-Path "icon.ico") {
-            Copy-Item -Path "icon.ico" -Destination "$targetDir/"
-        }
-        if (Test-Path "bambu_config_template.json") {
-            Copy-Item -Path "bambu_config_template.json" -Destination "$targetDir/"
-        }
-        if (Test-Path "assets") {
-            Copy-Item -Path "assets" -Destination "$targetDir/assets" -Recurse
-        }
-        if (Test-Path "lut-npy预设") {
-            Copy-Item -Path "lut-npy预设" -Destination "$targetDir/lut-npy预设" -Recurse
-        }
+          fi
 
-    - name: Upload Artifact
-      uses: actions/upload-artifact@v4
-      with:
-        # 这个 name 参数决定了生成的 zip 文件名
-        name: ${{ env.FULL_NAME }}
-        path: ${{ env.FULL_NAME }}/
+          mv "$app_path" "$target_dir/"
+
+      - name: Verify Windows artifact contents
+        if: matrix.platform_suffix == 'win'
+        shell: pwsh
+        run: |
+          $targetDir = "${{ env.ARTIFACT_NAME }}"
+
+          if (-not (Test-Path "$targetDir/${{ env.BASE_NAME }}.exe")) {
+              Write-Error "Missing executable in artifact directory"
+              exit 1
+          }
+          if (-not (Test-Path "$targetDir/icon.ico")) {
+              Write-Error "Missing icon.ico in artifact directory"
+              exit 1
+          }
+          if (-not (Test-Path "$targetDir/bambu_config_template.json")) {
+              Write-Error "Missing bambu_config_template.json in artifact directory"
+              exit 1
+          }
+          if (-not (Test-Path "$targetDir/assets")) {
+              Write-Error "Missing assets directory in artifact directory"
+              exit 1
+          }
+          if (-not (Test-Path "$targetDir/lut-npy预设")) {
+              Write-Error "Missing LUT preset directory in artifact directory"
+              exit 1
+          }
+
+      - name: Verify macOS artifact contents
+        if: matrix.platform_suffix == 'mac'
+        shell: bash
+        run: |
+          app_path="${ARTIFACT_NAME}/${BASE_NAME}.app"
+
+          test -d "$app_path"
+          find "$app_path" -type d -name assets | grep -q .
+          find "$app_path" -type f -name bambu_config_template.json | grep -q .
+          find "$app_path" -type d -name 'lut-npy预设' | grep -q .
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.ARTIFACT_NAME }}
+          path: ${{ env.ARTIFACT_NAME }}/

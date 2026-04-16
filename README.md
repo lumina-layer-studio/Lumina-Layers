@@ -65,7 +65,6 @@
     <img src="https://img.shields.io/badge/QQ%20Group-1065401448-EB1923?style=for-the-badge&logo=tencentqq&logoColor=white" alt="QQ Group">
   </a>
 </p>
----
 
 ## Project Status
 

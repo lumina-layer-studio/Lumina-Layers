@@ -5,7 +5,7 @@
 <h1 align="center">Lumina Studio</h1>
 
 <p align="center">
-  Physics-Based Multi-Material FDM Color System
+  A Multi-Material FDM Color System Based on Physical Calibration
 </p>
 
 <p align="center">
@@ -14,7 +14,7 @@
   </a>
   &nbsp;
   <a href="https://github.com/MOVIBALE/Lumina-Layers/releases/latest">
-    <img src="https://img.shields.io/github/v/release/MOVIBALE/Lumina-Layers?label=Latest%20Release&amp;include_prereleases" alt="Release">
+    <img src="https://img.shields.io/github/v/release/MOVIBALE/Lumina-Layers?label=Latest%20Version&amp;include_prereleases" alt="Release">
   </a>
   &nbsp;
   <a href="LICENSE">
@@ -23,50 +23,44 @@
 </p>
 
 <p align="center">
-  <a href="README_CN.md">📖 中文文档 / Chinese Version</a>
+  <a href="README.md">📖 Chinese Version / 中文文档</a>
 </p>
 
 ---
 
 <h2 align="center">Official Links & Community</h2>
 
-<p align="center"><b>GitHub Repository:</b></p>
 <p align="center">
+  <b>GitHub Repository:</b>
   <a href="https://github.com/MOVIBALE/Lumina-Layers">
     <img src="https://img.shields.io/badge/GitHub-Lumina--Layers-181717?style=for-the-badge&logo=github" alt="GitHub">
   </a>
-</p>
-
-<p align="center"><b>Join our Discord:</b></p>
-<p align="center">
+  &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+  <b>Join Discord Community:</b>
   <a href="https://discord.gg/57whRe3C8G">
     <img src="https://img.shields.io/badge/Discord-Lumina%20Studio-5865F2?style=for-the-badge&logo=discord&logoColor=white" alt="Discord">
   </a>
 </p>
 
-<p align="center"><b>Subscribe on YouTube:</b></p>
 <p align="center">
+  <b>Subscribe to YouTube Channel:</b>
   <a href="https://www.youtube.com/channel/UCyP2Euw9whk1j-MT8d652Kw">
     <img src="https://img.shields.io/badge/YouTube-Lumina%20Studio-FF0000?style=for-the-badge&logo=youtube&logoColor=white" alt="YouTube">
   </a>
-</p>
-
-<p align="center"><b>Support on Patreon:</b></p>
-<p align="center">
+  &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+  <b>Support Us on Patreon:</b>
   <a href="https://www.patreon.com/Lumina_studio">
     <img src="https://img.shields.io/badge/Patreon-Lumina%20Studio-FF424D?style=for-the-badge&logo=patreon&logoColor=white" alt="Patreon">
   </a>
 </p>
 
-<p align="center"><b>Follow us on Bilibili:</b></p>
 <p align="center">
+  <b>Follow Us on Bilibili:</b>
   <a href="https://b23.tv/CCxxiKC">
     <img src="https://img.shields.io/badge/Bilibili-Lumina%20Studio-00A1D6?style=for-the-badge&logo=bilibili&logoColor=white" alt="Bilibili">
   </a>
-</p>
-
-<p align="center"><b>Join our QQ Group:</b></p>
-<p align="center">
+  &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+  <b>Join QQ Group:</b>
   <a href="https://qm.qq.com/q/vocxOMTnj2">
     <img src="https://img.shields.io/badge/QQ%20Group-1065401448-EB1923?style=for-the-badge&logo=tencentqq&logoColor=white" alt="QQ Group">
   </a>
@@ -77,386 +71,186 @@
 ## Project Status
 
 **Current Version**: v1.6.7  
-**License**: GNU GPL v3.0 (with Commercial Use & "Street Vendor" Support)  
-**Nature**: Non-profit independent implementation, open-source community project
+**License**: GNU GPL v3.0  
+**Nature**: Non-profit Open Source Community Project
 
 ---
-Inspiration and Technical Statements
+## Project Background
+To simplify the steep learning curve of software such as HueForge/FlatForge and the requirement for specific filaments, Lumina uses brute-force and simplified brute-force methods based on physical calibration to obtain actual printed colors. The current mode does not involve any color theory calculations (color calculation based on color/TD values may be introduced in advanced features of version 2.0 in the future). The current approach is: Print - Capture - Extract Color - Map Stacking Formula Based on Extracted Color - Print (this is a color matching function, inspired by the default color matching in Autoforge and CMYK Lithophane).
 
-### Acknowledgements to Pioneers
+## Features
+**Color Modes**
 
-This project owes its existence to the open sharing of the following technologies:
+2/4/5/6/8 Colors
 
-- **HueForge** - The first tool to introduce optical color mixing to the FDM community, demonstrating that layering transparent materials can achieve rich colors through light transmission.
+**Generation Modes**
 
-- **AutoForge** - An automated color matching workflow, making multi-material color printing easy to use.
+High-fidelity mode / Pixel mode / SVG mode
 
-- **CMYK Printing Theory** - A layer-by-layer transmission adaptation of the classic subtractive color model in 3D printing.
+**Other Features**
 
-### Technical Differentiation and Positioning
+Custom color card and color calibration functions
 
-Traditional tools rely on theoretical calculations (such as TD1/TD0 transmission distance values), but these parameters are highly susceptible to failure due to various objective factors.
+Adjust the number of generated colors
 
- **Lumina Studio employs an exhaustive search approach:**
+Image cutout / background removal
 
-1. Print a 1024-color physical calibration board (4 colors x 5 layers, full permutation)
+Independent backplate
 
-2. Scan the board by photograph and extract the actual RGB data
+Outline
 
-3. Create a "LUT" (Learning Unknown Test Table)
+Add transparent layer
 
-4. Use a nearest neighbor algorithm for matching (similar to the matching in Bambulab's keychain generator).
+Cloisonné enamel mode
 
-### Prior Art Declaration
+Replace colors in the image after generating preview
 
-The core principle of FDM multilayer overlay was publicly disclosed by software such as HueForge between 2022 and 2023, and is considered **prior art**.
+**Advanced Features**
 
-The HueForge authors have also clearly stated that this technology has entered the public domain, and in most countries and regions, if the patent office carefully examines it, a principle patent would certainly be rejected.
+Color Formula Search
 
-The pioneers have chosen to remain open to help the community develop; therefore, this technology is generally **not patentable**.
-
-Lumina Studio will continue to maintain its open-source, collaborative, and non-profit positioning, and we welcome everyone's supervision.
-Lumina Studio will continue to operate on an open-source, collaborative, and non-profit basis, and we welcome your feedback.
-
-- This project is an open-source, non-profit project. There will be no bundled sales, and no features will be made into paid features.
-- If you or your company wish to support the project's continued development, please contact us. Sponsored products will only be used for software development, testing, and optimization.
-- Sponsorship represents support for the project only and does not constitute any commercial binding.
-- We reject any sponsorship collaborations that could influence technical decisions or open-source licenses.
-
-Lumina Studio did not refer to any patent applications because such patents usually only contain specifications and the technical code is not disclosed in the short term. Blindly referring to these patents would affect its own development process.
-
-**Special thanks to the HueForge team for their support and understanding of open source!**  **
----
+Merge color card function
 
 ## Open Ecosystem
 
 ### About .npy Calibration Files
 
-All calibration presets (`.npy` files) are **completely free and open**, adhering to the following principles:
+All calibration presets (.npy files) are **completely free and open**, following these principles:
 
-- **No Vendor Lock-in:** We have never, currently, and will never force users to use specific consumable brands, nor will we require manufacturers to produce specific "compatible consumables" that meet our requirements. This violates the spirit of open source.
+- **Vendor Lock-in Rejection**: We **will never** force users to use specific filament brands, or require manufacturers to produce specific "compatible filaments" — past, present, or future. This violates the spirit of open source.
+  
+- **Community Collaboration**: All users, organizations, and filament manufacturers are welcome to submit PRs to synchronize calibration presets. Your printer data can help others.
+- No additional testing tools required — only a 3D printer and a phone/camera.
 
-- **Community Collaboration:** We welcome all users, organizations, and consumable manufacturers to submit PRs and synchronize calibration presets. Your printer data can help others.
-
-- No other testing tools are needed; all you need is a 3D printer and a mobile phone.
-
-**Open Data = Democratization of Technology**
-
----
-
-## License
-
-### Core License: GNU GPL v3.0
-
-- ✅ **Open & Free**: You are free to run, study, modify, and distribute this software.
-- 🔄 **Copyleft**: If you modify and distribute this software, you must release the source code under GPL v3.0.
-- ❌ **No Proprietary Derivatives**: Selling closed-source versions of this software or its derivatives is strictly prohibited.
-
-### Commercial Use & "Street Vendor" Support Statement
-
-**To individual creators, street vendors, and small businesses**:
-
-GPL permits and encourages commercial use. We specifically support you to earn a living through your craft. You do **NOT** need to ask for additional permission to:
-- Use this software to generate models
-- Sell physical prints (keychains, reliefs, etc.)
-- Sell at night markets, fairs, or personal online shops
-
-**Go set up your stall and make a living! This is your right.**
-
----
-
-Lumina Studio v1.5.4 integrates three major modules into a unified interface:
-
-### 📐 Module 1: Calibration Generator
-
-Generates precision calibration boards to physically test filament mixing.
-
-- **Multiple Color Systems**: 
-  - **4-Color (CMYW/RYBW)**: 1024 colors (4 base filaments × 5 layers)
-  - **6-Color**: 1296 colors (6 base filaments × 3 layers) - Extended color gamut
-  - **8-Color**: 2738 colors (8 base filaments × 2 pages) - Professional wide gamut
-  - **BW Mode**: 32 grayscale levels for monochrome prints
-- **Smart Calibration Workflow**:
-  - 4-Color: Single board, full permutation
-  - 6-Color: Single board with extended palette
-  - 8-Color: Two-page system with merge function
-- **Face-Down Optimization**: Viewing surface prints directly on the build plate for a smooth finish
-- **Solid Backing**: Automatically generates opaque backing to ensure color consistency and structural rigidity
-- **Anti-Overlap Geometry**: Applies 0.02mm micro-shrinkage to voxels to prevent slicer line-width conflicts
-
-### 🎨 Module 2: Color Extractor
-
-Digitizes the physical reality of your printer.
-
-- **Computer Vision**: Perspective warp + lens distortion correction for automatic grid alignment
-- **Multi-Mode Support**: 
-  - 4-Color (CMYW/RYBW): Standard calibration
-  - 6-Color: Extended palette extraction
-  - 8-Color: Two-page extraction with manual correction support
-  - BW Mode: Grayscale calibration
-- **Mode-Aware Alignment**: Corner markers follow the correct color sequence based on your selected mode
-- **Digital Twin**: Extracts RGB values from the print and generates a .npy LUT file
-- **Human-in-the-Loop**: Interactive probe tools allow manual verification/correction of specific color block readings
-- **8-Color Workflow**: Extract Page 1 → Manual corrections → Extract Page 2 → Merge into single LUT
-
-### 💎 Module 3: Image Converter
-
-Converts images into printable 3D models using calibrated data.
-
-- **KD-Tree Color Matching**: Maps image pixels to actual printable colors found in your LUT
-- **Live 3D Preview**: Interactive WebGL preview with true matched colors—rotate, zoom, and inspect before printing
-- **Keychain Loop Generator**: Automatically adds functional hanging loops with:
-  - Smart color detection (matches nearby model colors)
-  - Customizable dimensions (width, length, hole diameter)
-  - Rectangle base + semicircle top + hollow hole geometry
-  - 2D preview shows loop placement
-- **Structure Options**: Double-sided (keychain) or Single-sided (relief) modes
-- **Smart Background Removal**: Automatic transparency detection with adjustable tolerance
-- **Correct 3MF Naming**: Objects are named by color (e.g., "Cyan", "Magenta") instead of "geometry_0" for easy slicer identification
-
----
-
-## Changelog
-
-For detailed version history, see [CHANGELOG.md](CHANGELOG.md) / [CHANGELOG_CN.md](CHANGELOG_CN.md).
-
----
-
-## Development Roadmap
-
-### Phase 1: The Foundation ✅ COMPLETE
-
-**Target**: Pixel Art & Photographic Graphics
-
-- ✅ Fixed CMYW/RYBW mixing
-- ✅ Two modeling modes (High-Fidelity/Pixel Art)
-- ✅ High-Fidelity mode with RLE mesh generation
-- ✅ Ultra-high precision (10 px/mm, 0.1mm/pixel)
-- ✅ K-Means color quantization architecture
-- ✅ Solid Backing generation
-- ✅ Closed-loop calibration system
-- ✅ Live 3D preview with true colors
-- ✅ Keychain loop generator
-- ✅ Dynamic language switching (Chinese/English)
-
-### Phase 2: Manga Mode (Monochrome) ✅ COMPLETE
-
-**Target**: Manga panels, Ink drawings, High-contrast illustrations
-
-- ✅ Black & White layering using thickness-based grayscale (Lithophane logic)
-- ✅ Simulating screen tones (Ben-Day dots)
-
-### Phase 3: Dynamic Palette Engine ✅ COMPLETE
-
-**Target**: Adaptive color systems
-
-- ✅ Dynamic Palette Support (4/6/8 colors auto-selection)
-- ✅ Intelligent color clustering algorithms
-- ✅ Adaptive dithering algorithms
-- ✅ Perceptual color difference optimization
-
-### Phase 4: Extended Color Modes ✅ COMPLETE
-
-**Target**: Professional multi-material printing
-
-- ✅ 6-color extended mode (1296 colors)
-- ✅ 8-color professional mode (2738 colors)
-- ✅ BW grayscale mode (32 levels)
-- 🚧 Perler bead mode (in progress)
+**Open Data = Community Co-creation**
 
 ---
 
 ## Installation
 
-### Clone the repository
+### Clone Repository
 
 ```bash
 git clone https://github.com/MOVIBALE/Lumina-Layers.git
 cd Lumina-Layers
-```
 
-### Option 1: Docker (Recommended)
+### Option 1：Docker 
 
-Using Docker is the easiest way to run Lumina Studio without worrying about system-level dependencies (like `cairo` or `pkg-config`).
-
-1. **Build the image**:
+Using Docker is the easiest way to run Lumina Studio without worrying about system-level dependencies (such as cairo or pkg-config).
+1. **Build the lumina image**：
    ```bash
    docker build -t lumina-layers .
    ```
 
-2. **Run the container**:
+2. **Run Container**：
    ```bash
    docker run -p 7860:7860 lumina-layers
    ```
 
-3. Open your browser to `http://localhost:7860`.
+3. Open in your browser `http://localhost:7860`。
 
-### Option 2: Local Installation
+### Option 2：Local Installation
 
-**Core dependencies** (required):
+**Basic Dependencies**：
 ```bash
 pip install -r requirements.txt
 ```
 
 ---
 
-## Usage Guide
+## User Guide
 
 ### Quick Start
 
 ```bash
 python main.py
 ```
-
-This launches the web interface with all three modules in tabs.
-
----
-
-### Step 1: Generate Calibration Board
-
-1. Open the **📐 Calibration** tab
-2. Select your color mode:
-   - **4-Color RYBW** (Red/Yellow/Blue/White) - Traditional primaries, 1024 colors
-   - **4-Color CMYW** (Cyan/Magenta/Yellow/White) - Print colors, wider gamut, 1024 colors
-   - **6-Color** - Extended palette with 1296 colors (requires 6-filament printer)
-   - **8-Color** - Professional mode with 2738 colors (two-page workflow)
-   - **BW** - Grayscale mode with 32 levels
-3. Adjust block size (default: 5mm) and gap (default: 0.82mm)
-4. Click **Generate** and download the `.3mf` file(s)
-   - 4-Color/6-Color/BW: Single file
-   - 8-Color: Two files (Page 1 and Page 2)
-
-**Print Settings**:
-
-- Layer height: 0.08mm (color layers), backing can use 0.2mm
-- Filament slots must match your selected mode
-
-| Mode | Total Colors | Filament Slots |
-|------|--------------|----------------|
-| 4-Color RYBW | 1024 | White, Red, Yellow, Blue |
-| 4-Color CMYW | 1024 | White, Cyan, Magenta, Yellow |
-| 6-Color | 1296 | White, Cyan, Magenta, Yellow, Lime, Black |
-| 8-Color | 2738 | White, Cyan, Magenta, Yellow, Lime, Black (+ 2 more) |
-| BW | 32 | Black, White |
+This will launch the web interface containing all three modules in a browser tab.
 
 ---
 
-### Step 2: Extract Colors
-
-1. Print the calibration board and photograph it (face-up, even lighting)
-2. Open the **🎨 Color Extractor** tab
-3. Select the same color mode as your calibration board
-4. Upload your photo
-5. Click the four corner blocks in order (colors vary by mode):
-
-| Mode | ⬜ White Top-Left | Top-Right | Bottom-Right | Bottom-Left |
-|------|------------------|-----------|--------------|-------------|
-| 4-Color RYBW | ⬜ White | Red | Blue | Yellow |
-| 4-Color CMYW | ⬜ White | Cyan | Magenta | Yellow |
-| 6-Color | ⬜ White | Cyan | Magenta | Yellow |
-| 8-Color | ⬜ White | Yellow | Black | Cyan |
-| BW | ⬜ White | Black | Black | Black |
-
-6. Adjust correction sliders if needed (white balance OFF by default, vignette, distortion)
-7. Click **Extract** 
-8. **For 8-Color Mode Only**:
-   - After extracting Page 1, you can click any color cell to manually correct it
-   - Extract Page 2 with the same process
-   - Click **Merge 8-Color Pages** to combine into final LUT
-9. Download the `.npy` LUT file
-
----
-
-### Step 3: Convert Image
-
-1. Open the **💎 Image Converter** tab
-2. Upload your `.npy` LUT file
-3. Upload your image
-4. Select the same color mode as your LUT
-5. **Choose Modeling Mode**:
-   - **High-Fidelity (Smooth)** - Recommended for logos, photos, portraits, illustrations
-   - **Pixel Art (Blocky)** - Recommended for pixel art and 8-bit style graphics
-6. Adjust **Color Detail** slider (8-256 colors, default 64):
-   - 8-32 colors: Minimalist style, fast generation
-   - 64-128 colors: Balanced detail & speed (recommended)
-   - 128-256 colors: Photographic detail, slower generation
-7. Click **👁️ Generate Preview** to see the result
-8. (Optional) Add Keychain Loop:
-   - Click on the 2D preview where you want the loop attached
-   - Enable "启用挂孔" checkbox
-   - Adjust loop width, length, and hole diameter
-   - The loop color is automatically detected from nearby pixels
-9. Choose structure type:
-   - **Double-sided** - For keychains (image on both sides)
-   - **Single-sided** - For relief/lithophane style
-10. Click **🚀 Generate 3MF**
-11. Preview in the interactive 3D viewer
-12. Download the `.3mf` file
-
----
-
-## Technical Stack
+## Tech Stack
 
 | Component | Technology |
-|-----------|------------|
-| Core Logic | Python (NumPy for voxel manipulation) |
-| Geometry Engine | Trimesh (Mesh generation & Export) |
+|------|------|
+| Core Logic | Python (NumPy for voxel operations) |
+| Geometry Engine | Trimesh (mesh generation and export) |
 | UI Framework | Gradio 4.0+ |
-| Vision Stack | OpenCV (Perspective & Color Extraction) |
+| Vision Stack | OpenCV (perspective and color extraction) |
 | Color Matching | SciPy KDTree |
 | 3D Preview | Gradio Model3D (GLB format) |
 
 ---
 
-## How It Works
-
-### Why Calibration Matters
-
-Theoretical TD values assume:
-- Perfectly consistent filament dye concentration
-- Identical nozzle temperatures across all materials
-- Uniform layer adhesion
-
-In reality, these vary significantly between:
-- Different filament brands/batches
-- Printer models and nozzle designs
-- Environmental humidity and temperature
-
-The LUT-based approach solves this by measuring actual printed colors and matching them via nearest-neighbor search in RGB space.
-
----
 
 ## License
 
-This project is licensed under the **GNU GPL v3.0** Open Source License.
+This project is licensed under the **GNU GPL v3.0** open-source license.
 
-- ✅ **Open & Free**: You are free to run, study, modify, and distribute this software.
-- 🔄 **Copyleft**: If you modify and distribute this software, you must release the source code under GPL v3.0.
-- ❌ **No Proprietary Derivatives**: Selling closed-source versions of this software or its derivatives is strictly prohibited.
+- ✅ **Open Source & Freedom**: You are free to run, study, modify and distribute this software.
+- 🔄 **Strong Copyleft**: If you modify and distribute this software, you must publish your source code under the GPL v3.0 license.
+- ❌ **No Closed-Source**: It is strictly prohibited to package and sell this software or its derivatives as closed-source products.
 
-**Commercial Use & "Street Vendor" Support Statement**: GPL permits and encourages commercial use. We specifically support individual creators, street vendors, and small businesses to earn a living through their craft. You may freely use this software to generate models and sell physical prints without additional permission.
+**Commercial Use & "Small Creator" Support Statement**: This project supports and encourages individual creators, small vendors and micro-enterprises to earn income through labor. You may freely use this software to generate models and sell physical printed products without additional authorization.
 
 ---
 
+## Technical Origin & Statement
+
+### Technical Inspiration
+
+This project is inspired by the following works:
+
+- **HueForge** – The first project to commercialize FDM multi-layer stacking color mixing technology.
+- **AutoForge** – Automated color matching built on Hueforge.
+- **CMYK Backlit Lithophane** – Multi-layer stacked backlit lithophane effects in 3D printing based on transmission and subtractive color principles.
+
+### Technical Differences & Positioning
+
+Traditional tools rely on theoretical calculations (such as TD1/TD0 transmission distance values), but these parameters often fail due to various objective variations.
+
+**Lumina Studio 1.X uses a brute-force approach**:
+1. Print physical calibration charts with 1024+ colors (full permutation for 2 colors × 5 layers, 4 colors × 5 layers; simplified brute-force for 6 colors × 5 layers, 8 colors × 5 layers)
+2. Scan via photography and extract real RGB data
+3. Build a "Lookup Table (LUT) of actual results"
+4. Match using nearest-neighbor algorithm (similar to Bambu Lab's keychain generator matching)
+
+### Prior Art Statement
+
+The core principle of FDM multi-layer color mixing was publicly disclosed by software such as HueForge between 2022 and 2023, and constitutes **prior art**.
+
+The author of Hueforge has also clarified that such technical principles have entered the public domain. In most countries and regions, patents on these principles would almost certainly be rejected if rigorously examined by patent offices.
+
+These authors chose openness to support community development, so this technology is generally **not patentable**.
+
+Lumina Studio will remain open-source, collaborative, and non-profit. Public oversight is welcome.
+
+- This is an open-source non-profit project with no bundled sales, and no features will be locked behind paywalls.
+- If you or your company wish to support the project’s continued development, please contact us. Sponsored products will only be used for software development, testing and optimization.
+- Sponsorship represents support for the project and does not constitute any commercial binding.
+- Sponsorship arrangements that would influence technical decisions or open-source licenses are rejected.
+
+Lumina Studio has not referenced any pending patent content, as most such patents only include specifications and do not disclose code in the short term; blind reference would hinder independent development.
+
+**Special thanks to HueForge for their support and understanding of open source!**
+
+---
 ## Acknowledgments
+Special Thanks to:
 
-Special thanks to:
-
-- **HueForge** - For pioneering optical color mixing in FDM printing
-- **AutoForge** - For democratizing multi-color workflows
-- **[ChromaStack](https://github.com/borealis-zhe/ChromaStack)** - A multi-color layer stacking model generator for FDM printers, using light transmission algorithms to achieve photo-level color effects
-- **[LD_ColorLayering](https://github.com/Luban-Daddy/LD_ColorLayering)** - An H5 web application for converting images to multi-color 3D models (3MF), supporting multiple color modes and layer stacking
-- **[ChromaPrint3D](https://github.com/Neroued/ChromaPrint3D)** - Converts images to multi-color 3MF models with Bambu Studio preset auto-injection and filament slot matching
-- **The 3D printing community** - For continuous innovation
+- **[Hueforge](https://shop.thehueforge.com/)**
+- **[AutoForge](https://github.com/AutoForgeAI/autoforge)**
+- **[ChromaStack](https://github.com/borealis-zhe/ChromaStack)** 
+- **[LD_ColorLayering](https://github.com/Luban-Daddy/LD_ColorLayering)** 
+- **[ChromaPrint3D](https://github.com/Neroued/ChromaPrint3D)** 
 
 ---
 
 ## Contributors
-
 <a href="https://github.com/MOVIBALE/Lumina-Layers/graphs/contributors">
   <img src="https://contrib.rocks/image?repo=MOVIBALE/Lumina-Layers" />
 </a>
 
-Made with ❤️ by all our contributors!
-
+Made with care by all contributors!
+---
 ⭐ Star this repo if you find it useful!

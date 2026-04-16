@@ -94,12 +94,19 @@ High-fidelity mode / Pixel mode / SVG mode
 
 **其他功能 Other Features**
 自定义色卡和校准颜色功能 Custom color card and color calibration functions
+
 调节生成颜色的数量 Adjust the number of generated colors.
+
 抠图功能 image cutout / background removal
+
 背板独立 Independent backplate
+
 描边 Outline
+
 添加透明层 Add transparent layer
+
 掐丝珐琅模式 wiry enamel(cloisonné enamel)
+
 生成预览后替换图中颜色 Replace colors in the image
 
 **高级功能 Advanced Features**

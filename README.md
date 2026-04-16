@@ -31,36 +31,36 @@
 <h2 align="center">Official Links & Community</h2>
 
 <p align="center">
-  <b>GitHub Repository:</b>
+  <b>GitHub :</b>
   <a href="https://github.com/MOVIBALE/Lumina-Layers">
     <img src="https://img.shields.io/badge/GitHub-Lumina--Layers-181717?style=for-the-badge&logo=github" alt="GitHub">
   </a>
   &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-  <b>Join Discord Community:</b>
+  <b>Join Discord :</b>
   <a href="https://discord.gg/57whRe3C8G">
     <img src="https://img.shields.io/badge/Discord-Lumina%20Studio-5865F2?style=for-the-badge&logo=discord&logoColor=white" alt="Discord">
   </a>
 </p>
 
 <p align="center">
-  <b>Subscribe to YouTube Channel:</b>
+  <b> YouTube:</b>
   <a href="https://www.youtube.com/channel/UCyP2Euw9whk1j-MT8d652Kw">
     <img src="https://img.shields.io/badge/YouTube-Lumina%20Studio-FF0000?style=for-the-badge&logo=youtube&logoColor=white" alt="YouTube">
   </a>
   &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-  <b>Support Us on Patreon:</b>
+  <b>Patreon:</b>
   <a href="https://www.patreon.com/Lumina_studio">
     <img src="https://img.shields.io/badge/Patreon-Lumina%20Studio-FF424D?style=for-the-badge&logo=patreon&logoColor=white" alt="Patreon">
   </a>
 </p>
 
 <p align="center">
-  <b>Follow Us on Bilibili:</b>
+  <b>Bilibili:</b>
   <a href="https://b23.tv/CCxxiKC">
     <img src="https://img.shields.io/badge/Bilibili-Lumina%20Studio-00A1D6?style=for-the-badge&logo=bilibili&logoColor=white" alt="Bilibili">
   </a>
   &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-  <b>Join QQ Group:</b>
+  <b>QQ Group:</b>
   <a href="https://qm.qq.com/q/vocxOMTnj2">
     <img src="https://img.shields.io/badge/QQ%20Group-1065401448-EB1923?style=for-the-badge&logo=tencentqq&logoColor=white" alt="QQ Group">
   </a>

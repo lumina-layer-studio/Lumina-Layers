@@ -386,6 +386,23 @@ def manual_fix_cell(coord, color_input, lut_path=None):
                     np.save(assets_path, lut)
                     print(f"[MANUAL_FIX] Also saved to assets: {assets_path}")
         
+        # 5-Color Extended dual-page: same as 8-Color — merge reads assets/temp_5c_ext_page_*.npy
+        if "temp_5c_ext_page_" in actual_path:
+            import re
+            import sys
+            match = re.search(r"temp_5c_ext_page_(\d+)\.npy", actual_path)
+            if match:
+                page_num = match.group(1)
+                if getattr(sys, "frozen", False):
+                    assets_dir = os.path.join(os.getcwd(), "assets")
+                else:
+                    assets_dir = "assets"
+                os.makedirs(assets_dir, exist_ok=True)
+                assets_path = os.path.join(assets_dir, f"temp_5c_ext_page_{page_num}.npy")
+                if os.path.abspath(actual_path) != os.path.abspath(assets_path):
+                    np.save(assets_path, lut)
+                    print(f"[MANUAL_FIX] Also saved 5C-EXT to assets: {assets_path}")
+        
         preview = cv2.resize(lut, (512, 512), interpolation=cv2.INTER_NEAREST)
         print(f"[MANUAL_FIX] Preview shape: {preview.shape}")
         return preview, "[OK] 已修正"

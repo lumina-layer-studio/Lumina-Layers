@@ -1424,10 +1424,10 @@ def _generate_5color_extended_page(block_size_mm, gap_mm, preview_colors, slot_n
     )
 
 
-def generate_5color_extended_batch_zip():
+def generate_5color_extended_batch_zip(block_size_mm=5.0, gap_mm=0.8):
     """Generates both pages and zips them."""
-    f1, _, _ = generate_5color_extended_board(page_index=0)
-    f2, _, _ = generate_5color_extended_board(page_index=1)
+    f1, _, _ = generate_5color_extended_board(block_size_mm, gap_mm, page_index=0)
+    f2, _, _ = generate_5color_extended_board(block_size_mm, gap_mm, page_index=1)
     
     if not f1 or not f2:
         return None, None, "❌ Generation failed"
@@ -1437,5 +1437,5 @@ def generate_5color_extended_batch_zip():
         zf.write(f1, os.path.basename(f1))
         zf.write(f2, os.path.basename(f2))
     
-    _, prev, _ = generate_5color_extended_board(page_index=0)  # Show Page 1 as preview
+    _, prev, _ = generate_5color_extended_board(block_size_mm, gap_mm, page_index=0)  # Show Page 1 as preview
     return zip_path, prev, "✅ 5-Color Extended Kit (Page 1 & 2) Generated!"

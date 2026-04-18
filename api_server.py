@@ -7,9 +7,11 @@ and starts the uvicorn ASGI server. Run with ``python api_server.py``.
 通过 ``python api_server.py`` 运行。
 """
 
+import os
 import uvicorn
 
 if __name__ == "__main__":
     from api.app import app
 
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    _api_host = os.environ.get("LUMINA_HOST", "0.0.0.0").strip() or "0.0.0.0"
+    uvicorn.run(app, host=_api_host, port=8000)

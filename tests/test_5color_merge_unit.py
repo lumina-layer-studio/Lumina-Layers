@@ -160,7 +160,7 @@ class TestCalibration5ColorExtended:
     """Verify calibration generate endpoint dispatches to correct core function for 5-Color Extended."""
 
     def test_5color_extended_routes_to_generate_5color_extended_batch_zip(self) -> None:
-        """5-Color Extended (1444) mode dispatches to generate_5color_extended_batch_zip()."""
+        """5-Color Extended (1444) mode dispatches to generate_5color_extended_batch_zip(block, gap)."""
         mock_return = ("/tmp/fake_5c.zip", _mock_preview, "OK")
         with patch(
             "api.routers.calibration.generate_5color_extended_batch_zip",
@@ -176,7 +176,7 @@ class TestCalibration5ColorExtended:
                 },
             )
             assert response.status_code == 200
-            mock_fn.assert_called_once_with()
+            mock_fn.assert_called_once_with(5.0, 0.82)
 
     def test_5color_extended_response_contains_download_and_preview_urls(self) -> None:
         """Response should contain download_url and preview_url."""

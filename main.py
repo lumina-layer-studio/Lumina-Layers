@@ -179,6 +179,55 @@ def start_browser(port):
     time.sleep(2)
     webbrowser.open(f"http://127.0.0.1:{port}")
 
+def get_platform_head_js() -> str:
+    """Return platform-specific head patches.
+
+    macOS browsers can freeze when Babylon's Model3D widgets use WebGPU and the
+    Gradio tab containing them is hidden. Force WebGL fallback on macOS.
+    Detection is done client-side so remote clients are handled correctly.
+    """
+    return """
+<script>
+(function() {
+    if (window.__luminaWebGPUFallbackApplied) return;
+    window.__luminaWebGPUFallbackApplied = true;
+    var isMac = /Mac|iPhone|iPad|iPod/.test(navigator.platform || '') ||
+                (navigator.userAgent && /Macintosh/.test(navigator.userAgent));
+    if (!isMac) return;
+    try {
+        Object.defineProperty(Navigator.prototype, 'gpu', {
+            configurable: true,
+            get: function() {
+                return undefined;
+            }
+        });
+        console.log('[3D] Disabled navigator.gpu on macOS to force WebGL fallback');
+    } catch (error) {
+        try {
+            Object.defineProperty(navigator, 'gpu', {
+                configurable: true,
+                get: function() {
+                    return undefined;
+                }
+            });
+            console.log('[3D] Disabled navigator.gpu on macOS via navigator instance fallback');
+        } catch (innerError) {
+            console.warn('[3D] Failed to disable navigator.gpu:', innerError);
+        }
+    }
+})();
+</script>
+"""
+
+def get_server_host() -> str:
+    """Return the Gradio bind host.
+
+    Defaults to IPv4 loopback because Gradio's macOS localhost startup check
+    can resolve to IPv6 (::1), while 0.0.0.0 binds all IPv4 interfaces but
+    does not cover IPv6. Override with LUMINA_HOST for LAN / container access.
+    """
+    return os.environ.get("LUMINA_HOST", "127.0.0.1").strip() or "127.0.0.1"
+
 def _graceful_shutdown(signum, frame):
     """Handle SIGTERM/SIGINT for clean container shutdown.
     处理 SIGTERM/SIGINT 信号，实现容器优雅退出。
@@ -211,11 +260,12 @@ if __name__ == "__main__":
             print(f"[TRAY] {TRAY_POLICY_REASON}")
 
         threading.Thread(target=start_browser, args=(PORT,), daemon=True).start()
-        print(f"✨ Lumina Studio is running on http://127.0.0.1:{PORT}")
+        server_host = get_server_host()
+        print(f"✨ Lumina Studio is running on http://127.0.0.1:{PORT}  (bind: {server_host})")
         app = create_app()
 
         try:
-            from ui.layout_new import HEADER_CSS, DEBOUNCE_JS, FIVECOLOR_CLICK_JS
+            from ui.layout_new import HEADER_CSS, DEBOUNCE_JS, FIVECOLOR_CLICK_JS, CUSTOM_TAB_HEAD_JS
             # Import crop extension for head JS injection
             from ui.crop_extension import get_crop_head_js
             
@@ -231,14 +281,14 @@ if __name__ == "__main__":
             
             app.launch(
                 inbrowser=False,
-                server_name="0.0.0.0",
+                server_name=server_host,
                 server_port=PORT,
                 show_error=True,
                 prevent_thread_lock=True,
                 favicon_path=icon_path,
                 css=CUSTOM_CSS + HEADER_CSS,
                 theme=gr.themes.Soft(),
-                head=get_crop_head_js() + DEBOUNCE_JS + FIVECOLOR_CLICK_JS
+                head=get_platform_head_js() + get_crop_head_js() + DEBOUNCE_JS + FIVECOLOR_CLICK_JS + CUSTOM_TAB_HEAD_JS
             )
         except Exception as e:
             print(f"❌ Failed to launch Gradio app: {e}")

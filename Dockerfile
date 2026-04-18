@@ -29,6 +29,7 @@ EXPOSE 7860
 
 # Define environment variable to ensure output is flushed
 ENV PYTHONUNBUFFERED=1
+ENV LUMINA_HOST=0.0.0.0
 
 # Run the application
 CMD ["python", "main.py"]

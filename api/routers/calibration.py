@@ -59,7 +59,9 @@ def calibration_generate(
         elif mode == "8-Color Max":
             path, preview_img, status = generate_8color_batch_zip()
         elif mode == "5-Color Extended (1444)":
-            path, preview_img, status = generate_5color_extended_batch_zip()
+            path, preview_img, status = generate_5color_extended_batch_zip(
+                float(request.block_size), float(request.gap)
+            )
         else:
             raise HTTPException(
                 status_code=422, detail=f"Unsupported color mode: {mode}"

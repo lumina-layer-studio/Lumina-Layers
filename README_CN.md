@@ -152,7 +152,7 @@ cd Lumina-Layers
 
 2. **运行容器**：
    ```bash
-   docker run -p 7860:7860 lumina-layers
+   docker run -d -p 7860:7860 lumina-layers
    ```
 
 3. 在浏览器中打开 `http://localhost:7860`。

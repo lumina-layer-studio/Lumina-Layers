@@ -23,7 +23,7 @@
 </p>
 
 <p align="center">
-  <a href="README.md">📖 Chinese Version / 中文文档</a>
+  <a href="README_CN.md">📖 Chinese Version / 中文文档</a>
 </p>
 
 ---
@@ -131,6 +131,7 @@ All calibration presets (.npy files) are **completely free and open**, following
 ```bash
 git clone https://github.com/MOVIBALE/Lumina-Layers.git
 cd Lumina-Layers
+```
 
 ### Option 1：Docker 
 
@@ -142,7 +143,7 @@ Using Docker is the easiest way to run Lumina Studio without worrying about syst
 
 2. **Run Container**：
    ```bash
-   docker run -p 7860:7860 lumina-layers
+   docker run -d -p 7860:7860 lumina-layers
    ```
 
 3. Open in your browser `http://localhost:7860`。

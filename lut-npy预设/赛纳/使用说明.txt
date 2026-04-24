@@ -2,7 +2,7 @@
 PLA 白色
 PLA 黑色
 PLA 黄色
-PLA 大红色
+PLA 深红色
 PLA 品红色
 PLA  深蓝色（预设里对应蓝色）
 PLA 蓝色（实际盘子上写的cyan 青色，预设对应青色）

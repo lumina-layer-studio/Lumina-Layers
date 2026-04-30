@@ -1789,6 +1789,8 @@ def _get_all_component_updates(lang: str, components: dict) -> list:
                 choices = [
                     ("BW (Black & White)", "BW (Black & White)"),
                     ("4-Color (1024 colors)", "4-Color"),
+                    ("CMYW (Cyan/Magenta/Yellow/White)", "CMYW"),
+                    ("RYBW (Red/Yellow/Blue/White)", "RYBW"),
                     ("5-Color Extended (2468)", "5-Color Extended"),
                     ("6-Color (Smart 1296)", "6-Color (Smart 1296)"),
                     ("8-Color Max", "8-Color Max"),
@@ -2227,6 +2229,8 @@ def create_converter_tab_content(lang: str, lang_state=None, theme_state=None) -
                     choices=[
                         ("BW (Black & White)", "BW (Black & White)"),
                         ("4-Color (1024 colors)", "4-Color"),
+                        ("CMYW (Cyan/Magenta/Yellow/White)", "CMYW"),
+                        ("RYBW (Red/Yellow/Blue/White)", "RYBW"),
                         ("5-Color Extended (2468)", "5-Color Extended"),
                         ("6-Color (Smart 1296)", "6-Color (Smart 1296)"),
                         ("8-Color Max", "8-Color Max"),
@@ -4704,6 +4708,8 @@ def create_calibration_tab_content(lang: str) -> dict:
                 choices=[
                     ("BW (Black & White)", "BW (Black & White)"),
                     ("4-Color (1024 colors)", "4-Color"),
+                    ("CMYW (Cyan/Magenta/Yellow/White)", "CMYW"),
+                    ("RYBW (Red/Yellow/Blue/White)", "RYBW"),
                     ("5-Color Extended (Dual Page)", "5-Color Extended (Dual Page)"),
                     ("6-Color (Smart 1296)", "6-Color (Smart 1296)"),
                     ("8-Color Max", "8-Color Max")
@@ -4771,8 +4777,9 @@ def create_calibration_tab_content(lang: str) -> dict:
             return generate_bw_calibration_board(block_size, gap, backing)
         else:
             # Call traditional 4-color generator (unified for all 4-color modes)
-            # Default to RYBW palette
-            return generate_calibration_board("RYBW", block_size, gap, backing)
+            # Pass actual mode for CMYW/RYBW, default RYBW for generic "4-Color"
+            actual_mode = color_mode if color_mode in ("CMYW", "RYBW") else "RYBW"
+            return generate_calibration_board(actual_mode, block_size, gap, backing)
     
     cal_event = components['btn_cal_generate_btn'].click(
             generate_board_wrapper,
@@ -4813,6 +4820,8 @@ def create_extractor_tab_content(lang: str) -> dict:
                 choices=[
                     ("BW (Black & White)", "BW (Black & White)"),
                     ("4-Color (1024 colors)", "4-Color"),
+                    ("CMYW (Cyan/Magenta/Yellow/White)", "CMYW"),
+                    ("RYBW (Red/Yellow/Blue/White)", "RYBW"),
                     ("5-Color Extended (2468)", "5-Color Extended"),
                     ("6-Color (Smart 1296)", "6-Color (Smart 1296)"),
                     ("8-Color Max", "8-Color Max")

@@ -6,6 +6,23 @@ All notable changes to Lumina Studio are documented in this file.
 
 ---
 
+## v1.6.8 (2026-04-30)
+
+### Bug Fixes
+- **fix(color)**: Distinguished CMYW and RYBW as separate color subtypes in `infer_color_mode()` and `ColorSystem.get()` — CMYW LUTs were previously misidentified as RYBW, causing wrong slot names, wrong filament colors, and wrong corner labels in 3MF export
+- **fix(color)**: Preserved CMYW/RYBW subtype through the full pipeline: LUT detection → config lookup → API schemas → Gradio UI → 3MF export, ensuring Cyan/Magenta/Yellow slots are used instead of Red/Blue/Yellow
+- **fix(3mf)**: Fixed `bambu_3mf_writer.py` overwriting CMYW/RYBW to generic "4-Color" mode, which always fell back to RYBW color mapping
+- **fix(ui)**: Added CMYW and RYBW as distinct color mode options in all Gradio Radio components (converter, calibration, extractor tabs)
+- **fix(ui)**: Fixed `generate_board_wrapper` in Gradio UI always passing "RYBW" to calibration generator regardless of selected mode
+- **fix(ui)**: Fixed `<label htmlFor>` not matching any element `id` in Dropdown and Slider React components
+- **fix(color)**: Updated Cyan/Magenta/Yellow filament colors to pure RGB values (`#00FFFF`/`#FF00FF`/`#FFFF00`) across CMYW, 6-Color, and 8-Color modes for accurate 3MF rendering
+
+### Changes
+- Added `CMYW` and `RYBW` enum values to `CalibrationColorMode`, `ColorMode` (backend schemas and frontend TypeScript types)
+- Added CMYW/RYBW routing entries in calibration API router and test routing maps
+
+---
+
 ## v1.6.7 (2026-03-29)
 
 ### Bug Fixes

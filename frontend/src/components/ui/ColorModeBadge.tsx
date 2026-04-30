@@ -4,10 +4,10 @@ interface ColorModeBadgeProps {
 
 // Filament dot colors per mode  (hex strings for inline style)
 const DOTS_RYBW    = ["#DC143C", "#FFE600", "#0064F0", "#F0F0F0"];
-const DOTS_CMYW    = ["#0086D6", "#EC008C", "#F4EE2A", "#F0F0F0"];
+const DOTS_CMYW    = ["#00FFFF", "#FF00FF", "#FFFF00", "#F0F0F0"];
 const DOTS_RYBWGK  = ["#00AE42", "#111111", "#DC143C", "#FFE600", "#0064F0", "#F0F0F0"];
-const DOTS_CMYWGK  = ["#00AE42", "#111111", "#0086D6", "#EC008C", "#F4EE2A", "#F0F0F0"];
-const DOTS_8COLOR  = ["#C12E1F", "#F4EE2A", "#0064F0", "#EC008C", "#0086D6", "#F0F0F0", "#00AE42", "#111111"];
+const DOTS_CMYWGK  = ["#00AE42", "#111111", "#00FFFF", "#FF00FF", "#FFFF00", "#F0F0F0"];
+const DOTS_8COLOR  = ["#C12E1F", "#FFFF00", "#0064F0", "#FF00FF", "#00FFFF", "#F0F0F0", "#00AE42", "#111111"];
 const DOTS_BW      = ["#F0F0F0", "#111111"];
 const DOTS_5COLOR  = ["#DC143C", "#FFE600", "#0064F0", "#F0F0F0", "#111111"];
 

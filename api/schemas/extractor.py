@@ -37,6 +37,8 @@ class CalibrationColorMode(str, Enum):
 
     BW = "BW (Black & White)"
     FOUR_COLOR = "4-Color"
+    CMYW = "CMYW"
+    RYBW = "RYBW"
     FIVE_COLOR_EXT = "5-Color Extended (1444)"
     SIX_COLOR = "6-Color (Smart 1296)"
     EIGHT_COLOR = "8-Color Max"

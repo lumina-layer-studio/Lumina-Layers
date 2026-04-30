@@ -117,6 +117,11 @@ class LUTManager:
         if "6色" in combined or "6-COLOR" in combined or "6COLOR" in combined:
             return "6-Color (Smart 1296)"
         if "4色" in combined or "4-COLOR" in combined or "4COLOR" in combined:
+            # 4-色模式需进一步区分子类型（CMYW / RYBW）
+            if "CMYW" in combined or "青品黄" in combined:
+                return "CMYW"
+            if "RYBW" in combined or "红黄蓝" in combined:
+                return "RYBW"
             return "4-Color"
         if "黑白" in combined or "B&W" in combined:
             return "BW (Black & White)"
@@ -142,11 +147,11 @@ class LUTManager:
 
         # ── 第三优先：颜色系关键词（仅在确认为 4-色时区分子类型）────────
         if "CMYW" in combined or "青品黄" in combined:
-            return "4-Color"
+            return "CMYW"
         if "RYBW" in combined or "红黄蓝" in combined:
-            return "4-Color"
+            return "RYBW"
 
-        # 默认回退为 4-Color
+        # 默认回退为 RYBW
         return "4-Color"
     
     @classmethod

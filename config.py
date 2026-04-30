@@ -236,26 +236,26 @@ class ColorSystem:
         """
         if mode is None:
             return ColorSystem.RYBW  # Default fallback
-        
+
+        # Explicit CMYW/RYBW subtypes (must check BEFORE generic "4-Color")
+        if "CMYW" in mode:
+            return ColorSystem.CMYW
+        if "RYBW" in mode:
+            return ColorSystem.RYBW
+
         # Unified 4-Color mode (defaults to RYBW)
         if mode == "4-Color" or "4-Color" in mode:
             return ColorSystem.RYBW
-        
+
         # Check specific patterns
         if "8-Color" in mode:
             return ColorSystem.EIGHT_COLOR
         if "6-Color" in mode:
             return ColorSystem.SIX_COLOR
-        
+
         # Merged LUT: use 8-Color config (superset of all material IDs 0-7)
         if mode == "Merged":
             return ColorSystem.EIGHT_COLOR
-        
-        # Legacy support for old mode strings
-        if "RYBW" in mode:
-            return ColorSystem.RYBW
-        if "CMYW" in mode:
-            return ColorSystem.CMYW
         
         # Check BW last to avoid matching RYBW
         if mode == "BW" or mode == "BW (Black & White)":

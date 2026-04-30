@@ -1,3 +1,5 @@
+import { useId } from "react";
+
 interface DropdownProps {
   label: string;
   value: string;
@@ -15,10 +17,12 @@ export default function Dropdown({
   disabled = false,
   placeholder,
 }: DropdownProps) {
+  const id = useId();
   return (
     <div className="flex flex-col gap-1">
-      <label className="text-sm text-gray-700 dark:text-gray-300">{label}</label>
+      <label htmlFor={id} className="text-sm text-gray-700 dark:text-gray-300">{label}</label>
       <select
+        id={id}
         value={value}
         disabled={disabled}
         onChange={(e) => onChange(e.target.value)}

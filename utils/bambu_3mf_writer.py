@@ -490,10 +490,14 @@ class BambuStudio3MFWriter:
         # CRITICAL: Build color arrays from ACTUAL meshes added, not from color_conf
         # This ensures colors match the actual objects in the model
         arrays['filament_colour'] = []
+        arrays['filament_multi_colour'] = []
+        arrays['default_filament_colour'] = []
         for mesh, name, color_rgb in self.objects:
             # Convert RGB to hex
             hex_color = f"#{color_rgb[0]:02X}{color_rgb[1]:02X}{color_rgb[2]:02X}"
             arrays['filament_colour'].append(hex_color)
+            arrays['filament_multi_colour'].append(hex_color)
+            arrays['default_filament_colour'].append(hex_color)
         
         # ALL filament arrays MUST have length = num_colors (not 8!)
         arrays['filament_settings_id'] = ['Bambu PLA Basic @BBL H2D'] * num_colors

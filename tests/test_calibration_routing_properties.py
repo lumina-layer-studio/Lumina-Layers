@@ -46,6 +46,9 @@ gap_values = st.floats(min_value=0.4, max_value=2.0, allow_nan=False, allow_infi
 _MODE_TO_MOCK_TARGET: dict[str, str] = {
     "BW (Black & White)": "api.routers.calibration.generate_bw_calibration_board",
     "4-Color": "api.routers.calibration.generate_calibration_board",
+    "CMYW": "api.routers.calibration.generate_calibration_board",
+    "RYBW": "api.routers.calibration.generate_calibration_board",
+    "5-Color Extended (1444)": "api.routers.calibration.generate_5color_extended_batch_zip",
     "6-Color (Smart 1296)": "api.routers.calibration.generate_smart_board",
     "8-Color Max": "api.routers.calibration.generate_8color_batch_zip",
 }
@@ -130,6 +133,10 @@ def test_block_size_and_gap_do_not_cause_parameter_errors(
         ),
         patch(
             "api.routers.calibration.generate_8color_batch_zip",
+            return_value=_mock_return,
+        ),
+        patch(
+            "api.routers.calibration.generate_5color_extended_batch_zip",
             return_value=_mock_return,
         ),
     ):

@@ -490,10 +490,14 @@ class BambuStudio3MFWriter:
         # CRITICAL: Build color arrays from ACTUAL meshes added, not from color_conf
         # This ensures colors match the actual objects in the model
         arrays['filament_colour'] = []
+        arrays['filament_multi_colour'] = []
+        arrays['default_filament_colour'] = []
         for mesh, name, color_rgb in self.objects:
             # Convert RGB to hex
             hex_color = f"#{color_rgb[0]:02X}{color_rgb[1]:02X}{color_rgb[2]:02X}"
             arrays['filament_colour'].append(hex_color)
+            arrays['filament_multi_colour'].append(hex_color)
+            arrays['default_filament_colour'].append(hex_color)
         
         # ALL filament arrays MUST have length = num_colors (not 8!)
         arrays['filament_settings_id'] = ['Bambu PLA Basic @BBL H2D'] * num_colors
@@ -587,7 +591,7 @@ class BambuStudio3MFWriter:
         
         header = ET.SubElement(config, 'header')
         ET.SubElement(header, 'header_item', attrib={'key': 'X-BBL-Client-Type', 'value': 'slicer'})
-        ET.SubElement(header, 'header_item', attrib={'key': 'X-BBL-Client-Version', 'value': 'Lumina-1.6.7'})
+        ET.SubElement(header, 'header_item', attrib={'key': 'X-BBL-Client-Version', 'value': 'Lumina-1.6.8'})
         
         tree = ET.ElementTree(config)
         ET.indent(tree, space='  ')
@@ -694,9 +698,12 @@ def export_scene_with_bambu_metadata(scene: trimesh.Scene, output_path: str,
     # CRITICAL: Use actual number of colors, not the LUT color mode
     # This ensures filament list matches actual model parts
     num_used_colors = len(slot_names)
-    
-    # Map actual usage to color mode
-    if num_used_colors <= 2:
+
+    # If caller already specified a specific subtype (CMYW/RYBW), keep it;
+    # otherwise infer from the number of colors used.
+    if color_mode in ('CMYW', 'RYBW'):
+        actual_color_mode = color_mode
+    elif num_used_colors <= 2:
         actual_color_mode = 'BW'
     elif num_used_colors <= 4:
         actual_color_mode = '4-Color'

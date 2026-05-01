@@ -4139,13 +4139,24 @@ def generate_lut_card_grid_html(lut_path, lang: str = "zh"):
 
 # ========== Auto-detection Functions ==========
 
+def _infer_4color_subtype(lut_path: str) -> str:
+    """Distinguish CMYW vs RYBW from filename keywords.
+    Returns "CMYW", "RYBW", or "4-Color" (unknown)."""
+    name = os.path.basename(lut_path).upper()
+    if "CMYW" in name or "青品黄" in name:
+        return "CMYW"
+    if "RYBW" in name or "红黄蓝" in name:
+        return "RYBW"
+    return "4-Color"
+
+
 def detect_lut_color_mode(lut_path):
     """
     自动检测LUT文件的颜色模式
-    
+
     Args:
         lut_path: LUT文件路径
-    
+
     Returns:
         str: 颜色模式 ("BW (Black & White)", "Merged", "6-Color (Smart 1296)", "8-Color Max", etc.)
     """
@@ -4171,8 +4182,9 @@ def detect_lut_color_mode(lut_path):
                     print(f"[AUTO_DETECT] Detected 6-Color mode from .npz ({total_colors} colors)")
                     return "6-Color (Smart 1296)"
                 if total_colors >= 900 and total_colors < 1200:
-                    print(f"[AUTO_DETECT] Detected 4-Color mode from .npz ({total_colors} colors)")
-                    return "4-Color"
+                    subtype = _infer_4color_subtype(lut_path)
+                    print(f"[AUTO_DETECT] Detected {subtype} mode from .npz ({total_colors} colors)")
+                    return subtype
                 if total_colors >= 30 and total_colors <= 36:
                     print(f"[AUTO_DETECT] Detected 2-Color BW mode from .npz ({total_colors} colors)")
                     return "BW (Black & White)"
@@ -4221,8 +4233,9 @@ def detect_lut_color_mode(lut_path):
         
         # 4色模式：900-1200色
         elif total_colors >= 900 and total_colors < 1200:
-            print(f"[AUTO_DETECT] Detected 4-Color mode ({total_colors} colors)")
-            return "4-Color"
+            subtype = _infer_4color_subtype(lut_path)
+            print(f"[AUTO_DETECT] Detected {subtype} mode ({total_colors} colors)")
+            return subtype
         
         else:
             # 非标准尺寸：识别为合并色卡

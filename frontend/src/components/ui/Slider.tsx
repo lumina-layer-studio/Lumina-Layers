@@ -1,3 +1,5 @@
+import { useId } from "react";
+
 interface SliderProps {
   label: string;
   value: number;
@@ -19,11 +21,12 @@ export default function Slider({
   disabled = false,
   unit,
 }: SliderProps) {
+  const id = useId();
   return (
     <div className="flex flex-col gap-1">
       {label && (
         <div className="flex items-center justify-between text-sm">
-          <label className="text-gray-700 dark:text-gray-300">{label}</label>
+          <label htmlFor={id} className="text-gray-700 dark:text-gray-300">{label}</label>
           <span className="text-gray-500 dark:text-gray-400 tabular-nums">
             {typeof value === 'number' ? Number(value.toFixed(2)) : value}
             {unit ? ` ${unit}` : ""}
@@ -32,6 +35,7 @@ export default function Slider({
       )}
       <div className="flex items-center gap-2">
         <input
+          id={id}
           type="range"
           min={min}
           max={max}

@@ -38,13 +38,13 @@ def _build_full_color_region_mask(cache, selected_color: str):
 # ═══════════════════════════════════════════════════════════════
 
 _MODE_DOTS = {
-    "8-Color":          ["#C12E1F","#F4EE2A","#0064F0","#EC008C","#0086D6","#F0F0F0","#00AE42","#111111"],
-    "6-Color-CMYWGK":   ["#00AE42","#111111","#0086D6","#EC008C","#F4EE2A","#F0F0F0"],
+    "8-Color":          ["#C12E1F","#FFFF00","#0064F0","#FF00FF","#00FFFF","#F0F0F0","#00AE42","#111111"],
+    "6-Color-CMYWGK":   ["#00AE42","#111111","#00FFFF","#FF00FF","#FFFF00","#F0F0F0"],
     "6-Color-RYBWGK":   ["#00AE42","#111111","#DC143C","#FFE600","#0064F0","#F0F0F0"],
     "6-Color":          ["#00AE42","#111111","#DC143C","#FFE600","#0064F0","#F0F0F0"],
     "5-Color Extended": ["#DC143C","#FFE600","#0064F0","#F0F0F0","#111111"],
     "BW":               ["#F0F0F0","#111111"],
-    "4-Color-CMYW":     ["#0086D6","#EC008C","#F4EE2A","#F0F0F0"],
+    "4-Color-CMYW":     ["#00FFFF","#FF00FF","#FFFF00","#F0F0F0"],
     "4-Color":          ["#DC143C","#FFE600","#0064F0","#F0F0F0"],
 }
 

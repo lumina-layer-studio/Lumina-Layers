@@ -6,6 +6,23 @@ Lumina Studio 所有重要变更记录。
 
 ---
 
+## v1.6.8 (2026-04-30)
+
+### Bug 修复
+- **fix(color)**: 区分 CMYW 和 RYBW 为独立颜色子类型——`infer_color_mode()` 和 `ColorSystem.get()` 现在正确识别 CMYW LUT，不再统一回退到 RYBW，修复了 3MF 导出中槽名、耗材颜色、角标全部错误的问题
+- **fix(color)**: CMYW/RYBW 子类型现在贯穿完整管线：LUT 检测 → 配置查找 → API Schema → Gradio UI → 3MF 导出，确保青/品红/黄槽位正确映射
+- **fix(3mf)**: 修复 `bambu_3mf_writer.py` 将 CMYW/RYBW 覆盖为通用 "4-Color" 模式导致始终回退到 RYBW 颜色映射的问题
+- **fix(ui)**: Gradio 所有 Radio 组件（转换器/校准板/提取器 tab）新增 CMYW 和 RYBW 独立选项
+- **fix(ui)**: 修复 Gradio 校准板生成器始终传 "RYBW" 给生成函数的问题
+- **fix(ui)**: 修复 React Dropdown 和 Slider 组件 `<label htmlFor>` 与元素 `id` 不匹配的无障碍报错
+- **fix(color)**: Cyan/Magenta/Yellow 耗材色值统一更新为纯 RGB（`#00FFFF`/`#FF00FF`/`#FFFF00`），适用于 CMYW、6色、8色模式
+
+### 变更
+- `CalibrationColorMode`、`ColorMode`（后端 Schema 和前端 TypeScript）新增 `CMYW` 和 `RYBW` 枚举值
+- 校准板 API 路由和测试路由表新增 CMYW/RYBW 条目
+
+---
+
 ## v1.6.7 (2026-03-29)
 
 ### Bug 修复

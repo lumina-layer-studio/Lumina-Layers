@@ -9,6 +9,8 @@ export interface HealthResponse {
 export enum ColorMode {
   BW = "BW (Black & White)",
   FOUR_COLOR = "4-Color",
+  CMYW = "CMYW",
+  RYBW = "RYBW",
   SIX_COLOR = "6-Color (Smart 1296)",
   EIGHT_COLOR = "8-Color Max",
   MERGED = "Merged",
@@ -145,6 +147,8 @@ export interface BedSizeListResponse {
 export enum CalibrationColorMode {
   BW = "BW (Black & White)",
   FOUR_COLOR = "4-Color",
+  CMYW = "CMYW",
+  RYBW = "RYBW",
   FIVE_COLOR_EXT = "5-Color Extended (1444)",
   SIX_COLOR = "6-Color (Smart 1296)",
   EIGHT_COLOR = "8-Color Max",
@@ -182,6 +186,8 @@ export interface CalibrationResponse {
 export enum ExtractorColorMode {
   BW = "BW (Black & White)",
   FOUR_COLOR = "4-Color",
+  CMYW = "CMYW",
+  RYBW = "RYBW",
   FIVE_COLOR_EXT = "5-Color Extended",
   SIX_COLOR = "6-Color (Smart 1296)",
   EIGHT_COLOR = "8-Color Max",

@@ -105,10 +105,10 @@ class SmartConfig:
 
     FILAMENTS = {
         0: {"name": "White",   "hex": "#FFFFFF", "rgb": [255, 255, 255], "td": 5.0},
-        1: {"name": "Cyan",    "hex": "#0086D6", "rgb": [0, 134, 214],   "td": 3.5},
-        2: {"name": "Magenta", "hex": "#EC008C", "rgb": [236, 0, 140],   "td": 3.0},
+        1: {"name": "Cyan",    "hex": "#00FFFF", "rgb": [0, 255, 255],   "td": 3.5},
+        2: {"name": "Magenta", "hex": "#FF00FF", "rgb": [255, 0, 255],   "td": 3.0},
         3: {"name": "Green",   "hex": "#00AE42", "rgb": [0, 174, 66],    "td": 2.0},
-        4: {"name": "Yellow",  "hex": "#F4EE2A", "rgb": [244, 238, 42],  "td": 6.0},
+        4: {"name": "Yellow",  "hex": "#FFFF00", "rgb": [255, 255, 0],   "td": 6.0},
         5: {"name": "Black",   "hex": "#000000", "rgb": [0, 0, 0],       "td": 0.6},
     }
 
@@ -135,10 +135,10 @@ class ColorSystem:
         'name': 'CMYW',
         'slots': ["White", "Cyan", "Magenta", "Yellow"],
         'preview': {
-            0: [255, 255, 255, 255],
-            1: [0, 134, 214, 255],
-            2: [236, 0, 140, 255],
-            3: [244, 238, 42, 255]
+            0: [255, 255, 255, 255],  # White
+            1: [0, 255, 255, 255],    # Cyan (#00FFFF)
+            2: [255, 0, 255, 255],    # Magenta (#FF00FF)
+            3: [255, 255, 0, 255]     # Yellow (#FFFF00)
         },
         'map': {"White": 0, "Cyan": 1, "Magenta": 2, "Yellow": 3},
         'corner_labels': ["白色 (左上)", "青色 (右上)", "品红 (右下)", "黄色 (左下)"],
@@ -166,10 +166,10 @@ class ColorSystem:
         'slots': ["White", "Cyan", "Magenta", "Green", "Yellow", "Black"],
         'preview': {
             0: [255, 255, 255, 255],  # White
-            1: [0, 134, 214, 255],    # Cyan
-            2: [236, 0, 140, 255],    # Magenta
+            1: [0, 255, 255, 255],    # Cyan (#00FFFF)
+            2: [255, 0, 255, 255],    # Magenta (#FF00FF)
             3: [0, 174, 66, 255],     # Green
-            4: [244, 238, 42, 255],   # Yellow
+            4: [255, 255, 0, 255],    # Yellow (#FFFF00)
             5: [0, 0, 0, 255]         # Black (纯黑 #000000)
         },
         'map': {"White": 0, "Cyan": 1, "Magenta": 2, "Green": 3, "Yellow": 4, "Black": 5},
@@ -181,7 +181,7 @@ class ColorSystem:
         'name': '8-Color Max',
         'slots': ['Slot 1 (White)', 'Slot 2 (Cyan)', 'Slot 3 (Magenta)', 'Slot 4 (Yellow)', 'Slot 5 (Black)', 'Slot 6 (Red)', 'Slot 7 (Deep Blue)', 'Slot 8 (Green)'],
         'preview': {
-            0: [255, 255, 255, 255], 1: [0, 134, 214, 255], 2: [236, 0, 140, 255], 3: [244, 238, 42, 255],
+            0: [255, 255, 255, 255], 1: [0, 255, 255, 255], 2: [255, 0, 255, 255], 3: [255, 255, 0, 255],
             4: [0, 0, 0, 255], 5: [193, 46, 31, 255], 6: [10, 41, 137, 255], 7: [0, 174, 66, 255]
         },
         'map': {'White': 0, 'Cyan': 1, 'Magenta': 2, 'Yellow': 3, 'Black': 4, 'Red': 5, 'Deep Blue': 6, 'Green': 7},
@@ -236,26 +236,26 @@ class ColorSystem:
         """
         if mode is None:
             return ColorSystem.RYBW  # Default fallback
-        
+
+        # Explicit CMYW/RYBW subtypes (must check BEFORE generic "4-Color")
+        if "CMYW" in mode:
+            return ColorSystem.CMYW
+        if "RYBW" in mode:
+            return ColorSystem.RYBW
+
         # Unified 4-Color mode (defaults to RYBW)
         if mode == "4-Color" or "4-Color" in mode:
             return ColorSystem.RYBW
-        
+
         # Check specific patterns
         if "8-Color" in mode:
             return ColorSystem.EIGHT_COLOR
         if "6-Color" in mode:
             return ColorSystem.SIX_COLOR
-        
+
         # Merged LUT: use 8-Color config (superset of all material IDs 0-7)
         if mode == "Merged":
             return ColorSystem.EIGHT_COLOR
-        
-        # Legacy support for old mode strings
-        if "RYBW" in mode:
-            return ColorSystem.RYBW
-        if "CMYW" in mode:
-            return ColorSystem.CMYW
         
         # Check BW last to avoid matching RYBW
         if mode == "BW" or mode == "BW (Black & White)":

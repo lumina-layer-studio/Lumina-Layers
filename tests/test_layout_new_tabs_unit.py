@@ -5,7 +5,7 @@ from ui.layout_new import CUSTOM_TAB_HEAD_JS, HEADER_CSS, create_app
 
 def test_header_css_shows_converter_by_default_and_hides_other_tabs():
     assert re.search(
-        r"#tab-content-calibration,\s*#tab-content-extractor,\s*#tab-content-advanced,\s*#tab-content-merge,\s*#tab-content-5color,\s*#tab-content-about\s*\{\s*display:\s*none;",
+        r"#tab-content-calibration,\s*#tab-content-extractor,\s*#tab-content-merge,\s*#tab-content-5color,\s*#tab-content-settings\s*\{\s*display:\s*none;",
         HEADER_CSS,
         re.S,
     )
@@ -30,17 +30,15 @@ def test_create_app_registers_all_custom_tab_ids():
         "tab-btn-converter",
         "tab-btn-calibration",
         "tab-btn-extractor",
-        "tab-btn-advanced",
         "tab-btn-merge",
         "tab-btn-5color",
-        "tab-btn-about",
+        "tab-btn-settings",
         "tab-content-converter",
         "tab-content-calibration",
         "tab-content-extractor",
-        "tab-content-advanced",
         "tab-content-merge",
         "tab-content-5color",
-        "tab-content-about",
+        "tab-content-settings",
     }
 
     found_ids = {

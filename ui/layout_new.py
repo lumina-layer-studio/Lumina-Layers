@@ -168,6 +168,29 @@ DEBOUNCE_JS = """
 </script>
 """
 
+DROPDOWN_SCROLL_FIX_JS = """
+<script>
+(function() {
+  if (window.__luminaDropdownScrollFix) return;
+  window.__luminaDropdownScrollFix = true;
+
+  document.addEventListener('scroll', function(e) {
+    // Ignore scroll events from within dropdown option lists
+    if (e.target.closest('ul') && e.target.closest('.wrap')) {
+      return;
+    }
+    // Close open dropdown by blurring active input inside a .wrap container
+    var active = document.activeElement;
+    if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA')) {
+      if (active.closest('.wrap')) {
+        active.blur();
+      }
+    }
+  }, true);
+})();
+</script>
+"""
+
 CONFIG_FILE = "user_settings.json"
 
 
@@ -695,10 +718,9 @@ HEADER_CSS = """
 
 #tab-content-calibration,
 #tab-content-extractor,
-#tab-content-advanced,
 #tab-content-merge,
 #tab-content-5color,
-#tab-content-about {
+#tab-content-settings {
     display: none;
 }
 
@@ -910,10 +932,9 @@ CUSTOM_TAB_HEAD_JS = """
         { key: "converter", buttonId: "tab-btn-converter", contentId: "tab-content-converter" },
         { key: "calibration", buttonId: "tab-btn-calibration", contentId: "tab-content-calibration" },
         { key: "extractor", buttonId: "tab-btn-extractor", contentId: "tab-content-extractor" },
-        { key: "advanced", buttonId: "tab-btn-advanced", contentId: "tab-content-advanced" },
         { key: "merge", buttonId: "tab-btn-merge", contentId: "tab-content-merge" },
         { key: "5color", buttonId: "tab-btn-5color", contentId: "tab-content-5color" },
-        { key: "about", buttonId: "tab-btn-about", contentId: "tab-content-about" }
+        { key: "settings", buttonId: "tab-btn-settings", contentId: "tab-content-settings" }
     ];
 
     window.luminaSwitchTab = function(activeKey) {
@@ -1223,7 +1244,7 @@ def process_batch_generation(batch_files, is_batch, single_image, lut_path, targ
     return None, None, _preview_update(None), "[ERROR] Batch failed: no valid models.\n" + "\n".join(logs), None
 
 
-# ========== Advanced Tab Callbacks ==========
+# ========== Settings Tab Callbacks ==========
 
 
 def _update_lut_grid(lut_path, lang, palette_mode="swatch"):
@@ -1275,18 +1296,12 @@ def create_app():
         lang_state = gr.State(value="zh")
         theme_state = gr.State(value=False)  # False=light, True=dark
 
-        # Header + Stats merged into one row
+        # Header
         with gr.Row(elem_classes=["header-row"], equal_height=True):
-            with gr.Column(scale=6):
+            with gr.Column(scale=10):
                 app_title_html = gr.HTML(
                     value=f"<h1>✨ Lumina Studio</h1><p>{I18n.get('app_subtitle', 'zh')}</p>",
                     elem_id="app-header"
-                )
-            with gr.Column(scale=4):
-                stats = Stats.get_all()
-                stats_html = gr.HTML(
-                    value=_get_stats_html("zh", stats),
-                    elem_classes=["stats-bar-inline"]
                 )
             with gr.Column(scale=1, min_width=140, elem_classes=["header-controls"]):
                 lang_btn = gr.Button(
@@ -1319,11 +1334,6 @@ def create_app():
                 elem_id="tab-btn-extractor",
                 elem_classes=["custom-tab-btn"],
             )
-            tab_components['tab_advanced'] = gr.Button(
-                value="🔬 高级",
-                elem_id="tab-btn-advanced",
-                elem_classes=["custom-tab-btn"],
-            )
             tab_components['tab_merge'] = gr.Button(
                 value=I18n.get('tab_merge', "zh"),
                 elem_id="tab-btn-merge",
@@ -1334,9 +1344,9 @@ def create_app():
                 elem_id="tab-btn-5color",
                 elem_classes=["custom-tab-btn"],
             )
-            tab_components['tab_about'] = gr.Button(
-                value=I18n.get('tab_about', "zh"),
-                elem_id="tab-btn-about",
+            tab_components['tab_settings'] = gr.Button(
+                value="⚙️ 软件设置",
+                elem_id="tab-btn-settings",
                 elem_classes=["custom-tab-btn"],
             )
 
@@ -1352,10 +1362,6 @@ def create_app():
             ext_components = create_extractor_tab_content("zh")
             components.update(ext_components)
 
-        with gr.Column(visible=True, elem_id="tab-content-advanced"):
-            advanced_components = create_advanced_tab_content("zh")
-            components.update(advanced_components)
-
         with gr.Column(visible=True, elem_id="tab-content-merge"):
             merge_components = create_merge_tab_content("zh")
             components.update(merge_components)
@@ -1364,9 +1370,9 @@ def create_app():
             from ui.fivecolor_tab_v2 import create_5color_tab_v2
             create_5color_tab_v2("zh")
 
-        with gr.Column(visible=True, elem_id="tab-content-about"):
-            about_components = create_about_tab_content("zh")
-            components.update(about_components)
+        with gr.Column(visible=True, elem_id="tab-content-settings"):
+            settings_components = create_settings_tab_content("zh")
+            components.update(settings_components)
 
         tab_components['tab_converter'].click(
             fn=None,
@@ -1386,12 +1392,6 @@ def create_app():
             outputs=None,
             js="() => { window.luminaSwitchTab && window.luminaSwitchTab('extractor'); }",
         )
-        tab_components['tab_advanced'].click(
-            fn=None,
-            inputs=None,
-            outputs=None,
-            js="() => { window.luminaSwitchTab && window.luminaSwitchTab('advanced'); }",
-        )
         tab_components['tab_merge'].click(
             fn=None,
             inputs=None,
@@ -1404,11 +1404,11 @@ def create_app():
             outputs=None,
             js="() => { window.luminaSwitchTab && window.luminaSwitchTab('5color'); }",
         )
-        tab_components['tab_about'].click(
+        tab_components['tab_settings'].click(
             fn=None,
             inputs=None,
             outputs=None,
-            js="() => { window.luminaSwitchTab && window.luminaSwitchTab('about'); }",
+            js="() => { window.luminaSwitchTab && window.luminaSwitchTab('settings'); }",
         )
 
         footer_html = gr.HTML(
@@ -1424,15 +1424,12 @@ def create_app():
             theme_label = I18n.get('theme_toggle_day', new_lang) if is_dark else I18n.get('theme_toggle_night', new_lang)
             updates.append(gr.update(value=theme_label))
             updates.append(gr.update(value=_get_header_html(new_lang)))
-            stats = Stats.get_all()
-            updates.append(gr.update(value=_get_stats_html(new_lang, stats)))
             updates.append(gr.update(value=I18n.get('tab_converter', new_lang)))
             updates.append(gr.update(value=I18n.get('tab_calibration', new_lang)))
             updates.append(gr.update(value=I18n.get('tab_extractor', new_lang)))
-            updates.append(gr.update(value="🔬 高级" if new_lang == "zh" else "🔬 Advanced"))
             updates.append(gr.update(value=I18n.get('tab_merge', new_lang)))
             updates.append(gr.update(value="🎨 配色查询" if new_lang == "zh" else "🎨 Color Query"))
-            updates.append(gr.update(value=I18n.get('tab_about', new_lang)))
+            updates.append(gr.update(value=I18n.get('tab_settings', new_lang)))
             updates.extend(_get_all_component_updates(new_lang, components))
             updates.append(gr.update(value=_get_footer_html(new_lang)))
             updates.append(new_lang)
@@ -1442,14 +1439,12 @@ def create_app():
             lang_btn,
             theme_btn,
             app_title_html,
-            stats_html,
             tab_components['tab_converter'],
             tab_components['tab_calibration'],
             tab_components['tab_extractor'],
-            tab_components['tab_advanced'],
             tab_components['tab_merge'],
             tab_components['tab_5color'],
-            tab_components['tab_about'],
+            tab_components['tab_settings'],
         ]
         output_list.extend(_get_component_list(components))
         output_list.extend([footer_html, lang_state])
@@ -1575,9 +1570,14 @@ def create_app():
                 new_stats.get('extractions', 0),
                 new_stats.get('conversions', 0)
             )
-            return status_msg, _get_stats_html(lang, new_stats)
+            stats_line = I18n.get('settings_stats', lang).format(
+                cal=new_stats.get('calibrations', 0),
+                ext=new_stats.get('extractions', 0),
+                conv=new_stats.get('conversions', 0)
+            )
+            return status_msg, stats_line
 
-        # ========== Advanced Tab Events ==========
+        # ========== Settings Tab Events ==========
         def on_unlock_max_size(unlock: bool):
             """Toggle max size limit for width/height sliders."""
             new_max = 9999 if unlock else 400
@@ -1589,7 +1589,7 @@ def create_app():
             outputs=[components['slider_conv_width'], components['slider_conv_height']]
         )
 
-        # ========== About Tab Events ==========
+        # ========== Settings Tab Events (continued) ==========
         components['btn_clear_cache'].click(
             fn=on_clear_cache,
             inputs=[lang_state],
@@ -1605,7 +1605,7 @@ def create_app():
         components['btn_reset_counters'].click(
             fn=on_reset_counters,
             inputs=[lang_state],
-            outputs=[components['md_settings_status'], stats_html]
+            outputs=[components['md_settings_status'], components['md_settings_stats']]
         )
 
         # ═══════ LUT Merge Tab Events ═══════
@@ -1639,30 +1639,34 @@ def create_app():
 
         def update_stats_bar(lang):
             stats = Stats.get_all()
-            return _get_stats_html(lang, stats)
+            return I18n.get('settings_stats', lang).format(
+                cal=stats.get('calibrations', 0),
+                ext=stats.get('extractions', 0),
+                conv=stats.get('conversions', 0)
+            )
 
         if 'cal_event' in components:
             components['cal_event'].then(
                 fn=update_stats_bar,
                 inputs=[lang_state],
-                outputs=[stats_html]
+                outputs=[components['md_settings_stats']]
             )
 
         if 'ext_event' in components:
             components['ext_event'].then(
                 fn=update_stats_bar,
                 inputs=[lang_state],
-                outputs=[stats_html]
+                outputs=[components['md_settings_stats']]
             )
 
         if 'conv_event' in components:
             components['conv_event'].then(
                 fn=update_stats_bar,
                 inputs=[lang_state],
-                outputs=[stats_html]
+                outputs=[components['md_settings_stats']]
             )
 
-        # Palette mode switch (Advanced tab)
+        # Palette mode switch (Settings tab)
         if 'radio_palette_mode' in components:
             def on_palette_mode_change(mode, lut_path, lang):
                 _save_user_setting("palette_mode", mode)
@@ -1731,8 +1735,13 @@ def _get_all_component_updates(lang: str, components: dict) -> list:
         if key == 'md_conv_lut_status' or key == 'textbox_conv_status':
             updates.append(gr.update())
             continue
-        if key == 'md_settings_title':
-            updates.append(gr.update(value=I18n.get('settings_title', lang)))
+        if key == 'md_settings_stats':
+            stats = Stats.get_all()
+            updates.append(gr.update(value=I18n.get('settings_stats', lang).format(
+                cal=stats.get('calibrations', 0),
+                ext=stats.get('extractions', 0),
+                conv=stats.get('conversions', 0)
+            )))
             continue
         if key == 'md_cache_size':
             cache_size = Stats.get_cache_size()
@@ -5129,82 +5138,84 @@ def create_merge_tab_content(lang: str) -> dict:
     return components
 
 
-def create_advanced_tab_content(lang: str) -> dict:
-    """Build Advanced tab content with independent setting groups.
-    独立分组构建高级设置标签页内容。
+def create_settings_tab_content(lang: str) -> dict:
+    """Build Settings tab content with all settings.
 
     Args:
-        lang (str): Language code, 'zh' or 'en'. (语言代码)
+        lang (str): Language code, 'zh' or 'en'.
 
     Returns:
-        dict: Gradio component dictionary. (组件字典)
+        dict: Gradio component dictionary.
     """
     components = {}
 
-    # --- Group 1: Palette display mode ---
-    with gr.Group():
-        palette_label = "调色板样式" if lang == "zh" else "Palette Style"
-        palette_swatch = "色块模式" if lang == "zh" else "Swatch Grid"
-        palette_card = "色卡模式" if lang == "zh" else "Card Layout"
-        saved_mode = _load_user_settings().get("palette_mode", "swatch")
-        components['radio_palette_mode'] = gr.Radio(
-            choices=[(palette_swatch, "swatch"), (palette_card, "card")],
-            value=saved_mode,
-            label=palette_label,
+    # --- Display ---
+    components['md_settings_section_display'] = gr.Markdown(
+        I18n.get('settings_section_display', lang)
+    )
+    palette_label = "调色板样式" if lang == "zh" else "Palette Style"
+    palette_swatch = "色块模式" if lang == "zh" else "Swatch Grid"
+    palette_card = "色卡模式" if lang == "zh" else "Card Layout"
+    saved_mode = _load_user_settings().get("palette_mode", "swatch")
+    components['radio_palette_mode'] = gr.Radio(
+        choices=[(palette_swatch, "swatch"), (palette_card, "card")],
+        value=saved_mode,
+        label=palette_label,
+    )
+
+    # --- Converter limits ---
+    components['md_settings_section_converter'] = gr.Markdown(
+        I18n.get('settings_section_converter', lang)
+    )
+    unlock_label = "解除最大尺寸限制" if lang == "zh" else "Unlock Max Size Limit"
+    unlock_info = "开启后，图像转换的宽度/高度滑块将不再限制最大值（默认上限 400mm）" if lang == "zh" else "When enabled, width/height sliders in Image Converter will have no upper limit (default max 400mm)"
+    components['checkbox_unlock_max_size'] = gr.Checkbox(
+        label=unlock_label,
+        value=False,
+        info=unlock_info,
+    )
+
+    # --- Data management ---
+    components['md_settings_section_data'] = gr.Markdown(
+        I18n.get('settings_section_data', lang)
+    )
+    stats = Stats.get_all()
+    components['md_settings_stats'] = gr.Markdown(
+        I18n.get('settings_stats', lang).format(
+            cal=stats.get('calibrations', 0),
+            ext=stats.get('extractions', 0),
+            conv=stats.get('conversions', 0)
         )
-
-    # --- Group 2: Unlock max size limit ---
-    with gr.Group():
-        unlock_label = "解除最大尺寸限制" if lang == "zh" else "Unlock Max Size Limit"
-        unlock_info = "开启后，图像转换的宽度/高度滑块将不再限制最大值（默认上限 400mm）" if lang == "zh" else "When enabled, width/height sliders in Image Converter will have no upper limit (default max 400mm)"
-        components['checkbox_unlock_max_size'] = gr.Checkbox(
-            label=unlock_label,
-            value=False,
-            info=unlock_info,
-        )
-
-    return components
-
-
-def create_about_tab_content(lang: str) -> dict:
-    """Build About tab content from i18n. Returns component dict."""
-    components = {}
-
-    # Settings section
-    components['md_settings_title'] = gr.Markdown(I18n.get('settings_title', lang))
+    )
     cache_size = Stats.get_cache_size()
     cache_size_str = _format_bytes(cache_size)
-    components['md_cache_size'] = gr.Markdown(
-        I18n.get('settings_cache_size', lang).format(cache_size_str)
-    )
     with gr.Row():
+        components['md_cache_size'] = gr.Markdown(
+            I18n.get('settings_cache_size', lang).format(cache_size_str)
+        )
         components['btn_clear_cache'] = gr.Button(
             I18n.get('settings_clear_cache', lang),
             variant="secondary",
             size="sm"
         )
-        components['btn_reset_counters'] = gr.Button(
-            I18n.get('settings_reset_counters', lang),
+    output_size = Stats.get_output_size()
+    output_size_str = _format_bytes(output_size)
+    with gr.Row():
+        components['md_output_size'] = gr.Markdown(
+            I18n.get('settings_output_size', lang).format(output_size_str)
+        )
+        components['btn_clear_output'] = gr.Button(
+            I18n.get('settings_clear_output', lang),
             variant="secondary",
             size="sm"
         )
-    
-    output_size = Stats.get_output_size()
-    output_size_str = _format_bytes(output_size)
-    components['md_output_size'] = gr.Markdown(
-        I18n.get('settings_output_size', lang).format(output_size_str)
-    )
-    components['btn_clear_output'] = gr.Button(
-        I18n.get('settings_clear_output', lang),
+    components['btn_reset_counters'] = gr.Button(
+        I18n.get('settings_reset_counters', lang),
         variant="secondary",
         size="sm"
     )
-    
     components['md_settings_status'] = gr.Markdown("")
-    
-    # About page content (from i18n)
-    components['md_about_content'] = gr.Markdown(I18n.get('about_content', lang))
-    
+
     return components
 
 

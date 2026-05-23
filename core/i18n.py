@@ -61,9 +61,9 @@ class I18n:
             'zh': '🎨 颜色提取',
             'en': '🎨 Color Extractor'
         },
-        'tab_about': {
-            'zh': 'ℹ️ 关于',
-            'en': 'ℹ️ About'
+        'tab_settings': {
+            'zh': '⚙️ 软件设置',
+            'en': '⚙️ Software Settings'
         },
         
         # ==================== Converter Tab ====================
@@ -858,6 +858,22 @@ class I18n:
         'settings_title': {
             'zh': '## ⚙️ 设置',
             'en': '## ⚙️ Settings'
+        },
+        'settings_section_display': {
+            'zh': '### 🖥️ 显示设置',
+            'en': '### 🖥️ Display'
+        },
+        'settings_stats': {
+            'zh': '📊 累计生成: **{cal}** 校准板 | **{ext}** 颜色提取 | **{conv}** 模型转换',
+            'en': '📊 Total Generated: **{cal}** Calibrations | **{ext}** Extractions | **{conv}** Conversions'
+        },
+        'settings_section_converter': {
+            'zh': '### ⚙️ 转换限制',
+            'en': '### ⚙️ Converter Limits'
+        },
+        'settings_section_data': {
+            'zh': '### 🗂️ 数据管理',
+            'en': '### 🗂️ Data Management'
         },
         'settings_clear_cache': {
             'zh': '🗑️ 清空缓存',

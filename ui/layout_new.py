@@ -174,19 +174,60 @@ DROPDOWN_SCROLL_FIX_JS = """
   if (window.__luminaDropdownScrollFix) return;
   window.__luminaDropdownScrollFix = true;
 
-  document.addEventListener('scroll', function(e) {
-    // Ignore scroll events from within dropdown option lists
-    if (e.target.closest('ul') && e.target.closest('.wrap')) {
-      return;
-    }
-    // Close open dropdown by blurring active input inside a .wrap container
-    var active = document.activeElement;
-    if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA')) {
-      if (active.closest('.wrap')) {
-        active.blur();
+  var scrollAncestors = [];
+
+  function isDropdownInput(el) {
+    return el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') && el.closest('.wrap');
+  }
+
+  function getScrollableAncestors(el) {
+    var result = [];
+    var cur = el.parentElement;
+    while (cur && cur !== document.body) {
+      var s = getComputedStyle(cur);
+      var overflowY = s.overflowY;
+      if (overflowY === 'auto' || overflowY === 'scroll') {
+        result.push(cur);
       }
+      cur = cur.parentElement;
     }
-  }, true);
+    return result;
+  }
+
+  function closeDropdown() {
+    var active = document.activeElement;
+    if (isDropdownInput(active)) {
+      active.blur();
+    }
+  }
+
+  function attachScrollListeners(input) {
+    scrollAncestors = getScrollableAncestors(input);
+    window.addEventListener('scroll', closeDropdown, { passive: true });
+    scrollAncestors.forEach(function(el) {
+      el.addEventListener('scroll', closeDropdown, { passive: true });
+    });
+  }
+
+  function detachScrollListeners() {
+    window.removeEventListener('scroll', closeDropdown);
+    scrollAncestors.forEach(function(el) {
+      el.removeEventListener('scroll', closeDropdown);
+    });
+    scrollAncestors = [];
+  }
+
+  document.addEventListener('focusin', function(e) {
+    if (isDropdownInput(e.target)) {
+      attachScrollListeners(e.target);
+    }
+  });
+
+  document.addEventListener('focusout', function(e) {
+    if (isDropdownInput(e.target)) {
+      detachScrollListeners();
+    }
+  });
 })();
 </script>
 """

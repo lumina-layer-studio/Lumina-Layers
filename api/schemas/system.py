@@ -43,7 +43,7 @@ class UserSettings(BaseModel):
 
     last_lut: str = ""
     last_modeling_mode: str = "high-fidelity"
-    last_color_mode: str = "4-Color"
+    last_color_mode: str = "RYBW"
     last_slicer: str = ""
     palette_mode: str = "swatch"
     enable_crop_modal: bool = True

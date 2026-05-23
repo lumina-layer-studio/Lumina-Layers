@@ -53,7 +53,7 @@ class TestModelingModeTags:
 class TestColorModeTags:
     """Verify every known color mode string maps to the correct tag."""
 
-    @pytest.mark.parametrize("color_mode", ["4-Color", "CMYW", "RYBW"])
+    @pytest.mark.parametrize("color_mode", ["CMYW", "RYBW"])
     def test_4color_variants_map_to_4c(self, color_mode):
         assert COLOR_MODE_TAGS[color_mode] == "4C"
 
@@ -77,7 +77,7 @@ class TestEdgeCases:
     """Edge cases: empty strings, special characters, unicode, unknown modes."""
 
     def test_empty_base_name_uses_untitled(self):
-        filename = generate_model_filename("", ModelingMode.PIXEL, "4-Color")
+        filename = generate_model_filename("", ModelingMode.PIXEL, "RYBW")
         assert filename.startswith("untitled_Lumina_")
 
     def test_whitespace_only_base_name_uses_untitled(self):
@@ -102,7 +102,7 @@ class TestEdgeCases:
             assert ch not in filename
 
     def test_unicode_base_name(self):
-        filename = generate_model_filename("日本語テスト", ModelingMode.VECTOR, "4-Color")
+        filename = generate_model_filename("日本語テスト", ModelingMode.VECTOR, "RYBW")
         assert "日本語テスト" in filename
         assert "_Lumina_Vector_4C_" in filename
 
@@ -113,7 +113,7 @@ class TestEdgeCases:
     def test_unknown_modeling_mode_uses_unknown(self):
         # Simulate an unknown mode by passing a value not in the mapping
         # We use a mock enum value that isn't in MODELING_MODE_TAGS
-        filename = generate_model_filename("test", "not_a_real_mode", "4-Color")
+        filename = generate_model_filename("test", "not_a_real_mode", "RYBW")
         assert "_Unknown_" in filename
 
     def test_unknown_color_mode_uses_unknown(self):
@@ -141,7 +141,7 @@ class TestGeneratedFilenameFormat:
     @patch("core.naming._get_timestamp", return_value=FIXED_TS)
     def test_model_filename_structure(self, _mock_ts):
         result = generate_model_filename(
-            "photo", ModelingMode.HIGH_FIDELITY, "4-Color"
+            "photo", ModelingMode.HIGH_FIDELITY, "RYBW"
         )
         assert result == f"photo_Lumina_HiFi_4C_{FIXED_TS}.3mf"
 
@@ -169,7 +169,7 @@ class TestGeneratedFilenameFormat:
 
     @patch("core.naming._get_timestamp", return_value=FIXED_TS)
     def test_calibration_filename_structure(self, _mock_ts):
-        result = generate_calibration_filename("4-Color", "Standard")
+        result = generate_calibration_filename("RYBW", "Standard")
         assert result == f"Lumina_Calibration_Standard_4C_{FIXED_TS}.3mf"
 
     @patch("core.naming._get_timestamp", return_value=FIXED_TS)
@@ -189,7 +189,7 @@ class TestGeneratedFilenameFormat:
             rf"^.+_Lumina_(HiFi|Pixel|Vector)_(4C|6C|8C|BW)_{TS_RE}\.3mf$"
         )
         for mode in ModelingMode:
-            for color in ["4-Color", "6-Color", "8-Color Max", "BW"]:
+            for color in ["RYBW", "6-Color", "8-Color Max", "BW"]:
                 filename = generate_model_filename("test", mode, color)
                 assert pattern.match(filename), f"No match: {filename}"
 
@@ -215,7 +215,7 @@ class TestParseFilename:
 
     @patch("core.naming._get_timestamp", return_value=FIXED_TS)
     def test_parse_model_filename(self, _mock_ts):
-        filename = generate_model_filename("photo", ModelingMode.HIGH_FIDELITY, "4-Color")
+        filename = generate_model_filename("photo", ModelingMode.HIGH_FIDELITY, "RYBW")
         parsed = parse_filename(filename)
         assert parsed is not None
         assert parsed["base_name"] == "photo"

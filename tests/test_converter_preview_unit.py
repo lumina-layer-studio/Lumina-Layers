@@ -136,7 +136,7 @@ class TestLutNotFoundReturns404:
                 files={"image": ("test.png", buf, "image/png")},
                 data={
                     "lut_name": "nonexistent_lut",
-                    "color_mode": "4-Color",
+                    "color_mode": "RYBW",
                 },
             )
         assert response.status_code == 404
@@ -173,7 +173,7 @@ class TestSessionContainsPreviewCache:
                 files={"image": ("test.png", buf, "image/png")},
                 data={
                     "lut_name": "test_lut",
-                    "color_mode": "4-Color",
+                    "color_mode": "RYBW",
                 },
             )
         assert response.status_code == 200
@@ -220,7 +220,7 @@ class TestResponseContainsPaletteAndDimensions:
                 files={"image": ("test.png", buf, "image/png")},
                 data={
                     "lut_name": "test_lut",
-                    "color_mode": "4-Color",
+                    "color_mode": "RYBW",
                 },
             )
         assert response.status_code == 200
@@ -276,7 +276,7 @@ class TestTimeoutReturns504:
                 files={"image": ("test.png", buf, "image/png")},
                 data={
                     "lut_name": "test_lut",
-                    "color_mode": "4-Color",
+                    "color_mode": "RYBW",
                 },
             )
         assert response.status_code == 504
@@ -308,7 +308,7 @@ class TestGeneralExceptionReturns500:
                 files={"image": ("test.png", buf, "image/png")},
                 data={
                     "lut_name": "test_lut",
-                    "color_mode": "4-Color",
+                    "color_mode": "RYBW",
                 },
             )
         assert response.status_code == 500

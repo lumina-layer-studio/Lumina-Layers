@@ -52,7 +52,7 @@ class TestCornerPointsValidation:
             files={"image": ("test.png", buf, "image/png")},
             data={
                 "corner_points": json.dumps([[0, 0], [100, 0], [100, 100]]),
-                "color_mode": "4-Color",
+                "color_mode": "RYBW",
                 "distortion": "0.0",
                 "white_balance": "false",
                 "vignette_correction": "false",
@@ -84,7 +84,7 @@ class TestSessionStatePersistence:
                     "corner_points": json.dumps(
                         [[0, 0], [100, 0], [100, 100], [0, 100]]
                     ),
-                    "color_mode": "4-Color",
+                    "color_mode": "RYBW",
                     "distortion": "0.0",
                     "white_balance": "false",
                     "vignette_correction": "false",
@@ -99,7 +99,7 @@ class TestSessionStatePersistence:
         session_data = session_store.get(session_id)
         assert session_data is not None
         assert session_data["lut_path"] == "/tmp/test.npy"
-        assert session_data["color_mode"] == "4-Color"
+        assert session_data["color_mode"] == "RYBW"
 
 
 # =========================================================================
@@ -124,7 +124,7 @@ class TestFieldNameMapping:
                     "corner_points": json.dumps(
                         [[0, 0], [100, 0], [100, 100], [0, 100]]
                     ),
-                    "color_mode": "4-Color",
+                    "color_mode": "RYBW",
                     "distortion": "0.1",
                     "white_balance": "true",
                     "vignette_correction": "true",

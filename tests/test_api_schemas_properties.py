@@ -403,7 +403,7 @@ def test_enum_field_string_serialization(instance: BaseModel) -> None:
             f"{model_name}.{field_name} serialized as {type(value).__name__} "
             f"({value!r}), expected str"
         )
-        # Ensure it's the enum *value* (e.g. "4-Color"), not the enum *name*
+        # Ensure it's the enum *value* (e.g. "RYBW"), not the enum *name*
         # (e.g. "FOUR_COLOR")
         field_obj = instance.__class__.model_fields[field_name]
         enum_cls = field_obj.annotation

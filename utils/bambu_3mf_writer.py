@@ -48,14 +48,14 @@ class BambuStudio3MFWriter:
         'brim_type': 'auto_brim',
     }
     
-    def __init__(self, output_path: str, settings: Optional[Dict] = None, color_mode: str = '4-Color'):
+    def __init__(self, output_path: str, settings: Optional[Dict] = None, color_mode: str = 'RYBW'):
         """
         Initialize 3MF writer.
-        
+
         Args:
             output_path: Output .3mf file path
             settings: Optional custom print settings (overrides defaults)
-            color_mode: Color mode ('4-Color', '6-Color', '8-Color', 'BW')
+            color_mode: Color mode ('CMYW', 'RYBW', '6-Color', '8-Color', 'BW')
         """
         self.output_path = output_path
         self.settings = {**self.DEFAULT_SETTINGS, **(settings or {})}
@@ -675,10 +675,10 @@ class BambuStudio3MFWriter:
 
 def export_scene_with_bambu_metadata(scene: trimesh.Scene, output_path: str,
                                      slot_names: List[str], preview_colors: Dict,
-                                     settings: Optional[Dict] = None, color_mode: str = '4-Color'):
+                                     settings: Optional[Dict] = None, color_mode: str = 'RYBW'):
     """
     Export a Trimesh scene to BambuStudio-compatible 3MF with metadata.
-    
+
     Args:
         scene: Trimesh Scene object containing all meshes
         output_path: Output .3mf file path
@@ -765,7 +765,7 @@ def export_scene_with_bambu_metadata(scene: trimesh.Scene, output_path: str,
 
 def inject_bambu_metadata(filepath: str, settings: Optional[Dict],
                           slot_names: List[str], preview_colors: Dict,
-                          color_mode: str = '4-Color'):
+                          color_mode: str = 'RYBW'):
     """
     Inject BambuStudio metadata into an existing 3MF file (exported by trimesh).
 

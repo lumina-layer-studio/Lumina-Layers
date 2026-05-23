@@ -122,7 +122,7 @@ class LUTManager:
                 return "CMYW"
             if "RYBW" in combined or "红黄蓝" in combined:
                 return "RYBW"
-            return "4-Color"
+            return "RYBW"
         if "黑白" in combined or "B&W" in combined:
             return "BW (Black & White)"
         if re.search(r"(?<![A-Z])BW(?![A-Z])", combined):
@@ -152,7 +152,7 @@ class LUTManager:
             return "RYBW"
 
         # 默认回退为 RYBW
-        return "4-Color"
+        return "RYBW"
     
     @classmethod
     def get_lut_path(cls, display_name: str) -> str | None:

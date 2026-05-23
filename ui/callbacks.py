@@ -45,6 +45,8 @@ _MODE_DOTS = {
     "5-Color Extended": ["#DC143C","#FFE600","#0064F0","#F0F0F0","#111111"],
     "BW":               ["#F0F0F0","#111111"],
     "4-Color-CMYW":     ["#00FFFF","#FF00FF","#FFFF00","#F0F0F0"],
+    "CMYW":             ["#00FFFF","#FF00FF","#FFFF00","#F0F0F0"],
+    "RYBW":             ["#DC143C","#FFE600","#0064F0","#F0F0F0"],
     "4-Color":          ["#DC143C","#FFE600","#0064F0","#F0F0F0"],
 }
 
@@ -56,8 +58,8 @@ def _resolve_mode_key(mode: str) -> str:
     if mode.startswith("6-Color"): return "6-Color"
     if "5-Color Extended" in mode: return "5-Color Extended"
     if mode.startswith("BW"):    return "BW"
-    if "CMYW" in mode:           return "4-Color-CMYW"
-    return "4-Color"
+    if "CMYW" in mode:           return "CMYW"
+    return "RYBW"
 
 def _color_mode_html(mode: str) -> str:
     """Return an HTML snippet with colored dots + label for the given color mode."""

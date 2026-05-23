@@ -24,7 +24,7 @@ client: TestClient = TestClient(app)
 
 # Valid values for constrained string fields
 modeling_modes = st.sampled_from(["high-fidelity", "pixel", "vector"])
-color_modes = st.sampled_from(["4-Color", "6-Color", "8-Color Max", "BW", "Merged"])
+color_modes = st.sampled_from(["RYBW", "6-Color", "8-Color Max", "BW", "Merged"])
 safe_text = st.text(
     alphabet=st.characters(whitelist_categories=("L", "N", "P", "Z")),
     min_size=0,
@@ -130,7 +130,7 @@ def test_settings_rejects_invalid_enable_crop_modal(bad_value) -> None:
     payload = {
         "last_lut": "",
         "last_modeling_mode": "high-fidelity",
-        "last_color_mode": "4-Color",
+        "last_color_mode": "RYBW",
         "last_slicer": "",
         "palette_mode": "swatch",
         "enable_crop_modal": bad_value,

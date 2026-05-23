@@ -82,7 +82,7 @@ class TestVectorBranchExport:
             structure_mode="Single-sided",
             auto_bg=False,
             bg_tol=30,
-            color_mode="4-Color",
+            color_mode="RYBW",
             add_loop=False,
             loop_width=5, loop_length=20, loop_hole=3, loop_pos="Top",
             modeling_mode=ModelingMode.VECTOR,
@@ -124,7 +124,7 @@ class TestVectorBranchExport:
             structure_mode="Single-sided",
             auto_bg=False,
             bg_tol=30,
-            color_mode="4-Color",
+            color_mode="RYBW",
             add_loop=False,
             loop_width=5, loop_length=20, loop_hole=3, loop_pos="Top",
             modeling_mode=ModelingMode.VECTOR,
@@ -162,7 +162,7 @@ class TestVectorBranchExport:
             structure_mode="Single-sided",
             auto_bg=False,
             bg_tol=30,
-            color_mode="4-Color",
+            color_mode="RYBW",
             add_loop=False,
             loop_width=5, loop_length=20, loop_hole=3, loop_pos="Top",
             modeling_mode=ModelingMode.VECTOR,
@@ -189,11 +189,11 @@ class TestBambuExportGuardrails:
                 slot_names=["White", "Cyan"],
                 preview_colors={0: [255, 255, 255, 255], 1: [0, 134, 214, 255]},
                 settings={},
-                color_mode="4-Color",
+                color_mode="RYBW",
             )
 
     def test_writer_add_mesh_rejects_empty_mesh(self, tmp_path):
-        writer = BambuStudio3MFWriter(str(tmp_path / "x.3mf"), settings={}, color_mode="4-Color")
+        writer = BambuStudio3MFWriter(str(tmp_path / "x.3mf"), settings={}, color_mode="RYBW")
         empty = trimesh.Trimesh(vertices=np.zeros((0, 3)), faces=np.zeros((0, 3), dtype=np.int64))
         with pytest.raises(ValueError, match="empty geometry"):
             writer.add_mesh(empty, "White", (255, 255, 255))

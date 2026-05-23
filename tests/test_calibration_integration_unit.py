@@ -60,7 +60,7 @@ class TestColorModeRouting:
             response = client.post(
                 "/api/calibration/generate",
                 json={
-                    "color_mode": "4-Color",
+                    "color_mode": "RYBW",
                     "block_size": 5,
                     "gap": 0.82,
                     "backing": "White",
@@ -161,7 +161,7 @@ class TestErrorHandling:
             response = client.post(
                 "/api/calibration/generate",
                 json={
-                    "color_mode": "4-Color",
+                    "color_mode": "RYBW",
                     "block_size": 5,
                     "gap": 0.82,
                     "backing": "White",

@@ -25,8 +25,10 @@ class CalibrationColorMode(str, Enum):
     Attributes:
         BW: Black & White grayscale mode (32 levels).
             黑白灰度模式 (32 级)。
-        FOUR_COLOR: 4-Color CMYW/RYBW mode (1024 colors).
-            4 色 CMYW/RYBW 模式 (1024 色)。
+        CMYW: 4-Color CMYW mode (1024 colors).
+            4 色 CMYW (青/品红/黄/白) 模式 (1024 色)。
+        RYBW: 4-Color RYBW mode (1024 colors).
+            4 色 RYBW (红/黄/蓝/白) 模式 (1024 色)。
         FIVE_COLOR_EXT: 5-Color Extended mode (1444 colors).
             5 色扩展模式 (1444 色)。
         SIX_COLOR: 6-Color extended smart mode (1296 colors).
@@ -36,7 +38,6 @@ class CalibrationColorMode(str, Enum):
     """
 
     BW = "BW (Black & White)"
-    FOUR_COLOR = "4-Color"
     CMYW = "CMYW"
     RYBW = "RYBW"
     FIVE_COLOR_EXT = "5-Color Extended (1444)"
@@ -92,7 +93,7 @@ class ExtractorExtractRequest(BaseModel):
     """
 
     color_mode: CalibrationColorMode = Field(
-        CalibrationColorMode.FOUR_COLOR, description="校准颜色模式"
+        CalibrationColorMode.RYBW, description="校准颜色模式"
     )
     corner_points: List[Tuple[int, int]] = Field(
         ..., min_length=4, max_length=4, description="4 个角点坐标 [(x,y), ...]"

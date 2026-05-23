@@ -267,6 +267,18 @@ class ColorSystem:
         
         return ColorSystem.RYBW  # Default fallback
 
+
+def normalize_4color_mode(mode: str) -> str:
+    """Map legacy '4-Color' to 'RYBW' for backward compatibility.
+
+    Used at API boundaries to normalize incoming color_mode values
+    before Pydantic validation or downstream processing.
+    """
+    if mode in ("4-Color", "4-Color (1024 colors)"):
+        return "RYBW"
+    return mode
+
+
 # ========== Global Constants ==========
 
 # Extractor constants

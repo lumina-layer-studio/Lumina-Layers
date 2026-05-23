@@ -44,9 +44,9 @@ def calibration_generate(
                 gap_mm=request.gap,
                 backing_color=request.backing.value,
             )
-        elif mode in ("4-Color", "CMYW", "RYBW"):
+        elif mode in ("CMYW", "RYBW"):
             path, preview_img, status = generate_calibration_board(
-                color_mode=mode if mode in ("CMYW", "RYBW") else "RYBW",
+                color_mode=mode,
                 block_size_mm=float(request.block_size),
                 gap_mm=request.gap,
                 backing_color=request.backing.value,

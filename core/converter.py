@@ -4141,13 +4141,13 @@ def generate_lut_card_grid_html(lut_path, lang: str = "zh"):
 
 def _infer_4color_subtype(lut_path: str) -> str:
     """Distinguish CMYW vs RYBW from filename keywords.
-    Returns "CMYW", "RYBW", or "4-Color" (unknown)."""
+    Returns "CMYW", "RYBW" (defaults to RYBW when unknown)."""
     name = os.path.basename(lut_path).upper()
     if "CMYW" in name or "青品黄" in name:
         return "CMYW"
     if "RYBW" in name or "红黄蓝" in name:
         return "RYBW"
-    return "4-Color"
+    return "RYBW"
 
 
 def detect_lut_color_mode(lut_path):

@@ -60,6 +60,7 @@ from .callbacks import (
     on_extractor_page_change,
     on_lut_select,
     on_lut_upload_save,
+    _color_mode_html,
     on_apply_color_replacement,
     on_clear_color_replacements,
     on_undo_color_replacement,
@@ -1239,6 +1240,14 @@ def _update_lut_grid(lut_path, lang, palette_mode="swatch"):
     return generate_lut_grid_html(lut_path, lang)
 
 
+def _on_color_mode_change_update_status(color_mode, lut_display_name):
+    """Update LUT status markdown when user manually changes color mode."""
+    if not lut_display_name:
+        return ""
+    badge = _color_mode_html(color_mode)
+    return f"[OK] Selected: {lut_display_name}<br>{badge}"
+
+
 def _detect_and_enforce_structure(lut_path):
     """Detect color mode from LUT, and enforce structure constraints for 5-Color Extended.
 
@@ -1247,12 +1256,12 @@ def _detect_and_enforce_structure(lut_path):
     mode = detect_lut_color_mode(lut_path)
     if mode and "5-Color Extended" in mode:
         gr.Info("5-Color Extended 模式：自动切换为单面模式，2.5D 浮雕不可用")
-        return mode, gr.update(
+        return gr.update(value=mode), gr.update(
             value=I18n.get('conv_structure_single', 'en'),
             interactive=False,
         ), gr.update(value=False, interactive=False)
     if mode:
-        return mode, gr.update(interactive=True), gr.update(interactive=True)
+        return gr.update(value=mode), gr.update(interactive=True), gr.update(interactive=True)
     return gr.update(), gr.update(interactive=True), gr.update(interactive=True)
 
 
@@ -1533,7 +1542,7 @@ def create_app():
         ).then(
             fn=_detect_and_enforce_structure,
             inputs=[components['state_conv_lut_path']],
-            outputs=[components['radio_conv_color_mode'], components['radio_conv_structure'], components['checkbox_conv_relief_mode']]
+            outputs=[components['dropdown_conv_color_mode'], components['radio_conv_structure'], components['checkbox_conv_relief_mode']]
         )
 
         # Settings: cache clearing and counter reset
@@ -1788,7 +1797,6 @@ def _get_all_component_updates(lang: str, components: dict) -> list:
             if choice_key == 'conv_color_mode' or choice_key == 'cal_color_mode' or choice_key == 'ext_color_mode':
                 choices = [
                     ("BW (Black & White)", "BW (Black & White)"),
-                    ("4-Color (1024 colors)", "4-Color"),
                     ("CMYW (Cyan/Magenta/Yellow/White)", "CMYW"),
                     ("RYBW (Red/Yellow/Blue/White)", "RYBW"),
                     ("5-Color Extended (2468)", "5-Color Extended"),
@@ -1841,14 +1849,29 @@ def _get_all_component_updates(lang: str, components: dict) -> list:
                 updates.append(gr.update(label=I18n.get(checkbox_key, lang)))
         elif key.startswith('dropdown_'):
             dropdown_key = key[9:]
-            info_key = dropdown_key + '_info'
-            if info_key in I18n.TEXTS:
+            if dropdown_key == 'conv_color_mode':
+                choices = [
+                    ("BW (Black & White)", "BW (Black & White)"),
+                    ("CMYW (Cyan/Magenta/Yellow/White)", "CMYW"),
+                    ("RYBW (Red/Yellow/Blue/White)", "RYBW"),
+                    ("5-Color Extended (2468)", "5-Color Extended"),
+                    ("6-Color (Smart 1296)", "6-Color (Smart 1296)"),
+                    ("8-Color Max", "8-Color Max"),
+                    ("🔀 Merged", "Merged"),
+                ]
                 updates.append(gr.update(
                     label=I18n.get(dropdown_key, lang),
-                    info=I18n.get(info_key, lang)
+                    choices=choices,
                 ))
             else:
-                updates.append(gr.update(label=I18n.get(dropdown_key, lang)))
+                info_key = dropdown_key + '_info'
+                if info_key in I18n.TEXTS:
+                    updates.append(gr.update(
+                        label=I18n.get(dropdown_key, lang),
+                        info=I18n.get(info_key, lang)
+                    ))
+                else:
+                    updates.append(gr.update(label=I18n.get(dropdown_key, lang)))
         elif key.startswith('image_'):
             image_key = key[6:]
             updates.append(gr.update(label=I18n.get(image_key, lang)))
@@ -2033,7 +2056,7 @@ def create_converter_tab_content(lang: str, lang_state=None, theme_state=None) -
 
             # Load saved preferences
             _user_prefs = _load_user_settings()
-            saved_color_mode = _user_prefs.get("last_color_mode", "4-Color")
+            saved_color_mode = _user_prefs.get("last_color_mode", "RYBW")
             saved_modeling_mode_str = _user_prefs.get("last_modeling_mode", ModelingMode.HIGH_FIDELITY.value)
             try:
                 saved_modeling_mode = ModelingMode(saved_modeling_mode_str)
@@ -2058,14 +2081,31 @@ def create_converter_tab_content(lang: str, lang_state=None, theme_state=None) -
                     elem_classes=["tall-upload"]
                 )
             
+            conv_palette_mode = gr.State(value=_load_user_settings().get("palette_mode", "swatch"))
+            components['state_conv_palette_mode'] = conv_palette_mode
+
+            components['dropdown_conv_color_mode'] = gr.Dropdown(
+                choices=[
+                    ("BW (Black & White)", "BW (Black & White)"),
+                    ("CMYW (Cyan/Magenta/Yellow/White)", "CMYW"),
+                    ("RYBW (Red/Yellow/Blue/White)", "RYBW"),
+                    ("5-Color Extended (2468)", "5-Color Extended"),
+                    ("6-Color (Smart 1296)", "6-Color (Smart 1296)"),
+                    ("8-Color Max", "8-Color Max"),
+                    ("🔀 Merged", "Merged"),
+                ],
+                value=saved_color_mode,
+                label=I18n.get('conv_color_mode', lang),
+                interactive=True,
+                visible=True,
+            )
+
             components['md_conv_lut_status'] = gr.Markdown(
                 value=I18n.get('conv_lut_status_default', lang),
                 visible=True,
                 elem_classes=["lut-status"]
             )
             conv_lut_path = gr.State(None)
-            conv_palette_mode = gr.State(value=_load_user_settings().get("palette_mode", "swatch"))
-            components['state_conv_palette_mode'] = conv_palette_mode
 
             with gr.Row():
                 components['checkbox_conv_batch_mode'] = gr.Checkbox(
@@ -2225,23 +2265,6 @@ def create_converter_tab_content(lang: str, lang_state=None, theme_state=None) -
             conv_target_height_mm = components['slider_conv_height']
 
             with gr.Row(elem_classes=["compact-row"]):
-                components['radio_conv_color_mode'] = gr.Radio(
-                    choices=[
-                        ("BW (Black & White)", "BW (Black & White)"),
-                        ("4-Color (1024 colors)", "4-Color"),
-                        ("CMYW (Cyan/Magenta/Yellow/White)", "CMYW"),
-                        ("RYBW (Red/Yellow/Blue/White)", "RYBW"),
-                        ("5-Color Extended (2468)", "5-Color Extended"),
-                        ("6-Color (Smart 1296)", "6-Color (Smart 1296)"),
-                        ("8-Color Max", "8-Color Max"),
-                        ("🔀 Merged", "Merged"),
-                    ],
-                    value=saved_color_mode,
-                    label=I18n.get('conv_color_mode', lang),
-                    interactive=False,
-                    visible=False,
-                )
-                
                 components['radio_conv_structure'] = gr.Radio(
                     choices=[
                         (I18n.get('conv_structure_double', lang), I18n.get('conv_structure_double', 'en')),
@@ -3189,7 +3212,7 @@ def create_converter_tab_content(lang: str, lang_state=None, theme_state=None) -
     ).then(
             fn=_detect_and_enforce_structure,
             inputs=[conv_lut_path],
-            outputs=[components['radio_conv_color_mode'], components['radio_conv_structure'], components['checkbox_conv_relief_mode']]
+            outputs=[components['dropdown_conv_color_mode'], components['radio_conv_structure'], components['checkbox_conv_relief_mode']]
     )
 
 
@@ -3206,7 +3229,7 @@ def create_converter_tab_content(lang: str, lang_state=None, theme_state=None) -
     ).then(
             fn=lambda lut_file: _detect_and_enforce_structure(lut_file.name if lut_file else None),
             inputs=[conv_lut_upload],
-            outputs=[components['radio_conv_color_mode'], components['radio_conv_structure'], components['checkbox_conv_relief_mode']]
+            outputs=[components['dropdown_conv_color_mode'], components['radio_conv_structure'], components['checkbox_conv_relief_mode']]
     )
     
     components['image_conv_image_label'].change(
@@ -3349,9 +3372,9 @@ def create_converter_tab_content(lang: str, lang_state=None, theme_state=None) -
     )
 
     # Save color mode when changed
-    components['radio_conv_color_mode'].change(
+    components['dropdown_conv_color_mode'].change(
         fn=save_color_mode,
-        inputs=[components['radio_conv_color_mode']],
+        inputs=[components['dropdown_conv_color_mode']],
         outputs=None
     )
 
@@ -3366,10 +3389,16 @@ def create_converter_tab_content(lang: str, lang_state=None, theme_state=None) -
             ), gr.update(value=False, interactive=False)
         return gr.update(interactive=True), gr.update(interactive=True)
 
-    components['radio_conv_color_mode'].change(
+    components['dropdown_conv_color_mode'].change(
         fn=_on_color_mode_update_structure,
-        inputs=[components['radio_conv_color_mode']],
+        inputs=[components['dropdown_conv_color_mode']],
         outputs=[components['radio_conv_structure'], components['checkbox_conv_relief_mode']],
+    )
+
+    components['dropdown_conv_color_mode'].change(
+        fn=_on_color_mode_change_update_status,
+        inputs=[components['dropdown_conv_color_mode'], components['dropdown_conv_lut_dropdown']],
+        outputs=[components['md_conv_lut_status']],
     )
 
     preview_event = components['btn_conv_preview_btn'].click(
@@ -3380,7 +3409,7 @@ def create_converter_tab_content(lang: str, lang_state=None, theme_state=None) -
                 components['slider_conv_width'],
                 components['checkbox_conv_auto_bg'],
                 components['slider_conv_tolerance'],
-                components['radio_conv_color_mode'],
+                components['dropdown_conv_color_mode'],
                 components['radio_conv_modeling_mode'],
                 components['slider_conv_quantize_colors'],
                 components['checkbox_conv_cleanup'],
@@ -4350,7 +4379,7 @@ def create_converter_tab_content(lang: str, lang_state=None, theme_state=None) -
                 components['radio_conv_structure'],
                 components['checkbox_conv_auto_bg'],
                 components['slider_conv_tolerance'],
-                components['radio_conv_color_mode'],
+                components['dropdown_conv_color_mode'],
                 components['checkbox_conv_loop_enable'],
                 components['slider_conv_loop_width'],
                 components['slider_conv_loop_length'],
@@ -4454,7 +4483,7 @@ def create_converter_tab_content(lang: str, lang_state=None, theme_state=None) -
         components['radio_conv_structure'],
         components['checkbox_conv_auto_bg'],
         components['slider_conv_tolerance'],
-        components['radio_conv_color_mode'],
+        components['dropdown_conv_color_mode'],
         components['radio_conv_modeling_mode'],
         components['slider_conv_quantize_colors'],
         components['checkbox_conv_loop_enable'],
@@ -4582,7 +4611,7 @@ def create_converter_tab_content(lang: str, lang_state=None, theme_state=None) -
             components['radio_conv_structure'],
             components['checkbox_conv_auto_bg'],
             components['slider_conv_tolerance'],
-            components['radio_conv_color_mode'],
+            components['dropdown_conv_color_mode'],
             components['checkbox_conv_loop_enable'],
             components['slider_conv_loop_width'],
             components['slider_conv_loop_length'],
@@ -4707,14 +4736,13 @@ def create_calibration_tab_content(lang: str) -> dict:
             components['radio_cal_color_mode'] = gr.Radio(
                 choices=[
                     ("BW (Black & White)", "BW (Black & White)"),
-                    ("4-Color (1024 colors)", "4-Color"),
                     ("CMYW (Cyan/Magenta/Yellow/White)", "CMYW"),
                     ("RYBW (Red/Yellow/Blue/White)", "RYBW"),
                     ("5-Color Extended (Dual Page)", "5-Color Extended (Dual Page)"),
                     ("6-Color (Smart 1296)", "6-Color (Smart 1296)"),
                     ("8-Color Max", "8-Color Max")
                 ],
-                value="4-Color",
+                value="RYBW",
                 label=I18n.get('cal_color_mode', lang)
             )
                 
@@ -4807,7 +4835,7 @@ def create_extractor_tab_content(lang: str) -> dict:
     ext_state_img = gr.State(None)
     ext_state_pts = gr.State([])
     ext_curr_coord = gr.State(None)
-    default_mode = "4-Color"
+    default_mode = "RYBW"
     ref_img = get_extractor_reference_image(default_mode)
 
     with gr.Row():
@@ -4819,14 +4847,13 @@ def create_extractor_tab_content(lang: str) -> dict:
             components['radio_ext_color_mode'] = gr.Radio(
                 choices=[
                     ("BW (Black & White)", "BW (Black & White)"),
-                    ("4-Color (1024 colors)", "4-Color"),
                     ("CMYW (Cyan/Magenta/Yellow/White)", "CMYW"),
                     ("RYBW (Red/Yellow/Blue/White)", "RYBW"),
                     ("5-Color Extended (2468)", "5-Color Extended"),
                     ("6-Color (Smart 1296)", "6-Color (Smart 1296)"),
                     ("8-Color Max", "8-Color Max")
                 ],
-                value="4-Color",
+                value="RYBW",
                 label=I18n.get('ext_color_mode', lang)
             )
             

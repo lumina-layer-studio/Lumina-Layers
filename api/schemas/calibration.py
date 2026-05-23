@@ -11,9 +11,10 @@ from __future__ import annotations
 
 from enum import Enum
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from api.schemas.extractor import CalibrationColorMode
+from config import normalize_4color_mode
 
 
 # ========== Enums ==========
@@ -77,3 +78,8 @@ class CalibrationGenerateRequest(BaseModel):
     backing: BackingColor = Field(
         BackingColor.WHITE, description="底板颜色"
     )
+
+    @field_validator("color_mode", mode="before")
+    @classmethod
+    def normalize_color_mode(cls, v: str) -> str:
+        return normalize_4color_mode(v)

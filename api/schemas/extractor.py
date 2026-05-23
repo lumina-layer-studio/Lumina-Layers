@@ -12,7 +12,9 @@ from __future__ import annotations
 from enum import Enum
 from typing import List, Tuple
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+
+from config import normalize_4color_mode
 
 
 # ========== Enums ==========
@@ -107,6 +109,11 @@ class ExtractorExtractRequest(BaseModel):
     page: ExtractorPage = Field(
         ExtractorPage.PAGE_1, description="8-Color 页码"
     )
+
+    @field_validator("color_mode", mode="before")
+    @classmethod
+    def normalize_color_mode(cls, v: str) -> str:
+        return normalize_4color_mode(v)
 
 
 class ExtractorManualFixRequest(BaseModel):

@@ -12,7 +12,9 @@ from __future__ import annotations
 from enum import Enum
 from typing import Dict, List, Optional, Set, Tuple
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+
+from config import normalize_4color_mode
 
 
 # ========== Enums ==========
@@ -165,6 +167,11 @@ class ConvertPreviewRequest(BaseModel):
     enable_cleanup: bool = Field(True, description="孤立像素清理")
     hue_weight: float = Field(0.0, ge=0.0, le=1.0, description="色相保护权重 (0=纯色差, 0.5=推荐, 1.0=最强)")
 
+    @field_validator("color_mode", mode="before")
+    @classmethod
+    def normalize_color_mode(cls, v: str) -> str:
+        return normalize_4color_mode(v)
+
 
 class ConvertGenerateRequest(BaseModel):
     """Request model for generating a final 3MF model.
@@ -302,6 +309,11 @@ class ConvertGenerateRequest(BaseModel):
     free_color_set: Optional[Set[str]] = Field(
         None, description="自由色集合 (hex)"
     )
+
+    @field_validator("color_mode", mode="before")
+    @classmethod
+    def normalize_color_mode(cls, v: str) -> str:
+        return normalize_4color_mode(v)
 
 
 class ConvertBatchRequest(BaseModel):

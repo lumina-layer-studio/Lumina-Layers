@@ -18,6 +18,7 @@ from pydantic import BaseModel
 
 from api.dependencies import get_file_registry, get_session_store, get_worker_pool
 from api.file_bridge import ndarray_to_png_bytes, pil_to_png_bytes, upload_to_tempfile
+from config import normalize_4color_mode
 from api.file_registry import FileRegistry
 from api.schemas.converter import (
     BedSizeItem,
@@ -217,6 +218,9 @@ async def convert_preview(
     lut_path = LUTManager.get_lut_path(lut_name)
     if lut_path is None:
         raise HTTPException(status_code=404, detail=f"LUT not found: {lut_name}")
+
+    # Normalize legacy color_mode values
+    color_mode = normalize_4color_mode(color_mode)
 
     # 1. File upload (I/O, main thread)
     temp_path = await upload_to_tempfile(image)
@@ -632,6 +636,9 @@ async def convert_batch(
     lut_path = LUTManager.get_lut_path(lut_name)
     if lut_path is None:
         raise HTTPException(status_code=404, detail=f"LUT not found: {lut_name}")
+
+    # Normalize legacy color_mode values
+    color_mode = normalize_4color_mode(color_mode)
 
     # Validate modeling_mode string (main thread)
     try:

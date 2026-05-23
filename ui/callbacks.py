@@ -44,10 +44,8 @@ _MODE_DOTS = {
     "6-Color":          ["#00AE42","#111111","#DC143C","#FFE600","#0064F0","#F0F0F0"],
     "5-Color Extended": ["#DC143C","#FFE600","#0064F0","#F0F0F0","#111111"],
     "BW":               ["#F0F0F0","#111111"],
-    "4-Color-CMYW":     ["#00FFFF","#FF00FF","#FFFF00","#F0F0F0"],
     "CMYW":             ["#00FFFF","#FF00FF","#FFFF00","#F0F0F0"],
     "RYBW":             ["#DC143C","#FFE600","#0064F0","#F0F0F0"],
-    "4-Color":          ["#DC143C","#FFE600","#0064F0","#F0F0F0"],
 }
 
 def _resolve_mode_key(mode: str) -> str:
@@ -74,7 +72,7 @@ def _color_mode_html(mode: str) -> str:
         )
         label = "Merged"
     else:
-        colors = _MODE_DOTS.get(key, _MODE_DOTS["4-Color"])
+        colors = _MODE_DOTS.get(key, _MODE_DOTS["RYBW"])
         dots_html = "".join(
             f'<span style="{dot_style};background:{c}"></span>' for c in colors
         )

@@ -6,6 +6,27 @@ Lumina Studio 所有重要变更记录。
 
 ---
 
+## v1.6.9 (2026-05-24)
+
+### 新增 LUT 预设
+- 新增彩多屋 LUT 预设：4色 PLA（CMYK、RYBW）、6色 PLA（CMYWGK、RYBWGK）、8色 PLA
+- 新增三绿 PETG 4色 RYBW 预设
+- 新增 inslogic PLA 4色 RYBW 及 6色 RYBWGK 预设
+- 新增千云端 PLA 4色 RYBW 及 6色 RYBWGK 预设
+- 新增 KYNIX PETG 4色 RYBW 预设
+
+### Bug 修复
+- **fix(ui)**: 移除颜色模式选择器中冗余的"4-Color"选项，直接使用 CMYW/RYBW 选择，不再通过通用中介
+- **fix(ui)**: 页面滚动时自动关闭下拉框，避免选项弹窗跟随页面移动
+
+### 重构
+- **refactor(ui)**: 将"高级"页改名为"软件设置"并移至末尾，移除"关于"页，统计信息迁入设置页
+
+### 杂项
+- **chore**: 从 1.6 主分支移除 React 2.0 前端代码（frontend/）
+
+---
+
 ## v1.6.8 (2026-04-30)
 
 ### Bug 修复

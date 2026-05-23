@@ -6,6 +6,27 @@ All notable changes to Lumina Studio are documented in this file.
 
 ---
 
+## v1.6.9 (2026-05-24)
+
+### New LUT Presets
+- Added 彩多屋 (Caiduowu) LUT presets: 4-Color PLA (CMYK, RYBW), 6-Color PLA (CMYWGK, RYBWGK), 8-Color PLA
+- Added 三绿 (Sanlv) PETG 4-Color RYBW preset
+- Added inslogic PLA 4-Color RYBW and 6-Color RYBWGK presets
+- Added 千云端 (QianYunDuan) PLA 4-Color RYBW and 6-Color RYBWGK presets
+- Added KYNIX PETG 4-Color RYBW preset
+
+### Bug Fixes
+- **fix(ui)**: Removed redundant "4-Color" option from color mode selectors — CMYW and RYBW are now directly selected instead of going through a generic "4-Color" intermediary
+- **fix(ui)**: Dropdown menus now auto-close on page scroll, preventing option popups from following page movement
+
+### Refactoring
+- **refactor(ui)**: Renamed "Advanced" tab to "Software Settings" and moved it to the last position; removed "About" tab; relocated generation statistics into the Settings page
+
+### Chores
+- **chore**: Removed React 2.0 frontend code (frontend/) from the 1.6 main branch
+
+---
+
 ## v1.6.8 (2026-04-30)
 
 ### Bug Fixes

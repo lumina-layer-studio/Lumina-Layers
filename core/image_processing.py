@@ -382,7 +382,7 @@ class LuminaImageProcessor:
                 for _ in range(5):
                     digits.append(temp % 4)
                     temp //= 4
-                stack = (-1,) + tuple(reversed(digits))
+                stack = (-4,) + tuple(reversed(digits)) # COATING UPDATE: USING -4 AS THE TOKEN FOR IN LAYER COATING
                 ref_stacks.append(stack)
             
             # Generate extended 1444 stacks using select_extended_1444_colors

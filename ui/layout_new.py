@@ -18,7 +18,7 @@ import numpy as np
 from PIL import Image as PILImage
 
 from core.i18n import I18n
-from config import ColorSystem, ModelingMode, BedManager
+from config import ColorSystem, ModelingMode, BedManager, normalize_4color_mode
 from utils import Stats, LUTManager
 from core.calibration import generate_calibration_board, generate_smart_board, generate_8color_batch_zip, generate_5color1444_board
 from core.naming import generate_batch_filename
@@ -1332,7 +1332,7 @@ def create_app():
     with gr.Blocks(title="Lumina Studio") as app:
         # Inject CSS styles via HTML component (for Gradio 4.20.0 compatibility)
         from ui.styles import CUSTOM_CSS
-        gr.HTML(f"<style>{CUSTOM_CSS + HEADER_CSS + LUT_GRID_CSS}</style>")
+        gr.HTML(f"<style>{CUSTOM_CSS + HEADER_CSS + LUT_GRID_CSS}</style>{DROPDOWN_SCROLL_FIX_JS}")
         
         lang_state = gr.State(value="zh")
         theme_state = gr.State(value=False)  # False=light, True=dark
@@ -2106,7 +2106,7 @@ def create_converter_tab_content(lang: str, lang_state=None, theme_state=None) -
 
             # Load saved preferences
             _user_prefs = _load_user_settings()
-            saved_color_mode = _user_prefs.get("last_color_mode", "RYBW")
+            saved_color_mode = normalize_4color_mode(_user_prefs.get("last_color_mode", "RYBW"))
             saved_modeling_mode_str = _user_prefs.get("last_modeling_mode", ModelingMode.HIGH_FIDELITY.value)
             try:
                 saved_modeling_mode = ModelingMode(saved_modeling_mode_str)

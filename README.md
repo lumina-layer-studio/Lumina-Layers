@@ -68,8 +68,8 @@
 
 ## Project Status
 
-**Current Version**: v1.6.9  
-**License**: GNU GPL v3.0  
+**Current Version**: v1.6.9
+**License**: GNU GPL v3.0
 **Nature**: Non-profit Open Source Community Project
 
 ---

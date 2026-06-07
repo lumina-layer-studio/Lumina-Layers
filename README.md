@@ -43,6 +43,25 @@
 </p>
 
 <p align="center">
+  <b>Website:</b>
+  <a href="https://www.luminastudio.com.cn/">
+    <img src="https://img.shields.io/badge/Website-Lumina%20Studio-2EAADC?style=for-the-badge" alt="Website">
+  </a>
+  &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+  <b>Wiki:</b>
+  <a href="https://wiki.luminastudio.com.cn/">
+    <img src="https://img.shields.io/badge/Wiki-Docs-4C8EDA?style=for-the-badge" alt="Wiki">
+  </a>
+</p>
+
+<p align="center">
+  <b>Sponsors:</b>
+  <a href="https://www.luminastudio.com.cn/sponsors">
+    <img src="https://img.shields.io/badge/Sponsors-Support%20List-8A63D2?style=for-the-badge" alt="Sponsors">
+  </a>
+</p>
+
+<p align="center">
   <b> YouTube:</b>
   <a href="https://www.youtube.com/channel/UCyP2Euw9whk1j-MT8d652Kw">
     <img src="https://img.shields.io/badge/YouTube-Lumina%20Studio-FF0000?style=for-the-badge&logo=youtube&logoColor=white" alt="YouTube">
@@ -69,12 +88,71 @@
 ## Project Status
 
 **Current Version**: v1.6.9
+
 **License**: GNU GPL v3.0
+
 **Nature**: Non-profit Open Source Community Project
+
+**Website**: https://www.luminastudio.com.cn/
+
+**Wiki**: https://wiki.luminastudio.com.cn/
+
+**Sponsors & Supported Brands**: https://www.luminastudio.com.cn/sponsors
 
 ---
 ## Project Background
 To simplify the steep learning curve of software such as HueForge/FlatForge and the requirement for specific filaments, Lumina uses brute-force and simplified brute-force methods based on physical calibration to obtain actual printed colors. The current mode does not involve any color theory calculations (color calculation based on color/TD values may be introduced in advanced features of version 2.0 in the future). The current approach is: Print - Capture - Extract Color - Map Stacking Formula Based on Extracted Color - Print (this is a color matching function, inspired by the default color matching in Autoforge and CMYK Lithophane).
+
+## Lumina Studio 2.0 Roadmap
+
+Lumina Studio 1.x proved that the physical-calibration workflow works. Lumina Studio 2.0 is the next-generation rewrite of the interface, workflow and internal architecture. The color-stacking principle is the same, but the goal is a more stable, easier and more complete daily tool.
+
+The 2.0 line is planned around these areas:
+
+1. **Image to full-color 3MF in one flow**
+   - Upload an image, preprocess it, match colors, preview, and export a slicer-ready 3MF in the same workflow.
+   - Mainstream multi-color printers and slicers such as Bambu Lab, Snapmaker, Elegoo, Creality and others are considered in the output flow.
+
+2. **More accurate color matching and faster adjustment**
+   - Newer processing paths aim for better color restoration and less visible layer loss.
+   - Built-in LUT presets for multiple filament brands remain open and ready to use.
+   - Compare the source image with the generated result, adjust unsatisfactory colors, and see changes more quickly.
+   - Single-select, multi-select, undo, gradient smoothing and thickness control are part of the planned daily color-editing workflow.
+
+3. **Creator-side model details**
+   - Keychain holes with custom size and position.
+   - Fridge-magnet holes, white outline and transparent coating integrated into the main workflow.
+
+4. **SVG/vector input**
+   - SVG input and vector export are part of the 2.0 direction, making logos, icons, paper-cut style works and other clean-edge models easier to handle.
+
+5. **Printer and slicer adaptation**
+   - Built-in printer bed profiles constrain model size and reduce out-of-bed exports.
+   - Slicer choice can drive default slicing parameters.
+   - Large-format models can be split automatically for beds smaller than the final work.
+
+6. **Daily usability**
+   - Chinese/English UI switching is supported, with more languages planned on top of the internationalization framework.
+   - 3D preview before export helps users inspect the model in the browser.
+   - Output and cache cleanup are being designed as normal one-click maintenance tasks.
+
+### 2.0 FAQ
+
+**Q1: What is the relationship between 2.0 and 1.x?**
+
+2.0 is the next generation of 1.x. The physical color-calibration principle is the same, but the UI, workflow and architecture are being rebuilt. In short, 1.x proved the technical route; 2.0 is intended to become the mature daily version.
+
+**Q2: Will Lumina remain open source after crowdfunding or sponsorship?**
+
+Yes. The stable 2.0 release will remain open source for research, learning and community use. Sponsorship helps turn 2.0 from a prototype into a stable, usable and maintainable project.
+
+**Q3: Will supporters get paid-only features?**
+
+No paid-exclusive features are planned. Supporters may receive easier-to-run stable packages or development builds earlier. The open-source version and stable package are intended to keep the same functionality. Development builds are for verification; once features are stable, they will move into the stable release.
+
+**Q4: Can individual creators or small shops use Lumina commercially?**
+
+Yes. Lumina supports individual creators and small businesses selling physical prints generated with Lumina. See the license section below for the open-source license and commercial-use statement.
 
 ## Features
 **Color Modes**
@@ -121,6 +199,30 @@ All calibration presets (.npy files) are **completely free and open**, following
 - No additional testing tools required — only a 3D printer and a phone/camera.
 
 **Open Data = Community Co-creation**
+
+---
+
+## Support & Sponsors
+
+Lumina Studio is a non-profit open-source project. Sponsorship only represents support for development, testing and community maintenance. It does not affect the technical roadmap, open-source license, or filament/slicer neutrality.
+
+- Official sponsors and supported brands: https://www.luminastudio.com.cn/sponsors
+- Project Wiki: https://wiki.luminastudio.com.cn/
+- Official Website: https://www.luminastudio.com.cn/
+
+The English sponsorship flow is not ready yet. Please refer to the sponsors page for the current public support list.
+
+### Sponsored Filament Adaptation
+
+The sponsors page lists filament brands that have provided materials or otherwise supported adaptation work, including Aliz, Elegoo, Bing3D, BIQU, CAILAB, Snapmaker, Inslogic, CHING LEUNG, KYNIX, Mochuang, REBIRTH3D, Sailner, Bambu Lab, XYD, Antinsky and Anycubic.
+
+### Product Support
+
+Product support currently includes BIQU, dfoptix, Phaetus, Snapmaker, Antinsky and Anycubic.
+
+### Special Thanks
+
+Additional thanks go to Aliz, Elegoo, Aoromas, CHING LEUNG Technology, Jilin University College of Mechanical and Aerospace Engineering / Jilin University Intelligent Manufacturing Innovation and Entrepreneurship Practice Demonstration Base, Snapmaker Technology and Wujing Materials.
 
 ---
 

@@ -59,6 +59,11 @@
   <a href="https://www.luminastudio.com.cn/sponsors">
     <img src="https://img.shields.io/badge/Sponsors-Support%20List-8A63D2?style=for-the-badge" alt="Sponsors">
   </a>
+  &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+  <b>Patreon:</b>
+  <a href="https://www.patreon.com/c/lumina_studio">
+    <img src="https://img.shields.io/badge/Patreon-Lumina%20Studio-FF424D?style=for-the-badge&logo=patreon&logoColor=white" alt="Patreon">
+  </a>
 </p>
 
 <p align="center">
@@ -67,9 +72,26 @@
     <img src="https://img.shields.io/badge/YouTube-Lumina%20Studio-FF0000?style=for-the-badge&logo=youtube&logoColor=white" alt="YouTube">
   </a>
   &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-  <b>Patreon:</b>
-  <a href="https://www.patreon.com/Lumina_studio">
-    <img src="https://img.shields.io/badge/Patreon-Lumina%20Studio-FF424D?style=for-the-badge&logo=patreon&logoColor=white" alt="Patreon">
+  <b>X / Twitter:</b>
+  <a href="https://x.com/wLuF53gzlV98666">
+    <img src="https://img.shields.io/badge/X-Lumina%20Studio-000000?style=for-the-badge&logo=x&logoColor=white" alt="X / Twitter">
+  </a>
+</p>
+
+<p align="center">
+  <b>TikTok:</b>
+  <a href="https://www.tiktok.com/@dy6kueohw5ii">
+    <img src="https://img.shields.io/badge/TikTok-Lumina%20Studio-000000?style=for-the-badge&logo=tiktok&logoColor=white" alt="TikTok">
+  </a>
+  &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+  <b>Bluesky:</b>
+  <a href="https://bsky.app/profile/wluf53gzlv98666.bsky.social">
+    <img src="https://img.shields.io/badge/Bluesky-Lumina%20Studio-0285FF?style=for-the-badge&logo=bluesky&logoColor=white" alt="Bluesky">
+  </a>
+  &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+  <b>Mastodon:</b>
+  <a href="https://mastodon.social/@wluf53gzlv98666">
+    <img src="https://img.shields.io/badge/Mastodon-Lumina%20Studio-6364FF?style=for-the-badge&logo=mastodon&logoColor=white" alt="Mastodon">
   </a>
 </p>
 
@@ -98,6 +120,8 @@
 **Wiki**: https://wiki.luminastudio.com.cn/
 
 **Sponsors & Supported Brands**: https://www.luminastudio.com.cn/sponsors
+
+**Overseas Crowdfunding / Support**: https://www.patreon.com/c/lumina_studio
 
 ---
 ## Project Background
@@ -207,10 +231,16 @@ All calibration presets (.npy files) are **completely free and open**, following
 Lumina Studio is a non-profit open-source project. Sponsorship only represents support for development, testing and community maintenance. It does not affect the technical roadmap, open-source license, or filament/slicer neutrality.
 
 - Official sponsors and supported brands: https://www.luminastudio.com.cn/sponsors
+- Overseas crowdfunding / support: https://www.patreon.com/c/lumina_studio
 - Project Wiki: https://wiki.luminastudio.com.cn/
 - Official Website: https://www.luminastudio.com.cn/
+- YouTube: https://www.youtube.com/channel/UCyP2Euw9whk1j-MT8d652Kw
+- X / Twitter: https://x.com/wLuF53gzlV98666
+- TikTok: https://www.tiktok.com/@dy6kueohw5ii
+- Bluesky: https://bsky.app/profile/wluf53gzlv98666.bsky.social
+- Mastodon: https://mastodon.social/@wluf53gzlv98666
 
-The English sponsorship flow is not ready yet. Please refer to the sponsors page for the current public support list.
+The public repository currently hosts the 1.6.x open-source line. Lumina Studio 2.0 is being developed in a private beta and is planned to move into the public open-source workflow later. Patreon support helps fund that development, beta testing, packaging, documentation and community maintenance; it does not change the open-source license or make this project a paid closed-source product.
 
 ### Sponsored Filament Adaptation
 

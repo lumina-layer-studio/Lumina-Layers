@@ -1,0 +1,90 @@
+services:
+  lumina-layers:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: lumina-layers:local
+    pull_policy: build
+    container_name: lumina-layers
+    restart: unless-stopped
+    init: true
+
+    # Default Dockerfile command. main.py does not parse command-line arguments.
+    # command: ["python", "main.py"]
+    #
+    # Alternative API-only entrypoint (no command-line arguments):
+    # command: ["python", "api_server.py"]
+    # When using the API entrypoint, replace the port mapping below with
+    # "${LUMINA_PORT:-8000}:8000". api_server.py fixes the container port at 8000.
+    #
+    # One-off benchmark, not a server (inherits the image and environment):
+    # Prerequisite even for --help: lut-npy预设/Aliz/PETG/5色/*.npy must exist.
+    # The current repository lacks that subdirectory; benchmark startup fails
+    # until it is supplied. Its input paths are not configurable via env/CLI.
+    # docker compose run --rm --no-deps lumina-layers python benchmark.py --runs 1
+    # --svg-only:   false by default; run only the SVG benchmark.
+    # --hifi-only:  false by default; run only the HiFi benchmark.
+    # --no-preview: false by default; skip the preview step when present.
+    # --runs:       1 by default; integer repetition count.
+    # -h, --help:   show usage and exit.
+    # Omit boolean flags for their defaults; do not combine --svg-only and --hifi-only.
+
+    environment:
+      # Docker default: 0.0.0.0; main.py outside Docker defaults to 127.0.0.1.
+      # api_server.py also defaults to 0.0.0.0. Keep 0.0.0.0 for port publishing.
+      LUMINA_HOST: "0.0.0.0"
+      # Dockerfile default: unbuffered Python stdout/stderr.
+      PYTHONUNBUFFERED: "1"
+
+      # Optional project environment variables; uncomment to override.
+      # Values are strings. Unset entries preserve the application's defaults.
+
+      # Desktop tray policy (config.py). Both flags default to unset / false.
+      # Truthy values: 1, true, yes, on (case-insensitive).
+      # DISABLE_TRAY takes precedence; WSL always disables the tray.
+      # Linux requires ENABLE_TRAY; Windows/macOS otherwise enable it by default.
+      # Leave the tray disabled in this headless Linux container.
+      # DISABLE_TRAY: "0"
+      # ENABLE_TRAY: "0"
+
+      # SVG preview and mesh generation (core/converter.py).
+      # Only the exact string "1" enables either opt-out.
+      # LUMINA_VECTOR_SKIP_2D_PREVIEW: "0"
+      # LUMINA_DISABLE_PARALLEL_MESH: "0"
+
+      # Raster color recipe reports: auto, on, off.
+      # auto generates a report when solid_pixels <= the threshold.
+      # Invalid integer thresholds fall back to 1200000.
+      # LUMINA_COLOR_RECIPE_POLICY: "auto"
+      # LUMINA_COLOR_RECIPE_AUTO_MAX_PIXELS: "1200000"
+
+      # Vector recipe logging (core/vector_engine.py): summary, full, off.
+      # summary logs counts and up to 8 samples; other non-full values disable it.
+      # LUMINA_VECTOR_RECIPE_LOG: "summary"
+
+      # API-only worker processes (config.py, api/dependencies.py).
+      # Default: min(os.cpu_count() or 2, 4); leave unset to retain CPU detection.
+      # The value below matches the default only when at least 4 CPUs are detected.
+      # LUMINA_MAX_WORKERS: "4"
+      # Parsed timeout in seconds; currently NOT wired into API task submission.
+      # WorkerPoolManager.submit independently defaults to 300.0 seconds.
+      # LUMINA_TASK_TIMEOUT: "300.0"
+
+      # Internal/environment-detection variables, NOT deployment overrides:
+      # GRADIO_TEMP_DIR: "/app/output/.gradio_cache"
+      # main.py unconditionally overwrites this with <cwd>/output/.gradio_cache.
+      # LUMINA_BENCH_TIMING: "1"
+      # Normally unset; benchmark.py sets it during HiFi conversion.
+      # No current project code reads LUMINA_BENCH_TIMING.
+      # WSL_DISTRO_NAME and WSL_INTEROP: normally unset; either key's presence
+      # triggers WSL detection, even with an empty value. Do not set them here.
+
+    ports:
+      # Compose-only host port: LUMINA_PORT defaults to 7860.
+      # Set via shell or .env; the application does not read LUMINA_PORT.
+      # main.py selects the first free container port in 7860..8859.
+      # No project environment variable or CLI flag overrides that range.
+      - "${LUMINA_PORT:-7860}:7860"
+    volumes:
+      - ./output:/app/output
+      - ./lut-npy预设:/app/lut-npy预设

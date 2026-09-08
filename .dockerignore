@@ -20,3 +20,8 @@ coverage.xml
 .mypy_cache
 .pytest_cache
 .hypotheses
+
+# Runtime data and local settings must not be baked into the image.
+output/
+logs/
+user_settings.json

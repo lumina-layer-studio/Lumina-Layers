@@ -4622,7 +4622,7 @@ async def convert_batch(
     db_names: list[str] | str | None = Form(None, description="原生 DB 名称列表"),
     material_source: str = Form("lut", description="颜色来源: lut | material_archive"),
     selected_materials: list[str] | str | None = Form(None, description="已选耗材目录名列表"),
-    material_layer_count: int | None = Form(None, ge=1, le=20, description="耗材模式叠色层数"),
+    material_layer_count: int | None = Form(None, ge=1, le=30, description="耗材模式叠色层数"),
     material_dynamic_layer_count_enabled: bool = Form(
         False,
         description="启用耗材模式动态有效叠层数",
@@ -4656,7 +4656,7 @@ async def convert_batch(
     structure_mode: str = Form("Double-sided", description="打印结构模式"),
     color_mode: str = Form("4-Color (RYBW)", description="颜色模式"),
     modeling_mode: str = Form("high-fidelity", description="建模模式"),
-    color_layers: int | None = Form(None, ge=1, le=20, description="叠色层数"),
+    color_layers: int | None = Form(None, ge=1, le=30, description="叠色层数"),
     layer_height_mm: float | None = Form(None, gt=0.0, le=1.0, description="叠色层高 (mm)"),
     quantize_colors: int = Form(48, description="K-Means 色彩细节（仅高保真模式生效）"),
     enable_cleanup: bool = Form(True, description="孤立像素清理"),

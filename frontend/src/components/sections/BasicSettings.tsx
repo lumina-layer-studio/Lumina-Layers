@@ -6,6 +6,7 @@ import {
   ACCEPT_IMAGE_FORMATS,
   MATERIAL_DYNAMIC_LAYER_COUNT_MAX,
   MATERIAL_DYNAMIC_LAYER_COUNT_MIN,
+  MATERIAL_LAYER_COUNT_MAX,
   inferDefaultMaterialBackingDirName,
   isValidImageType,
   hasOnlySvgInputs,
@@ -1326,7 +1327,7 @@ export default function BasicSettings() {
                     wikiPath={WIKI_DOCS.materialArchiveSource}
                     value={materialLayerCount}
                     min={5}
-                    max={10}
+                    max={MATERIAL_LAYER_COUNT_MAX}
                     step={1}
                     onChange={(v) => setMaterialLayerCount(Math.round(v))}
                   />

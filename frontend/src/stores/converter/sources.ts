@@ -35,7 +35,13 @@ const MATERIAL_ARCHIVE_RELIEF_LAYER_HEIGHT_MM = 0.08;
 
 export const MATERIAL_DYNAMIC_LAYER_COUNT_MIN = 5;
 
-export const MATERIAL_DYNAMIC_LAYER_COUNT_MAX = 10;
+export const MATERIAL_DYNAMIC_LAYER_COUNT_MAX = 30;
+
+/** Default upper bound of the dynamic range (wider ranges cost build time). */
+export const MATERIAL_DYNAMIC_LAYER_COUNT_DEFAULT_MAX = 10;
+
+/** Upper bound for fixed material-archive colour layers (layer-wise DP > 10). */
+export const MATERIAL_LAYER_COUNT_MAX = 30;
 
 export function normalizeDynamicMaterialLayerCount(
   value: number,

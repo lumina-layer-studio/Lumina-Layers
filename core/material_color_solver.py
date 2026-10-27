@@ -45,7 +45,13 @@ ALLOWED_LAYER_HEIGHTS_MM: tuple[float, ...] = (0.04, 0.08, 0.1)
 DEFAULT_LAYER_HEIGHT_MM: float = 0.08
 DEFAULT_LAYER_COUNT: int = 5
 MIN_LAYER_COUNT: int = 5
-MAX_LAYER_COUNT: int = 10
+MAX_LAYER_COUNT: int = 30
+"""Upper bound for printed colour layers. Deep stacks (>10) are served by the
+layer-wise DP in :mod:`core.material_layer_dp` through the candidate runtime.
+打印叠色层数上限；>10 层由候选运行时内的逐层 DP 求解。"""
+MITM_MAX_LAYER_COUNT: int = 10
+"""Upper bound for the exhaustive meet-in-the-middle helpers below, whose
+cost grows as ``M ** (N / 2)``. 下方 MITM 穷举函数的层数上限（代价随 M**(N/2) 增长）。"""
 DEFAULT_BEAM_WIDTH: int = 32
 
 
@@ -686,9 +692,10 @@ def solve_image_colors_optimal(
         delta_e: (C,) float64 CIE76 ΔE between target and prediction.
             (CIE76 ΔE)
     """
-    if layer_count < MIN_LAYER_COUNT or layer_count > MAX_LAYER_COUNT:
+    if layer_count < MIN_LAYER_COUNT or layer_count > MITM_MAX_LAYER_COUNT:
         raise ValueError(
-            f"layer_count must be {MIN_LAYER_COUNT}-{MAX_LAYER_COUNT}, got {layer_count}"
+            f"layer_count must be {MIN_LAYER_COUNT}-{MITM_MAX_LAYER_COUNT}, got {layer_count} "
+            "(deeper stacks: use the material candidate runtime)"
         )
     if not materials:
         raise ValueError("At least one material must be provided (materials is empty)")
@@ -970,9 +977,10 @@ def suggest_colors_for_target(
     target_srgb = np.asarray(target_srgb, dtype=np.uint8)
     if target_srgb.shape != (3,):
         raise ValueError(f"target_srgb must be shaped (3,), got {target_srgb.shape}")
-    if layer_count < MIN_LAYER_COUNT or layer_count > MAX_LAYER_COUNT:
+    if layer_count < MIN_LAYER_COUNT or layer_count > MITM_MAX_LAYER_COUNT:
         raise ValueError(
-            f"layer_count must be {MIN_LAYER_COUNT}-{MAX_LAYER_COUNT}, got {layer_count}"
+            f"layer_count must be {MIN_LAYER_COUNT}-{MITM_MAX_LAYER_COUNT}, got {layer_count} "
+            "(deeper stacks: use the material candidate runtime)"
         )
     if not materials:
         raise ValueError("At least one material must be provided (materials is empty)")

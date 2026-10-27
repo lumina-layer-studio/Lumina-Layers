@@ -140,7 +140,7 @@ import {
 } from "./previewCommitGuard";
 import { buildMissingAutoReliefHeightMap,buildPreviewParams } from "./requests";
 import {
-  buildConversionSourceParams,buildNativeModelDefaults,buildNativeModelState,clampValue,filterNativeBrandGroups,getMaterialArchiveReliefMinimumExtraHeight,getNativeBrandGroupByKey,getNativeDbNamesForGroup,getNativeDbOptionNames,getSelectedNativeBrandGroup,getSupportedModeByPair,inferDefaultMaterialBackingDirName,isDynamicMaterialActive,MATERIAL_DYNAMIC_LAYER_COUNT_MAX,MATERIAL_DYNAMIC_LAYER_COUNT_MIN,normalizeDynamicMaterialLayerCount,normalizeLegacyLutNames,normalizeLutColorMode,normalizeLutDrivenReliefState,normalizeLutGroups,normalizeNativeBrandGroups,normalizePublicColorMode,normalizeStringArray,RELIEF_MAX_EXTRA_HEIGHT_MM,resolveConverterSourceSelection,resolveMaterialPrintLayerCount,resolveNativeBrandSelection,resolveNativeSupportedModeForBrand,resolvePreferredSupportedMode,
+  buildConversionSourceParams,buildNativeModelDefaults,buildNativeModelState,clampValue,filterNativeBrandGroups,getMaterialArchiveReliefMinimumExtraHeight,getNativeBrandGroupByKey,getNativeDbNamesForGroup,getNativeDbOptionNames,getSelectedNativeBrandGroup,getSupportedModeByPair,inferDefaultMaterialBackingDirName,isDynamicMaterialActive,MATERIAL_DYNAMIC_LAYER_COUNT_DEFAULT_MAX,MATERIAL_DYNAMIC_LAYER_COUNT_MIN,MATERIAL_LAYER_COUNT_MAX,normalizeDynamicMaterialLayerCount,normalizeLegacyLutNames,normalizeLutColorMode,normalizeLutDrivenReliefState,normalizeLutGroups,normalizeNativeBrandGroups,normalizePublicColorMode,normalizeStringArray,RELIEF_MAX_EXTRA_HEIGHT_MM,resolveConverterSourceSelection,resolveMaterialPrintLayerCount,resolveNativeBrandSelection,resolveNativeSupportedModeForBrand,resolvePreferredSupportedMode,
 } from "./sources";
 import type {
   ConverterActions,ConverterState,ModelSurfaceModelRotation,ModelSurfacePlacement,PendingReplacement,RegionData,SelectionMode,SelectionTool,SourceVersion,
@@ -148,7 +148,7 @@ import type {
 export { CONVERTER_ERROR_KEYS } from "./generationActions";
 export { buildLayerImagesSourceKey } from "./previewArtifacts";
 export {
-  clampValue,getMaterialArchiveReliefMinimumExtraHeight,getMaterialArchiveReliefMinimumTotalHeight,inferDefaultMaterialBackingDirName,isDynamicMaterialActive,MATERIAL_DYNAMIC_LAYER_COUNT_MAX,MATERIAL_DYNAMIC_LAYER_COUNT_MIN,resolveConverterSourceSelection,
+  clampValue,getMaterialArchiveReliefMinimumExtraHeight,getMaterialArchiveReliefMinimumTotalHeight,inferDefaultMaterialBackingDirName,isDynamicMaterialActive,MATERIAL_DYNAMIC_LAYER_COUNT_DEFAULT_MAX,MATERIAL_DYNAMIC_LAYER_COUNT_MAX,MATERIAL_DYNAMIC_LAYER_COUNT_MIN,MATERIAL_LAYER_COUNT_MAX,resolveConverterSourceSelection,
 } from "./sources";
 export type {
   ContentCommitStatus,ConverterActions,ConverterState,ModelSurfaceModelRotation,ModelSurfacePlacement,ModelSurfacePlacementMode,PendingReplacement,RegionData,SelectionDocument,SelectionMode,SelectionTool,SourceVersion,WorkshopConverterImageInput,
@@ -1930,7 +1930,7 @@ export const DEFAULT_STATE: ConverterState = {
   materialBackingMaterialDirName: loadMaterialBackingMaterialDirName(),
   materialDynamicLayerCountEnabled: false,
   materialMinLayerCount: MATERIAL_DYNAMIC_LAYER_COUNT_MIN,
-  materialMaxLayerCount: MATERIAL_DYNAMIC_LAYER_COUNT_MAX,
+  materialMaxLayerCount: MATERIAL_DYNAMIC_LAYER_COUNT_DEFAULT_MAX,
   materialDynamicRecipes: [],
   materialLayerBenefitCurve: [],
   materialLayerBenefitScope: "all_printable_pixels",
@@ -2950,7 +2950,7 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
     setMaterialLayerCount: (count: number) => {
       const materialSuggestionReset = _cancelMaterialSuggestionWork();
       set((state) => {
-        const materialLayerCount = clampValue(Math.round(count), 1, 20);
+        const materialLayerCount = clampValue(Math.round(count), 1, MATERIAL_LAYER_COUNT_MAX);
         return {
           materialLayerCount,
           ...materialSuggestionReset,
@@ -3000,7 +3000,7 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
         const materialMaxLayerCount = Math.max(
           normalizeDynamicMaterialLayerCount(
             state.materialMaxLayerCount,
-            MATERIAL_DYNAMIC_LAYER_COUNT_MAX,
+            MATERIAL_DYNAMIC_LAYER_COUNT_DEFAULT_MAX,
           ),
           materialMinLayerCount,
         );

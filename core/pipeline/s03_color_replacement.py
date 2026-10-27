@@ -507,7 +507,8 @@ def _apply_material_archive_color_replacements(
     # 优先走持久化缓存；无缓存时退回严格 MITM 求解器。
     try:
         from core.material_cache import DEFAULT_GRID_RESOLUTION
-        from core.material_lut_provider import load_solver_cache
+        from core.material_color_solver import MITM_MAX_LAYER_COUNT
+        from core.material_lut_provider import load_solver_cache, load_solver_runtime
         from core.material_lut_synthesis import (
             ensure_not_worse_than_smaller_N,
             solve_image_colors_optimal,
@@ -533,6 +534,20 @@ def _apply_material_archive_color_replacements(
                 unique_repl_srgb, materials
             )
             solver_path = "cache"
+        elif int(layer_count) > MITM_MAX_LAYER_COUNT:
+            # Deep stacks: MITM is infeasible; use the candidate runtime
+            # (layer-wise DP). 深叠层：MITM 不可行，改用候选运行时（逐层 DP）。
+            runtime, _runtime_grid = load_solver_runtime(
+                materials=materials,
+                layer_count=layer_count,
+                layer_height_mm=layer_height_mm,
+                substrate=substrate,
+                grid_resolution=effective_grid,
+            )
+            matched_rgb_unique, recipes_unique, delta_e = runtime.lookup(
+                unique_repl_srgb, materials
+            )
+            solver_path = "runtime"
         else:
             matched_rgb_unique, recipes_unique, delta_e = solve_image_colors_optimal(
                 unique_repl_srgb,

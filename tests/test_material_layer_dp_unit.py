@@ -178,3 +178,32 @@ def test_isolated_pixel_cleanup_handles_deep_stacks():
     cleaned_rgb, cleaned_mat = cleanup_isolated_pixels(material_matrix, rgb)
     np.testing.assert_array_equal(cleaned_mat[2, 2], stack_a)
     assert cleaned_rgb[2, 2].tolist() == [0, 0, 0]
+
+
+def test_dynamic_layer_caps_agree_across_api_and_core():
+    """The API wire validator must accept every depth the core solver supports."""
+    from api.dynamic_material_settings import (
+        MAX_DYNAMIC_MATERIAL_LAYER_COUNT,
+        normalize_dynamic_material_settings,
+    )
+    from core.material_dynamic_solver import MAX_DYNAMIC_LAYER_COUNT
+
+    assert MAX_DYNAMIC_MATERIAL_LAYER_COUNT == MAX_DYNAMIC_LAYER_COUNT == MAX_LAYER_COUNT
+    enabled, low, high, _tol = normalize_dynamic_material_settings(
+        material_source="material_archive",
+        enabled=True,
+        min_layer_count=5,
+        max_layer_count=30,
+        delta_e00_tolerance=0.5,
+        hue_weight=0.0,
+    )
+    assert (enabled, low, high) == (True, 5, 30)
+    with pytest.raises(ValueError):
+        normalize_dynamic_material_settings(
+            material_source="material_archive",
+            enabled=True,
+            min_layer_count=5,
+            max_layer_count=31,
+            delta_e00_tolerance=0.5,
+            hue_weight=0.0,
+        )

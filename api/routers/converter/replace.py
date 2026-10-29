@@ -4391,6 +4391,7 @@ def region_replace_batch(
             "matched_rgb",
             "material_matrix",
             "mask_solid",
+            "quantized_image",
         },
     )
     cache, history_checkpoint = cache_context.__enter__()

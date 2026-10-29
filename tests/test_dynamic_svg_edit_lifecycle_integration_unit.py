@@ -211,8 +211,10 @@ def _generate_params() -> dict[str, object]:
     }
 
 
+@pytest.mark.parametrize("batch_regions", [False, True], ids=["single", "batch"])
 def test_dynamic_svg_edit_lifecycle_keeps_native_geometry_and_export_recipes(
     monkeypatch,
+    batch_regions: bool,
 ) -> None:
     """Keep dynamic SVG recipes consistent through edit, GLB, 3MF and tiles.
 
@@ -388,9 +390,22 @@ def test_dynamic_svg_edit_lifecycle_keeps_native_geometry_and_export_recipes(
             json={"session_id": session_id, "x": 150, "y": 100},
         )
         assert spatial_region.status_code == 200, spatial_region.text
+        target_map_before = np.asarray(cache["quantized_image"]).copy()
+        replace_endpoint = (
+            "/api/convert/region-replace-batch"
+            if batch_regions else "/api/convert/region-replace"
+        )
+        spatial_item = {
+            "replacement_color": "#686868", "click_x": 150, "click_y": 100,
+        }
         spatial_replace = client.post(
-            "/api/convert/region-replace",
-            json={"session_id": session_id, "replacement_color": "#686868"},
+            replace_endpoint,
+            json={
+                "session_id": session_id,
+                **({"items": [spatial_item]} if batch_regions else {
+                    "replacement_color": spatial_item["replacement_color"],
+                }),
+            },
         )
         assert spatial_replace.status_code == 200, spatial_replace.text
         assert spatial_replace.json()["material_dynamic_recipes"]
@@ -402,16 +417,18 @@ def test_dynamic_svg_edit_lifecycle_keeps_native_geometry_and_export_recipes(
             initial_matrix,
             after_spatial["material_matrix"],
         )
+        assert not np.array_equal(target_map_before, after_spatial["quantized_image"])
 
+        gradient_item = {
+            "replacement_color": "#787878",
+            "gradient_group_index": gradient_group["group_index"],
+            "gradient_region_index": gradient_group["regions"][0]["region_index"],
+        }
         gradient_replace = client.post(
-            "/api/convert/region-replace",
+            replace_endpoint,
             json={
                 "session_id": session_id,
-                "replacement_color": "#787878",
-                "gradient_group_index": gradient_group["group_index"],
-                "gradient_region_index": gradient_group["regions"][0][
-                    "region_index"
-                ],
+                **({"items": [gradient_item]} if batch_regions else gradient_item),
             },
         )
         assert gradient_replace.status_code == 200, gradient_replace.text

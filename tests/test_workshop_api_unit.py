@@ -511,10 +511,12 @@ def test_registry_install_request_cannot_declare_official_identity(
     assert response.status_code == 422
 
 
-def test_registry_install_retries_one_transient_read_timeout(
+@pytest.mark.parametrize("timeout_type", [httpx.ReadTimeout, httpx.ConnectTimeout])
+def test_registry_install_retries_one_transient_timeout(
     api_bundle,
     monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
+    timeout_type: type[httpx.TimeoutException],
 ) -> None:
     client, _installer, archive, _registry = api_bundle
     attempts = 0
@@ -524,7 +526,7 @@ def test_registry_install_retries_one_transient_read_timeout(
         nonlocal attempts
         attempts += 1
         if attempts == 1:
-            raise httpx.ReadTimeout("temporary timeout")
+            raise timeout_type("temporary timeout")
         return archive
 
     monkeypatch.setattr(
@@ -556,7 +558,50 @@ def test_registry_install_retries_one_transient_read_timeout(
     assert records[0].attempt == 1
     assert records[0].max_attempts == 2
     assert records[0].delay_ms == 250
+    assert records[0].error_type == timeout_type.__name__
     assert "https://" not in records[0].getMessage()
+
+
+def test_registry_install_stops_after_two_timeouts_without_installing(
+    api_bundle,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client, installer, _archive, _registry = api_bundle
+    attempts = []
+
+    def failed_download(_candidate):
+        attempts.append(True)
+        raise httpx.ConnectTimeout("private download URL")
+
+    monkeypatch.setattr(workshop_router, "download_registry_package", failed_download)
+    monkeypatch.setattr(workshop_router.time, "sleep", lambda _delay: None)
+    response = client.post(
+        "/api/workshop/v1/install/registry",
+        json={"module_id": "fixture.hello", "version": "1.0.0"},
+    )
+    assert response.status_code == 504
+    assert "timed out" in response.json()["detail"]
+    assert "private download URL" not in response.text
+    assert len(attempts) == 2
+    assert installer.list() == ()
+
+
+def test_modules_reports_storage_permission_failure_and_can_be_retried(
+    api_bundle,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client, installer, _archive, _registry = api_bundle
+
+    def denied_installer():
+        raise PermissionError(1, "Operation not permitted", "/private/user/data")
+
+    monkeypatch.setattr(workshop_router, "get_workshop_installer", denied_installer)
+    response = client.get("/api/workshop/v1/modules")
+    assert response.status_code == 503
+    assert "permissions" in response.json()["detail"]
+    assert "/private/user/data" not in response.text
+    monkeypatch.setattr(workshop_router, "get_workshop_installer", lambda: installer)
+    assert client.get("/api/workshop/v1/modules").json() == {"modules": []}
 
 
 def test_registry_install_does_not_retry_non_timeout_http_errors(

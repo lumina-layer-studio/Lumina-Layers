@@ -7,6 +7,7 @@
 import { useEffect } from "react";
 
 import { useErrorTicketPromptStore } from "../stores/errorTicketPromptStore";
+import { isHandledSceneError } from "../utils/handledSceneErrors";
 
 /**
  * Extract a short, human-readable message from an unknown thrown value.
@@ -28,6 +29,7 @@ export function useErrorTicketPromptCapture(enabled: boolean): void {
     const { reportClientError } = useErrorTicketPromptStore.getState();
 
     const handleError = (event: ErrorEvent) => {
+      if (isHandledSceneError(event.error)) return;
       reportClientError(describeThrownValue(event.error, event.message ?? ""));
     };
     const handleUnhandledRejection = (event: PromiseRejectionEvent) => {

@@ -6,6 +6,7 @@ import {
   useErrorTicketPromptCapture,
 } from "../useErrorTicketPromptCapture";
 import { useErrorTicketPromptStore } from "../../stores/errorTicketPromptStore";
+import { markSceneErrorHandled } from "../../utils/handledSceneErrors";
 
 function dispatchRejection(reason: unknown) {
   const event = new Event("unhandledrejection") as Event & { reason: unknown };
@@ -37,6 +38,18 @@ describe("useErrorTicketPromptCapture", () => {
     dispatchRejection(new Error("async failure"));
 
     expect(useErrorTicketPromptStore.getState().pending?.message).toBe("async failure");
+  });
+
+  it("does not offer a duplicate ticket for a recovered scene error", () => {
+    renderHook(() => useErrorTicketPromptCapture(true));
+    const error = new Error("Environment unavailable");
+    markSceneErrorHandled(error);
+    window.dispatchEvent(new ErrorEvent("error", { error }));
+    expect(useErrorTicketPromptStore.getState().pending).toBeNull();
+
+    // Identical text from a different, uncaught failure must still be reported.
+    window.dispatchEvent(new ErrorEvent("error", { error: new Error(error.message) }));
+    expect(useErrorTicketPromptStore.getState().pending?.message).toBe(error.message);
   });
 
   it("does not listen when disabled or after unmount", () => {

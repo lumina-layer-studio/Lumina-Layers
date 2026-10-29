@@ -71,19 +71,26 @@ vi.mock("../components/FridgeMagnet3D", () => ({
 // Mock @react-three/drei — Environment renders a queryable DOM element
 // Boolean false is dropped by React DOM, so we explicitly map props to data-* attributes
 let capturedOrbitControlsProps: Record<string, unknown> = {};
+let environmentError: Error | null = null;
+let canvasError: Error | null = null;
+const clearEnvironment = vi.fn((_options?: unknown) => { environmentError = null; });
 vi.mock("@react-three/drei", () => ({
   OrbitControls: (props: Record<string, unknown>) => {
     capturedOrbitControlsProps = props;
     return null;
   },
-  Environment: (props: Record<string, unknown>) => (
+  useEnvironment: { clear: (options: unknown) => clearEnvironment(options) },
+  Environment: (props: Record<string, unknown>) => {
+    if (environmentError) throw environmentError;
+    return (
     <div
       data-testid="mock-environment"
       data-files={String(props.files ?? "")}
       data-background={String(props.background ?? "")}
       data-environment-intensity={String(props.environmentIntensity ?? "")}
     />
-  ),
+    );
+  },
   Html: ({ children, ...props }: Record<string, unknown> & { children?: React.ReactNode }) => (
     <div data-testid="mock-html" {...(props as React.HTMLAttributes<HTMLDivElement>)}>{children}</div>
   ),
@@ -218,6 +225,7 @@ function getMockThreeState(): MockThreeState {
 
 vi.mock("@react-three/fiber", () => ({
   Canvas: (props: Record<string, unknown> & { children?: React.ReactNode }) => {
+    if (canvasError) throw canvasError;
     capturedCanvasProps = props;
     return <div data-testid="mock-canvas">{props.children}</div>;
   },
@@ -258,6 +266,9 @@ describe("Scene3D", () => {
     } finally { Object.assign(window, { electronAPI: undefined }); }
   });
 beforeEach(() => {
+    environmentError = null;
+    canvasError = null;
+    clearEnvironment.mockClear();
     clearSceneTransitionSnapshot();
     capturedCanvasProps = {};
     capturedOrbitControlsProps = {};
@@ -1480,6 +1491,57 @@ beforeEach(() => {
   });
 
   describe("lighting (Environment optimization)", () => {
+    it("keeps the scene usable with basic lighting when the HDR cannot load", () => {
+      const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+      environmentError = new Error("Could not load /hdr/studio_small_09_1k.hdr: Failed to fetch");
+      try {
+        const { container } = render(<Scene3D />);
+        expect(screen.getByTestId("mock-canvas")).toBeInTheDocument();
+        expect(screen.getByTestId("mock-bed-platform")).toBeInTheDocument();
+        expect(container.querySelector("ambientLight")).not.toBeNull();
+        expect(screen.getByText("viewer_lighting_fallback")).toBeInTheDocument();
+        expect(screen.queryByText("app_3d_scene_error")).not.toBeInTheDocument();
+      } finally {
+        consoleError.mockRestore();
+      }
+    });
+
+    it("retries a failed HDR cache without resetting conversion settings", () => {
+      const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+      environmentError = new Error("HDR request failed");
+      useConverterStore.setState({ target_width_mm: 225, sessionId: "retained-session" });
+      try {
+        const { container } = render(<Scene3D />);
+        fireEvent.click(screen.getByRole("button", { name: "viewer_retry_lighting" }));
+        expect(clearEnvironment).toHaveBeenCalledWith({ files: "/hdr/studio_small_09_1k.hdr" });
+        expect(screen.getByTestId("mock-environment")).toBeInTheDocument();
+        expect(container.querySelector("ambientLight")).toBeNull();
+        expect(screen.queryByText("viewer_lighting_fallback")).not.toBeInTheDocument();
+        expect(useConverterStore.getState().sessionId).toBe("retained-session");
+        expect(useConverterStore.getState().target_width_mm).toBe(225);
+      } finally {
+        consoleError.mockRestore();
+      }
+    });
+
+    it("recovers a failed WebGL canvas without discarding the current project", () => {
+      const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+      canvasError = new Error("Error creating WebGL context.");
+      useConverterStore.setState({ target_width_mm: 225, sessionId: "retained-session" });
+      try {
+        render(<Scene3D />);
+        expect(screen.getByText("app_3d_scene_error")).toBeInTheDocument();
+        canvasError = null;
+        fireEvent.click(screen.getByRole("button", { name: "viewer_retry_scene" }));
+        expect(screen.getByTestId("mock-canvas")).toBeInTheDocument();
+        expect(screen.queryByText("app_3d_scene_error")).not.toBeInTheDocument();
+        expect(useConverterStore.getState().sessionId).toBe("retained-session");
+        expect(useConverterStore.getState().target_width_mm).toBe(225);
+      } finally {
+        consoleError.mockRestore();
+      }
+    });
+
     it("does not render hemisphereLight", () => {
       const { container } = render(<Scene3D />);
       expect(container.querySelector("hemisphereLight")).toBeNull();

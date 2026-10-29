@@ -3588,6 +3588,22 @@ export const translations: Record<string, Record<"zh" | "en", string>> = {
     zh: "3D 场景加载失败",
     en: "3D scene failed to load",
   },
+  viewer_scene_recovery_hint: {
+    zh: "可以重试加载 3D 预览，图片和参数会保留。若仍失败，请检查浏览器的图形加速设置。",
+    en: "Retry the 3D preview; your image and settings are kept. If it still fails, check your browser's graphics acceleration settings.",
+  },
+  viewer_retry_scene: {
+    zh: "重试 3D 预览",
+    en: "Retry 3D preview",
+  },
+  viewer_lighting_fallback: {
+    zh: "环境光照加载失败，已使用基础光照。",
+    en: "Environment lighting could not load. Using basic lighting.",
+  },
+  viewer_retry_lighting: {
+    zh: "重试光照",
+    en: "Retry lighting",
+  },
   app_toggle_language: {
     zh: "切换语言",
     en: "Toggle language",

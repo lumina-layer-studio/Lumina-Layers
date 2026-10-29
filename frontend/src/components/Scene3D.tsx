@@ -12,7 +12,7 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from "react";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
-import { Environment, Html } from "@react-three/drei";
+import { Environment, Html, useEnvironment } from "@react-three/drei";
 import { LIGHTING_CONFIG } from "./lightingConfig";
 import * as THREE from "three";
 import { computeFitDistance } from "./ModelViewer";
@@ -20,6 +20,8 @@ import InteractiveModelViewer, {
   resolvePreviewColorLayerHeightMm,
 } from "./InteractiveModelViewer";
 import BedPlatform from "./BedPlatform";
+import SceneErrorBoundary from "./SceneErrorBoundary";
+import Button from "./ui/Button";
 import { SceneAssetReady, SceneTransitionBridge } from "./SceneTransitionBridge";
 import {
   clearSceneTransitionSnapshot,
@@ -786,6 +788,20 @@ function BatchPreviewModels({
   );
 }
 
+function requireCanvasContext(canvas: HTMLCanvasElement | null) {
+  // R3F configures the renderer asynchronously, outside React's error boundary.
+  // Acquire its actual context at ref attachment, before that initialization.
+  // Three.js reuses this same context, including its drawing-buffer attributes.
+  if (canvas && !canvas.getContext("webgl2", {
+    alpha: true,
+    antialias: true,
+    powerPreference: "high-performance",
+    preserveDrawingBuffer: true,
+  })) {
+    throw new Error("Error creating WebGL context.");
+  }
+}
+
 function Scene3D({ modelUrl, deferInitialization = false, suspended = false }: Scene3DProps) {
   const { t } = useI18n();
   const themeColors = useThemeConfig();
@@ -805,12 +821,37 @@ function Scene3D({ modelUrl, deferInitialization = false, suspended = false }: S
   const snapshotCanvasRef = useRef<HTMLCanvasElement>(null);
   const captureTransitionRef = useRef<(() => void) | null>(null);
   const [environmentReady, setEnvironmentReady] = useState(false);
+  const [environmentFailed, setEnvironmentFailed] = useState(false);
+  const [environmentAttempt, setEnvironmentAttempt] = useState(0);
+  const [sceneAttempt, setSceneAttempt] = useState(0);
   const [bedReady, setBedReady] = useState(false);
   const [readyModelKey, setReadyModelKey] = useState<string | null>(null);
   const visibleSnapshot = transitionSnapshot?.key === transitionKey ? transitionSnapshot : null;
   const handleFrameReady = useCallback(() => {
     setTransitionSnapshot(null);
     clearSceneTransitionSnapshot();
+  }, []);
+  const handleEnvironmentError = useCallback((error: Error) => {
+    setEnvironmentFailed(true);
+    postClientLog("viewer: environment unavailable; using basic lighting", {
+      scope: "viewer", phase: "environment-fallback", method: "warn",
+      details: { message: error.message },
+    });
+  }, []);
+  const retryEnvironment = () => {
+    useEnvironment.clear({ files: LIGHTING_CONFIG.environment.hdrFile });
+    setEnvironmentFailed(false);
+    setEnvironmentAttempt((attempt) => attempt + 1);
+  };
+  const handleSceneError = useCallback((error: Error) => {
+    glRef.current = null;
+    setEnvironmentFailed(false);
+    setTransitionSnapshot(null);
+    clearSceneTransitionSnapshot();
+    postClientLog("viewer: scene unavailable; retry is available", {
+      scope: "viewer", phase: "scene-failed", method: "error",
+      details: { message: error.message },
+    });
   }, []);
 
   useLayoutEffect(() => () => {
@@ -1502,7 +1543,26 @@ function Scene3D({ modelUrl, deferInitialization = false, suspended = false }: S
 
       {/* Loading indicator is now 3D-anchored inside Canvas */}
 
-      {!deferInitialization && <Canvas
+      {!deferInitialization && <SceneErrorBoundary
+        key={sceneAttempt}
+        onError={handleSceneError}
+        fallback={(
+          <div
+            role="alert"
+            className="absolute inset-y-0 flex flex-col items-center justify-center gap-3 p-6 text-center text-sm"
+            style={{
+              left: "var(--lumina-left-dock-width, 0px)",
+              right: "var(--lumina-right-dock-width, 0px)",
+              color: "var(--surface-text-muted)",
+            }}
+          >
+            <p>{t("app_3d_scene_error")}</p>
+            <p>{t("viewer_scene_recovery_hint")}</p>
+            <Button label={t("viewer_retry_scene")} onClick={() => setSceneAttempt((attempt) => attempt + 1)} />
+          </div>
+        )}
+      ><Canvas
+        ref={requireCanvasContext}
         style={visibleSnapshot ? { visibility: "hidden" } : undefined}
         frameloop={suspended ? "never" : "demand"}
         camera={{
@@ -1581,14 +1641,18 @@ function Scene3D({ modelUrl, deferInitialization = false, suspended = false }: S
         <CameraDepthPrecisionGuard />
         <ThemeUpdater />
         <CanvasInteractionBridge />
-        <Suspense fallback={null}>
+        <SceneErrorBoundary
+          key={environmentAttempt}
+          onError={handleEnvironmentError}
+          fallback={<><ambientLight intensity={1} /><SceneAssetReady onReadyChange={setEnvironmentReady} /></>}
+        ><Suspense fallback={<ambientLight intensity={1} />}>
           <Environment
             files={LIGHTING_CONFIG.environment.hdrFile}
             background={false}
             environmentIntensity={themeColors.environmentIntensity}
           />
           <SceneAssetReady onReadyChange={setEnvironmentReady} />
-        </Suspense>
+        </Suspense></SceneErrorBoundary>
         <directionalLight
           position={[...LIGHTING_CONFIG.keyLight.position]}
           intensity={themeColors.keyLightIntensity}
@@ -1780,7 +1844,23 @@ function Scene3D({ modelUrl, deferInitialization = false, suspended = false }: S
             </div>
           </Html>
         )}
-      </Canvas>}
+      </Canvas></SceneErrorBoundary>}
+      {environmentFailed && (
+        <div
+          role="status"
+          className="absolute bottom-3 z-20 flex flex-wrap items-center justify-between gap-2 rounded-lg border px-3 py-2 text-xs"
+          style={{
+            left: "calc(var(--lumina-left-dock-width, 0px) + 12px)",
+            right: "calc(var(--lumina-right-dock-width, 0px) + 12px)",
+            borderColor: "var(--surface-outline)",
+            background: "var(--surface-panel-strong)",
+            color: "var(--surface-text-muted)",
+          }}
+        >
+          <span>{t("viewer_lighting_fallback")}</span>
+          <Button label={t("viewer_retry_lighting")} size="sm" onClick={retryEnvironment} />
+        </div>
+      )}
       {visibleSnapshot && (
         <canvas
           ref={snapshotCanvasRef}

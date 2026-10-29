@@ -469,10 +469,34 @@ def match_unique_colors_with_runtime(
     """
     unique_lab = _rgb_to_runtime_opencv_lab(unique_colors, runtime.pred_lab)
     pred_lab = runtime.pred_lab.astype(np.float32, copy=False)
-    diff = unique_lab[:, None, :] - pred_lab[None, :, :]
-    dist2 = np.sum(diff * diff, axis=2)
-    nearest = np.argmin(dist2, axis=1)
-    distances = np.sqrt(dist2[np.arange(dist2.shape[0]), nearest]).astype(np.float32, copy=False)
+    # Photo palettes can contain tens of thousands of colors. Bound both axes
+    # instead of allocating targets × all recipes × Lab (41 GiB in one report).
+    # Keep float32 arithmetic and first-candidate tie order identical to the
+    # full search; no quantization or approximate nearest-neighbor matching.
+    candidate_count = pred_lab.shape[0]
+    if candidate_count == 0:
+        raise ValueError("Predictive runtime has no candidate recipes")
+    candidate_chunk = min(candidate_count, 8192)
+    # Each pair needs three float32 differences and one squared distance.
+    target_chunk = max(1, (32 * 1024 * 1024) // (candidate_chunk * 16))
+    nearest = np.zeros(len(unique_lab), dtype=np.intp)
+    best_dist2 = np.full(len(unique_lab), np.inf, dtype=np.float32)
+    for start in range(0, len(unique_lab), target_chunk):
+        stop = min(start + target_chunk, len(unique_lab))
+        block_best = best_dist2[start:stop]
+        block_nearest = nearest[start:stop]
+        rows = np.arange(stop - start)
+        for offset in range(0, candidate_count, candidate_chunk):
+            diff = unique_lab[start:stop, None, :] - pred_lab[None, offset:offset + candidate_chunk, :]
+            np.square(diff, out=diff)
+            dist2 = np.sum(diff, axis=2)
+            local_nearest = np.argmin(dist2, axis=1)
+            local_dist2 = dist2[rows, local_nearest]
+            improved = local_dist2 < block_best
+            block_best[improved] = local_dist2[improved]
+            block_nearest[improved] = offset + local_nearest[improved]
+            del diff, dist2
+    distances = np.sqrt(best_dist2)
     matched_lab = pred_lab[nearest]
     matched_rgb = opencv_lab_to_rgb_uint8(matched_lab)
     recipes = runtime.candidate_recipes[nearest].astype(np.int32, copy=False)

@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import tempfile
+import tracemalloc
 from unittest.mock import patch
 
 import msgpack
@@ -272,6 +273,60 @@ def test_match_unique_colors_with_runtime_accepts_float_space_pred_lab() -> None
     np.testing.assert_array_equal(result["recipes"], runtime.candidate_recipes)
     np.testing.assert_allclose(result["matched_rgb"], unique_colors, atol=2)
     np.testing.assert_allclose(result["distances"], np.zeros(2, dtype=np.float32), atol=1e-4)
+
+
+def test_predictive_matching_bounds_memory_and_keeps_first_equal_recipe() -> None:
+    """Photo palettes must not allocate the full targets × recipes RGB tensor."""
+    colors = np.random.default_rng(12).integers(0, 256, (1536, 3), dtype=np.uint8)
+    endpoints = _rgb_to_opencv_lab(np.array([[0, 0, 0], [255, 255, 255]], dtype=np.uint8))
+    runtime = PredictiveModeRuntime(
+        mode_key="0.08x2", layer_height_mm=0.08, color_layers=2,
+        layer_order="Top2Bottom",
+        candidate_recipes=np.tile([[0, 0], [1, 1]], (2048, 1)).astype(np.int32),
+        pred_lab=np.tile(endpoints, (2048, 1)), threshold=80.0, margin=0.8,
+    )
+    # Every recipe predicts either black or white. The two-color reference
+    # verifies exact distances, threshold boundaries, and duplicate tie order.
+    reference = match_unique_colors_with_runtime(
+        colors,
+        PredictiveModeRuntime(
+            mode_key="0.08x2", layer_height_mm=0.08, color_layers=2,
+            layer_order="Top2Bottom", candidate_recipes=np.array([[0, 0], [1, 1]]),
+            pred_lab=endpoints, threshold=80.0, margin=0.8,
+        ),
+    )
+    # Make later equal-color recipes observably different from the first pair.
+    runtime.candidate_recipes[2:] = [1, 0]
+    tracemalloc.start()
+    try:
+        result = match_unique_colors_with_runtime(colors, runtime)
+        _, peak_bytes = tracemalloc.get_traced_memory()
+    finally:
+        tracemalloc.stop()
+    for key in ("recipes", "matched_rgb", "distances", "within_threshold"):
+        np.testing.assert_array_equal(result[key], reference[key])
+    assert peak_bytes < 64 * 1024 * 1024
+
+
+def test_predictive_matching_searches_later_recipe_blocks_without_changing_ties() -> None:
+    colors = np.array([[255, 0, 0], [0, 0, 0], [255, 255, 255]], dtype=np.uint8)
+    lab = _rgb_to_opencv_lab(colors)
+    predictions = np.repeat(lab[0:1], 16385, axis=0)
+    predictions[8192] = lab[1]
+    predictions[-1] = lab[2]
+    recipes = np.tile([1, 0], (len(predictions), 1)).astype(np.int32)
+    recipes[0] = [0, 0]
+    recipes[8192] = [0, 1]
+    recipes[-1] = [1, 1]
+    runtime = PredictiveModeRuntime(
+        mode_key="0.08x2", layer_height_mm=0.08, color_layers=2,
+        layer_order="Top2Bottom", candidate_recipes=recipes,
+        pred_lab=predictions, threshold=0.0, margin=0.8,
+    )
+    result = match_unique_colors_with_runtime(colors, runtime)
+    np.testing.assert_array_equal(result["recipes"], [[0, 0], [0, 1], [1, 1]])
+    np.testing.assert_array_equal(result["distances"], [0, 0, 0])
+    assert np.all(result["within_threshold"])
 
 
 def test_predict_recipe_color_rejects_non_exact_recipe_for_runtime_package_only_source() -> None:

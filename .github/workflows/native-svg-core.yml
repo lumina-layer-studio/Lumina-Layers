@@ -60,7 +60,7 @@ jobs:
           repository: lumina-layer-studio/lumina-svg-core
           # Test-only update separates compositor correctness from timing reports.
           # The installed runtime and its provenance remain the published 0.3.4.
-          ref: 915be6133db2e74fa4b1157f719f68b88fd43af1
+          ref: 9956a9840ff03e16ca37909d06a5ee1f1d7a8313
           path: .ci-svg-core-034
           persist-credentials: false
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
@@ -100,8 +100,8 @@ jobs:
       - name: Install and exercise the published runtime
         shell: bash
         run: |
-          # Exercise the pinned compatibility tests with the same pytest major supported
-          # by requirements-dev.txt; their nested approx assertions reject pytest 9.
+          # Exercise the pinned compatibility tests with the same pytest major
+          # used by the application's requirements-dev.txt.
           python -m pip install --force-reinstall wheelhouse/*.whl "pytest>=8,<9" "shapely>=2,<3" cmake==4.3.4
           python .ci-svg-core-034/tools/verify_wheel.py --installed
           # The vendored source is a frozen 0.3.0 snapshot, not the released runtime.

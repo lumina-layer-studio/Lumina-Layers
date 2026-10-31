@@ -113,7 +113,8 @@ export default function TabNavBar({ activeTab, onTabChange, onIndicatorAnimation
   const activePrimaryTab = resolvePrimaryTab(activeTab);
 
   return (
-    <NavTabStrip navRef={navRef} tutorialAnchor="primary-tabs">
+    // Only the strip is no-drag, so the empty title bar around it still moves the window.
+    <NavTabStrip navRef={navRef} tutorialAnchor="primary-tabs" className="desktop-titlebar-controls">
       {PRIMARY_TAB_LIST.map(({ id, titleKey }) => {
         const isActive = id === activePrimaryTab;
         return (

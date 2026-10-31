@@ -38,6 +38,8 @@ function scrollStripWithWheel(event: WheelEvent<HTMLElement>): void {
 
 interface NavTabStripProps {
   children: ReactNode;
+  /** Extra classes for the strip itself, not the row around it. */
+  className?: string;
   navRef?: Ref<HTMLElement>;
   role?: AriaRole;
   tutorialAnchor?: string;
@@ -45,6 +47,7 @@ interface NavTabStripProps {
 
 export default function NavTabStrip({
   children,
+  className,
   navRef,
   role,
   tutorialAnchor,
@@ -54,7 +57,7 @@ export default function NavTabStrip({
       ref={navRef}
       role={role}
       data-tutorial={tutorialAnchor}
-      className={NAV_TAB_STRIP_CLASS}
+      className={className ? `${NAV_TAB_STRIP_CLASS} ${className}` : NAV_TAB_STRIP_CLASS}
       onWheel={scrollStripWithWheel}
     >
       <div className="flex min-w-max items-center gap-1">{children}</div>

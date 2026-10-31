@@ -492,7 +492,7 @@ function AppContent({ connected }: { connected: boolean | null }) {
         </div>
 
         {/* Primary tabs: same row as brand and tools when they fit */}
-        <div className={`desktop-titlebar-controls ${primaryTabsCellClass(headerNavAlignment, headerNavFit.singleRow)}`}>
+        <div className={primaryTabsCellClass(headerNavAlignment, headerNavFit.singleRow)}>
           <AlignedNavStrip
             alignment={headerNavAlignment}
             centerShift={primaryTabsCellShift(headerNavFit)}

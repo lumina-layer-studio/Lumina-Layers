@@ -1,4 +1,5 @@
 import axios from "axios";
+import { createAsyncJobAdapter } from "./asyncJobAdapter";
 import { postClientLog, summarizeErrorForLog } from "../utils/clientLog";
 import { useActionHistoryStore } from "../stores/actionHistoryStore";
 import { useErrorTicketPromptStore } from "../stores/errorTicketPromptStore";
@@ -27,6 +28,12 @@ const apiClient = axios.create({
   baseURL: import.meta.env.VITE_API_BASE_URL || "/api",
   timeout: 3_600_000,
 });
+
+// Long write requests become pollable backend jobs so reverse proxies do not
+// cut them off with 504. 长请求改为后台任务轮询，避免反向代理超时。
+apiClient.defaults.adapter = createAsyncJobAdapter(
+  axios.getAdapter(axios.defaults.adapter),
+);
 
 function isHttpUrl(value: string): boolean {
   return /^https?:\/\//i.test(value);

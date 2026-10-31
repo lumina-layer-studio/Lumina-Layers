@@ -709,6 +709,7 @@ export default function MaterialPickerDialog({
             <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
               <div
                 role="tablist"
+                data-tutorial="material-picker-tabs"
                 aria-label={t("basic_material_picker_dialog_title")}
                 className="flex min-w-0 gap-1 overflow-x-auto rounded-2xl bg-slate-100/80 p-1 dark:bg-slate-800/70"
               >
@@ -735,7 +736,7 @@ export default function MaterialPickerDialog({
               </div>
 
               <div className="flex min-w-0 flex-1 flex-col gap-2 sm:flex-row lg:max-w-[35rem] lg:justify-end">
-                <label className="relative min-w-0 flex-1">
+                <label className="relative min-w-0 flex-1" data-tutorial="material-picker-search">
                   <span className="sr-only">
                     {t("basic_material_picker_search_placeholder")}
                   </span>
@@ -854,6 +855,7 @@ export default function MaterialPickerDialog({
             <aside
               className="hidden min-h-0 flex-col border-r border-slate-200/80 dark:border-slate-700/80 md:flex"
               data-testid="material-picker-brand-sidebar"
+              data-tutorial="material-picker-brands"
             >
               <p className="px-4 pb-2 pt-4 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">
                 {t("basic_material_picker_brand_filter_label")}
@@ -913,7 +915,10 @@ export default function MaterialPickerDialog({
                 </label>
               </div>
 
-              <div className="dock-scrollbar min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-4 sm:px-5">
+              <div
+                className="dock-scrollbar min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-4 sm:px-5"
+                data-tutorial="material-picker-cards"
+              >
                 {loading ? (
                   <div className="flex min-h-48 items-center justify-center text-sm text-slate-500 dark:text-slate-400">
                     {t("basic_material_loading")}
@@ -967,7 +972,10 @@ export default function MaterialPickerDialog({
             </main>
           </div>
 
-          <footer className="border-t border-slate-200/80 px-4 py-3 dark:border-slate-700/80 sm:px-6">
+          <footer
+            className="border-t border-slate-200/80 px-4 py-3 dark:border-slate-700/80 sm:px-6"
+            data-tutorial="material-picker-footer"
+          >
             {selectedTypeSummary.requiresConfirmation && (
               <StatusBanner
                 role="status"

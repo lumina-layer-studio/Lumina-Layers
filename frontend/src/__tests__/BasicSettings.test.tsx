@@ -1,4 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import { TUTORIAL_STEPS } from "../data/tutorialSteps";
+import { useTutorialStore } from "../stores/tutorialStore";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import BasicSettings from "../components/sections/BasicSettings";
 import BedSizeSelector from "../components/sections/BedSizeSelector";
@@ -1036,6 +1038,54 @@ describe("BasicSettings", () => {
     const dots = screen.getByTestId("material-picker-summary-dots").children;
     expect(dots).toHaveLength(8);
     expect(dots[1]).toHaveStyle({ backgroundColor: "rgb(200, 30, 40)" });
+  });
+
+  it("opens the picker for the tour's picker steps and closes it afterwards", async () => {
+    vi.mocked(extractorApi.listGradientCardMaterials).mockResolvedValue({
+      status: "success",
+      message: "ok",
+      materials: [makeMaterial("JAYO/red-pla", "Red PLA")],
+    });
+    useConverterStore.setState({
+      source_version: "material",
+      selectedMaterialDirNames: [],
+      materialBackingMaterialDirName: null,
+    });
+    const searchStep = TUTORIAL_STEPS.findIndex((step) => step.id === "picker-search");
+    const summaryStep = TUTORIAL_STEPS.findIndex((step) => step.id === "materials-summary");
+
+    render(<BasicSettings />);
+    expect(screen.queryByTestId("material-picker-dialog")).not.toBeInTheDocument();
+
+    act(() => {
+      useTutorialStore.setState({ phase: "touring", stepIndex: searchStep });
+    });
+    expect(await screen.findByTestId("material-picker-dialog")).toBeInTheDocument();
+
+    act(() => {
+      useTutorialStore.setState({ stepIndex: summaryStep });
+    });
+    await waitFor(() =>
+      expect(screen.queryByTestId("material-picker-dialog")).not.toBeInTheDocument(),
+    );
+    act(() => {
+      useTutorialStore.setState({ phase: "idle", stepIndex: 0 });
+    });
+  });
+
+  it("does not open the picker for the tour in Classic LUT mode", () => {
+    useConverterStore.setState({ source_version: "legacy" });
+    const searchStep = TUTORIAL_STEPS.findIndex((step) => step.id === "picker-search");
+    act(() => {
+      useTutorialStore.setState({ phase: "touring", stepIndex: searchStep });
+    });
+
+    render(<BasicSettings />);
+
+    expect(screen.queryByTestId("material-picker-dialog")).not.toBeInTheDocument();
+    act(() => {
+      useTutorialStore.setState({ phase: "idle", stepIndex: 0 });
+    });
   });
 
   it("lets users retry a failed material-library load from the picker", async () => {

@@ -46,7 +46,7 @@ describe("TutorialTour", () => {
   });
 
   it("spotlights the step anchor and shows the step copy", async () => {
-    mountAnchor("primary-tabs");
+    mountAnchor("device-settings");
     startTourAt(0);
     render(<TutorialTour />);
 
@@ -65,7 +65,7 @@ describe("TutorialTour", () => {
       width: "612px",
       height: "60px",
     });
-    expect(screen.getByText(zh("tutorial_step_tabs_title"))).toBeInTheDocument();
+    expect(screen.getByText(zh("tutorial_step_device_title"))).toBeInTheDocument();
     expect(screen.getByTestId("tutorial-card")).toHaveAttribute("data-side", "bottom");
     expect(screen.queryByText(zh("tutorial_back"))).not.toBeInTheDocument();
   });
@@ -84,16 +84,35 @@ describe("TutorialTour", () => {
     expect(screen.queryByTestId("tutorial-spotlight")).not.toBeInTheDocument();
   });
 
-  it("renders the principle flow and requirement lines for color sources", async () => {
-    const legacyIndex = TUTORIAL_STEPS.findIndex((step) => step.id === "source-legacy-lut");
-    mountAnchor("color-source");
-    startTourAt(legacyIndex);
+  it("renders the numbered flow for the materials step", async () => {
+    const materialsIndex = TUTORIAL_STEPS.findIndex((step) => step.id === "materials-open");
+    mountAnchor("material-picker");
+    startTourAt(materialsIndex);
     render(<TutorialTour />);
 
     const flow = await screen.findByTestId("tutorial-flow");
     expect(flow.querySelectorAll("li")).toHaveLength(3);
-    expect(screen.getByText(zh("tutorial_step_legacy_need"))).toBeInTheDocument();
-    expect(screen.getByText(zh("tutorial_step_legacy_fit"))).toBeInTheDocument();
+    expect(screen.getByText(zh("tutorial_flow_materials_find"))).toBeInTheDocument();
+  });
+
+  it("prefers the precise anchor and falls back to its section", async () => {
+    const materialsIndex = TUTORIAL_STEPS.findIndex((step) => step.id === "materials-open");
+    const section = mountAnchor("color-source");
+    section.getBoundingClientRect = () =>
+      ({ top: 100, left: 40, width: 600, height: 400, right: 640, bottom: 500, x: 40, y: 100, toJSON: () => ({}) }) as DOMRect;
+    startTourAt(materialsIndex);
+    const { unmount } = render(<TutorialTour />);
+
+    // Classic LUT mode: no filament picker, so the whole color block is used.
+    expect(await screen.findByTestId("tutorial-spotlight")).toHaveStyle({ top: "94px", height: "412px" });
+    unmount();
+
+    // Material Archive mode: the picker itself is highlighted.
+    mountAnchor("material-picker");
+    render(<TutorialTour />);
+    await waitFor(() =>
+      expect(screen.getByTestId("tutorial-spotlight")).toHaveStyle({ top: "14px", height: "60px" }),
+    );
   });
 
   it("explains 3D mouse controls and lets the user try them in the spotlight", async () => {
@@ -122,9 +141,9 @@ describe("TutorialTour", () => {
   });
 
   it("caps the card height and scrolls only the copy so actions stay reachable", async () => {
-    const legacyIndex = TUTORIAL_STEPS.findIndex((step) => step.id === "source-legacy-lut");
+    const materialsIndex = TUTORIAL_STEPS.findIndex((step) => step.id === "materials-open");
     mountAnchor("color-source");
-    startTourAt(legacyIndex);
+    startTourAt(materialsIndex);
     render(<TutorialTour />);
 
     await screen.findByTestId("tutorial-spotlight");
@@ -140,7 +159,7 @@ describe("TutorialTour", () => {
     const outside = document.createElement("button");
     outside.textContent = "background";
     document.body.appendChild(outside);
-    mountAnchor("primary-tabs");
+    mountAnchor("device-settings");
     startTourAt(0);
     render(<TutorialTour />);
     await screen.findByTestId("tutorial-spotlight");
@@ -152,7 +171,7 @@ describe("TutorialTour", () => {
   });
 
   it("keeps the whole app shielded on regular steps", async () => {
-    mountAnchor("primary-tabs");
+    mountAnchor("device-settings");
     startTourAt(0);
     render(<TutorialTour />);
 
@@ -162,7 +181,7 @@ describe("TutorialTour", () => {
   });
 
   it("moves forward and back with the buttons and arrow keys", async () => {
-    mountAnchor("primary-tabs");
+    mountAnchor("device-settings");
     startTourAt(0);
     render(<TutorialTour />);
 

@@ -11,11 +11,19 @@
 import type { ConverterSubTabId, TabId, WidgetId } from "../types/widget";
 
 export type TutorialStepId =
-  | "primary-tabs"
-  | "image-upload"
+  | "device-settings"
   | "color-source"
-  | "source-legacy-lut"
-  | "source-material-archive"
+  | "materials-open"
+  | "picker-search"
+  | "picker-cards"
+  | "picker-favorites"
+  | "picker-done"
+  | "materials-summary"
+  | "materials-backing"
+  | "materials-missing"
+  | "layer-height"
+  | "layer-count"
+  | "image-upload"
   | "output-size"
   | "preview"
   | "view-3d"
@@ -27,6 +35,12 @@ export interface TutorialStepPrepare {
   tab?: TabId;
   converterSubTab?: ConverterSubTabId;
   widget?: WidgetId;
+  /**
+   * Keep the material picker dialog open (Material Archive mode only); it is
+   * closed again when the tour leaves these steps. Nothing is selected.
+   * 保持耗材选择框打开（仅耗材档案模式）；离开这些步骤后自动关闭，不会替用户勾选。
+   */
+  materialPicker?: boolean;
 }
 
 /** One "gesture → effect" row, e.g. left-drag → rotate. 一行「操作 → 效果」说明。 */
@@ -37,8 +51,12 @@ export interface TutorialControlHint {
 
 export interface TutorialStep {
   id: TutorialStepId;
-  /** `data-tutorial` value to spotlight; null shows a centered card. 高亮目标；null 时卡片居中。 */
-  anchor: string | null;
+  /**
+   * `data-tutorial` value to spotlight, or candidates tried in order (the
+   * first visible one wins); null shows a centered card.
+   * 高亮目标，或按顺序尝试的候选（取第一个可见的）；null 时卡片居中。
+   */
+  anchor: string | readonly string[] | null;
   titleKey: string;
   bodyKey: string;
   /** Short principle chain rendered as numbered chips. 原理流程芯片。 */
@@ -70,6 +88,16 @@ const BASIC_SETTINGS: TutorialStepPrepare = {
   widget: "basic-settings",
 };
 
+const MATERIAL_PICKER: TutorialStepPrepare = {
+  ...BASIC_SETTINGS,
+  materialPicker: true,
+};
+
+// Material Archive controls only exist in that mode; in Classic LUT mode the
+// steps fall back to the color block (and the picker cannot open).
+// 这些控件只在耗材档案模式下存在；经典 LUT 模式下退回高亮颜色设置区（选择框也不会打开）。
+const MATERIAL_FALLBACK = ["material-picker", "color-source"] as const;
+
 const ACTION_BAR: TutorialStepPrepare = {
   tab: "converter",
   converterSubTab: "core",
@@ -78,18 +106,11 @@ const ACTION_BAR: TutorialStepPrepare = {
 
 export const TUTORIAL_STEPS: readonly TutorialStep[] = [
   {
-    id: "primary-tabs",
-    anchor: "primary-tabs",
-    titleKey: "tutorial_step_tabs_title",
-    bodyKey: "tutorial_step_tabs_body",
-    prepare: { tab: "converter", converterSubTab: "core" },
-  },
-  {
-    id: "image-upload",
-    anchor: "image-upload",
-    titleKey: "tutorial_step_upload_title",
-    bodyKey: "tutorial_step_upload_body",
-    prepare: BASIC_SETTINGS,
+    id: "device-settings",
+    anchor: "device-settings",
+    titleKey: "tutorial_step_device_title",
+    bodyKey: "tutorial_step_device_body",
+    prepare: { tab: "settings" },
   },
   {
     id: "color-source",
@@ -99,31 +120,85 @@ export const TUTORIAL_STEPS: readonly TutorialStep[] = [
     prepare: BASIC_SETTINGS,
   },
   {
-    id: "source-material-archive",
-    anchor: "color-source",
-    titleKey: "tutorial_step_material_title",
-    bodyKey: "tutorial_step_material_body",
+    id: "materials-open",
+    anchor: MATERIAL_FALLBACK,
+    titleKey: "tutorial_step_materials_title",
+    bodyKey: "tutorial_step_materials_body",
     flowKeys: [
-      "tutorial_flow_material_card",
-      "tutorial_flow_material_measure",
-      "tutorial_flow_material_solve",
+      "tutorial_flow_materials_find",
+      "tutorial_flow_materials_favorite",
+      "tutorial_flow_materials_done",
     ],
-    needKey: "tutorial_step_material_need",
-    fitKey: "tutorial_step_material_fit",
     prepare: BASIC_SETTINGS,
   },
   {
-    id: "source-legacy-lut",
-    anchor: "color-source",
-    titleKey: "tutorial_step_legacy_title",
-    bodyKey: "tutorial_step_legacy_body",
-    flowKeys: [
-      "tutorial_flow_legacy_print",
-      "tutorial_flow_legacy_extract",
-      "tutorial_flow_legacy_table",
-    ],
-    needKey: "tutorial_step_legacy_need",
-    fitKey: "tutorial_step_legacy_fit",
+    id: "picker-search",
+    anchor: ["material-picker-search", ...MATERIAL_FALLBACK],
+    titleKey: "tutorial_step_picker_search_title",
+    bodyKey: "tutorial_step_picker_search_body",
+    prepare: MATERIAL_PICKER,
+  },
+  {
+    id: "picker-cards",
+    anchor: ["material-picker-cards", ...MATERIAL_FALLBACK],
+    titleKey: "tutorial_step_picker_cards_title",
+    bodyKey: "tutorial_step_picker_cards_body",
+    prepare: MATERIAL_PICKER,
+  },
+  {
+    id: "picker-favorites",
+    anchor: ["material-picker-tabs", ...MATERIAL_FALLBACK],
+    titleKey: "tutorial_step_picker_favorites_title",
+    bodyKey: "tutorial_step_picker_favorites_body",
+    prepare: MATERIAL_PICKER,
+  },
+  {
+    id: "picker-done",
+    anchor: ["material-picker-footer", ...MATERIAL_FALLBACK],
+    titleKey: "tutorial_step_picker_done_title",
+    bodyKey: "tutorial_step_picker_done_body",
+    prepare: MATERIAL_PICKER,
+  },
+  {
+    id: "materials-summary",
+    anchor: MATERIAL_FALLBACK,
+    titleKey: "tutorial_step_materials_summary_title",
+    bodyKey: "tutorial_step_materials_summary_body",
+    prepare: BASIC_SETTINGS,
+  },
+  {
+    id: "materials-backing",
+    anchor: ["material-backing", "color-source"],
+    titleKey: "tutorial_step_backing_title",
+    bodyKey: "tutorial_step_backing_body",
+    prepare: BASIC_SETTINGS,
+  },
+  {
+    id: "materials-missing",
+    anchor: ["nav-material-management", "primary-tabs"],
+    titleKey: "tutorial_step_materials_missing_title",
+    bodyKey: "tutorial_step_materials_missing_body",
+    prepare: BASIC_SETTINGS,
+  },
+  {
+    id: "layer-height",
+    anchor: ["material-layer-height", "color-source"],
+    titleKey: "tutorial_step_layer_height_title",
+    bodyKey: "tutorial_step_layer_height_body",
+    prepare: BASIC_SETTINGS,
+  },
+  {
+    id: "layer-count",
+    anchor: ["material-layer-count", "color-source"],
+    titleKey: "tutorial_step_layer_count_title",
+    bodyKey: "tutorial_step_layer_count_body",
+    prepare: BASIC_SETTINGS,
+  },
+  {
+    id: "image-upload",
+    anchor: "image-upload",
+    titleKey: "tutorial_step_upload_title",
+    bodyKey: "tutorial_step_upload_body",
     prepare: BASIC_SETTINGS,
   },
   {

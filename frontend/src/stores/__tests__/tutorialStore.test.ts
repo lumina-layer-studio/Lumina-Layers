@@ -87,7 +87,7 @@ describe("tutorialStore", () => {
     expect(trackMock).toHaveBeenCalledWith("lumina_tutorial_started", { trigger: "auto" });
     expect(trackMock).toHaveBeenCalledWith("lumina_tutorial_step_view", {
       trigger: "auto",
-      step_id: "primary-tabs",
+      step_id: "device-settings",
       step_index: 1,
       total_steps: TOTAL,
     });
@@ -134,7 +134,7 @@ describe("tutorialStore", () => {
     expect(skipped?.[1]).toMatchObject({
       trigger: "auto",
       via: "skip_button",
-      step_id: "color-source",
+      step_id: "materials-open",
       step_index: 3,
       total_steps: TOTAL,
     });

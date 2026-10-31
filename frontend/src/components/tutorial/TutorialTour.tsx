@@ -224,20 +224,31 @@ export default function TutorialTour(): JSX.Element | null {
   }, [stepIndex]);
 
   useEffect(() => {
+    // Capture phase + stopPropagation: the tour owns the keyboard, so a dialog
+    // it has opened underneath (the material picker) must not also react to
+    // Escape or pull Tab focus back into itself. The tour's own focus trap is a
+    // capture listener on the same node and still runs.
+    // 捕获阶段并阻止继续传播：引导期间由引导处理键盘，避免其下方打开的对话框
+    // （耗材选择框）同时响应 Esc 或把 Tab 焦点抢回去；同节点的焦点陷阱仍会执行。
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         event.preventDefault();
+        event.stopPropagation();
         skip("escape");
       } else if (event.key === "ArrowRight") {
         event.preventDefault();
+        event.stopPropagation();
         next();
       } else if (event.key === "ArrowLeft") {
         event.preventDefault();
+        event.stopPropagation();
         back();
+      } else if (event.key === "Tab") {
+        event.stopPropagation();
       }
     };
-    document.addEventListener("keydown", handleKeyDown);
-    return () => document.removeEventListener("keydown", handleKeyDown);
+    document.addEventListener("keydown", handleKeyDown, true);
+    return () => document.removeEventListener("keydown", handleKeyDown, true);
   }, [next, back, skip]);
 
   if (typeof document === "undefined") {
@@ -260,7 +271,7 @@ export default function TutorialTour(): JSX.Element | null {
   const passThroughHole = step.interactive && spotlight ? spotlight : null;
 
   return createPortal(
-    <div className="pointer-events-none fixed inset-0 z-[9000]" data-testid="tutorial-tour">
+    <div className="pointer-events-none fixed inset-0 z-[10020]" data-testid="tutorial-tour">
       {/* Click shield: blocks the app while the tour explains. Interactive
           steps leave the spotlight open so the user can try it there. */}
       <TutorialClickShield hole={passThroughHole} dimmed={!spotlight} />

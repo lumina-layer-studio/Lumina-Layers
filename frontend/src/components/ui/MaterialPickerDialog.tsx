@@ -10,10 +10,12 @@ import { StarIcon } from "@heroicons/react/24/solid";
 import {
   useEffect,
   useId,
+  useImperativeHandle,
   useMemo,
   useRef,
   useState,
 } from "react";
+import type { Ref } from "react";
 import { createPortal } from "react-dom";
 
 import type { SavedMaterialLibraryItem } from "../../api/types";
@@ -49,6 +51,13 @@ interface MaterialPickerDialogProps {
   onConfirm: (selected: string[]) => void;
   onCancel: () => void;
   onRetry?: () => void;
+  /** Lets a caller (the beginner tour) press Done on the user's behalf. 允许调用方（新手引导）代为点击「完成」。 */
+  ref?: Ref<MaterialPickerDialogHandle>;
+}
+
+export interface MaterialPickerDialogHandle {
+  /** Same as clicking Done, including the mixed-type confirmation. 等同点击「完成」，含混合类型确认。 */
+  done: () => void;
 }
 
 const FOCUSABLE_SELECTOR = [
@@ -138,6 +147,7 @@ export default function MaterialPickerDialog({
   onConfirm,
   onCancel,
   onRetry,
+  ref,
 }: MaterialPickerDialogProps) {
   const { t } = useI18n();
   const titleId = useId();
@@ -355,6 +365,9 @@ export default function MaterialPickerDialog({
     }
     onConfirm(staged);
   };
+  const handleDoneRef = useRef(handleDone);
+  handleDoneRef.current = handleDone;
+  useImperativeHandle(ref, () => ({ done: () => handleDoneRef.current() }), []);
 
   const renderFavoriteButton = (
     profile: SavedMaterialLibraryItem,

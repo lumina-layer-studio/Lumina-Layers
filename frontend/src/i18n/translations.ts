@@ -10685,12 +10685,12 @@ export const translations: Record<string, Record<"zh" | "en", string>> = {
     en: "Welcome to Lumina Studio",
   },
   tutorial_welcome_body: {
-    zh: "Lumina Studio 可以把一张普通图片转换成多色 3D 打印文件（3MF）：用几种耗材一层层叠着打印，叠出丰富的颜色。\n\n这份新手引导大约 2 分钟，按第一次打印的顺序，带你从设置打印机一路走到生成打印文件。",
-    en: "Lumina Studio turns an ordinary picture into a multi-color 3D print file (3MF) by stacking a few materials layer by layer to mix rich colors.\n\nThis tour takes about 2 minutes and follows the order of a first print, from setting up your printer to generating the print file.",
+    zh: "Lumina Studio 可以把一张普通图片转换成多色 3D 打印文件（3MF）：用几种耗材一层层叠着打印，叠出丰富的颜色。\n\n这份新手引导按第一次打印的顺序，带你一步步设置好打印机、耗材和参数，大约需要 3 分钟。",
+    en: "Lumina Studio turns an ordinary picture into a multi-color 3D print file (3MF) by stacking a few materials layer by layer to mix rich colors.\n\nThis tour follows the order of a first print and walks you through setting up your printer, materials and settings. It takes about 3 minutes.",
   },
   tutorial_welcome_note: {
-    zh: "引导只做讲解，不需要真的上传图片或生成模型。之后可以随时打开右上角的菜单（三条横线图标），选择“新手引导”重新查看。",
-    en: "The tour only explains things. You don't need to upload or generate anything, and you can replay it any time from the menu (the three-line icon) at the top right by choosing Beginner tour.",
+    zh: "每一步都可以直接在高亮区域里完成设置，也可以只看说明、点「下一步」继续。之后可以随时打开右上角的菜单（三条横线图标），选择“新手引导”重新查看。",
+    en: "You can set things up right in the highlighted area at each step, or just read and click Next. You can reopen the tour any time from the menu in the top-right corner (the three-line icon).",
   },
   tutorial_welcome_start: {
     zh: "开始引导",
@@ -10757,44 +10757,116 @@ export const translations: Record<string, Record<"zh" | "en", string>> = {
     en: "Color settings: choose Material Archive",
   },
   tutorial_step_source_body: {
-    zh: "「色彩数据来源」建议选「耗材档案」：颜色和过渡通常比经典 LUT 更好，耗材也能自由搭配，不需要整套同品牌。\n「经典 LUT」适合已经有现成 LUT 的用户，第一次使用可以先不管。",
-    en: "For Color Data Source we recommend Material Archive: colors and transitions are usually better than with a Classic LUT, and you can mix materials freely instead of needing a full set from one brand.\nClassic LUT is for people who already have a LUT; you can skip it on your first print.",
+    zh: "在这里选「耗材档案」：颜色和过渡通常比经典 LUT 更好，耗材也能自由搭配，不需要整套同品牌。经典 LUT 适合已经有现成 LUT 的用户。",
+    en: "Choose Material Archive here: colors and transitions are usually better than with a Classic LUT, and you can mix materials freely instead of needing a full set from one brand. Classic LUT is for people who already have a LUT.",
   },
   tutorial_step_device_title: {
     zh: "先选好打印机和打印板",
     en: "First, choose your printer and build plate",
   },
   tutorial_step_device_body: {
-    zh: "在「设置 → 打印与切片」里点「更改设备」，选择切片软件（如 Orca Slicer、Bambu Studio）、打印机型号和喷嘴，再选好打印板。\n生成的 3MF 会按这台设备配置。只需设置一次，之后会自动记住；在「图像转换」页点「打印机热床」旁的「更改」也能回到这里。",
-    en: "In Settings → Printer & Slicer, click Change Device and choose your slicer (such as Orca Slicer or Bambu Studio), printer model and nozzle, then pick the build plate.\nGenerated 3MF files are set up for this device. You only need to do this once; it is remembered. On the Converter page, Change next to Printer Bed brings you back here.",
+    zh: "点「更改设备」选择切片软件（如 Orca Slicer、Bambu Studio）、打印机型号和喷嘴，再在下面选好打印板。\n只需设置一次，之后会自动记住；以后在「图像转换」页点「打印机热床」旁的「更改」也能回到这里。",
+    en: "Click Change Device to choose your slicer (such as Orca Slicer or Bambu Studio), printer model and nozzle, then pick the build plate below.\nYou only need to do this once; it is remembered. Later, Change next to Printer Bed on the Converter page brings you back here.",
   },
   tutorial_step_materials_title: {
-    zh: "选耗材：打开选择框",
+    zh: "选耗材：点开选择框",
     en: "Choose materials: open the picker",
   },
   tutorial_step_materials_body: {
-    zh: "点「选择耗材…」会打开耗材选择框。叠色一般用 4 色以上，很多人用 8 色：颜色越多，能叠出的颜色越丰富。4 色推荐白、红、蓝、黄。\n接下来看看选择框怎么用。",
-    en: "Choose materials… opens the material picker. Color stacking usually uses four or more materials, and many people use eight: more colors give a wider range of mixed colors. For four colors we recommend white, red, blue and yellow.\nNext, a quick look at the picker.",
+    zh: "点「选择耗材…」打开耗材选择框。",
+    en: "Click Choose materials… to open the material picker.",
   },
-  tutorial_flow_materials_find: {
-    zh: "搜索同款",
-    en: "Search",
+  tutorial_interactive_hint: {
+    zh: "可以直接在高亮区域里设置。",
+    en: "You can set this up right in the highlighted area.",
   },
-  tutorial_flow_materials_favorite: {
-    zh: "勾选并收藏",
-    en: "Select & favorite",
+  tutorial_interactive_auto_hint: {
+    zh: "可以直接在高亮区域里操作，完成后会自动进入下一步。",
+    en: "You can do this right in the highlighted area; the tour moves on when you are done.",
   },
-  tutorial_flow_materials_done: {
-    zh: "点「完成」",
-    en: "Click Done",
+  tutorial_step_picker_palette_title: {
+    zh: "推荐配色，找到你手上的耗材",
+    en: "Recommended colors: find your filaments",
   },
-  tutorial_step_picker_search_title: {
-    zh: "搜索你手上的耗材",
-    en: "Search for the materials you have",
+  tutorial_step_picker_palette_body: {
+    zh: "按下面的推荐准备耗材，再在搜索框输入品牌或颜色（比如「拓竹 白」）找到你手上的那卷，也可以在左侧按品牌筛选。透明耗材不在这里选，后面在「透明镀层」里打开。",
+    en: "Use the recommendations below, then type a brand or color in the search box (such as \"Bambu white\") to find the filament you have, or filter by brand on the left. Clear filament is not picked here; you turn it on later under Transparent Coating.",
   },
-  tutorial_step_picker_search_body: {
-    zh: "在搜索框输入品牌或颜色，比如「拓竹 白」；也可以在左侧的品牌列表里筛选。品牌和颜色尽量和你手上的耗材一致。",
-    en: "Type a brand or color in the search box, such as \"Bambu white\", or filter by brand in the list on the left. Match the brand and color of your own filament as closely as you can.",
+  tutorial_palette_eight_title: {
+    zh: "8 色：效果最好",
+    en: "8 colors: best results",
+  },
+  tutorial_palette_clear_title: {
+    zh: "7+1：7 色 + 透明首层",
+    en: "7+1: 7 colors + a clear first layer",
+  },
+  tutorial_palette_clear_note: {
+    zh: "0.08 mm 的首层很薄，热床稍有不平就容易打不好。很多用户（尤其是拓竹打印机）会用一卷透明耗材打首层，把误差填平。",
+    en: "A 0.08 mm first layer is very thin, so a slightly uneven bed easily ruins it. Many people (especially with Bambu Lab printers) print the first layer in clear filament to even out the bed.",
+  },
+  tutorial_palette_four_title: {
+    zh: "4 色",
+    en: "4 colors",
+  },
+  tutorial_palette_four_note: {
+    zh: "需要把 0.08 mm 首层调好；调不好的话，可以加一台 AMS 扩到 8 个槽位，改用 7+1。",
+    en: "Needs a well-tuned 0.08 mm first layer. If you cannot get it reliable, add another AMS for 8 slots and use 7+1.",
+  },
+  tutorial_color_white: {
+    zh: "白",
+    en: "White",
+  },
+  tutorial_color_yellow: {
+    zh: "黄",
+    en: "Yellow",
+  },
+  tutorial_color_red: {
+    zh: "红",
+    en: "Red",
+  },
+  tutorial_color_blue: {
+    zh: "蓝",
+    en: "Blue",
+  },
+  tutorial_color_black: {
+    zh: "黑",
+    en: "Black",
+  },
+  tutorial_color_magenta: {
+    zh: "品红",
+    en: "Magenta",
+  },
+  tutorial_color_cyan: {
+    zh: "青",
+    en: "Cyan",
+  },
+  tutorial_color_green: {
+    zh: "绿",
+    en: "Green",
+  },
+  tutorial_color_clear: {
+    zh: "透明",
+    en: "Clear",
+  },
+  tutorial_step_coating_title: {
+    zh: "透明首层：打开「透明镀层」",
+    en: "Clear first layer: turn on Transparent Coating",
+  },
+  tutorial_step_coating_body: {
+    zh: "用 7+1 方案时，在这里勾选「启用透明镀层」。画面朝下打印时，这层透明耗材就是贴着热床的首层，可以填平热床的误差。在切片软件里确认它用的是透明耗材。\n不用透明首层的话，保持关闭即可。",
+    en: "If you use 7+1, tick Enable Transparent Coating here. When the picture is printed face down, this clear layer is the first layer on the bed and evens out bed unevenness. In your slicer, check that it uses the clear filament.\nIf you do not use a clear first layer, leave it off.",
+  },
+  tutorial_size_small: {
+    zh: "小尺寸",
+    en: "Small",
+  },
+  tutorial_size_large: {
+    zh: "大尺寸",
+    en: "Large",
+  },
+  tutorial_size_caption: {
+    zh: "同一张图，打得越大，细节越清楚",
+    en: "The same picture: printed larger, the details are clearer",
   },
   tutorial_step_picker_cards_title: {
     zh: "勾选耗材并收藏",
@@ -10817,7 +10889,7 @@ export const translations: Record<string, Record<"zh" | "en", string>> = {
     en: "Check the count and click Done",
   },
   tutorial_step_picker_done_body: {
-    zh: "底部会显示已选耗材的数量。确认无误后点「完成」。",
+    zh: "底部会显示已选耗材的数量，确认无误后点「完成」。",
     en: "The bottom bar shows how many materials are selected. When it looks right, click Done.",
   },
   tutorial_step_materials_summary_title: {
@@ -10865,8 +10937,8 @@ export const translations: Record<string, Record<"zh" | "en", string>> = {
     en: "Set the size",
   },
   tutorial_step_size_body: {
-    zh: "在这里设置打印成品的宽度和高度（毫米），需要在打印机的打印范围内。\n下方的「厚度」是底板厚度，第一次使用保持默认即可。",
-    en: "Set the printed width and height here (in mm). Keep them within your printer's print area.\nThe Thickness setting below controls the base plate. The default is fine for your first print.",
+    zh: "在这里设置宽度和高度（毫米），需要在打印机的打印范围内。\n叠色画由一格格色块拼成：同一张图打得越大，每处细节分到的色块越多，画面越清晰。空间允许就尽量打大一些。底板厚度第一次保持默认即可。",
+    en: "Set the width and height (mm) here, within your printer's build area.\nA color-stacked picture is made of small printed cells: the larger you print the same picture, the more cells each detail gets and the clearer it looks. Print as large as you can. Leave the base thickness at its default for your first print.",
   },
   tutorial_step_preview_title: {
     zh: "预览效果",

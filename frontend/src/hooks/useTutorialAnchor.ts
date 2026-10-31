@@ -34,6 +34,17 @@ function findVisibleRect(
   return null;
 }
 
+/**
+ * The element a step's anchor currently resolves to (first visible candidate).
+ * 步骤锚点当前对应的元素（第一个可见的候选）。
+ */
+export function findTutorialAnchorElement(
+  anchor: string | readonly string[] | null,
+): HTMLElement | null {
+  if (anchor === null) return null;
+  return findVisibleRect(typeof anchor === "string" ? [anchor] : anchor)?.element ?? null;
+}
+
 function sameRect(a: TutorialRect | null, b: TutorialRect | null): boolean {
   if (a === null || b === null) {
     return a === b;

@@ -21,7 +21,7 @@ describe("beginner tutorial steps", () => {
       "device-settings",
       "color-source",
       "materials-open",
-      "picker-search",
+      "picker-palette",
       "picker-cards",
       "picker-favorites",
       "picker-done",
@@ -30,6 +30,7 @@ describe("beginner tutorial steps", () => {
       "materials-missing",
       "layer-height",
       "layer-count",
+      "coating",
       "image-upload",
       "output-size",
       "preview",
@@ -42,7 +43,7 @@ describe("beginner tutorial steps", () => {
   it("fall back to the color block when Material Archive controls are hidden", () => {
     for (const id of [
       "materials-open",
-      "picker-search",
+      "picker-palette",
       "picker-cards",
       "picker-favorites",
       "picker-done",
@@ -61,6 +62,37 @@ describe("beginner tutorial steps", () => {
     const pickerSteps = TUTORIAL_STEPS.filter((step) => step.prepare?.materialPicker).map(
       (step) => step.id,
     );
-    expect(pickerSteps).toEqual(["picker-search", "picker-cards", "picker-favorites", "picker-done"]);
+    expect(pickerSteps).toEqual(["picker-palette", "picker-cards", "picker-favorites", "picker-done"]);
+  });
+
+  it("let the user set things up in the setting steps", () => {
+    const interactive = TUTORIAL_STEPS.filter((step) => step.interactive).map((step) => step.id);
+    expect(interactive).toEqual(
+      expect.arrayContaining([
+        "device-settings",
+        "color-source",
+        "materials-open",
+        "picker-palette",
+        "picker-cards",
+        "picker-done",
+        "materials-backing",
+        "layer-height",
+        "layer-count",
+        "coating",
+        "image-upload",
+        "output-size",
+      ]),
+    );
+    // Generating is never triggered from inside the tour.
+    expect(interactive).not.toContain("print-output");
+  });
+
+  it("recommend 8 colors, 7 + clear, and 4 colors after the picker opens", () => {
+    const palette = TUTORIAL_STEPS.find((step) => step.id === "picker-palette");
+    expect(palette?.prepare?.materialPicker).toBe(true);
+    const labels = palette?.palettes?.map((item) => item.swatches.map((s) => s.labelKey));
+    expect(labels?.[0]).toHaveLength(8);
+    expect(labels?.[1]).toContain("tutorial_color_clear");
+    expect(labels?.[2]).toHaveLength(4);
   });
 });

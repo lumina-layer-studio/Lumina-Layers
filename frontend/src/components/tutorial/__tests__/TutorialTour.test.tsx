@@ -42,6 +42,7 @@ describe("TutorialTour", () => {
   afterEach(() => {
     cleanup();
     document.querySelectorAll("[data-tutorial]").forEach((node) => node.remove());
+    document.querySelectorAll('[role="dialog"]').forEach((node) => node.remove());
     vi.unstubAllGlobals();
   });
 
@@ -84,15 +85,76 @@ describe("TutorialTour", () => {
     expect(screen.queryByTestId("tutorial-spotlight")).not.toBeInTheDocument();
   });
 
-  it("renders the numbered flow for the materials step", async () => {
-    const materialsIndex = TUTORIAL_STEPS.findIndex((step) => step.id === "materials-open");
-    mountAnchor("material-picker");
-    startTourAt(materialsIndex);
+  it("shows the recommended palettes as swatches", async () => {
+    const paletteIndex = TUTORIAL_STEPS.findIndex((step) => step.id === "picker-palette");
+    mountAnchor("material-picker-search");
+    startTourAt(paletteIndex);
     render(<TutorialTour />);
 
-    const flow = await screen.findByTestId("tutorial-flow");
-    expect(flow.querySelectorAll("li")).toHaveLength(3);
-    expect(screen.getByText(zh("tutorial_flow_materials_find"))).toBeInTheDocument();
+    const palettes = await screen.findByTestId("tutorial-palettes");
+    expect(palettes.querySelectorAll("section")).toHaveLength(3);
+    expect(screen.getByText(zh("tutorial_palette_clear_title"))).toBeInTheDocument();
+    expect(screen.getAllByText(zh("tutorial_color_clear"))).toHaveLength(1);
+    expect(screen.getByTestId("tutorial-interactive-hint")).toHaveTextContent(
+      zh("tutorial_interactive_auto_hint"),
+    );
+  });
+
+  it("illustrates that larger prints are clearer on the size step", async () => {
+    const sizeIndex = TUTORIAL_STEPS.findIndex((step) => step.id === "output-size");
+    mountAnchor("output-size");
+    startTourAt(sizeIndex);
+    render(<TutorialTour />);
+
+    const figure = await screen.findByTestId("tutorial-illustration-print-size");
+    expect(figure.querySelectorAll("svg")).toHaveLength(2);
+    expect(screen.getByText(zh("tutorial_size_caption"))).toBeInTheDocument();
+  });
+
+  it("lets clicks through the spotlight on setting steps", async () => {
+    mountAnchor("device-settings");
+    startTourAt(0);
+    render(<TutorialTour />);
+
+    await screen.findByTestId("tutorial-spotlight");
+    expect(screen.queryByTestId("tutorial-click-shield")).not.toBeInTheDocument();
+    expect(screen.getAllByTestId("tutorial-click-shield-part")).toHaveLength(4);
+  });
+
+  it("steps aside while a dialog the user opened is up, then comes back", async () => {
+    mountAnchor("device-settings");
+    startTourAt(0);
+    render(<TutorialTour />);
+    await screen.findByTestId("tutorial-card");
+
+    const dialog = document.createElement("div");
+    dialog.setAttribute("role", "dialog");
+    dialog.setAttribute("aria-modal", "true");
+    dialog.getClientRects = () => [{} as DOMRect] as unknown as DOMRectList;
+    document.body.appendChild(dialog);
+    await waitFor(() => expect(screen.queryByTestId("tutorial-tour")).not.toBeInTheDocument());
+
+    // Escape belongs to the user's dialog meanwhile, not to the tour.
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(useTutorialStore.getState().phase).toBe("touring");
+
+    dialog.remove();
+    expect(await screen.findByTestId("tutorial-tour")).toBeInTheDocument();
+  });
+
+  it("keeps arrow keys for the caret inside text fields", async () => {
+    const paletteIndex = TUTORIAL_STEPS.findIndex((step) => step.id === "picker-palette");
+    const search = mountAnchor("material-picker-search");
+    const input = document.createElement("input");
+    search.appendChild(input);
+    startTourAt(paletteIndex);
+    render(<TutorialTour />);
+    await screen.findByTestId("tutorial-spotlight");
+
+    fireEvent.keyDown(input, { key: "ArrowRight" });
+    expect(useTutorialStore.getState().stepIndex).toBe(paletteIndex);
+    fireEvent.keyDown(document.body, { key: "ArrowRight" });
+    expect(useTutorialStore.getState().stepIndex).toBe(paletteIndex + 1);
   });
 
   it("prefers the precise anchor and falls back to its section", async () => {
@@ -159,8 +221,9 @@ describe("TutorialTour", () => {
     const outside = document.createElement("button");
     outside.textContent = "background";
     document.body.appendChild(outside);
-    mountAnchor("device-settings");
-    startTourAt(0);
+    // The preview step only explains; it does not let clicks through.
+    mountAnchor("preview-button");
+    startTourAt(TUTORIAL_STEPS.findIndex((step) => step.id === "preview"));
     render(<TutorialTour />);
     await screen.findByTestId("tutorial-spotlight");
 
@@ -171,8 +234,9 @@ describe("TutorialTour", () => {
   });
 
   it("keeps the whole app shielded on regular steps", async () => {
-    mountAnchor("device-settings");
-    startTourAt(0);
+    // The preview step only explains; it does not let clicks through.
+    mountAnchor("preview-button");
+    startTourAt(TUTORIAL_STEPS.findIndex((step) => step.id === "preview"));
     render(<TutorialTour />);
 
     await screen.findByTestId("tutorial-spotlight");

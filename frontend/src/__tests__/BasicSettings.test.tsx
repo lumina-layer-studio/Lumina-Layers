@@ -1051,7 +1051,7 @@ describe("BasicSettings", () => {
       selectedMaterialDirNames: [],
       materialBackingMaterialDirName: null,
     });
-    const searchStep = TUTORIAL_STEPS.findIndex((step) => step.id === "picker-search");
+    const searchStep = TUTORIAL_STEPS.findIndex((step) => step.id === "picker-palette");
     const summaryStep = TUTORIAL_STEPS.findIndex((step) => step.id === "materials-summary");
 
     render(<BasicSettings />);
@@ -1073,9 +1073,42 @@ describe("BasicSettings", () => {
     });
   });
 
+  it("keeps what the user selected in the picker when the tour moves on", async () => {
+    vi.mocked(extractorApi.listGradientCardMaterials).mockResolvedValue({
+      status: "success",
+      message: "ok",
+      materials: [makeMaterial("JAYO/red-pla", "Red PLA")],
+    });
+    useConverterStore.setState({
+      source_version: "material",
+      selectedMaterialDirNames: [],
+      materialBackingMaterialDirName: null,
+    });
+    const paletteStep = TUTORIAL_STEPS.findIndex((step) => step.id === "picker-palette");
+    const backingStep = TUTORIAL_STEPS.findIndex((step) => step.id === "materials-backing");
+
+    render(<BasicSettings />);
+    act(() => {
+      useTutorialStore.setState({ phase: "touring", stepIndex: paletteStep });
+    });
+    const dialog = await screen.findByTestId("material-picker-dialog");
+    fireEvent.click(await within(dialog).findByRole("button", { name: "选择 Red PLA" }));
+
+    act(() => {
+      useTutorialStore.setState({ stepIndex: backingStep });
+    });
+    await waitFor(() =>
+      expect(screen.queryByTestId("material-picker-dialog")).not.toBeInTheDocument(),
+    );
+    expect(useConverterStore.getState().selectedMaterialDirNames).toEqual(["JAYO/red-pla"]);
+    act(() => {
+      useTutorialStore.setState({ phase: "idle", stepIndex: 0 });
+    });
+  });
+
   it("does not open the picker for the tour in Classic LUT mode", () => {
     useConverterStore.setState({ source_version: "legacy" });
-    const searchStep = TUTORIAL_STEPS.findIndex((step) => step.id === "picker-search");
+    const searchStep = TUTORIAL_STEPS.findIndex((step) => step.id === "picker-palette");
     act(() => {
       useTutorialStore.setState({ phase: "touring", stepIndex: searchStep });
     });

@@ -226,6 +226,35 @@ describe("tutorialStore", () => {
     expectOriginalWorkspace();
   });
 
+  it("moves on when the user opens the material picker themselves", () => {
+    const openIndex = TUTORIAL_STEPS.findIndex((step) => step.id === "materials-open");
+    useTutorialStore.getState().startTour("manual");
+    useTutorialStore.setState({ stepIndex: openIndex });
+
+    useTutorialStore.getState().notifyMaterialPicker(false);
+    expect(useTutorialStore.getState().stepIndex).toBe(openIndex);
+    useTutorialStore.getState().notifyMaterialPicker(true);
+    expect(TUTORIAL_STEPS[useTutorialStore.getState().stepIndex].id).toBe("picker-palette");
+  });
+
+  it("jumps to the summary when the user closes the picker during its steps", () => {
+    const cardsIndex = TUTORIAL_STEPS.findIndex((step) => step.id === "picker-cards");
+    useTutorialStore.getState().startTour("manual");
+    useTutorialStore.setState({ stepIndex: cardsIndex });
+
+    useTutorialStore.getState().notifyMaterialPicker(false);
+    expect(TUTORIAL_STEPS[useTutorialStore.getState().stepIndex].id).toBe("materials-summary");
+  });
+
+  it("ignores picker changes outside the tour and on unrelated steps", () => {
+    useTutorialStore.getState().notifyMaterialPicker(true);
+    expect(useTutorialStore.getState().phase).toBe("idle");
+
+    useTutorialStore.getState().startTour("manual");
+    useTutorialStore.getState().notifyMaterialPicker(true);
+    expect(useTutorialStore.getState().stepIndex).toBe(0);
+  });
+
   it("keeps panels the tour did not change as the user left them", () => {
     useTutorialStore.getState().startTour("manual");
     useTutorialStore.getState().next();

@@ -12,7 +12,7 @@ export default function CoatingSettings() {
   const setCoatingHeightMm = useConverterStore((s) => s.setCoatingHeightMm);
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-4" data-tutorial="coating-settings">
       <Checkbox
         label={t("coating_enable")}
         checked={enable_coating}

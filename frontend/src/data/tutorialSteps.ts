@@ -14,7 +14,7 @@ export type TutorialStepId =
   | "device-settings"
   | "color-source"
   | "materials-open"
-  | "picker-search"
+  | "picker-palette"
   | "picker-cards"
   | "picker-favorites"
   | "picker-done"
@@ -23,6 +23,7 @@ export type TutorialStepId =
   | "materials-missing"
   | "layer-height"
   | "layer-count"
+  | "coating"
   | "image-upload"
   | "output-size"
   | "preview"
@@ -36,9 +37,11 @@ export interface TutorialStepPrepare {
   converterSubTab?: ConverterSubTabId;
   widget?: WidgetId;
   /**
-   * Keep the material picker dialog open (Material Archive mode only); it is
-   * closed again when the tour leaves these steps. Nothing is selected.
-   * 保持耗材选择框打开（仅耗材档案模式）；离开这些步骤后自动关闭，不会替用户勾选。
+   * Keep the material picker dialog open (Material Archive mode only). When
+   * the tour leaves these steps the picker is closed with Done, so whatever
+   * the user selected is kept; the tour itself never selects anything.
+   * 保持耗材选择框打开（仅耗材档案模式）。离开这些步骤时按「完成」关闭，
+   * 保留用户自己的勾选；引导本身不会替用户勾选。
    */
   materialPicker?: boolean;
 }
@@ -48,6 +51,31 @@ export interface TutorialControlHint {
   gestureKey: string;
   effectKey: string;
 }
+
+/** One color in a recommended palette. 推荐配色中的一个颜色。 */
+export interface TutorialSwatch {
+  /** CSS color; null draws a clear (transparent) swatch. CSS 颜色；null 表示透明耗材。 */
+  color: string | null;
+  labelKey: string;
+}
+
+/** A recommended material palette shown as swatches. 以色块展示的推荐配色。 */
+export interface TutorialPalette {
+  titleKey: string;
+  noteKey?: string;
+  swatches: readonly TutorialSwatch[];
+}
+
+/** Built-in illustrations a step can show. 步骤可显示的内置示意图。 */
+export type TutorialIllustration = "print-size";
+
+/**
+ * Move the tour on when the user does the step's action, so it follows them.
+ * 用户完成本步操作后自动前进，引导跟着用户走。
+ */
+export type TutorialAdvance =
+  | { on: "material-picker-opened" }
+  | { on: "material-picker-closed"; to: TutorialStepId };
 
 export interface TutorialStep {
   id: TutorialStepId;
@@ -79,6 +107,10 @@ export interface TutorialStep {
    * 卡片放在高亮区域内部靠下，适用于太大、旁边放不下卡片的目标。
    */
   cardInside?: boolean;
+  /** Recommended palettes rendered as swatch rows. 以色块行展示的推荐配色。 */
+  palettes?: readonly TutorialPalette[];
+  illustration?: TutorialIllustration;
+  advance?: TutorialAdvance;
   prepare?: TutorialStepPrepare;
 }
 
@@ -98,6 +130,43 @@ const MATERIAL_PICKER: TutorialStepPrepare = {
 // 这些控件只在耗材档案模式下存在；经典 LUT 模式下退回高亮颜色设置区（选择框也不会打开）。
 const MATERIAL_FALLBACK = ["material-picker", "color-source"] as const;
 
+const COATING_SETTINGS: TutorialStepPrepare = {
+  tab: "converter",
+  converterSubTab: "advanced",
+  widget: "coating-settings",
+};
+
+const swatch = (color: string | null, labelKey: string): TutorialSwatch => ({ color, labelKey });
+const WHITE = swatch("var(--palette-white)", "tutorial_color_white");
+const YELLOW = swatch("var(--palette-yellow)", "tutorial_color_yellow");
+const RED = swatch("var(--palette-crimson)", "tutorial_color_red");
+const BLUE = swatch("var(--palette-blue)", "tutorial_color_blue");
+const BLACK = swatch("var(--palette-black)", "tutorial_color_black");
+const MAGENTA = swatch("var(--palette-magenta)", "tutorial_color_magenta");
+const CYAN = swatch("var(--palette-cyan)", "tutorial_color_cyan");
+const GREEN = swatch("var(--palette-green)", "tutorial_color_green");
+const CLEAR = swatch(null, "tutorial_color_clear");
+
+export const TUTORIAL_PALETTES: readonly TutorialPalette[] = [
+  {
+    titleKey: "tutorial_palette_eight_title",
+    swatches: [WHITE, YELLOW, RED, BLUE, BLACK, MAGENTA, CYAN, GREEN],
+  },
+  {
+    titleKey: "tutorial_palette_clear_title",
+    noteKey: "tutorial_palette_clear_note",
+    swatches: [WHITE, YELLOW, RED, BLUE, BLACK, MAGENTA, CYAN, CLEAR],
+  },
+  {
+    titleKey: "tutorial_palette_four_title",
+    noteKey: "tutorial_palette_four_note",
+    swatches: [WHITE, YELLOW, RED, BLUE],
+  },
+];
+
+/** Picker steps: closing the picker (Done or ✕) jumps to the summary. 关闭选择框后跳到已选显示。 */
+const AFTER_PICKER: TutorialAdvance = { on: "material-picker-closed", to: "materials-summary" };
+
 const ACTION_BAR: TutorialStepPrepare = {
   tab: "converter",
   converterSubTab: "core",
@@ -110,13 +179,15 @@ export const TUTORIAL_STEPS: readonly TutorialStep[] = [
     anchor: "device-settings",
     titleKey: "tutorial_step_device_title",
     bodyKey: "tutorial_step_device_body",
+    interactive: true,
     prepare: { tab: "settings" },
   },
   {
     id: "color-source",
-    anchor: "color-source",
+    anchor: ["color-source-mode", "color-source"],
     titleKey: "tutorial_step_source_title",
     bodyKey: "tutorial_step_source_body",
+    interactive: true,
     prepare: BASIC_SETTINGS,
   },
   {
@@ -124,18 +195,18 @@ export const TUTORIAL_STEPS: readonly TutorialStep[] = [
     anchor: MATERIAL_FALLBACK,
     titleKey: "tutorial_step_materials_title",
     bodyKey: "tutorial_step_materials_body",
-    flowKeys: [
-      "tutorial_flow_materials_find",
-      "tutorial_flow_materials_favorite",
-      "tutorial_flow_materials_done",
-    ],
+    interactive: true,
+    advance: { on: "material-picker-opened" },
     prepare: BASIC_SETTINGS,
   },
   {
-    id: "picker-search",
+    id: "picker-palette",
     anchor: ["material-picker-search", ...MATERIAL_FALLBACK],
-    titleKey: "tutorial_step_picker_search_title",
-    bodyKey: "tutorial_step_picker_search_body",
+    titleKey: "tutorial_step_picker_palette_title",
+    bodyKey: "tutorial_step_picker_palette_body",
+    palettes: TUTORIAL_PALETTES,
+    interactive: true,
+    advance: AFTER_PICKER,
     prepare: MATERIAL_PICKER,
   },
   {
@@ -143,6 +214,8 @@ export const TUTORIAL_STEPS: readonly TutorialStep[] = [
     anchor: ["material-picker-cards", ...MATERIAL_FALLBACK],
     titleKey: "tutorial_step_picker_cards_title",
     bodyKey: "tutorial_step_picker_cards_body",
+    interactive: true,
+    advance: AFTER_PICKER,
     prepare: MATERIAL_PICKER,
   },
   {
@@ -150,6 +223,8 @@ export const TUTORIAL_STEPS: readonly TutorialStep[] = [
     anchor: ["material-picker-tabs", ...MATERIAL_FALLBACK],
     titleKey: "tutorial_step_picker_favorites_title",
     bodyKey: "tutorial_step_picker_favorites_body",
+    interactive: true,
+    advance: AFTER_PICKER,
     prepare: MATERIAL_PICKER,
   },
   {
@@ -157,6 +232,8 @@ export const TUTORIAL_STEPS: readonly TutorialStep[] = [
     anchor: ["material-picker-footer", ...MATERIAL_FALLBACK],
     titleKey: "tutorial_step_picker_done_title",
     bodyKey: "tutorial_step_picker_done_body",
+    interactive: true,
+    advance: AFTER_PICKER,
     prepare: MATERIAL_PICKER,
   },
   {
@@ -164,6 +241,7 @@ export const TUTORIAL_STEPS: readonly TutorialStep[] = [
     anchor: MATERIAL_FALLBACK,
     titleKey: "tutorial_step_materials_summary_title",
     bodyKey: "tutorial_step_materials_summary_body",
+    interactive: true,
     prepare: BASIC_SETTINGS,
   },
   {
@@ -171,6 +249,7 @@ export const TUTORIAL_STEPS: readonly TutorialStep[] = [
     anchor: ["material-backing", "color-source"],
     titleKey: "tutorial_step_backing_title",
     bodyKey: "tutorial_step_backing_body",
+    interactive: true,
     prepare: BASIC_SETTINGS,
   },
   {
@@ -185,6 +264,7 @@ export const TUTORIAL_STEPS: readonly TutorialStep[] = [
     anchor: ["material-layer-height", "color-source"],
     titleKey: "tutorial_step_layer_height_title",
     bodyKey: "tutorial_step_layer_height_body",
+    interactive: true,
     prepare: BASIC_SETTINGS,
   },
   {
@@ -192,13 +272,23 @@ export const TUTORIAL_STEPS: readonly TutorialStep[] = [
     anchor: ["material-layer-count", "color-source"],
     titleKey: "tutorial_step_layer_count_title",
     bodyKey: "tutorial_step_layer_count_body",
+    interactive: true,
     prepare: BASIC_SETTINGS,
+  },
+  {
+    id: "coating",
+    anchor: "coating-settings",
+    titleKey: "tutorial_step_coating_title",
+    bodyKey: "tutorial_step_coating_body",
+    interactive: true,
+    prepare: COATING_SETTINGS,
   },
   {
     id: "image-upload",
     anchor: "image-upload",
     titleKey: "tutorial_step_upload_title",
     bodyKey: "tutorial_step_upload_body",
+    interactive: true,
     prepare: BASIC_SETTINGS,
   },
   {
@@ -206,6 +296,8 @@ export const TUTORIAL_STEPS: readonly TutorialStep[] = [
     anchor: "output-size",
     titleKey: "tutorial_step_size_title",
     bodyKey: "tutorial_step_size_body",
+    illustration: "print-size",
+    interactive: true,
     prepare: BASIC_SETTINGS,
   },
   {
@@ -259,5 +351,13 @@ export function collectTutorialStepKeys(
     ...(step.needKey ? [step.needKey] : []),
     ...(step.fitKey ? [step.fitKey] : []),
     ...(step.controlHints ?? []).flatMap((hint) => [hint.gestureKey, hint.effectKey]),
+    ...(step.palettes ?? []).flatMap((palette) => [
+      palette.titleKey,
+      ...(palette.noteKey ? [palette.noteKey] : []),
+      ...palette.swatches.map((item) => item.labelKey),
+    ]),
+    ...(step.illustration === "print-size"
+      ? ["tutorial_size_small", "tutorial_size_large", "tutorial_size_caption"]
+      : []),
   ]);
 }

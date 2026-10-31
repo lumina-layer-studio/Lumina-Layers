@@ -30,6 +30,7 @@ import { CropModal } from "../ui/CropModal";
 import type { CropData } from "../ui/CropModal";
 import ImportConfirmDialog from "../ui/ImportConfirmDialog";
 import MaterialPickerDialog from "../ui/MaterialPickerDialog";
+import type { MaterialPickerDialogHandle } from "../ui/MaterialPickerDialog";
 import MaterialSolverCacheDialog from "../MaterialSolverCacheDialog";
 import LegacyLutSelector from "./LegacyLutSelector";
 import { TUTORIAL_STEPS } from "../../data/tutorialSteps";
@@ -862,28 +863,36 @@ export default function BasicSettings() {
     [setSelectedMaterialDirNames],
   );
 
-  // Compact summary for the trigger button: shows the first few material names
-  // plus a "+N more" suffix when truncated.
-  // The beginner tour walks through the picker dialog: open it while a step
-  // asks for it, and close it again only if the tour opened it.
-  // 新手引导会讲解耗材选择框：步骤需要时打开，离开时只关闭由引导打开的选择框。
+  // The beginner tour walks the user through the picker dialog. Entering its
+  // steps opens the picker (unless the user already did); leaving them presses
+  // Done, so the user's own selection is kept. Open/close is reported back so
+  // a step waiting for that action moves on.
+  // 新手引导会带用户使用耗材选择框：进入相关步骤时打开（用户已打开则不动）；离开时
+  // 代为点击「完成」，保留用户自己的勾选。打开/关闭会回报给引导，等待该操作的步骤自动前进。
   const tutorialWantsMaterialPicker = useTutorialStore(
     (state) =>
       state.phase === "touring" &&
       Boolean(TUTORIAL_STEPS[state.stepIndex]?.prepare?.materialPicker),
   );
-  const materialPickerOpenedByTutorialRef = useRef(false);
+  const notifyTutorialMaterialPicker = useTutorialStore((state) => state.notifyMaterialPicker);
+  const materialPickerRef = useRef<MaterialPickerDialogHandle>(null);
+  const tutorialWantedPickerRef = useRef(false);
   useEffect(() => {
-    if (tutorialWantsMaterialPicker && source_version === "material") {
-      if (!materialPickerOpen) {
-        materialPickerOpenedByTutorialRef.current = true;
-        setMaterialPickerOpen(true);
-      }
-    } else if (materialPickerOpenedByTutorialRef.current) {
-      materialPickerOpenedByTutorialRef.current = false;
-      setMaterialPickerOpen(false);
+    const wanted = tutorialWantsMaterialPicker && source_version === "material";
+    const wasWanted = tutorialWantedPickerRef.current;
+    tutorialWantedPickerRef.current = wanted;
+    if (wanted && !wasWanted && !materialPickerOpen) {
+      setMaterialPickerOpen(true);
+    } else if (!wanted && wasWanted && materialPickerOpen) {
+      materialPickerRef.current?.done();
     }
   }, [tutorialWantsMaterialPicker, source_version, materialPickerOpen]);
+  const reportedPickerOpenRef = useRef(materialPickerOpen);
+  useEffect(() => {
+    if (reportedPickerOpenRef.current === materialPickerOpen) return;
+    reportedPickerOpenRef.current = materialPickerOpen;
+    notifyTutorialMaterialPicker(materialPickerOpen);
+  }, [materialPickerOpen, notifyTutorialMaterialPicker]);
 
   const materialSummary = useMemo(() => {
     if (selectedMaterialDirNames.length === 0) {
@@ -1173,14 +1182,16 @@ export default function BasicSettings() {
       <ConversionPresets />
 
       <Block label={t("basic_group_color_source")} tutorial="color-source" className="gap-5">
-        <RadioGroup
-          label={t("basic_source_version_label")}
-          tooltip={t("basic_source_version_hint")}
-          wikiPath={WIKI_DOCS.sourceType}
-          value={source_version}
-          options={sourceVersionOptions}
-          onChange={(value) => setSourceVersion(value as "legacy" | "material")}
-        />
+        <div data-tutorial="color-source-mode" className="min-w-0">
+          <RadioGroup
+            label={t("basic_source_version_label")}
+            tooltip={t("basic_source_version_hint")}
+            wikiPath={WIKI_DOCS.sourceType}
+            value={source_version}
+            options={sourceVersionOptions}
+            onChange={(value) => setSourceVersion(value as "legacy" | "material")}
+          />
+        </div>
 
         {source_version === "material" ? (
           <div className="flex min-w-0 flex-col gap-5">
@@ -1243,6 +1254,7 @@ export default function BasicSettings() {
               </button>
 
               <MaterialPickerDialog
+                ref={materialPickerRef}
                 open={materialPickerOpen}
                 materials={materialLibrary}
                 loading={materialLibraryLoading}

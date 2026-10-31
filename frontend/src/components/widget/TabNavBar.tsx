@@ -120,6 +120,7 @@ export default function TabNavBar({ activeTab, onTabChange, onIndicatorAnimation
           <button
             key={id}
             data-testid={`tab-${id}`}
+            data-tutorial={`nav-${id}`}
             onClick={() => {
               if (id === 'lut-management') {
                 onTabChange(isLutSubTab(activeTab) ? activeTab : 'lut-library');

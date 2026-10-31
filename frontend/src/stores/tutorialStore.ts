@@ -44,6 +44,11 @@ interface TutorialState {
   skip: (via: TutorialSkipVia) => void;
   finish: () => void;
   /**
+   * Report that the material picker opened or closed, so a step waiting for
+   * that action moves on by itself. 报告耗材选择框打开/关闭，等待该操作的步骤自动前进。
+   */
+  notifyMaterialPicker: (open: boolean) => void;
+  /**
    * Restore the workspace left changed by a tour interrupted by a reload.
    * 恢复因刷新而中断的引导留下的工作区改动。
    */
@@ -302,6 +307,25 @@ export const useTutorialStore = create<TutorialState>()((set, get) => {
       });
       restoreWorkspace();
       set({ phase: "idle", stepIndex: 0, startedAtMs: null });
+    },
+
+    notifyMaterialPicker: (open) => {
+      const { phase, stepIndex } = get();
+      if (phase !== "touring") {
+        return;
+      }
+      const advance = TUTORIAL_STEPS[stepIndex]?.advance;
+      if (!advance) {
+        return;
+      }
+      if (open && advance.on === "material-picker-opened") {
+        get().next();
+      } else if (!open && advance.on === "material-picker-closed") {
+        const target = TUTORIAL_STEPS.findIndex((step) => step.id === advance.to);
+        if (target >= 0) {
+          goToStep(target);
+        }
+      }
     },
 
     recoverInterruptedTour: () => {

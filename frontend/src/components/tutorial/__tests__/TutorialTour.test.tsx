@@ -42,11 +42,12 @@ describe("TutorialTour", () => {
   afterEach(() => {
     cleanup();
     document.querySelectorAll("[data-tutorial]").forEach((node) => node.remove());
+    document.querySelectorAll('[role="dialog"]').forEach((node) => node.remove());
     vi.unstubAllGlobals();
   });
 
   it("spotlights the step anchor and shows the step copy", async () => {
-    mountAnchor("primary-tabs");
+    mountAnchor("device-settings");
     startTourAt(0);
     render(<TutorialTour />);
 
@@ -65,7 +66,7 @@ describe("TutorialTour", () => {
       width: "612px",
       height: "60px",
     });
-    expect(screen.getByText(zh("tutorial_step_tabs_title"))).toBeInTheDocument();
+    expect(screen.getByText(zh("tutorial_step_device_title"))).toBeInTheDocument();
     expect(screen.getByTestId("tutorial-card")).toHaveAttribute("data-side", "bottom");
     expect(screen.queryByText(zh("tutorial_back"))).not.toBeInTheDocument();
   });
@@ -84,16 +85,96 @@ describe("TutorialTour", () => {
     expect(screen.queryByTestId("tutorial-spotlight")).not.toBeInTheDocument();
   });
 
-  it("renders the principle flow and requirement lines for color sources", async () => {
-    const legacyIndex = TUTORIAL_STEPS.findIndex((step) => step.id === "source-legacy-lut");
-    mountAnchor("color-source");
-    startTourAt(legacyIndex);
+  it("shows the recommended palettes as swatches", async () => {
+    const paletteIndex = TUTORIAL_STEPS.findIndex((step) => step.id === "picker-palette");
+    mountAnchor("material-picker-search");
+    startTourAt(paletteIndex);
     render(<TutorialTour />);
 
-    const flow = await screen.findByTestId("tutorial-flow");
-    expect(flow.querySelectorAll("li")).toHaveLength(3);
-    expect(screen.getByText(zh("tutorial_step_legacy_need"))).toBeInTheDocument();
-    expect(screen.getByText(zh("tutorial_step_legacy_fit"))).toBeInTheDocument();
+    const palettes = await screen.findByTestId("tutorial-palettes");
+    expect(palettes.querySelectorAll("section")).toHaveLength(3);
+    expect(screen.getByText(zh("tutorial_palette_clear_title"))).toBeInTheDocument();
+    expect(screen.getAllByText(zh("tutorial_color_clear"))).toHaveLength(1);
+    expect(screen.getByTestId("tutorial-interactive-hint")).toHaveTextContent(
+      zh("tutorial_interactive_auto_hint"),
+    );
+  });
+
+  it("illustrates that larger prints are clearer on the size step", async () => {
+    const sizeIndex = TUTORIAL_STEPS.findIndex((step) => step.id === "output-size");
+    mountAnchor("output-size");
+    startTourAt(sizeIndex);
+    render(<TutorialTour />);
+
+    const figure = await screen.findByTestId("tutorial-illustration-print-size");
+    expect(figure.querySelectorAll("svg")).toHaveLength(2);
+    expect(screen.getByText(zh("tutorial_size_caption"))).toBeInTheDocument();
+  });
+
+  it("lets clicks through the spotlight on setting steps", async () => {
+    mountAnchor("device-settings");
+    startTourAt(0);
+    render(<TutorialTour />);
+
+    await screen.findByTestId("tutorial-spotlight");
+    expect(screen.queryByTestId("tutorial-click-shield")).not.toBeInTheDocument();
+    expect(screen.getAllByTestId("tutorial-click-shield-part")).toHaveLength(4);
+  });
+
+  it("steps aside while a dialog the user opened is up, then comes back", async () => {
+    mountAnchor("device-settings");
+    startTourAt(0);
+    render(<TutorialTour />);
+    await screen.findByTestId("tutorial-card");
+
+    const dialog = document.createElement("div");
+    dialog.setAttribute("role", "dialog");
+    dialog.setAttribute("aria-modal", "true");
+    dialog.getClientRects = () => [{} as DOMRect] as unknown as DOMRectList;
+    document.body.appendChild(dialog);
+    await waitFor(() => expect(screen.queryByTestId("tutorial-tour")).not.toBeInTheDocument());
+
+    // Escape belongs to the user's dialog meanwhile, not to the tour.
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(useTutorialStore.getState().phase).toBe("touring");
+
+    dialog.remove();
+    expect(await screen.findByTestId("tutorial-tour")).toBeInTheDocument();
+  });
+
+  it("keeps arrow keys for the caret inside text fields", async () => {
+    const paletteIndex = TUTORIAL_STEPS.findIndex((step) => step.id === "picker-palette");
+    const search = mountAnchor("material-picker-search");
+    const input = document.createElement("input");
+    search.appendChild(input);
+    startTourAt(paletteIndex);
+    render(<TutorialTour />);
+    await screen.findByTestId("tutorial-spotlight");
+
+    fireEvent.keyDown(input, { key: "ArrowRight" });
+    expect(useTutorialStore.getState().stepIndex).toBe(paletteIndex);
+    fireEvent.keyDown(document.body, { key: "ArrowRight" });
+    expect(useTutorialStore.getState().stepIndex).toBe(paletteIndex + 1);
+  });
+
+  it("prefers the precise anchor and falls back to its section", async () => {
+    const materialsIndex = TUTORIAL_STEPS.findIndex((step) => step.id === "materials-open");
+    const section = mountAnchor("color-source");
+    section.getBoundingClientRect = () =>
+      ({ top: 100, left: 40, width: 600, height: 400, right: 640, bottom: 500, x: 40, y: 100, toJSON: () => ({}) }) as DOMRect;
+    startTourAt(materialsIndex);
+    const { unmount } = render(<TutorialTour />);
+
+    // Classic LUT mode: no filament picker, so the whole color block is used.
+    expect(await screen.findByTestId("tutorial-spotlight")).toHaveStyle({ top: "94px", height: "412px" });
+    unmount();
+
+    // Material Archive mode: the picker itself is highlighted.
+    mountAnchor("material-picker");
+    render(<TutorialTour />);
+    await waitFor(() =>
+      expect(screen.getByTestId("tutorial-spotlight")).toHaveStyle({ top: "14px", height: "60px" }),
+    );
   });
 
   it("explains 3D mouse controls and lets the user try them in the spotlight", async () => {
@@ -122,9 +203,9 @@ describe("TutorialTour", () => {
   });
 
   it("caps the card height and scrolls only the copy so actions stay reachable", async () => {
-    const legacyIndex = TUTORIAL_STEPS.findIndex((step) => step.id === "source-legacy-lut");
+    const materialsIndex = TUTORIAL_STEPS.findIndex((step) => step.id === "materials-open");
     mountAnchor("color-source");
-    startTourAt(legacyIndex);
+    startTourAt(materialsIndex);
     render(<TutorialTour />);
 
     await screen.findByTestId("tutorial-spotlight");
@@ -140,8 +221,9 @@ describe("TutorialTour", () => {
     const outside = document.createElement("button");
     outside.textContent = "background";
     document.body.appendChild(outside);
-    mountAnchor("primary-tabs");
-    startTourAt(0);
+    // The preview step only explains; it does not let clicks through.
+    mountAnchor("preview-button");
+    startTourAt(TUTORIAL_STEPS.findIndex((step) => step.id === "preview"));
     render(<TutorialTour />);
     await screen.findByTestId("tutorial-spotlight");
 
@@ -152,8 +234,9 @@ describe("TutorialTour", () => {
   });
 
   it("keeps the whole app shielded on regular steps", async () => {
-    mountAnchor("primary-tabs");
-    startTourAt(0);
+    // The preview step only explains; it does not let clicks through.
+    mountAnchor("preview-button");
+    startTourAt(TUTORIAL_STEPS.findIndex((step) => step.id === "preview"));
     render(<TutorialTour />);
 
     await screen.findByTestId("tutorial-spotlight");
@@ -162,7 +245,7 @@ describe("TutorialTour", () => {
   });
 
   it("moves forward and back with the buttons and arrow keys", async () => {
-    mountAnchor("primary-tabs");
+    mountAnchor("device-settings");
     startTourAt(0);
     render(<TutorialTour />);
 

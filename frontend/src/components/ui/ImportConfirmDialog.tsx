@@ -42,6 +42,9 @@ export default function ImportConfirmDialog({
       onClick={onCancel}
     >
       <div
+        role="dialog"
+        aria-modal="true"
+        aria-label={t("recipe_import_title")}
         className="relative mx-4 flex max-h-[90vh] w-full max-w-md flex-col overflow-hidden rounded-2xl border shadow-2xl"
         style={{
           borderColor: "var(--surface-outline)",

@@ -773,12 +773,21 @@ ipcMain.on("application-menu-state", (event, payload) => {
   if (isTrustedMainFrameSender(event, win, `${FRONTEND_URL}/`)) applicationMenu?.update(payload);
 });
 
-ipcMain.on("set-titlebar-theme", (event, theme) => {
+// Window buttons per theme. "scrimmed" is the title bar color under the page's
+// modal scrim (--surface-scrim over the bar); symbols take the same color so
+// the buttons disappear into the scrim instead of floating above it.
+const TITLE_BAR_OVERLAYS = {
+  light: { color: "#e2e8f0", symbolColor: "#334155", scrimmed: "#6c7381" },
+  dark: { color: "#020617", symbolColor: "#cbd5e1", scrimmed: "#020617" },
+};
+
+ipcMain.on("set-titlebar-theme", (event, theme, scrimmed) => {
   if (process.platform !== "win32" || !isTrustedMainFrameSender(event, win, `${FRONTEND_URL}/`)) return;
   if (theme !== "light" && theme !== "dark") return;
-  win.setTitleBarOverlay(theme === "dark"
-    ? { color: "#020617", symbolColor: "#cbd5e1" }
-    : { color: "#e2e8f0", symbolColor: "#334155" });
+  const overlay = TITLE_BAR_OVERLAYS[theme];
+  win.setTitleBarOverlay(scrimmed === true
+    ? { color: overlay.scrimmed, symbolColor: overlay.scrimmed }
+    : { color: overlay.color, symbolColor: overlay.symbolColor });
 });
 
 ipcMain.handle("align-traffic-lights", (event, centerY, controlsHeight) => {

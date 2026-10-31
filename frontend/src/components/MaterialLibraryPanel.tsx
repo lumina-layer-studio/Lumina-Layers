@@ -647,6 +647,9 @@ export default function MaterialLibraryPanel() {
           onClick={handleCloseHistoryDialog}
         >
           <section
+            role="dialog"
+            aria-modal="true"
+            aria-label={t("mat_gradient_library_history_title")}
             data-testid="material-library-history-dialog"
             className="relative flex max-h-[85vh] w-full max-w-5xl flex-col gap-4 overflow-hidden rounded-[28px] border p-4 shadow-2xl sm:p-5"
             style={{
@@ -1020,6 +1023,9 @@ function MaterialLibraryEditDialog({
       style={{ background: "var(--surface-scrim)" }}
     >
       <section
+        role="dialog"
+        aria-modal="true"
+        aria-label={t("mat_gradient_library_edit_title")}
         className="relative flex w-full max-w-lg flex-col gap-4 overflow-hidden rounded-[28px] border p-4 shadow-2xl sm:p-5"
         style={{
           borderColor: "var(--surface-outline)",

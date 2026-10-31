@@ -3023,8 +3023,8 @@ export const translations: Record<string, Record<"zh" | "en", string>> = {
     en: "Interface scale",
   },
   "settings.interface_scale_description": {
-    zh: "100% 使用系统默认显示比例，不会因屏幕分辨率额外放大。可按需调整界面大小，或按 Ctrl 加号、减号逐档调整，Ctrl 0 回到 100%（Mac 上用 Command 键）。不影响模型和导出尺寸。",
-    en: "100% follows your system display scale without extra enlargement based on screen resolution. Adjust the interface size here or with Ctrl plus/minus; Ctrl+0 returns to 100% (use Command on Mac). Model and export dimensions are unchanged.",
+    zh: "界面的排版尺寸固定，不随屏幕分辨率或系统缩放变化：100% 时各种屏幕上的面板占比一致。想更大或更小再逐档调整，也可以按 Ctrl 加号或减号切换，Ctrl 0 回到 100%（Mac 上用 Command 键）。",
+    en: "The layout has one fixed size and does not follow the screen resolution or the system scaling: at 100% the panels take the same share of the screen everywhere. Pick a larger or smaller step if you want, or press Ctrl with plus or minus; Ctrl+0 returns to 100% (use Command on a Mac).",
   },
   "settings.interface_scale_failed": {
     zh: "无法读取或更改界面缩放，请重启软件后重试。",

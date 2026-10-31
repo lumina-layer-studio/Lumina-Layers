@@ -5,9 +5,16 @@ const { randomBytes } = require("node:crypto");
 const { isTrustedMainFrameSender } = require("./generated-file-directory.cjs");
 
 const STATE_VERSION = 1;
-// Electron already applies native OS DPI. Display size is not a page zoom input.
+// Product decision: the OS must not decide how this app is laid out. Every page
+// is laid out in the same 1536×864 room (what a 1920×1080 screen at 125% system
+// scaling gives other apps), so panels, header and toolbars keep the same share
+// of the window on any screen. resolveZoomFactor() converts the display size —
+// which already carries the system scaling — into page zoom, cancelling both the
+// resolution and the system scaling. Only the user's own preference changes the
+// layout; plain percent/100 would hand that decision back to the OS.
+const REFERENCE = { width: 1536, height: 864 };
 const DEFAULT_PREFERENCE = "100";
-// Explicit user-selected percentages, relative to native 100%.
+// Interface first; each step scales the 100% layout room.
 const SCALE_STEPS = Object.freeze(["80", "90", "100", "110", "125", "150", "175"]);
 const PREFERENCES = new Set(SCALE_STEPS);
 const DEFAULT_WINDOW_SIZE = { width: 1440, height: 900 };
@@ -23,15 +30,30 @@ function isInterfaceScalePreference(value) {
 }
 
 /**
- * Resolve literal user zoom without compensating native display scaling.
- * 按用户选择解析页面比例，不再额外补偿系统缩放或显示器分辨率。
- * The second argument remains accepted for existing callers.
+ * Page zoom that lays the page out on the shared reference room.
+ * The room is exact: a panel that is 23% of the window stays 23% of the
+ * window on every screen, whatever its resolution or system scaling.
+ * Display metrics are read only here, and only so they can be cancelled out.
+ */
+function referenceZoomFactor(displaySize) {
+  const width = Number(displaySize?.width);
+  const height = Number(displaySize?.height);
+  if (!(width > 0 && height > 0)) return 1;
+  return Math.min(width / REFERENCE.width, height / REFERENCE.height);
+}
+
+/**
+ * Page zoom for a preference on a display of the given logical size.
+ * 100% is the reference room; other steps are multiples of it.
+ * The display is an argument only so it can be cancelled: the preference is
+ * the one setting that is allowed to change the layout.
  */
 function resolveZoomFactor(preference, displaySize) {
   const percent = isInterfaceScalePreference(preference)
     ? Number(preference)
     : Number(DEFAULT_PREFERENCE);
-  return percent / 100;
+  const factor = referenceZoomFactor(displaySize) * percent / 100;
+  return Math.round(factor * 1000) / 1000;
 }
 
 /**

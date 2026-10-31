@@ -81,42 +81,49 @@ function keyDown(key, modifiers = {}, code = "") {
   return { type: "keyDown", key, code, control: false, meta: false, alt: false, shift: false, ...modifiers };
 }
 
-test("100% follows native system scaling without compensating display resolution", () => {
-  // OS DPI already maps logical pixels to physical pixels.
+test("100% hands every screen the same page, whatever its resolution or system scale", () => {
+  // 1920×1080 at 125% system scaling, 4K at 200%, and 2560×1440 at 100% all
+  // hand the page the same 1536×864 layout room.
   assert.equal(resolveZoomFactor("100", SCREENS.fhd125), 1);
-  assert.equal(resolveZoomFactor("100", SCREENS.fhd100), 1);
-  assert.equal(resolveZoomFactor("100", SCREENS.qhd100), 1);
-  assert.equal(resolveZoomFactor("100", SCREENS.laptop1200p150), 1);
-  assert.equal(resolveZoomFactor("100", SCREENS.ultrawide100), 1);
+  assert.equal(resolveZoomFactor("100", SCREENS.fhd100), 1.25);
+  assert.equal(resolveZoomFactor("100", SCREENS.qhd100), 1.667);
+  // The tighter side decides on screens that are not 16:9.
+  assert.equal(resolveZoomFactor("100", SCREENS.laptop1200p150), 0.833);
+  assert.equal(resolveZoomFactor("100", SCREENS.ultrawide100), 1.667);
 });
 
-test("native page zoom stays 1 across logical display sizes", () => {
+test("every screen gets the same layout room, limited by its tighter side", () => {
   for (const size of Object.values(SCREENS)) {
     const zoom = resolveZoomFactor("100", size);
-    assert.equal(zoom, 1, JSON.stringify(size));
+    const roomWidth = size.width / zoom;
+    const roomHeight = size.height / zoom;
+    // The tighter side lands on the 1536×864 reference (within zoom rounding);
+    // the other side is at least as large, so the room always fits.
+    assert.ok(Math.abs(Math.min(roomWidth / 1536, roomHeight / 864) - 1) < 0.002, JSON.stringify(size));
+    assert.ok(roomWidth >= 1535.5 && roomHeight >= 863.5, JSON.stringify(size));
   }
-  assert.equal(resolveZoomFactor("100", SCREENS.fhd175), 1);
-  assert.equal(resolveZoomFactor("100", SCREENS.uhd100), 1);
+  // No guardrails: a cramped or very high-DPI screen still gets the same room.
+  assert.equal(resolveZoomFactor("100", SCREENS.fhd175), 0.714);
+  assert.equal(resolveZoomFactor("100", SCREENS.uhd100), 2.5);
   assert.equal(resolveZoomFactor("100", { width: 0, height: 0 }), 1);
   assert.equal(resolveZoomFactor("100"), 1);
 });
 
-test("manual percentages are literal page zoom factors on every display", () => {
+test("manual steps multiply that room and stay ordered", () => {
   assert.equal(resolveZoomFactor("80", SCREENS.fhd125), 0.8);
   assert.equal(resolveZoomFactor("110", SCREENS.fhd125), 1.1);
-  assert.equal(resolveZoomFactor("175", SCREENS.qhd100), 1.75);
+  assert.equal(resolveZoomFactor("175", SCREENS.qhd100), 2.917);
   for (const size of Object.values(SCREENS)) {
     const factors = SCALE_STEPS.map(step => resolveZoomFactor(step, size));
-    assert.deepEqual(factors, SCALE_STEPS.map(step => Number(step) / 100));
     for (let index = 1; index < factors.length; index += 1) {
       assert.ok(factors[index] > factors[index - 1], `${JSON.stringify(size)}: ${factors}`);
     }
   }
 });
 
-test("an unknown preference falls back to native 100%", () => {
+test("an unknown preference falls back to the 100% room", () => {
   for (const value of ["auto", "system", "300", "", null, undefined]) {
-    assert.equal(resolveZoomFactor(value, SCREENS.fhd100), 1);
+    assert.equal(resolveZoomFactor(value, SCREENS.fhd100), 1.25);
   }
 });
 
@@ -214,11 +221,11 @@ test("raising the step grows a small window; lowering it leaves the window alone
   const stateFile = tempStateFile(t);
   writeInterfaceScalePreference(stateFile, "80");
   const controller = createInterfaceScaleController({ screen: fakeScreen([mac]), stateFile });
-  const window = fakeWindow({ x: 40, y: 60, width: 768, height: 496 });
+  const window = fakeWindow({ x: 40, y: 60, width: 736, height: 475 });
   controller.attach(window);
   window.webContents.emit("did-navigate");
-  assert.deepEqual(window.minimumSizes.at(-1), [768, 496]);
-  assert.deepEqual(window.bounds, { x: 40, y: 60, width: 768, height: 496 });
+  assert.deepEqual(window.minimumSizes.at(-1), [736, 475]);
+  assert.deepEqual(window.bounds, { x: 40, y: 60, width: 736, height: 475 });
 
   controller.choose("150");
   const zoom = window.webContents.getZoomFactor();
@@ -229,7 +236,7 @@ test("raising the step grows a small window; lowering it leaves the window alone
   assert.ok(window.bounds.height / zoom >= MIN_PAGE_SIZE.height - 1, JSON.stringify(window.bounds));
 
   controller.choose("80");
-  assert.deepEqual(window.minimumSizes.at(-1), [768, 496]);
+  assert.deepEqual(window.minimumSizes.at(-1), [736, 475]);
   assert.deepEqual(window.bounds, { x: 40, y: 25, width: 1305, height: 843 });
   window.setBounds({ width: 800, height: 520 });
   assert.deepEqual(window.bounds, { x: 40, y: 25, width: 800, height: 520 });
@@ -247,7 +254,7 @@ test("restoring after a maximized scale increase keeps the enlarged window on sc
   const stateFile = tempStateFile(t);
   writeInterfaceScalePreference(stateFile, "80");
   const controller = createInterfaceScaleController({ screen: fakeScreen([mac]), stateFile });
-  const window = fakeWindow({ x: 600, y: 350, width: 768, height: 496 });
+  const window = fakeWindow({ x: 600, y: 350, width: 736, height: 475 });
   controller.attach(window);
   window.webContents.emit("did-navigate");
 
@@ -278,49 +285,49 @@ test("the controller applies, saves and announces a new preference", t => {
   const controller = createInterfaceScaleController({ screen, stateFile });
   assert.equal(controller.preference(), "100");
   assert.deepEqual(controller.initialPlacement(), {
-    zoomFactor: 1,
-    minimumSize: { width: 960, height: 620 },
-    maximize: false,
-    bounds: { x: 240, y: 66, width: 1440, height: 900 },
+    zoomFactor: 1.25,
+    minimumSize: { width: 1200, height: 775 },
+    maximize: true,
+    bounds: { x: 96, y: 52, width: 1728, height: 928 },
   });
 
   const window = fakeWindow({ x: 10, y: 10, width: 1600, height: 900 });
   controller.attach(window);
   assert.equal(controller.choose("150"), true);
-  assert.deepEqual(window.webContents.zoomCalls, [1.5]);
-  assert.deepEqual(window.minimumSizes, [[1440, 930]]);
+  // The requested 1.875 zoom is capped by the 1032-high work area.
+  assert.deepEqual(window.webContents.zoomCalls, [1.664]);
+  assert.deepEqual(window.minimumSizes, [[1598, 1032]]);
   assert.deepEqual(window.webContents.sent, [["interface-scale-changed", { preference: "150" }]]);
   assert.equal(readInterfaceScalePreference(stateFile), "150");
 
   assert.equal(controller.choose("auto"), false);
   assert.equal(controller.preference(), "150");
-  assert.deepEqual(window.webContents.zoomCalls, [1.5]);
+  assert.deepEqual(window.webContents.zoomCalls, [1.664]);
 });
 
-test("navigation repairs inherited zoom and moving displays does not rescale the page", t => {
+test("the controller rescales when the window lands on another display", t => {
   const stateFile = tempStateFile(t);
   const external = display({ x: 0, y: 0, width: 1920, height: 1080 });
   const laptop = display({ x: 492, y: 1080, width: 1280, height: 800 });
   const screen = fakeScreen([external, laptop]);
   const controller = createInterfaceScaleController({ screen, stateFile });
   const window = fakeWindow({ x: 10, y: 10, width: 1600, height: 900 });
-  window.webContents.zoom = 1.667; // Persisted by the former 4K / 150% calculation.
   controller.attach(window);
 
   window.webContents.emit("did-navigate");
-  assert.deepEqual(window.webContents.zoomCalls, [1]);
+  assert.deepEqual(window.webContents.zoomCalls, [1.25]);
 
   t.mock.timers.enable({ apis: ["setTimeout"] });
   window.bounds = { x: 600, y: 1100, width: 1100, height: 700 };
   window.emit("move");
   window.emit("move");
-  assert.deepEqual(window.webContents.zoomCalls, [1]);
+  assert.deepEqual(window.webContents.zoomCalls, [1.25]);
   t.mock.timers.tick(200);
-  assert.deepEqual(window.webContents.zoomCalls, [1]);
+  assert.deepEqual(window.webContents.zoomCalls, [1.25, 0.833]);
 
   laptop.size = { width: 1536, height: 960 };
   screen.emit("display-metrics-changed", {}, laptop, ["scaleFactor"]);
-  assert.deepEqual(window.webContents.zoomCalls, [1]);
+  assert.deepEqual(window.webContents.zoomCalls, [1.25, 0.833, 1]);
 
   window.emit("closed");
   assert.equal(screen.listenerCount("display-metrics-changed"), 0);
@@ -347,7 +354,7 @@ test("keyboard shortcuts step the preference and keep the key from the page", t 
   assert.equal(controller.preference(), "90");
   assert.equal(press(keyDown("a", { control: true })), false);
   assert.equal(readInterfaceScalePreference(stateFile), "90");
-  assert.deepEqual(window.webContents.zoomCalls, [1.1, 1, 0.9]);
+  assert.deepEqual(window.webContents.zoomCalls, [1.375, 1.25, 1.125]);
 });
 
 test("only the trusted main frame may read or change the preference", t => {

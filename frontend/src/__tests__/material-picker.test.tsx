@@ -116,6 +116,9 @@ function renderPicker(
   return { ...render(<MaterialPickerDialog {...props} />), props };
 }
 
+// Selected names also appear in the pinned strip; look for cards in the grid.
+const cardGrid = () => screen.getByTestId("material-picker-card-grid");
+
 describe("MaterialPickerDialog", () => {
   beforeEach(() => {
     localStorage.clear();
@@ -175,6 +178,30 @@ describe("MaterialPickerDialog", () => {
     expect(onConfirm).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: "完成" }));
     expect(onConfirm).toHaveBeenCalledWith(["jayo/yellow-pla"]);
+  });
+
+  it("pins the selected materials above the list and lets them be removed there", () => {
+    const onConfirm = vi.fn();
+    renderPicker({ initialSelected: ["jayo/yellow-pla"], onConfirm });
+
+    const strip = screen.getByTestId("material-picker-selected-strip");
+    expect(within(strip).getByText("Yellow PLA")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "选择 Red PLA" }));
+    // Listed in selection order.
+    expect(within(strip).getAllByRole("listitem").map((item) => item.textContent)).toEqual([
+      "Yellow PLA",
+      "Red PLA",
+    ]);
+
+    fireEvent.click(within(strip).getByRole("button", { name: "移除 Yellow PLA" }));
+    fireEvent.click(screen.getByRole("button", { name: "完成" }));
+    expect(onConfirm).toHaveBeenCalledWith(["JAYO/red-pla"]);
+  });
+
+  it("shows no selected strip content before anything is chosen", () => {
+    renderPicker();
+    expect(screen.getByTestId("material-picker-selected-strip")).toBeEmptyDOMElement();
   });
 
   it("toggles and commits a single material from the lower card details", () => {
@@ -263,10 +290,10 @@ describe("MaterialPickerDialog", () => {
       initialSelected: ["JAYO/red-pla"],
     });
 
-    const selectedCard = screen
+    const selectedCard = within(cardGrid())
       .getByText("Red PLA")
       .closest('[data-testid="material-picker-product-card"]');
-    const unselectedCard = screen
+    const unselectedCard = within(cardGrid())
       .getByText("Yellow PLA")
       .closest('[data-testid="material-picker-product-card"]');
 
@@ -417,19 +444,19 @@ describe("MaterialPickerDialog", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "选择 Red PLA" }));
     fireEvent.click(screen.getByRole("tab", { name: "PETG" }));
-    expect(screen.queryByText("Red PLA")).not.toBeInTheDocument();
+    expect(within(cardGrid()).queryByText("Red PLA")).not.toBeInTheDocument();
     fireEvent.click(
       screen.getByRole("button", { name: "选择 Black PETG" }),
     );
     fireEvent.click(screen.getByRole("tab", { name: "PLA" }));
-    expect(screen.getByText("Red PLA")).toBeInTheDocument();
+    expect(within(cardGrid()).getByText("Red PLA")).toBeInTheDocument();
     expect(screen.getByText(/已选耗材：2/)).toBeInTheDocument();
 
     fireEvent.click(
       screen.getByTestId("material-picker-brand-option-brand:jayo"),
     );
-    expect(screen.getByText("Red PLA")).toBeInTheDocument();
-    expect(screen.queryByText("Blue PLA")).not.toBeInTheDocument();
+    expect(within(cardGrid()).getByText("Red PLA")).toBeInTheDocument();
+    expect(within(cardGrid()).queryByText("Blue PLA")).not.toBeInTheDocument();
   });
 
   it("groups same-product author profiles and requires an explicit profile choice", () => {

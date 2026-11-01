@@ -229,6 +229,7 @@ def _resolve_preview_rgb_for_material_name(
 
     color_rgb, source = resolve_preview_color_for_slot(
         material_name, material_index, preview_colors or {},
+        palette_index_is_authoritative=True,
     )
     if source != "fallback":
         return color_rgb

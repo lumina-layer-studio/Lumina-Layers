@@ -305,7 +305,8 @@ def _resolve_generation_backing_color_id(
     """Resolve the backing fill id for actual generation.
     解析实际生成时使用的底板填充编号。
     """
-    if lut_metadata is None:
+    # Negative labels reserve a separate mesh; its material is assigned at export.
+    if backing_color_id < 0 or lut_metadata is None:
         return int(backing_color_id)
 
     if get_source_kind(lut_metadata) == "legacy_lookup":

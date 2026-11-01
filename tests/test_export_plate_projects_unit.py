@@ -60,6 +60,26 @@ def test_independent_projects_require_a_real_backing_part(tmp_path):
     assert not list(tmp_path.iterdir())
 
 
+def test_independent_projects_keep_colours_when_compacting_numbered_palette(tmp_path):
+    from io import BytesIO
+    import json
+
+    scene = _scene()
+    names = ["Slot 2 (White)", "Slot 1 (Red)"]
+    scene.geometry["Color"].metadata["bambu_material_name"] = names[1]
+    scene.geometry["Backing"].metadata["bambu_material_name"] = names[0]
+    output = export_scene_with_slicer_metadata(
+        scene, str(tmp_path / "scene.3mf"), list(scene.geometry),
+        {0: [249, 249, 249, 255], 1: [193, 46, 31, 255]}, project_slot_names=names,
+        backing_output="separate_project", base_height_mm=1.2, color_height_mm=0.8,
+    )
+    with zipfile.ZipFile(output) as archive:
+        for name, colour in [("plate_1_model.3mf", "#C12E1F"), ("plate_2_backing.3mf", "#F9F9F9")]:
+            with zipfile.ZipFile(BytesIO(archive.read(name))) as project:
+                settings = json.loads(project.read("Metadata/project_settings.config"))
+            assert settings["filament_colour"] == [colour]
+
+
 def test_second_plate_failure_leaves_no_partial_download(tmp_path):
     from core.export_plates import export_separate_backing_projects
 

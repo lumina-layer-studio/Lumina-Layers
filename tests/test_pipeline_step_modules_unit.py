@@ -1502,6 +1502,34 @@ class TestS06VoxelBuilding:
             backing_end - backing_start + 1
         )
 
+    @pytest.mark.parametrize("source_kind", ["legacy_lookup", "legacy_multi", "predictive_package"])
+    @pytest.mark.parametrize("structure_mode", ["Single-sided", "Double-sided"])
+    def test_separate_backing_retains_its_mesh_label(self, source_kind, structure_mode):
+        from core.pipeline.s06_voxel_building import run
+
+        ctx = self._make_valid_ctx()
+        ctx.update(
+            structure_mode=structure_mode,
+            separate_backing=True,
+            backing_color_id=-2,
+            separate_backing_color_id=1,
+            lut_metadata=LUTMetadata(
+                palette=[
+                    PaletteEntry(color="Red", material="PLA"),
+                    PaletteEntry(color="White", material="PLA"),
+                ],
+                base_channel_idx=1,
+                extensions={"source_kind": source_kind},
+            ),
+        )
+
+        result = run(ctx)
+        backing_start, backing_end = result["backing_metadata"]["backing_z_range"]
+        logical_column = np.repeat(result["full_matrix"][:, 0, 0], np.diff(result["voxel_z_edges"]))
+        assert np.all(logical_column[backing_start:backing_end + 1] == -2)
+        assert np.all(logical_column[:backing_start] == 0)
+        assert np.all(logical_column[backing_end + 1:] == 0)
+
     @pytest.mark.parametrize("structure_mode", ["Single-sided", "Double-sided"])
     def test_pixel_mode_backing_preserves_transparent_pixels(self, structure_mode):
         """Transparent margins and holes must stay empty through every layer."""

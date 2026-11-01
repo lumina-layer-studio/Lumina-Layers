@@ -1005,6 +1005,39 @@ describe("BasicSettings", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("lists every selected material with its color swatch", async () => {
+    const names = ["White", "Red", "Blue", "Yellow", "Cyan", "Magenta", "Black", "Green"];
+    const colors = [
+      [250, 250, 250], [200, 30, 40], [20, 60, 200], [250, 220, 30],
+      [0, 160, 220], [220, 0, 140], [10, 10, 10], [40, 160, 60],
+    ];
+    vi.mocked(extractorApi.listGradientCardMaterials).mockResolvedValueOnce({
+      status: "success",
+      message: "ok",
+      materials: names.map((name, index) => ({
+        ...makeMaterial(`Brand/${name}`, `Brand PLA ${name}`),
+        estimated_rgb: colors[index],
+      })),
+    });
+    useConverterStore.setState({
+      source_version: "material",
+      selectedMaterialDirNames: names.map((name) => `Brand/${name}`),
+      materialBackingMaterialDirName: null,
+    });
+
+    render(<BasicSettings />);
+
+    const list = await screen.findByTestId("material-picker-summary-list");
+    await waitFor(() => expect(list).toHaveTextContent("Brand PLA Green"));
+    // All eight are named (no "and N more"), each with its own swatch.
+    for (const name of names) {
+      expect(list).toHaveTextContent(`Brand PLA ${name}`);
+    }
+    const dots = screen.getByTestId("material-picker-summary-dots").children;
+    expect(dots).toHaveLength(8);
+    expect(dots[1]).toHaveStyle({ backgroundColor: "rgb(200, 30, 40)" });
+  });
+
   it("lets users retry a failed material-library load from the picker", async () => {
     vi.mocked(extractorApi.listGradientCardMaterials)
       .mockRejectedValueOnce(new Error("temporary failure"))

@@ -151,6 +151,10 @@ export default function MaterialPickerDialog({
   const previouslyFocusedRef = useRef<HTMLElement | null>(null);
 
   const [staged, setStaged] = useState<string[]>(initialSelected);
+  const materialByDirectory = useMemo(
+    () => new Map(materials.map((item) => [item.directory_name, item])),
+    [materials],
+  );
   const [query, setQuery] = useState("");
   const [typeFilter, setTypeFilter] = useState<MaterialTypeFilter>("all");
   const [brandKey, setBrandKey] = useState("all");
@@ -678,7 +682,7 @@ export default function MaterialPickerDialog({
           style={{
             borderColor: "var(--surface-outline)",
             background: "var(--surface-panel-strong)",
-            gridTemplateRows: "auto auto minmax(0,1fr) auto",
+            gridTemplateRows: "auto auto auto minmax(0,1fr) auto",
           }}
           onMouseDown={(event) => event.stopPropagation()}
           data-testid="material-picker-dialog"
@@ -791,6 +795,59 @@ export default function MaterialPickerDialog({
                 </label>
               </div>
             </div>
+          </div>
+
+          {/* Selected materials pinned above the list, in selection order, so
+              the current palette stays visible while browsing. An empty row
+              keeps the grid rows stable. 已选耗材固定在列表上方，按选择顺序显示，
+              浏览时始终能看到当前配色；未选择时保留空行以保持网格行数不变。 */}
+          <div
+            className={staged.length > 0 ? "border-b border-slate-200/80 px-4 py-2.5 dark:border-slate-700/80 sm:px-6" : undefined}
+            data-testid="material-picker-selected-strip"
+          >
+            {staged.length > 0 && (
+              <div className="flex items-start gap-3">
+                <p className="shrink-0 pt-1 text-xs font-medium text-slate-500 dark:text-slate-400">
+                  {t("basic_material_picker_selected_label")}
+                </p>
+                <ul className="dock-scrollbar flex max-h-[4.5rem] min-w-0 flex-1 flex-wrap gap-1.5 overflow-y-auto">
+                  {staged.map((directoryName) => {
+                    const item = materialByDirectory.get(directoryName);
+                    const name = item?.material_name ?? directoryName;
+                    return (
+                      <li
+                        key={directoryName}
+                        className="flex min-w-0 items-center gap-1.5 rounded-full border border-slate-200/80 bg-slate-50 py-0.5 pl-2 pr-0.5 dark:bg-slate-800/60 text-xs font-medium text-slate-700 dark:border-slate-700/80 dark:text-slate-200"
+                      >
+                        <span
+                          aria-hidden="true"
+                          className="inline-block size-2.5 shrink-0 rounded-full bg-slate-200 ring-1 ring-black/15 dark:bg-slate-700 dark:ring-white/25"
+                          style={item ? { backgroundColor: materialSwatchColor(item) } : undefined}
+                        />
+                        <span className="max-w-[12rem] truncate" title={name}>
+                          {name}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setStaged((previous) =>
+                              previous.filter((value) => value !== directoryName),
+                            )
+                          }
+                          aria-label={formatMessage(
+                            t("basic_material_picker_remove_selected"),
+                            { material: name },
+                          )}
+                          className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-slate-400 hover:bg-slate-100 hover:text-slate-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)] dark:hover:bg-slate-800 dark:hover:text-slate-200"
+                        >
+                          <XMarkIcon className="h-3.5 w-3.5" aria-hidden="true" />
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            )}
           </div>
 
           <div className="grid min-h-0 md:grid-cols-[13rem_minmax(0,1fr)]">

@@ -5181,10 +5181,6 @@ export const translations: Record<string, Record<"zh" | "en", string>> = {
     zh: "\u9009\u62e9\u8017\u6750\u2026",
     en: "Choose materials\u2026",
   },
-  basic_material_picker_summary_more: {
-    zh: "\u7b49 {count} \u79cd",
-    en: "+{count} more",
-  },
   basic_material_picker_dialog_title: {
     zh: "\u9009\u62e9\u8017\u6750",
     en: "Choose Materials",
@@ -5208,6 +5204,14 @@ export const translations: Record<string, Record<"zh" | "en", string>> = {
   basic_material_picker_deselect_all: {
     zh: "\u6e05\u7a7a\u9009\u62e9",
     en: "Deselect all",
+  },
+  basic_material_picker_remove_selected: {
+    zh: "移除 {material}",
+    en: "Remove {material}",
+  },
+  basic_material_picker_selected_label: {
+    zh: "已选",
+    en: "Selected",
   },
   basic_material_picker_close: {
     zh: "\u5173\u95ed",

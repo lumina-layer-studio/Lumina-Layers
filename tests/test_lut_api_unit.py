@@ -116,7 +116,7 @@ def test_legacy_multi_runtime_accepts_cross_color_lut_candidates(tmp_path: Path)
         "layer_height_mm": 0.08,
         "line_width_mm": 0.42,
         "base_layers": 10,
-        "base_channel_idx": 3,
+        "base_channel_idx": 0,
         "layer_order": "Top2Bottom",
     }
     four_meta = LUTMetadata(

@@ -4,6 +4,7 @@ LUT preset management module
 """
 
 import copy
+from collections import Counter
 from dataclasses import dataclass
 import os
 import re
@@ -1204,7 +1205,24 @@ class LUTManager:
                 return (0, standard_order[color], normalize_channel_key(str(entry.material)))
             return (1, len(standard_order), key)
 
-        return [entry for _key, entry in sorted(entries_by_key.items(), key=sort_key)]
+        palette = [entry for _key, entry in sorted(entries_by_key.items(), key=sort_key)]
+        # Metadata serializes the palette by display name. Equal color labels
+        # from different materials must not overwrite each other on disk.
+        counts = Counter(entry.color for entry in palette)
+        used_names = set(counts)
+        for entry in palette:
+            if counts[entry.color] == 1:
+                continue
+            color = cls._canonicalize_legacy_multi_color_name(entry.color)
+            label = f"{entry.material} ({color})"
+            unique_label = label
+            suffix = 2
+            while unique_label in used_names:
+                unique_label = f"{label} [{suffix}]"
+                suffix += 1
+            entry.color = unique_label
+            used_names.add(unique_label)
+        return palette
 
     @staticmethod
     def _legacy_print_settings_signature(metadata: LUTMetadata) -> dict[str, Any]:
@@ -1332,6 +1350,11 @@ class LUTManager:
         runtime_rgb = np.concatenate(rgb_parts, axis=0)
         runtime_stacks = np.concatenate(stack_parts, axis=0)
         metadata = baseline_metadata
+        base_index = int(metadata.base_channel_idx)
+        if not 0 <= base_index < len(metadata.palette):
+            raise ValueError(f"Legacy LUT base channel is outside its palette: {selected_names[0]}")
+        base_key = cls._legacy_palette_entry_key(metadata.palette[base_index])
+        metadata.base_channel_idx = global_palette_index[base_key]
         metadata.palette = global_palette
         metadata.color_mode = "Merged"
         metadata.max_color_layers = int(stack_width)

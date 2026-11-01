@@ -15,6 +15,7 @@ import {
 import { postClientLog } from "../utils/clientLog";
 import { createMatteMaterialFromStandard } from "../utils/threeMatteMaterial";
 import { useGltfCacheLifecycle } from "./useGltfCacheLifecycle";
+import { configureGltfTransport } from "../utils/gltfTransport";
 
 type LuminaWindow = Window & { __luminaGenerateStart?: number };
 
@@ -62,7 +63,7 @@ function ModelViewer({
   position = DEFAULT_MODEL_POSITION,
   autoFitCamera = true,
 }: ModelViewerProps) {
-  const { scene } = useGLTF(url);
+  const { scene } = useGLTF(url, true, true, configureGltfTransport);
   const camera = useThree((state) => state.camera);
   const controls = useThree((state) => state.controls);
   useGltfCacheLifecycle(url, useGLTF.clear);

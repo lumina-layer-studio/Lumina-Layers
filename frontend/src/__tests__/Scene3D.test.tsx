@@ -21,8 +21,10 @@ vi.mock("../components/ModelViewer", () => ({
   computeFitDistance: () => 100,
 }));
 let capturedInteractiveViewerProps: Record<string, unknown> | null = null;
+const failedModelUrls = new Set<string>();
 vi.mock("../components/InteractiveModelViewer", () => ({
   default: (props: Record<string, unknown>) => {
+    if (failedModelUrls.has(String(props.url))) throw new Error("Cached model load failure");
     capturedInteractiveViewerProps = props;
     return null;
   },
@@ -74,12 +76,14 @@ let capturedOrbitControlsProps: Record<string, unknown> = {};
 let environmentError: Error | null = null;
 let canvasError: Error | null = null;
 const clearEnvironment = vi.fn((_options?: unknown) => { environmentError = null; });
+const clearGltf = vi.fn((url: string) => { failedModelUrls.delete(url); });
 vi.mock("@react-three/drei", () => ({
   OrbitControls: (props: Record<string, unknown>) => {
     capturedOrbitControlsProps = props;
     return null;
   },
   useEnvironment: { clear: (options: unknown) => clearEnvironment(options) },
+  useGLTF: { clear: (url: string) => clearGltf(url) },
   Environment: (props: Record<string, unknown>) => {
     if (environmentError) throw environmentError;
     return (
@@ -269,6 +273,8 @@ beforeEach(() => {
     environmentError = null;
     canvasError = null;
     clearEnvironment.mockClear();
+    clearGltf.mockClear();
+    failedModelUrls.clear();
     clearSceneTransitionSnapshot();
     capturedCanvasProps = {};
     capturedOrbitControlsProps = {};
@@ -1537,6 +1543,51 @@ beforeEach(() => {
         expect(screen.queryByText("app_3d_scene_error")).not.toBeInTheDocument();
         expect(useConverterStore.getState().sessionId).toBe("retained-session");
         expect(useConverterStore.getState().target_width_mm).toBe(225);
+      } finally {
+        consoleError.mockRestore();
+      }
+    });
+
+    it.each(["preview", "generated", "override"])("retries a cached %s model failure", (source) => {
+      const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+      const url = "/api/files/current.glb";
+      failedModelUrls.add(url);
+      useConverterStore.setState({
+        sessionId: "retained-session",
+        target_width_mm: 225,
+        previewGlbUrl: source === "preview" ? url : null,
+        modelUrl: source === "generated" ? url : "/api/files/unused.glb",
+      });
+      try {
+        render(<Scene3D modelUrl={source === "override" ? url : undefined} />);
+        expect(screen.getByText("app_3d_scene_error")).toBeInTheDocument();
+        fireEvent.click(screen.getByRole("button", { name: "viewer_retry_scene" }));
+        expect(screen.queryByText("app_3d_scene_error")).not.toBeInTheDocument();
+        expect(clearGltf.mock.calls).toEqual([[url]]);
+        expect(useConverterStore.getState().sessionId).toBe("retained-session");
+        expect(useConverterStore.getState().target_width_mm).toBe(225);
+      } finally {
+        consoleError.mockRestore();
+      }
+    });
+
+    it("retries every model in the active batch", () => {
+      const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+      const urls = ["/api/files/batch-a.glb", "/api/files/batch-b.glb"];
+      for (const url of urls) failedModelUrls.add(url);
+      useConverterStore.setState({
+        previewGlbUrl: "/api/files/unused-preview.glb",
+        batchPreviewItems: urls.map((url, index) => ({
+          url, filename: `${index}.png`, tx_mm: index * 30, ty_mm: 0,
+          width_mm: 30, depth_mm: 20,
+        })),
+      });
+      try {
+        render(<Scene3D />);
+        expect(screen.getByText("app_3d_scene_error")).toBeInTheDocument();
+        fireEvent.click(screen.getByRole("button", { name: "viewer_retry_scene" }));
+        expect(screen.queryByText("app_3d_scene_error")).not.toBeInTheDocument();
+        expect(clearGltf.mock.calls).toEqual(urls.map((url) => [url]));
       } finally {
         consoleError.mockRestore();
       }

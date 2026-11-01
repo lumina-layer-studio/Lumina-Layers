@@ -12,7 +12,7 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from "react";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
-import { Environment, Html, useEnvironment } from "@react-three/drei";
+import { Environment, Html, useEnvironment, useGLTF } from "@react-three/drei";
 import { LIGHTING_CONFIG } from "./lightingConfig";
 import * as THREE from "three";
 import { computeFitDistance } from "./ModelViewer";
@@ -996,6 +996,17 @@ function Scene3D({ modelUrl, deferInitialization = false, suspended = false }: S
   const previewGlbUrl = useConverterStore((s) => s.previewGlbUrl);
   const effectiveModelUrl =
     modelUrl ?? (previewGlbUrl ? null : storeModelUrl);
+  const retryScene = () => {
+    const urls = batchPreviewItems.length > 0
+      ? batchPreviewItems.map((item) => item.url)
+      : [effectiveModelUrl ?? previewGlbUrl];
+    // A rejected Suspense load is cached too. Remounting alone repeats the
+    // cached error without ever requesting the file again.
+    for (const url of new Set(urls)) {
+      if (url) useGLTF.clear(url);
+    }
+    setSceneAttempt((attempt) => attempt + 1);
+  };
   const modelSurfaceEnabled = useConverterStore((s) => s.modelSurfaceEnabled);
   const modelSurfaceFile = useConverterStore((s) => s.modelSurfaceFile);
   const modelSurfacePreviewUrl = useConverterStore((s) => s.modelSurfacePreviewUrl);
@@ -1558,7 +1569,7 @@ function Scene3D({ modelUrl, deferInitialization = false, suspended = false }: S
           >
             <p>{t("app_3d_scene_error")}</p>
             <p>{t("viewer_scene_recovery_hint")}</p>
-            <Button label={t("viewer_retry_scene")} onClick={() => setSceneAttempt((attempt) => attempt + 1)} />
+            <Button label={t("viewer_retry_scene")} onClick={retryScene} />
           </div>
         )}
       ><Canvas

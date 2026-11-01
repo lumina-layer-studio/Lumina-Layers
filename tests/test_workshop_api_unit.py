@@ -16,6 +16,7 @@ from api.routers import workshop as workshop_router
 from core.workshop import WorkshopInstaller, inspect_workshop_package
 from core.workshop.models import RegistryRefreshResult
 from core.workshop.registry_client import parse_registry_index
+from core.workshop import release_client
 
 
 PNG_1X1 = base64.b64decode(
@@ -173,7 +174,7 @@ def registry_index_for(
                         "sha256": hashlib.sha256(
                             archive.read_bytes()
                         ).hexdigest(),
-                        "manifestSha256": "b" * 64,
+                        "manifestSha256": inspect_workshop_package(archive).manifest_sha256,
                         "workshopApi": {
                             "min": "1.0.0",
                             "maxExclusive": "2.0.0",
@@ -560,6 +561,62 @@ def test_registry_install_retries_one_transient_timeout(
     assert records[0].delay_ms == 250
     assert records[0].error_type == timeout_type.__name__
     assert "https://" not in records[0].getMessage()
+
+
+@pytest.mark.parametrize("persistent_failure", [False, True])
+def test_registry_install_recovers_from_partial_download_connection_reset(
+    api_bundle,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    persistent_failure: bool,
+) -> None:
+    client, installer, archive, _registry = api_bundle
+    package_bytes = archive.read_bytes()
+    download_dir = tmp_path / "downloads"
+    download_dir.mkdir()
+    attempts = 0
+    closed_streams: list[bool] = []
+
+    class InterruptedStream(httpx.SyncByteStream):
+        def __iter__(self):
+            yield package_bytes[:128]
+            raise httpx.ReadError("[WinError 10054] private download URL")
+
+        def close(self) -> None:
+            closed_streams.append(True)
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1 or persistent_failure:
+            return httpx.Response(200, stream=InterruptedStream(), request=request)
+        return httpx.Response(200, content=package_bytes, request=request)
+
+    monkeypatch.setattr(release_client, "TEMP_DIR", str(download_dir))
+    monkeypatch.setattr(
+        release_client, "_new_http_client",
+        lambda: httpx.Client(transport=httpx.MockTransport(handle)),
+    )
+    monkeypatch.setattr(
+        workshop_router, "download_registry_package",
+        release_client.download_registry_package,
+    )
+    monkeypatch.setattr(workshop_router.time, "sleep", lambda _delay: None)
+    response = client.post(
+        "/api/workshop/v1/install/registry",
+        json={"module_id": "fixture.hello", "version": "1.0.0"},
+    )
+
+    assert response.status_code == (502 if persistent_failure else 200)
+    assert attempts == 2
+    assert len(closed_streams) == (2 if persistent_failure else 1)
+    assert list(download_dir.iterdir()) == []
+    assert "private download URL" not in response.text
+    if persistent_failure:
+        assert installer.list() == ()
+    else:
+        assert len(installer.list()) == 1
+        assert response.json()["module"]["module_id"] == "fixture.hello"
 
 
 def test_registry_install_stops_after_two_timeouts_without_installing(

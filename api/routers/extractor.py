@@ -485,13 +485,12 @@ def _write_colorchecker_full_png(image_bgr: np.ndarray) -> str:
     """Write a full-size ColorChecker calibration image directly to disk.
     将完整 ColorChecker 校色图直接写入磁盘。
     """
-    from core.colorchecker.image_io import image_to_uint8_display
+    from core.colorchecker.image_io import image_to_uint8_display, write_png_file
 
     fd, path = tempfile.mkstemp(suffix=".png", dir=TEMP_DIR)
     os.close(fd)
     try:
-        if not cv2.imwrite(path, image_to_uint8_display(image_bgr)):
-            raise ValueError("Failed to write ColorChecker calibrated image.")
+        write_png_file(path, image_to_uint8_display(image_bgr))
     except (cv2.error, OSError, TypeError, ValueError):
         try:
             os.remove(path)

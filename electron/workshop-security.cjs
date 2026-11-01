@@ -335,7 +335,10 @@ function isAllowedWorkshopDownload(details) {
   const target = parseUrl(details.url);
   return (
     target !== null &&
-    (target.protocol === "http:" || target.protocol === "https:")
+    (target.protocol === "http:" || target.protocol === "https:" ||
+      (target.protocol === "blob:" &&
+        target.origin !== "null" &&
+        target.origin === parseUrl(details.frameUrl).origin))
   );
 }
 

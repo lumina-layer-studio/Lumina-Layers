@@ -2364,9 +2364,10 @@ def apply_recipe_overrides_to_analysis(
     - Rasterises each ``analysis.matched_shapes`` entry onto the same grid
       used by :meth:`VectorProcessor.build_preview_cache` so the preview-time
       region masks line up pixel-for-pixel.
-    - Picks the dominant region (by mask overlap) for each connected polygon
-      component. Compound SVG paths are split only when their disconnected
-      components resolve to different recipes, preserving source metadata.
+    - Resolves overlapping edits in chronological order, then picks the
+      dominant remaining region for each connected polygon component.
+      Compound SVG paths are split only when their disconnected components
+      resolve to different recipes, preserving source metadata.
     - Translates each override recipe into the vector internal order
       (``Top2Bottom`` — recipe[0] is the visible face at z=0) and pads it
       up to the effective layer count with the base backing channel.
@@ -2593,7 +2594,23 @@ def apply_recipe_overrides_to_analysis(
             continue
         rid = str(item.get("region_id", "")).strip()
         if rid:
+            # Reusing an earlier selection ID is still a new edit. Keep the
+            # order of each region's last occurrence, not its first insertion.
+            override_by_region.pop(rid, None)
             override_by_region[rid] = item
+
+    # The raster edit path applies later recipes over earlier pixels. Resolve
+    # that ownership once here too: independently scoring overlapping masks
+    # lets an old selection reclaim pixels after the user selects them again.
+    # Keep the saved masks immutable; only this local label grid is rewritten.
+    pixel_owners = np.zeros((h_px, w_px), dtype=np.int32)
+    ordered_overrides: list[dict] = []
+    for rid, override in override_by_region.items():
+        region_mask = normalised_masks.get(rid)
+        if region_mask is None:
+            continue
+        ordered_overrides.append(override)
+        pixel_owners[region_mask] = len(ordered_overrides)
 
     def _select_override(geometry) -> dict | None:
         mask = _shape_mask(geometry)
@@ -2602,18 +2619,18 @@ def apply_recipe_overrides_to_analysis(
         shape_px = int(mask.sum())
         if shape_px == 0:
             return None
-        best_rid: str | None = None
-        best_overlap = 0
-        for rid, rmask in normalised_masks.items():
-            overlap = int(np.logical_and(mask, rmask).sum())
-            if overlap > best_overlap:
-                best_overlap = overlap
-                best_rid = rid
-        if best_rid is None:
+        overlaps = np.bincount(
+            pixel_owners[mask], minlength=len(ordered_overrides) + 1,
+        )[1:]
+        if not overlaps.size or not overlaps.any():
             return None
+        # Equal coverage favors the most recent edit, independent of how the
+        # mask mapping was serialized or restored from an editor snapshot.
+        best_index = len(overlaps) - 1 - int(np.argmax(overlaps[::-1]))
+        best_overlap = int(overlaps[best_index])
         if best_overlap / shape_px < min_overlap_ratio:
             return None
-        return override_by_region.get(best_rid)
+        return ordered_overrides[best_index]
 
     def _resolve_recipe(shape: dict, override: dict | None) -> tuple[list[int], bool]:
         if override is not None:

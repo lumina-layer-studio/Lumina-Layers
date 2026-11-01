@@ -148,6 +148,62 @@ class TestApplyRecipeOverridesToAnalysis:
         # if layers were added — here target == num_layers so no padding).
         assert analysis.matched_shapes[1]["recipe"] == [1, 1, 1]
 
+    @pytest.mark.parametrize("region_order", [("old", "new"), ("new", "old")])
+    @pytest.mark.parametrize("revisit_old", [False, True])
+    def test_reselected_footprint_uses_last_edit(
+        self, region_order: tuple[str, str], revisit_old: bool,
+    ) -> None:
+        """Selection IDs and mask storage order must not override edit history."""
+        analysis = _make_analysis([
+            {"geometry": box(1, 1, 4, 4), "recipe": [0, 0, 0]},
+            {"geometry": box(6, 6, 9, 9), "recipe": [2, 2, 2]},
+        ])
+        mask = np.zeros((100, 100), dtype=bool)
+        mask[10:41, 10:41] = True
+        masks = {region: mask.copy() for region in region_order}
+        overrides = [
+            {"region_id": "old", "recipe": [1, 1, 1]},
+            {"region_id": "new", "recipe": [0, 3, 2]},
+        ]
+        if revisit_old:
+            overrides.append({"region_id": "old", "recipe": [3, 2, 1]})
+
+        apply_recipe_overrides_to_analysis(
+            analysis, recipe_overrides=overrides, region_masks=masks,
+        )
+
+        assert analysis.matched_shapes[0]["recipe"] == overrides[-1]["recipe"]
+        assert analysis.matched_shapes[1]["recipe"] == [2, 2, 2]
+        for saved_mask in masks.values():
+            np.testing.assert_array_equal(saved_mask, mask)
+
+    @pytest.mark.parametrize(
+        "latest_width, expected",
+        [(60, [0, 3, 2]), (50, [0, 3, 2]), (40, [1, 1, 1])],
+    )
+    def test_overlapping_edits_count_only_pixels_not_superseded(
+        self, latest_width: int, expected: list[int],
+    ) -> None:
+        """An older large mask cannot reclaim pixels painted by a later edit."""
+        analysis = _make_analysis([
+            {"geometry": box(0, 0, 10, 10), "recipe": [0, 0, 0]},
+        ])
+        first_mask = np.ones((100, 100), dtype=bool)
+        latest_mask = np.zeros_like(first_mask)
+        latest_mask[:, :latest_width] = True
+        apply_recipe_overrides_to_analysis(
+            analysis,
+            recipe_overrides=[
+                {"region_id": "first", "recipe": [1, 1, 1]},
+                {"region_id": "latest", "recipe": [0, 3, 2]},
+            ],
+            region_masks={"first": first_mask, "latest": latest_mask},
+        )
+
+        assert analysis.matched_shapes[0]["recipe"] == expected
+        assert first_mask.all()
+        assert int(latest_mask.sum()) == latest_width * 100
+
     @pytest.mark.parametrize("base_channel_idx", [0, 2])
     def test_added_layers_extend_num_layers_and_pad_non_overrides(self, base_channel_idx):
         """target_layers > num_layers must extend every shape's recipe."""

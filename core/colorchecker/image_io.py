@@ -283,6 +283,19 @@ def encode_png_bytes(image: np.ndarray) -> bytes:
     return buffer.tobytes()
 
 
+def write_png_file(path: str | Path, image: np.ndarray) -> None:
+    """Encode without a filename so Windows paths use Python's Unicode I/O.
+
+    Keep the caller's bit depth/channel order and write the encoder buffer
+    directly, avoiding an additional full-size PNG bytes copy.
+    """
+    ok, buffer = cv2.imencode(".png", image)
+    if not ok:
+        raise ValueError("Failed to encode PNG image.")
+    with Path(path).open("wb") as output:
+        output.write(memoryview(buffer))
+
+
 def encode_jpeg_bytes(image: np.ndarray, quality: int = 95) -> bytes:
     display = image_to_uint8_display(image)
     ok, buffer = cv2.imencode(".jpg", display, [cv2.IMWRITE_JPEG_QUALITY, quality])

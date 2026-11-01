@@ -6,9 +6,39 @@ import io
 from types import SimpleNamespace
 
 import numpy as np
+import pytest
 from PIL import Image
 
 import core.colorchecker.image_io as image_io
+
+
+@pytest.mark.parametrize("dtype", [np.uint8, np.uint16])
+def test_png_write_round_trips_unicode_paths_without_changing_pixels(tmp_path, dtype) -> None:
+    directory = tmp_path / "软件" / "校色 café"
+    directory.mkdir(parents=True)
+    target = directory / "校准结果.png"
+    pixels = np.arange(12 * 8 * 3, dtype=dtype).reshape(8, 12, 3)
+    if dtype == np.uint16:
+        pixels *= 173
+
+    image_io.write_png_file(target, pixels)
+
+    decoded = image_io.cv2.imdecode(
+        np.frombuffer(target.read_bytes(), dtype=np.uint8), image_io.cv2.IMREAD_UNCHANGED,
+    )
+    assert decoded.dtype == pixels.dtype
+    np.testing.assert_array_equal(decoded, pixels)
+
+
+def test_png_encoding_failure_does_not_truncate_existing_file(tmp_path, monkeypatch) -> None:
+    target = tmp_path / "校准结果.png"
+    target.write_bytes(b"original")
+    monkeypatch.setattr(image_io.cv2, "imencode", lambda *_: (False, None))
+
+    with pytest.raises(ValueError, match="Failed to encode PNG"):
+        image_io.write_png_file(target, np.zeros((2, 2, 3), dtype=np.uint8))
+
+    assert target.read_bytes() == b"original"
 
 
 def test_standard_decode_applies_exif_orientation(monkeypatch) -> None:

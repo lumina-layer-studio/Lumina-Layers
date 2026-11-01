@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+from pathlib import Path
 from types import SimpleNamespace
 
 import numpy as np
@@ -98,3 +100,29 @@ def test_export_rejects_a_solid_that_cannot_fit_the_writer_domain() -> None:
 
     with pytest.raises(ModelSurfaceError, match="model_surface_boolean_failed"):
         prepare_surface_base_for_export(source)
+
+
+def test_export_retriangulates_a_collinear_face_retained_by_manifold() -> None:
+    # A closed local fragment of the failing phone-case Boolean. The original
+    # artwork/model is not needed: one collinear face survives Mesh64 cleanup.
+    data = json.loads((
+        Path(__file__).parent / "fixtures/surface_collinear_export.json"
+    ).read_text())
+    source = trimesh.Trimesh(data["vertices"], data["faces"], process=False)
+    source.metadata["bambu_material_name"] = "White"
+    original_vertices = source.vertices.copy()
+    original_faces = source.faces.copy()
+    assert source.is_volume
+
+    result = prepare_surface_base_for_export(source)
+    vertices, faces = _materialize_n3mf_mesh_view_arrays(result)
+    written = trimesh.Trimesh(vertices.astype(np.float64), faces, process=False)
+
+    assert written.is_volume
+    assert written.is_winding_consistent
+    assert np.all(written.area_faces > 0)
+    assert written.volume == pytest.approx(source.volume, abs=1e-4)
+    np.testing.assert_allclose(written.bounds, source.bounds, atol=1e-5)
+    assert result.metadata["bambu_material_name"] == "White"
+    np.testing.assert_array_equal(source.vertices, original_vertices)
+    np.testing.assert_array_equal(source.faces, original_faces)

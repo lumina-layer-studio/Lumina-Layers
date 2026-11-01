@@ -10,7 +10,7 @@ import numpy as np
 
 from .calibration_core import EXPOSURE_ANCHOR_TARGET_SRGB
 from .image_io import decode_uploaded_bytes, encode_png_bytes, png_bytes_to_data_url
-from .image_io import looks_like_raw_input
+from .image_io import looks_like_raw_input, write_png_file
 from .pipeline import (
     DEFAULT_PREVIEW_HEIGHT,
     DEFAULT_PREVIEW_WIDTH,
@@ -61,8 +61,7 @@ class CalibrationResult:
             "preview_overlay": target / f"{prefix}_preview_overlay.png",
         }
         if self.calibrated_png is None:
-            if not cv2.imwrite(str(paths["calibrated"]), self.calibrated_image):
-                raise ValueError("Failed to save calibrated image.")
+            write_png_file(paths["calibrated"], self.calibrated_image)
         else:
             paths["calibrated"].write_bytes(self.calibrated_png)
         paths["preview"].write_bytes(self.preview_png)

@@ -1,5 +1,6 @@
 import axios from "axios";
 import { createAsyncJobAdapter } from "./asyncJobAdapter";
+import { createEditorRetryAdapter } from "./editorRetryAdapter";
 import { postClientLog, summarizeErrorForLog } from "../utils/clientLog";
 import { useActionHistoryStore } from "../stores/actionHistoryStore";
 import { useErrorTicketPromptStore } from "../stores/errorTicketPromptStore";
@@ -8,11 +9,13 @@ import { rememberFeedbackSource } from "../utils/sourceFileOrigins";
 
 export interface ApiRequestOptions {
   suppressClientLog?: boolean;
+  suppressErrorTicket?: boolean;
 }
 
 declare module "axios" {
   interface AxiosRequestConfig {
     suppressClientLog?: boolean;
+    suppressErrorTicket?: boolean;
   }
 }
 
@@ -29,10 +32,10 @@ const apiClient = axios.create({
   timeout: 3_600_000,
 });
 
-// Only preview/generate opt into polling; unrelated writes keep their transport.
-// 仅预览与生成启用任务轮询，避免代理超时；其他写请求保持原样。
+// Preview/generate use polling. Batch edits can retry once with their original
+// commit identity; unrelated writes keep their transport.
 apiClient.defaults.adapter = createAsyncJobAdapter(
-  axios.getAdapter(axios.defaults.adapter),
+  createEditorRetryAdapter(axios.getAdapter(axios.defaults.adapter)),
 );
 
 function isHttpUrl(value: string): boolean {
@@ -520,6 +523,7 @@ function recordApiFailure({
   responseDetailForLog,
   error,
   readableMessage,
+  suppressErrorTicket = false,
 }: {
   method: string | null;
   url: string | null;
@@ -528,6 +532,7 @@ function recordApiFailure({
   responseDetailForLog: unknown;
   error: unknown;
   readableMessage: string;
+  suppressErrorTicket?: boolean;
 }): void {
   postClientLog("api: request failed", {
     scope: "api",
@@ -566,12 +571,14 @@ function recordApiFailure({
   }
   // Offer a bug-report ticket for unexpected server failures (5xx only).
   // 服务端意外错误（仅 5xx）时提示用户是否提交工单。
-  useErrorTicketPromptStore.getState().reportApiError({
-    statusCode,
-    path: url,
-    requestId,
-    message: readableMessage,
-  });
+  if (!suppressErrorTicket) {
+    useErrorTicketPromptStore.getState().reportApiError({
+      statusCode,
+      path: url,
+      requestId,
+      message: readableMessage,
+    });
+  }
 }
 
 async function readResourceErrorData(response: Response): Promise<unknown> {
@@ -762,6 +769,7 @@ apiClient.interceptors.response.use(
         responseDetailForLog,
         error,
         readableMessage,
+        suppressErrorTicket: config?.suppressErrorTicket === true,
       });
     }
     if (error && typeof error === "object") {

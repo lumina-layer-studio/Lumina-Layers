@@ -10,6 +10,7 @@ import { useActionHistoryStore } from "../stores/actionHistoryStore";
 import type { Workstream } from "../types/actionHistory";
 
 const HEARTBEAT_INTERVAL_MS = 2 * 60 * 1000;
+const HEARTBEAT_RETRY_MS = 10_000;
 const SESSION_CLOSE_DELAY_MS = 30_000;
 const EMPTY_KEEP_FILE_IDS: readonly string[] = [];
 const pendingSessionCloseTimers = new Map<string, number>();
@@ -34,6 +35,11 @@ function isMissingSessionHeartbeat(error: unknown): boolean {
   }
   const response = (error as { response?: { status?: unknown } }).response;
   return response?.status === 404;
+}
+
+function isTransientHeartbeatFailure(error: unknown): boolean {
+  const status = (error as { response?: { status?: number } } | null)?.response?.status;
+  return status == null || status === 408 || status === 429 || status >= 500;
 }
 
 function scheduleSessionClose(
@@ -80,13 +86,29 @@ export function useSessionLease(
     // 后仍能追溯近期会话。工作流分类的精细化由后续任务 1.4 处理。
     useActionHistoryStore.getState().observeSession(workstream, sessionId);
 
-    const intervalId = window.setInterval(() => {
-      void heartbeatSession(sessionId).catch((error: unknown) => {
-        if (isMissingSessionHeartbeat(error)) {
-          window.clearInterval(intervalId);
+    const controller = new AbortController();
+    let retryPending = false;
+    let timerId: number;
+    const renew = async (): Promise<void> => {
+      let nextDelay = HEARTBEAT_INTERVAL_MS;
+      try {
+        await heartbeatSession(sessionId, controller.signal);
+        retryPending = false;
+      } catch (error: unknown) {
+        if (isMissingSessionHeartbeat(error)) return;
+        // One prompt retry per cycle; prolonged outages keep the normal cadence.
+        if (!retryPending && isTransientHeartbeatFailure(error)) {
+          retryPending = true;
+          nextDelay = HEARTBEAT_RETRY_MS;
+        } else {
+          retryPending = false;
         }
-      });
-    }, HEARTBEAT_INTERVAL_MS);
+      }
+      if (!controller.signal.aborted) {
+        timerId = window.setTimeout(() => void renew(), nextDelay);
+      }
+    };
+    timerId = window.setTimeout(() => void renew(), HEARTBEAT_INTERVAL_MS);
 
     const handleBeforeUnload = () => {
       if (isSessionCloseRequested(sessionId)) {
@@ -98,7 +120,8 @@ export function useSessionLease(
     window.addEventListener("beforeunload", handleBeforeUnload);
 
     return () => {
-      window.clearInterval(intervalId);
+      controller.abort();
+      window.clearTimeout(timerId);
       window.removeEventListener("beforeunload", handleBeforeUnload);
       scheduleSessionClose(sessionId, keepFileIdsRef.current);
     };

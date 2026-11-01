@@ -7,6 +7,7 @@ import pytest
 from api.services import lut_registry_sync as lut
 from core.registry_transport import fallback_base, fetch_catalog, map_package_url
 from core.single_stage import material_files, material_registry_client
+from core import registry_transport
 
 
 PRIMARY = "https://primary.test/api/material-registry/v1"
@@ -15,12 +16,53 @@ BACKUP = "https://backup.test/api/material-registry/v1"
 
 @pytest.fixture(autouse=True)
 def registry_env(monkeypatch):
+    monkeypatch.setattr(registry_transport, "sleep", lambda seconds: None)
     for family in ("MATERIAL", "LUT"):
         monkeypatch.setenv(f"LUMINA_{family}_REGISTRY_URL", PRIMARY)
         monkeypatch.setenv(f"LUMINA_{family}_REGISTRY_FALLBACK_URL", BACKUP)
         monkeypatch.delenv(f"LUMINA_{family}_REGISTRY_TOKEN", raising=False)
         monkeypatch.setenv(f"LUMINA_{family}_REGISTRY_CHANNELS", "official")
     material_registry_client.invalidate_material_registry_remote_catalog_cache()
+
+
+@pytest.mark.parametrize("family", ["material", "lut"])
+@pytest.mark.parametrize("failure", [502, 503, 504, "connect", "read", "eof"])
+def test_catalog_recovers_from_one_transient_failure_without_a_backup(monkeypatch, family, failure):
+    monkeypatch.delenv(f"LUMINA_{family.upper()}_REGISTRY_FALLBACK_URL")
+    # LUT can inherit the material fallback when its primary is shared.
+    monkeypatch.delenv("LUMINA_MATERIAL_REGISTRY_FALLBACK_URL", raising=False)
+    calls = []
+
+    def handle(request):
+        calls.append(request)
+        if len(calls) == 1:
+            if isinstance(failure, int):
+                return httpx.Response(failure)
+            errors = {"connect": httpx.ConnectError, "read": httpx.ReadError, "eof": httpx.RemoteProtocolError}
+            raise errors[failure]("connection interrupted", request=request)
+        return httpx.Response(200, json={"materials": [], "items": []})
+
+    with httpx.Client(transport=httpx.MockTransport(handle)) as client:
+        result = fetch_catalog(client=client, primary=PRIMARY, family=family.upper(),
+                               suffix="/materials/catalog", channels=["official"],
+                               headers={}, params={"q": "白色", "offset": 20}, etag='"catalog-1"')
+    assert result.status_code == 200
+    assert len(calls) == 2
+    assert calls[0].url == calls[1].url
+    assert calls[1].headers["If-None-Match"] == '"catalog-1"'
+
+
+def test_catalog_stops_after_one_same_origin_retry(monkeypatch):
+    monkeypatch.delenv("LUMINA_MATERIAL_REGISTRY_FALLBACK_URL")
+    calls = []
+
+    def handle(request):
+        calls.append(request)
+        raise httpx.ReadError("connection reset", request=request)
+
+    with pytest.raises(RuntimeError, match="catalog request failed"):
+        material_registry_client.list_material_registry_catalog(transport=httpx.MockTransport(handle), use_cache=False)
+    assert len(calls) == 2
 
 
 @pytest.mark.parametrize("family", ["material", "lut"])
@@ -154,7 +196,22 @@ def test_private_credentials_never_reach_backup(monkeypatch, family, guard):
                           headers={"Authorization": "secret"} if guard == "header" else None) as client:
             with pytest.raises(lut.LutRegistryRemoteError):
                 lut.fetch_remote_catalog(client=client)
-    assert [request.url.host for request in calls] == ["primary.test"]
+    is_package_read = family == "material" and guard in {"cookie", "auth", "header"}
+    assert [request.url.host for request in calls] == ["primary.test"] * (1 if is_package_read else 2)
+
+
+@pytest.mark.parametrize("status,headers", [(429, {}), (503, {"retry-after": "30"})])
+def test_catalog_does_not_retry_a_same_origin_rate_limit(monkeypatch, status, headers):
+    monkeypatch.delenv("LUMINA_MATERIAL_REGISTRY_FALLBACK_URL")
+    calls = []
+
+    def handle(request):
+        calls.append(request)
+        return httpx.Response(status, headers=headers)
+
+    with pytest.raises(RuntimeError, match="catalog request failed"):
+        material_registry_client.list_material_registry_catalog(transport=httpx.MockTransport(handle), use_cache=False)
+    assert len(calls) == 1
 
 
 @pytest.mark.parametrize("url", ["https://evil.test/packages/a.zip", "../secret", "/admin",
@@ -329,5 +386,5 @@ def test_external_conditional_headers_disable_fallback_without_mutating_client(h
             )
         assert dict(client.headers) == original_headers
     assert supplied_headers == {header: condition}
-    assert len(calls) == 1
-    assert calls[0].headers[header] == condition
+    assert [request.url.host for request in calls] == ["primary.test", "primary.test"]
+    assert all(request.headers[header] == condition for request in calls)

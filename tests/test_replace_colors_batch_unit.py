@@ -98,6 +98,40 @@ def red_green_canvas() -> tuple[np.ndarray, np.ndarray, np.ndarray]:
 
 
 class TestReplaceColorsBatch:
+    def test_retry_after_lost_response_does_not_apply_or_record_the_edit_twice(
+        self,
+        red_green_canvas: tuple[np.ndarray, np.ndarray, np.ndarray],
+    ) -> None:
+        matched, mask_solid, quantized = red_green_canvas
+        client, sid, store = _make_client(
+            matched, mask_solid=mask_solid, quantized_image=quantized,
+        )
+        request = {
+            "session_id": sid,
+            "operation_id": "interrupted-batch-1",
+            "replacements": [{"selected_color": "#ff0000", "replacement_color": "#0000ff"}],
+        }
+        with client:
+            first = client.post("/api/convert/replace-colors-batch", json=request)
+            assert first.status_code == 200, first.text
+            after_first = store.get(sid)["preview_cache"]["matched_rgb"].copy()
+            history_size = len(store.get(sid)["replacement_undo_stack"])
+            assert history_size == 1
+
+            retry = client.post("/api/convert/replace-colors-batch", json=request)
+            assert retry.status_code == 409, retry.text
+            np.testing.assert_array_equal(store.get(sid)["preview_cache"]["matched_rgb"], after_first)
+            assert len(store.get(sid)["replacement_undo_stack"]) == history_size
+
+            receipt = client.get(f"/api/convert/editor-commit/{sid}/interrupted-batch-1")
+            assert receipt.status_code == 200, receipt.text
+            assert receipt.json()["status"] == "committed"
+            assert receipt.json()["editor_content_revision"] == first.json()["editor_content_revision"]
+            assert receipt.json()["result"]["replacement_regions"] == [{
+                "quantized_hex": "#ff0000", "matched_hex": "#ff0000", "replacement_hex": "#0000ff",
+            }]
+            assert receipt.json()["result"]["preview_url"] == first.json()["preview_url"]
+
     def test_global_replace_returns_authoritative_selection_revision_for_next_gesture(
         self,
         red_green_canvas: tuple[np.ndarray, np.ndarray, np.ndarray],

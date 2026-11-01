@@ -2,6 +2,7 @@ export interface RetryAsyncOptions {
   attempts: number;
   delayMs: number;
   sleep?: (delayMs: number) => Promise<void>;
+  shouldRetry?: (error: unknown) => boolean;
 }
 
 function defaultSleep(delayMs: number): Promise<void> {
@@ -14,7 +15,7 @@ export async function retryAsync<T>(
   operation: () => Promise<T>,
   options: RetryAsyncOptions,
 ): Promise<T> {
-  const { attempts, delayMs, sleep = defaultSleep } = options;
+  const { attempts, delayMs, sleep = defaultSleep, shouldRetry } = options;
 
   let lastError: unknown = null;
 
@@ -23,7 +24,7 @@ export async function retryAsync<T>(
       return await operation();
     } catch (error) {
       lastError = error;
-      if (attempt >= attempts) {
+      if (attempt >= attempts || (shouldRetry && !shouldRetry(error))) {
         throw error;
       }
       await sleep(delayMs);

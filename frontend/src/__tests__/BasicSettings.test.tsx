@@ -1173,7 +1173,7 @@ describe("BasicSettings", () => {
       if (nextAction === "skip") {
         fireEvent.click(await screen.findByRole("button", { name: "跳过引导" }));
       } else {
-        fireEvent.click(screen.getByRole("button", { name: "完成", exact: true }));
+        fireEvent.click(screen.getByRole("button", { name: "完成" }));
       }
       fireEvent.click(await screen.findByRole("button", { name: "仍然使用" }));
 

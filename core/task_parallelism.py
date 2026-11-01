@@ -17,11 +17,12 @@ from core.task_parallelism_runtime import (
 
 _log = get_logger(__name__)
 
-WorkloadKind = Literal["raster", "vector"]
+WorkloadKind = Literal["raster", "vector", "material"]
 
 _ENV_BY_WORKLOAD: dict[WorkloadKind, str] = {
     "raster": "LUMINA_RASTER_PARALLELISM",
     "vector": "LUMINA_VECTOR_PARALLELISM",
+    "material": "LUMINA_MATERIAL_PARALLELISM",
 }
 _WARNED_INVALID_VALUES: set[tuple[str, str]] = set()
 _WARNING_LOCK = threading.Lock()

@@ -5,8 +5,10 @@ from __future__ import annotations
 import importlib
 import importlib.util
 import inspect
+import os
 import subprocess
 import sys
+from functools import partial
 
 import numpy as np
 import pytest
@@ -521,11 +523,68 @@ def test_search_has_exact_frontier_interface_without_tolerance() -> None:
     assert "tolerance" not in signature.parameters
 
 
-def test_numba_kernel_uses_required_exact_parallel_options() -> None:
-    options = getattr(dynamic_solver._search_exact_numba_kernel, "targetoptions", {})
+@pytest.mark.parametrize("workers", [1, 3])
+def test_exact_search_preserves_target_order_across_worker_counts(
+    monkeypatch: pytest.MonkeyPatch,
+    workers: int,
+) -> None:
+    from core.task_parallelism import resolve_task_parallelism_plan
 
-    assert options.get("parallel") is True
-    assert options.get("fastmath") is False
+    monkeypatch.setenv("LUMINA_MATERIAL_PARALLELISM", str(workers))
+    monkeypatch.setattr(
+        dynamic_solver,
+        "resolve_task_parallelism_plan",
+        partial(resolve_task_parallelism_plan, effective_cpu_capacity=4, outer_demand=1),
+    )
+    targets, catalog = _make_random_search_fixture()
+    # Uneven block lengths and repeated targets catch lost/reordered rows.
+    targets = np.tile(targets, (8, 1))[:-5]
+    expected = _brute_force_frontiers(targets, catalog, 5, 10)
+    result = search_dynamic_catalog_exact(targets, catalog, 5, 10)
+
+    assert result.engine == "numba"
+    np.testing.assert_array_equal(result.cumulative_best_candidate_indices, expected[0])
+    np.testing.assert_allclose(result.cumulative_best_delta_e00, expected[1], rtol=0, atol=1e-12)
+    np.testing.assert_allclose(result.fixed_max_delta_e00, expected[2], rtol=0, atol=1e-12)
+
+
+def test_concurrent_material_searches_do_not_abort_the_process() -> None:
+    script = """
+from concurrent.futures import ThreadPoolExecutor
+from threading import Barrier
+import numpy as np
+from core.material_dynamic_solver import build_dynamic_candidate_catalog, search_dynamic_catalog_exact
+
+rng = np.random.default_rng(90210)
+colors = rng.integers(0, 256, size=(20000, 3), dtype=np.uint8)
+recipes = rng.integers(0, 4, size=(20000, 10), dtype=np.int32)
+counts = rng.integers(5, 11, size=20000, dtype=np.int16)
+catalog = build_dynamic_candidate_catalog(colors, recipes, counts, 10)
+targets = rng.integers(0, 256, size=(32, 3), dtype=np.uint8)
+expected = search_dynamic_catalog_exact(targets, catalog, 5, 10)
+assert expected.engine == 'numba'
+barrier = Barrier(2)
+def search():
+    barrier.wait(timeout=10)
+    return search_dynamic_catalog_exact(targets, catalog, 5, 10)
+with ThreadPoolExecutor(max_workers=2) as pool:
+    results = [future.result() for future in [pool.submit(search), pool.submit(search)]]
+for result in results:
+    assert result.engine == 'numba'
+    np.testing.assert_array_equal(result.cumulative_best_candidate_indices, expected.cumulative_best_candidate_indices)
+    np.testing.assert_array_equal(result.cumulative_best_delta_e00, expected.cumulative_best_delta_e00)
+    np.testing.assert_array_equal(result.fixed_max_delta_e00, expected.fixed_max_delta_e00)
+print('concurrent searches complete')
+"""
+    result = subprocess.run(
+        [sys.executable, "-c", script],
+        env={**os.environ, "NUMBA_THREADING_LAYER": "workqueue", "NUMBA_NUM_THREADS": "2"},
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "concurrent searches complete" in result.stdout
 
 
 def test_numba_call_failure_falls_back_to_exact_numpy(

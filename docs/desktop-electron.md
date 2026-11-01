@@ -110,6 +110,10 @@ pnpm --dir electron install --frozen-lockfile
 
 上述命令直接安装上一节指定的两个正式依赖。
 
+动态层数求色使用释放 GIL 的 Numba 内核，由 Lumina 按 CPU 容量和当前任务负载分配线程。
+可用 `LUMINA_MATERIAL_PARALLELISM` 设置线程上限；`1` 表示串行，未设置时自动分配。
+该设置只影响执行并发，候选搜索、色差计算和配方结果保持一致。
+
 运行测试时另外安装 `requirements-dev.txt`；仅在明确启用 PostgreSQL 后端时安装 `api/requirements-postgres.txt`，配置方法见 [server-mode-scaffold.md](server-mode-scaffold.md)。
 
 `frontend/` 和 `electron/` 分别安装依赖；pnpm 版本由各目录的 `packageManager` 固定。Electron 安装时会下载当前平台的运行时，其安装脚本已在 `onlyBuiltDependencies` 中允许。`core/requirements-glb-v2.txt` 是可选光栅预览依赖。

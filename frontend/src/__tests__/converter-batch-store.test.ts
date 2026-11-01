@@ -45,6 +45,8 @@ function resetStore(overrides: Record<string, unknown> = {}): void {
     enable_cleanup: true,
     enable_coating: false,
     coating_height_mm: 0.08,
+    enable_outline: false,
+    outline_width: 2,
     svg_hole_compensation_enabled: false,
     svg_hole_max_area_mm2: 0.5,
     svg_hole_max_width_mm: 0.1,
@@ -67,6 +69,24 @@ describe("submitBatch modelUrl 与 batchResult 状态管理", () => {
   beforeEach(() => {
     resetStore();
     vi.clearAllMocks();
+  });
+
+  it.each([
+    { enabled: true, width: 0.5, mode: ModelingMode.HIGH_FIDELITY, extension: "png" },
+    { enabled: true, width: 10, mode: ModelingMode.VECTOR, extension: "svg" },
+    { enabled: false, width: 3, mode: ModelingMode.HIGH_FIDELITY, extension: "png" },
+  ])("forwards outline settings for $extension: $enabled, $width mm", async ({ enabled, width, mode, extension }) => {
+    const files = ["one", "two"].map((name) => new File(["image"], `${name}.${extension}`));
+    resetStore({ batchFiles: files, modeling_mode: mode, enable_outline: enabled, outline_width: width });
+    mockedConvertBatch.mockResolvedValueOnce({ status: "ok", message: "done",
+      download_url: null, threemf_disk_path: null, preview_3d_url: null,
+      results: [], warnings: [] });
+
+    await useConverterStore.getState().submitBatch();
+
+    expect(mockedConvertBatch).toHaveBeenCalledWith(files, expect.objectContaining({
+      enable_outline: enabled, outline_width: width,
+    }));
   });
 
   it.each([true, false])("forwards coating and compensation settings for multiple SVGs: %s", async (enabled) => {

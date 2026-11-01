@@ -715,6 +715,11 @@ def run(ctx: dict) -> dict:
                     outline_mesh.metadata["bambu_material_name"] = base_aux_material_name
                 preview_colors[outline_name] = base_aux_color
                 scene.add_geometry(outline_mesh, node_name=outline_name, geom_name=outline_name)
+                if ctx.get("batch_preview", False):
+                    # Capture image-space geometry before S09 mirrors and
+                    # centres the print scene. Quick previews keep using the
+                    # interactive frontend outline instead.
+                    ctx["preview_outline_mesh"] = outline_mesh.copy()
                 valid_slot_names.append(outline_name)
                 _log.debug(f"Outline added as standalone '{outline_name}' object")
                 outline_added = True

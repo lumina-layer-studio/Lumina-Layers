@@ -781,6 +781,17 @@ class TestBatchTimeout:
 class TestBatchWorkerPoolSubmit:
     """Verify batch requests submit their settings to the worker pool."""
 
+    @pytest.mark.parametrize("width", ["0.49", "10.01", "nan", "inf", "-inf", "invalid"])
+    def test_batch_rejects_invalid_outline_width(self, width: str) -> None:
+        _mock_pool.submit = AsyncMock()
+        response = client.post(
+            "/api/convert/batch",
+            files=[("images", _make_test_image_buf())],
+            data={"lut_name": "test_lut", "enable_outline": "true", "outline_width": width},
+        )
+        assert response.status_code == 422
+        _mock_pool.submit.assert_not_called()
+
     @pytest.mark.parametrize("height", ["0.03", "0.13", "nan", "inf"])
     def test_batch_rejects_invalid_coating_height(self, height):
         _mock_pool.submit = AsyncMock()

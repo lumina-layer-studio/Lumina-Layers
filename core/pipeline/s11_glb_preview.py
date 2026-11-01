@@ -1399,6 +1399,9 @@ def generate_segmented_glb(
     cache: dict,
     output_path: str,
     max_meshes: int = 128,
+    *,
+    outline_mesh: trimesh.Trimesh | None = None,
+    total_layers: int = 25,
 ) -> Optional[str]:
     """Generate a color-segmented GLB with a bounded scene-node contract.
     生成按颜色分段、且场景节点总数受控的 GLB 预览。
@@ -1411,6 +1414,10 @@ def generate_segmented_glb(
     其余物理层每层至多一个 mesh，同时保留显示色、高度身份与物理层预览色。
 
     Args:
+        outline_mesh: Optional batch outline in preview coordinates. Single-image
+            quick previews leave this absent and use their interactive overlay.
+        total_layers: Display height in printer layers; batch callers use the
+            generated model height so the embedded outline aligns vertically.
         cache (dict): Preview cache dict containing at least:
             - matched_rgb: (H, W, 3) uint8 array
             - mask_solid: (H, W) bool array
@@ -1630,7 +1637,6 @@ def generate_segmented_glb(
         # Material archives concatenate the colour parts into one appearance
         # node after this loop, so unique colours do not multiply draw calls.
         _t = time.perf_counter()
-        total_layers = 25
         scene = trimesh.Scene()
         contours_data: dict[str, list[list[list[float]]]] = {}
         use_material_matrix_meshes = material_matrix is not None
@@ -1801,6 +1807,9 @@ def generate_segmented_glb(
             scene.add_geometry(backing_mesh, node_name="backing_plate")
             _log.debug(f"Backing plate added ({backing_mesh.vertices.shape[0]} vertices)")
         _t_backing = time.perf_counter() - _t
+
+        if outline_mesh is not None:
+            scene.add_geometry(outline_mesh, node_name="Outline", geom_name="Outline")
 
         _t = time.perf_counter()
         canvas_bounds_mesh = _build_preview_canvas_bounds_mesh(
@@ -2002,7 +2011,11 @@ def run(ctx: dict) -> dict:
             glb_mesh_budget = 0
         if glb_mesh_budget > 128:
             cache["glb_max_meshes"] = glb_mesh_budget
-    glb_path = generate_segmented_glb(cache, output_path=out_path)
+    batch_preview_options = (
+        {"outline_mesh": ctx.get("preview_outline_mesh"), "total_layers": ctx["total_layers"]}
+        if ctx.get("batch_preview", False) else {}
+    )
+    glb_path = generate_segmented_glb(cache, output_path=out_path, **batch_preview_options)
 
     ctx["glb_path"] = glb_path
 

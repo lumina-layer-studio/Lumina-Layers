@@ -363,11 +363,14 @@ def convert_image_to_3d(
     svg_hole_compensation_enabled: bool = False,
     svg_hole_max_area_mm2: float = 0.5,
     svg_hole_max_width_mm: float = 0.1,
+    batch_preview: bool = False,
 ):
     """Main conversion function: Convert image to 3D model.
     主要转换函数：将图像转换为 3D 模型。
 
     Args:
+        batch_preview: Embed generated outline geometry in the raster GLB.
+            Batch viewers do not apply the single-image interactive overlays.
         custom_3mf_template_id: Saved native project template for export.
             (导出时使用的已保存原生项目模板)
         svg_hole_compensation_enabled: Fill enclosed source-SVG voids before
@@ -547,6 +550,7 @@ def convert_image_to_3d(
         "svg_hole_compensation_enabled": svg_hole_compensation_enabled,
         "svg_hole_max_area_mm2": svg_hole_max_area_mm2,
         "svg_hole_max_width_mm": svg_hole_max_width_mm,
+        "batch_preview": batch_preview,
     }
     ctx = build_image_model_context(progress=progress, **ctx)
     _raise_dynamic_material_pipeline_error(ctx)

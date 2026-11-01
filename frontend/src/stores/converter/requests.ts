@@ -43,6 +43,8 @@ function buildConversionInputParams(
     quantize_colors: state.quantize_colors,
     high_precision_3d_preview: state.high_precision_3d_preview,
     enable_cleanup: state.enable_cleanup,
+    enable_outline: state.enable_outline,
+    outline_width: state.outline_width,
     svg_pixels_per_mm: settings.svgPixelsPerMm,
     ...svgHoleCompensationOptions(state),
     ...resolveColorMatchingWeights(state),
@@ -142,8 +144,6 @@ export function buildPreviewParams(
     ...buildConversionInputParams(state, settings, sourceParams),
     enable_smooth_vector_preview:
       settings.enableSmoothVectorPreview,
-    enable_outline: state.enable_outline,
-    outline_width: state.outline_width,
     is_dark: settings.theme === "dark",
     large_format_enabled: state.largeFormatEnabled,
     ...(shouldReplayGlobalReplacements
@@ -177,8 +177,6 @@ export function buildGenerateParams(
     loop_offset_x: state.loop_offset_x,
     loop_offset_y: state.loop_offset_y,
     loop_position_preset: state.loop_position_preset,
-    enable_outline: state.enable_outline,
-    outline_width: state.outline_width,
     enable_cloisonne: state.enable_cloisonne,
     wire_width_mm: state.wire_width_mm,
     wire_height_mm: state.wire_height_mm,

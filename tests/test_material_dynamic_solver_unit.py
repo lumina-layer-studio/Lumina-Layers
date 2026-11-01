@@ -9,6 +9,7 @@ import os
 import subprocess
 import sys
 from functools import partial
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -546,6 +547,44 @@ def test_exact_search_preserves_target_order_across_worker_counts(
     np.testing.assert_array_equal(result.cumulative_best_candidate_indices, expected[0])
     np.testing.assert_allclose(result.cumulative_best_delta_e00, expected[1], rtol=0, atol=1e-12)
     np.testing.assert_allclose(result.fixed_max_delta_e00, expected[2], rtol=0, atol=1e-12)
+
+
+@pytest.mark.parametrize(("context", "expected_workers"), [("pool", 2), ("missing", 1), ("nested", 1)])
+def test_exact_search_retains_worker_demand_and_nested_limits(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, context: str, expected_workers: int,
+) -> None:
+    from contextlib import ExitStack
+    from core.task_parallelism import resolve_task_parallelism_plan, task_parallelism_worker_scope
+    from core.task_parallelism_runtime import OuterDemandPublisher, task_parallelism_runtime_scope
+
+    monkeypatch.delenv("LUMINA_MATERIAL_PARALLELISM", raising=False)
+    monkeypatch.setenv("LUMINA_MAX_WORKERS", "4")
+    plans = []
+
+    def capture_plan(workload, **kwargs):
+        plan = resolve_task_parallelism_plan(workload, **kwargs, effective_cpu_capacity=4)
+        plans.append(plan)
+        return plan
+
+    monkeypatch.setattr(dynamic_solver, "resolve_task_parallelism_plan", capture_plan)
+    targets, catalog = _make_random_search_fixture()
+    targets = np.tile(targets, (8, 1))
+    with ExitStack() as scopes:
+        if context == "pool":
+            publisher = OuterDemandPublisher(max_workers=4, parent_dir=tmp_path)
+            scopes.callback(publisher.cleanup)
+            publisher.increment()
+            publisher.increment()
+            scopes.enter_context(task_parallelism_runtime_scope(publisher.snapshot_path))
+        elif context == "missing":
+            scopes.enter_context(task_parallelism_runtime_scope(tmp_path / "missing.json"))
+        else:
+            scopes.enter_context(task_parallelism_worker_scope())
+        result = search_dynamic_catalog_exact(targets, catalog, 5, 10)
+    assert result.engine == "numba"
+    assert len(plans) == 1 and plans[0].workers == expected_workers
+    expected = _brute_force_frontiers(targets, catalog, 5, 10)
+    np.testing.assert_array_equal(result.cumulative_best_candidate_indices, expected[0])
 
 
 def test_concurrent_material_searches_do_not_abort_the_process() -> None:

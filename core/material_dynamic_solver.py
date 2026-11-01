@@ -44,6 +44,7 @@ from core.task_parallelism import (
     resolve_task_parallelism_plan,
     task_parallelism_worker_scope,
 )
+from core.task_parallelism_runtime import current_demand_snapshot_path
 
 
 MIN_DYNAMIC_LAYER_COUNT = 5
@@ -686,6 +687,9 @@ def _search_exact_numba(
         work_units=len(target_lab) * len(candidate_lab),
         min_parallel_work_units=_MIN_PARALLEL_SEARCH_COMPARISONS,
         hard_max_workers=None,
+        # Synchronous API edits and standalone calls are one task, without a
+        # pool snapshot. Pool tasks retain live demand and its failure fallback.
+        outer_demand=1 if current_demand_snapshot_path() is None else None,
     )
     shared_args = (
         candidate_lab, minimum_actual_layer_counts, max_layer_reachable,

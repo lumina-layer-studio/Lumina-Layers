@@ -1,4 +1,5 @@
 import axios from "axios";
+import { createAsyncJobAdapter } from "./asyncJobAdapter";
 import { postClientLog, summarizeErrorForLog } from "../utils/clientLog";
 import { useActionHistoryStore } from "../stores/actionHistoryStore";
 import { useErrorTicketPromptStore } from "../stores/errorTicketPromptStore";
@@ -27,6 +28,12 @@ const apiClient = axios.create({
   baseURL: import.meta.env.VITE_API_BASE_URL || "/api",
   timeout: 3_600_000,
 });
+
+// Only preview/generate opt into polling; unrelated writes keep their transport.
+// 仅预览与生成启用任务轮询，避免代理超时；其他写请求保持原样。
+apiClient.defaults.adapter = createAsyncJobAdapter(
+  axios.getAdapter(axios.defaults.adapter),
+);
 
 function isHttpUrl(value: string): boolean {
   return /^https?:\/\//i.test(value);

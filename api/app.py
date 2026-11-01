@@ -22,6 +22,7 @@ from math import isfinite
 from pathlib import Path
 from typing import Any
 
+from api.async_jobs import AsyncJobMiddleware
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
@@ -535,6 +536,11 @@ def create_app() -> FastAPI:
             配置完整的应用实例，已注册 CORS 中间件、生命周期管理器和所有领域路由。
     """
     app = FastAPI(title="Lumina Studio API", version="2.0", lifespan=lifespan)
+
+    # Long requests -> pollable jobs, so reverse proxies do not time out (504).
+    # Added before CORS so job responses still carry CORS headers.
+    # 长请求转为可轮询任务，避免反向代理超时 504。
+    app.add_middleware(AsyncJobMiddleware)
 
     app.add_middleware(
         CORSMiddleware,

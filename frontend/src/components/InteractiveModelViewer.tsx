@@ -1,6 +1,7 @@
 /* eslint-disable react-refresh/only-export-components */
 import { useMemo, useEffect, useRef } from "react";
 import { useGLTF } from "@react-three/drei";
+import { configureGltfTransport } from "../utils/gltfTransport";
 import * as THREE from "three";
 import { useConverterStore } from "../stores/converter";
 import {
@@ -711,7 +712,7 @@ function InteractiveModelViewer({
   coatingHeightMm = 0.08,
   printingLayerHeightMm = 0.08,
 }: InteractiveModelViewerProps) {
-  const { scene } = useGLTF(url);
+  const { scene } = useGLTF(url, true, true, configureGltfTransport);
   const groupRef = useRef<THREE.Group>(null);
   useGltfCacheLifecycle(url, useGLTF.clear);
   const applyQuickPreviewGeometry = shouldApplyQuickPreviewGeometry(sourceRole);

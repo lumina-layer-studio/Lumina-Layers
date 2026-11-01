@@ -16,9 +16,8 @@ import { useModalOpen } from "./useModalOpen";
  * （五色查询画布在挂载时就会读取它来绘制）。
  *
  * On Windows the native window buttons sit above the page, so a modal's scrim
- * cannot cover them; the title bar is told to blend into the scrim while one
- * is open.
- * Windows 原生窗口按钮画在页面之上，弹窗遮罩盖不住；有弹窗时让按钮区与遮罩同色。
+ * cannot cover them; dim the title bar while keeping its buttons visible.
+ * Windows 原生窗口按钮画在页面之上，弹窗遮罩盖不住；有弹窗时压暗按钮区，但保留图标可见。
  */
 export function useDocumentThemeClass(): void {
   const theme = useSettingsStore((s) => s.theme);

@@ -193,7 +193,7 @@ test('macOS installs a menu during startup and accepts state only from its trust
   assert.equal(item('settings').enabled, false);
 });
 
-test("win32 window buttons blend into the page scrim while a modal is open", async t => {
+test("win32 window buttons stay visible but subdued while a modal is open", async t => {
   const f = await fixture(t, "win32");
   await f.healthy();
   const window = f.mainWindow();
@@ -208,9 +208,9 @@ test("win32 window buttons blend into the page scrim while a modal is open", asy
   f.ipcMain.emit("set-titlebar-theme", page, "sepia", true);
   // main.cjs runs in its own context, so compare plain data rather than prototypes.
   assert.deepEqual(JSON.parse(JSON.stringify(window.overlays)), [
-    { color: "#6c7381", symbolColor: "#6c7381" },
+    { color: "#6c7381", symbolColor: "#0f172a" },
     { color: "#e2e8f0", symbolColor: "#334155" },
-    { color: "#020617", symbolColor: "#020617" },
+    { color: "#020617", symbolColor: "#64748b" },
     { color: "#020617", symbolColor: "#cbd5e1" },
   ]);
 });

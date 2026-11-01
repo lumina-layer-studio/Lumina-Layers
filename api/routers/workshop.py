@@ -566,20 +566,20 @@ def _download_registry_package_with_retry(
     *,
     module_id: str,
 ) -> Path:
-    """Retry one idempotent download after a connection or read timeout."""
+    """Retry one idempotent download after a timeout or interrupted read."""
 
     for attempt in range(1, _REGISTRY_DOWNLOAD_MAX_ATTEMPTS + 1):
         try:
             return download_registry_package(candidate)
-        except (httpx.ConnectTimeout, httpx.ReadTimeout) as exc:
+        except (httpx.ConnectTimeout, httpx.ReadTimeout, httpx.ReadError) as exc:
             if attempt >= _REGISTRY_DOWNLOAD_MAX_ATTEMPTS:
                 raise
             log.warning(
-                "Creative Workshop Registry download timed out; retrying",
+                "Creative Workshop Registry download interrupted; retrying",
                 extra={
                     "event": "workshop_registry_download_retry",
                     "error_type": type(exc).__name__,
-                    "error_message": "Registry package download timed out",
+                    "error_message": "Registry package download interrupted",
                     "module_id": module_id,
                     "version": candidate.version,
                     "attempt": attempt,

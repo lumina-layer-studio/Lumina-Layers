@@ -882,7 +882,7 @@ def _canonical_cap_faces(
     *,
     grid_mm: float,
 ) -> np.ndarray:
-    """Triangulate canonical rings with one deterministic kernel per topology."""
+    """Triangulate canonical rings without changing their printable boundary."""
 
     if not polygon.hole_units:
         faces = np.asarray(
@@ -908,9 +908,20 @@ def _canonical_cap_faces(
             for start, stop in zip(ring_starts[1:], ring_stops[1:])
         ],
     )
-    triangle_parts = shapely.get_parts(
-        shapely.constrained_delaunay_triangles(polygon_geometry)
-    )
+    try:
+        triangles = shapely.constrained_delaunay_triangles(polygon_geometry)
+    except shapely.errors.GEOSException:
+        # GEOS's ear scan can stall on valid, point-touching rings depending on
+        # their traversal. Rebuild that traversal once with a zero-distance
+        # buffer, accepting only the exact same polygon. Original ring indices
+        # below still own the caps/walls, including collinear/contact vertices.
+        if not polygon_geometry.is_valid:
+            raise
+        reordered = polygon_geometry.buffer(0)
+        if not isinstance(reordered, Polygon) or not reordered.equals(polygon_geometry):
+            raise
+        triangles = shapely.constrained_delaunay_triangles(reordered)
+    triangle_parts = shapely.get_parts(triangles)
     coordinate_counts = np.asarray(
         shapely.get_num_coordinates(triangle_parts),
         dtype=np.int64,

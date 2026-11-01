@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import numpy as np
 import pytest
+import shapely
 from shapely.geometry import GeometryCollection, MultiPolygon, Polygon, box
 
 import core.vector_layer_geometry as vector_layer_geometry
@@ -112,6 +115,36 @@ def test_single_polygon_with_hole_is_one_closed_prism() -> None:
 
     _assert_closed_volume(mesh, source.area * 0.2, volume_tolerance=1e-8)
     assert mesh.metadata["vector_layer_geometry"]["component_count"] == 1
+
+
+def test_canonical_cap_preserves_touching_holes_when_geos_ear_scan_stalls() -> None:
+    # Reduced integer rings from a failing cap, without the source SVG. Keep
+    # their canonical start/order: GEOS's failure depends on ring traversal.
+    source = shapely.from_wkt((
+        Path(__file__).parent / "fixtures/svg_regression/touching_holes_cap.wkt"
+    ).read_text())
+    assert source.is_valid
+    polygon = vector_layer_geometry._IndexedPolygon(
+        np.asarray(source.exterior.coords[:-1], dtype=np.int64),
+        tuple(np.asarray(hole.coords[:-1], dtype=np.int64) for hole in source.interiors),
+    )
+    polygon = vector_layer_geometry._node_indexed_polygon_ring_contacts(polygon)
+    prepared = vector_layer_geometry._IndexedRunGroup(
+        (polygon,), 1.0, source.area,
+        len(polygon.exterior_units) + sum(map(len, polygon.hole_units)),
+        len(polygon.hole_units),
+    )
+
+    mesh = vector_layer_geometry._extrude_indexed_run_group(
+        prepared, height_mm=0.08, z_offset_mm=0.4,
+    )
+
+    _assert_closed_volume(mesh, source.area * 0.08, volume_tolerance=1e-8)
+    triangles = mesh.triangles
+    top = triangles[
+        np.all(np.isclose(triangles[:, :, 2], 0.48, rtol=0, atol=1e-12), axis=1), :, :2
+    ]
+    assert shapely.union_all([Polygon(triangle) for triangle in top]).equals(source)
 
 
 def test_svg_scale_is_applied_before_integer_grid_conversion() -> None:

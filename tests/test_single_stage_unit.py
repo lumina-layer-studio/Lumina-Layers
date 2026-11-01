@@ -5882,6 +5882,53 @@ def test_material_bundle_manifest_rejects_windows_drive_relative_path_under_posi
         material_package._safe_manifest_relative_path("C:material.json")
 
 
+@pytest.mark.parametrize("wrapper", ["", "package/"])
+@pytest.mark.parametrize("legacy_manifest", [False, True])
+def test_material_archive_round_trip_preserves_materials_named_parent(
+    tmp_path: Path, wrapper: str, legacy_manifest: bool,
+) -> None:
+    source_root = tmp_path / "source"
+    directory_name = "materials/PLA Yellow"
+    archive_path, stage_a_path = _write_updatable_material_archive(
+        source_root, directory_name, material_name="PLA Yellow",
+    )
+    stage_a_path.write_text(
+        json.dumps(_minimal_solver_stage_a_payload("PLA Yellow")), encoding="utf-8",
+    )
+    exported = tmp_path / "export.zip"
+    export_saved_stage_a_material_archives(
+        directory_names=[directory_name],
+        materials_dir=str(source_root),
+        output_path=str(exported),
+    )
+    # A material may itself have a parent named "materials". The outer
+    # materials directory still belongs to the archive format, not its name.
+    imported_zip = tmp_path / "import.zip"
+    with zipfile.ZipFile(exported) as source, zipfile.ZipFile(imported_zip, "w") as target:
+        for name in source.namelist():
+            if legacy_manifest and name == "lumina_material_bundle.json":
+                continue
+            target.writestr(wrapper + name, source.read(name))
+    target_root = tmp_path / "target"
+    result = import_saved_stage_a_material_archives(
+        archive_path=str(imported_zip), materials_dir=str(target_root),
+    )
+
+    assert len(result.imported_materials) == 1
+    restored = target_root / directory_name
+    assert (restored / "material.json").read_bytes() == archive_path.read_bytes()
+    assert (restored / "stage_A_parameters.json").read_bytes() == stage_a_path.read_bytes()
+    if not legacy_manifest:
+        manifest = validate_material_bundle_archive(archive_path=str(imported_zip))
+        package = manifest["packages"][0]
+        repeated = import_saved_stage_a_material_archives(
+            archive_path=str(imported_zip), materials_dir=str(target_root),
+            selected_material_id=package["material_id"],
+            selected_revision_id=package["revision_id"],
+        )
+        assert repeated.imported_materials == []
+
+
 def test_import_saved_stage_a_material_archives_skips_same_v2_revision(
     tmp_path: Path,
 ) -> None:

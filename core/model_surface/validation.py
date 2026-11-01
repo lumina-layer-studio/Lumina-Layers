@@ -14,12 +14,66 @@ MODEL_SURFACE_INSUFFICIENT_THICKNESS = "model_surface_insufficient_thickness"
 MODEL_SURFACE_BOOLEAN_FAILED = "model_surface_boolean_failed"
 
 
+def _retriangulate_collinear_faces(mesh: trimesh.Trimesh) -> trimesh.Trimesh:
+    """Split the neighbor of a flat triangle at its existing middle vertex.
+
+    Manifold can retain collinear faces at Boolean seams. Swapping their long
+    edge preserves the surface, vertex positions and oriented outer boundary;
+    deleting those faces independently would leave a hole or a T-junction.
+    """
+    vertices = np.asarray(mesh.vertices)
+    faces = np.asarray(mesh.faces).copy()
+    pending = set(np.flatnonzero(mesh.area_faces == 0.0).tolist())
+    while pending:
+        progressed = False
+        for index in sorted(pending):
+            triangle = faces[index]
+            points = vertices[triangle]
+            edge_lengths = np.sum(
+                (points - np.roll(points, -1, axis=0)) ** 2, axis=1,
+            )
+            edge = int(np.argmax(edge_lengths))
+            first, second, middle = np.roll(triangle, -edge)
+            neighbors = np.flatnonzero(
+                np.any(faces == first, axis=1) & np.any(faces == second, axis=1)
+            )
+            if len(neighbors) != 2:
+                raise ModelSurfaceError(MODEL_SURFACE_BOOLEAN_FAILED)
+            neighbor = int(neighbors[0] if neighbors[1] == index else neighbors[1])
+            if neighbor in pending:
+                continue
+            opposite = faces[neighbor][~np.isin(faces[neighbor], [first, second])]
+            if len(opposite) != 1:
+                raise ModelSurfaceError(MODEL_SURFACE_BOOLEAN_FAILED)
+            tip = int(opposite[0])
+            # An existing middle-to-tip edge would create a non-manifold seam.
+            if np.any(
+                np.any(faces == middle, axis=1) & np.any(faces == tip, axis=1)
+            ):
+                continue
+            replacement = np.asarray([(second, middle, tip), (middle, first, tip)])
+            triangles = vertices[replacement]
+            normals = np.cross(
+                triangles[:, 1] - triangles[:, 0], triangles[:, 2] - triangles[:, 0],
+            )
+            old = vertices[faces[neighbor]]
+            old_normal = np.cross(old[1] - old[0], old[2] - old[0])
+            if np.any(normals @ old_normal <= 0.0):
+                continue
+            faces[index], faces[neighbor] = replacement
+            pending.remove(index)
+            progressed = True
+        if not progressed:
+            raise ModelSurfaceError(MODEL_SURFACE_BOOLEAN_FAILED)
+    return trimesh.Trimesh(vertices, faces, process=False)
+
+
 def prepare_surface_base_for_export(mesh: trimesh.Trimesh) -> trimesh.Trimesh:
     """Finalize the Boolean base after every model/print transform.
 
     Quantize once to the writer's coordinates, then let Manifold contract
     collapsed edges while preserving the closed solid. Use Mesh64 for that
-    topology operation: Mesh's float32 tolerance can retain collinear faces.
+    topology operation, then retriangulate any remaining collinear seams.
     No independent triangle filtering or wider geometric tolerance is used.
     """
     vertices = np.asarray(mesh.vertices, dtype=np.float32).astype(np.float64)
@@ -48,6 +102,9 @@ def prepare_surface_base_for_export(mesh: trimesh.Trimesh) -> trimesh.Trimesh:
             raise
         except Exception as exc:
             raise ModelSurfaceError(MODEL_SURFACE_BOOLEAN_FAILED) from exc
+
+        if np.any(result.area_faces == 0.0):
+            result = _retriangulate_collinear_faces(result)
 
     if (
         not np.array_equal(

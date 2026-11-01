@@ -349,6 +349,19 @@ describe("Workshop desktop runtime security", () => {
     );
   });
 
+  it("allows only same-origin host blobs alongside ordinary file downloads", () => {
+    assert.equal(isAllowedWorkshopDownload({
+      frameUrl: HOST_URL,
+      url: `blob:${new URL(HOST_URL).origin}/svg-result`,
+    }), true);
+    for (const url of ["blob:null/result", "blob:http://127.0.0.1:9000/result", "blob:https://example.com/result"]) {
+      assert.equal(isAllowedWorkshopDownload({ frameUrl: HOST_URL, url }), false);
+    }
+    assert.equal(isAllowedWorkshopDownload({
+      frameUrl: "file:///app/index.html", url: "blob:null/result",
+    }), false);
+  });
+
   it("allows Workshop IPC only from the trusted host frame", () => {
     assert.equal(isAllowedWorkshopIpcSender(HOST_URL), true);
     assert.equal(isAllowedWorkshopIpcSender(MODULE_URL), false);

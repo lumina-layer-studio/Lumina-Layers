@@ -447,6 +447,28 @@ def test_dynamic_svg_edit_lifecycle_keeps_native_geometry_and_export_recipes(
             json={"session_id": session_id, "x": 150, "y": 100},
         )
         assert custom_region.status_code == 200, custom_region.text
+        first_region_id = custom_region.json()["region_id"]
+        first_recipe = client.post(
+            "/api/convert/apply-recipe-override",
+            json={
+                "session_id": session_id,
+                "region_ids": [first_region_id],
+                "recipe": [3, 3, 3, 3, 3],
+                "layer_order": "Top2Bottom",
+                "color_layers": 5,
+                "layer_height_mm": _LAYER_HEIGHT_MM,
+            },
+        )
+        assert first_recipe.status_code == 200, first_recipe.text
+        # Re-select the edited footprint, as the UI does after clearing a
+        # completed selection. Generation must use this later recipe even
+        # though the earlier region's saved mask still covers the same area.
+        custom_region = client.post(
+            "/api/convert/region-detect",
+            json={"session_id": session_id, "x": 150, "y": 100},
+        )
+        assert custom_region.status_code == 200, custom_region.text
+        assert custom_region.json()["region_id"] != first_region_id
         custom_recipe = [0, 1, 2, 3, 0]
         custom_apply = client.post(
             "/api/convert/apply-recipe-override",

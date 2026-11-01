@@ -590,6 +590,12 @@ def test_colorchecker_calibrate_returns_private_full_id_and_releases(
 
     monkeypatch.setattr(adapter, "decode_colorchecker_file", fake_decode)
     monkeypatch.setattr(adapter, "apply_colorchecker_calibration", fake_apply)
+    # Windows OpenCV's narrow-path writer may reject a valid Unicode path.
+    # Calibration must still save through Python's Unicode-aware filesystem.
+    unicode_temp = tmp_path / "软件" / "校色结果"
+    unicode_temp.mkdir(parents=True)
+    monkeypatch.setattr(extractor_router, "TEMP_DIR", str(unicode_temp))
+    monkeypatch.setattr(extractor_router.cv2, "imwrite", lambda *_args: False)
     source_preview_id = registry.register_bytes(
         f"bounded-preview-owner:{source_id}:role:source",
         _png_bytes(120, 80),

@@ -318,6 +318,17 @@ def _safe_extract_material_zip(zip_path: str, dest_dir: Path) -> Path:
     except zipfile.BadZipFile as exc:
         raise ValueError("Malformed ZIP archive") from exc
 
+    # Manifest paths are relative to the package root. Do not unwrap its
+    # materials directory: a material's own parent may also be named materials.
+    if any(
+        (resolved_dest_dir / filename).is_file()
+        for filename in (
+            _MATERIAL_BUNDLE_MANIFEST_FILENAME,
+            _MATERIAL_EXPORT_MANIFEST_FILENAME,
+        )
+    ):
+        return resolved_dest_dir
+
     children = [p for p in resolved_dest_dir.iterdir() if p.is_dir()]
     if len(children) == 1 and not any(p.is_dir() for p in resolved_dest_dir.iterdir() if p != children[0]):
         return children[0]

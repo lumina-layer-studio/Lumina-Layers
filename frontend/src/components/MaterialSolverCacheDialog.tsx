@@ -52,6 +52,9 @@ export default function MaterialSolverCacheDialog({
               data-testid="material-solver-cache-dialog-overlay"
             >
               <div
+                role="dialog"
+                aria-modal="true"
+                aria-label={t("basic_material_cache_section_title")}
                 className="relative mx-4 flex max-h-[85vh] w-full max-w-md flex-col overflow-hidden rounded-2xl border shadow-2xl"
                 style={{
                   borderColor: "var(--surface-outline)",

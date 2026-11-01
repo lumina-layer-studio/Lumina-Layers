@@ -1,6 +1,7 @@
 import { useLayoutEffect } from "react";
 import { useSettingsStore } from "../stores/settingsStore";
 import { electronAPI } from "../integrations/electron";
+import { useModalOpen } from "./useModalOpen";
 
 /**
  * Mirror the persisted theme onto the root element's ``dark`` class.
@@ -13,12 +14,20 @@ import { electronAPI } from "../integrations/electron";
  * 需在应用整个生命周期内保持挂载；主题开关位于可折叠的顶栏菜单中，并非一直渲染。
  * 使用 layout effect，保证在首次绘制和任何子组件的普通 effect 之前设置好该类
  * （五色查询画布在挂载时就会读取它来绘制）。
+ *
+ * On Windows the native window buttons sit above the page, so a modal's scrim
+ * cannot cover them; dim the title bar while keeping its buttons visible.
+ * Windows 原生窗口按钮画在页面之上，弹窗遮罩盖不住；有弹窗时压暗按钮区，但保留图标可见。
  */
 export function useDocumentThemeClass(): void {
   const theme = useSettingsStore((s) => s.theme);
+  const modalOpen = useModalOpen(electronAPI?.platform === "win32");
 
   useLayoutEffect(() => {
     document.documentElement.classList.toggle("dark", theme === "dark");
-    if (electronAPI?.platform === "win32") electronAPI.setTitlebarTheme?.(theme);
   }, [theme]);
+
+  useLayoutEffect(() => {
+    if (electronAPI?.platform === "win32") electronAPI.setTitlebarTheme?.(theme, modalOpen);
+  }, [theme, modalOpen]);
 }

@@ -3,7 +3,7 @@ const { contextBridge, ipcRenderer } = require("electron");
 contextBridge.exposeInMainWorld("electronAPI", {
   platform: process.platform,
   alignTrafficLights: (centerY, controlsHeight) => ipcRenderer.invoke("align-traffic-lights", centerY, controlsHeight),
-  setTitlebarTheme: (theme) => ipcRenderer.send("set-titlebar-theme", theme),
+  setTitlebarTheme: (theme, scrimmed) => ipcRenderer.send("set-titlebar-theme", theme, scrimmed === true),
   setApplicationMenuState: (state) => ipcRenderer.send("application-menu-state", state),
   onApplicationMenuCommand: (listener) => {
     const forward = (_event, command) => listener(command);

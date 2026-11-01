@@ -1303,6 +1303,9 @@ export default function CustomRecipeDialog({
       onClick={onClose}
     >
       <div
+        role="dialog"
+        aria-modal="true"
+        aria-label={t("recipe_custom_title")}
         className="max-h-[90vh] w-full max-w-5xl overflow-hidden rounded-[28px] border border-slate-200 shadow-2xl dark:border-slate-700"
         style={{ backgroundColor: "var(--surface-panel-strong)" }}
         onClick={(event) => event.stopPropagation()}

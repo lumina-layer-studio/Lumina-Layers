@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+from time import sleep
 from typing import Any, Callable, Sequence, TypeVar
 from urllib.parse import urljoin, urlsplit
 
@@ -106,8 +107,9 @@ def _public_client(client: Any, headers: dict[str, str], channels: Sequence[str]
 
 def read_with_fallback(*, client: Any, primary: str, fallback: str | None,
                        headers: dict[str, str], channels: Sequence[str],
-                       action: Callable[[str], _Result]) -> _Result:
-    """Try one public backup after a transient failure. / 临时故障后仅尝试一次公开备用源。
+                       action: Callable[[str], _Result],
+                       retry_primary: bool = False) -> _Result:
+    """Recover a transient read with at most one backup or same-origin retry.
 
     Args:
         client: HTTP client. / HTTP 客户端。
@@ -116,6 +118,7 @@ def read_with_fallback(*, client: Any, primary: str, fallback: str | None,
         headers: Request headers. / 请求头。
         channels: Requested channels. / 请求频道。
         action: Complete read operation, including stream consumption. / 包含流读取的完整操作。
+        retry_primary: Allow one same-origin catalog retry when no public backup is usable.
 
     Returns:
         Successful read result. / 成功读取的结果。
@@ -124,9 +127,20 @@ def read_with_fallback(*, client: Any, primary: str, fallback: str | None,
     try:
         return action(primary)
     except Exception as exc:
-        if not allowed or not _retryable(exc) or not _public_client(client, headers, channels):
+        if not _retryable(exc):
             raise
-        return action(fallback)
+        if allowed and _public_client(client, headers, channels):
+            return action(fallback)
+        if not retry_primary:
+            raise
+        # A rate limit or explicit Retry-After belongs to the caller's next
+        # refresh, not an immediate retry. Keep the total at two requests.
+        if isinstance(exc, httpx.HTTPStatusError) and (
+            exc.response.status_code == 429 or "retry-after" in exc.response.headers
+        ):
+            raise
+        sleep(0.25)
+        return action(primary)
 
 
 def fetch_catalog(*, client: Any, primary: str, family: str, suffix: str,
@@ -174,4 +188,4 @@ def fetch_catalog(*, client: Any, primary: str, family: str, suffix: str,
         return response
     return read_with_fallback(client=client, primary=primary,
                               fallback=fallback_base(primary, family), headers=headers,
-                              channels=channels, action=request)
+                              channels=channels, action=request, retry_primary=True)

@@ -15,11 +15,11 @@ function markSessionCloseRequested(sessionId: string): void {
 /**
  * Renew an active frontend session lease.
  */
-export async function heartbeatSession(sessionId: string): Promise<void> {
+export async function heartbeatSession(sessionId: string, signal?: AbortSignal): Promise<void> {
   await apiClient.post(
     "/session/heartbeat",
     { session_id: sessionId },
-    { timeout: 3_600_000 },
+    { timeout: 15_000, signal, suppressErrorTicket: true },
   );
 }
 

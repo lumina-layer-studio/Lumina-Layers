@@ -54,13 +54,13 @@ describe("useSessionLease", () => {
     });
 
     await act(async () => {
-      vi.advanceTimersByTime(240_000);
+      await vi.advanceTimersByTimeAsync(240_000);
       await Promise.resolve();
     });
 
     expect(heartbeatSessionMock).toHaveBeenCalledTimes(2);
-    expect(heartbeatSessionMock).toHaveBeenNthCalledWith(1, "session-a");
-    expect(heartbeatSessionMock).toHaveBeenNthCalledWith(2, "session-a");
+    expect(heartbeatSessionMock).toHaveBeenNthCalledWith(1, "session-a", expect.any(AbortSignal));
+    expect(heartbeatSessionMock).toHaveBeenNthCalledWith(2, "session-a", expect.any(AbortSignal));
   });
 
   it("stops heartbeat after the backend reports a missing session", async () => {
@@ -76,7 +76,7 @@ describe("useSessionLease", () => {
       await Promise.resolve();
     });
     await act(async () => {
-      vi.advanceTimersByTime(240_000);
+      await vi.advanceTimersByTimeAsync(240_000);
       await Promise.resolve();
     });
 
@@ -92,11 +92,39 @@ describe("useSessionLease", () => {
     });
 
     await act(async () => {
-      vi.advanceTimersByTime(240_000);
+      await vi.advanceTimersByTimeAsync(240_000);
       await Promise.resolve();
     });
 
     expect(heartbeatSessionMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("retries one transient failure promptly, then returns to the normal interval", async () => {
+    heartbeatSessionMock.mockRejectedValue({ response: { status: 502 } });
+    renderHook(() => useSessionLease("retry-session"));
+    await act(async () => { await vi.advanceTimersByTimeAsync(120_000); });
+    expect(heartbeatSessionMock).toHaveBeenCalledTimes(1);
+    await act(async () => { await vi.advanceTimersByTimeAsync(10_000); });
+    expect(heartbeatSessionMock).toHaveBeenCalledTimes(2);
+    await act(async () => { await vi.advanceTimersByTimeAsync(119_999); });
+    expect(heartbeatSessionMock).toHaveBeenCalledTimes(2);
+    await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+    expect(heartbeatSessionMock).toHaveBeenCalledTimes(3);
+  });
+
+  it("does not overlap pending heartbeats and aborts them when the session changes", async () => {
+    let finish!: () => void;
+    heartbeatSessionMock.mockImplementationOnce(() => new Promise<void>((resolve) => { finish = resolve; }));
+    const { rerender } = renderHook(({ id }) => useSessionLease(id), { initialProps: { id: "old-session" } });
+    await act(async () => { await vi.advanceTimersByTimeAsync(360_000); });
+    expect(heartbeatSessionMock).toHaveBeenCalledTimes(1);
+    const signal = heartbeatSessionMock.mock.calls[0][1] as AbortSignal;
+    rerender({ id: "new-session" });
+    expect(signal.aborted).toBe(true);
+    heartbeatSessionMock.mockResolvedValue(undefined);
+    await act(async () => { finish(); await vi.advanceTimersByTimeAsync(120_000); });
+    expect(heartbeatSessionMock).toHaveBeenCalledTimes(2);
+    expect(heartbeatSessionMock.mock.calls[1][0]).toBe("new-session");
   });
 
   it("starts heartbeat again when a new session replaces a missing one", async () => {
@@ -121,8 +149,8 @@ describe("useSessionLease", () => {
     });
 
     expect(heartbeatSessionMock).toHaveBeenCalledTimes(2);
-    expect(heartbeatSessionMock).toHaveBeenNthCalledWith(1, "session-a");
-    expect(heartbeatSessionMock).toHaveBeenNthCalledWith(2, "session-b");
+    expect(heartbeatSessionMock).toHaveBeenNthCalledWith(1, "session-a", expect.any(AbortSignal));
+    expect(heartbeatSessionMock).toHaveBeenNthCalledWith(2, "session-b", expect.any(AbortSignal));
   });
 
   it("does not close the current session during StrictMode initial mount", async () => {
@@ -284,7 +312,7 @@ describe("useSessionLease", () => {
     });
 
     await act(async () => {
-      vi.advanceTimersByTime(240_000);
+      await vi.advanceTimersByTimeAsync(240_000);
       await Promise.resolve();
     });
 

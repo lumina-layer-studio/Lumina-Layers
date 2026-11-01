@@ -5,10 +5,11 @@ import { useI18n } from "../../i18n/context";
 import { TUTORIAL_STEPS } from "../../data/tutorialSteps";
 import type { TutorialStep } from "../../data/tutorialSteps";
 import { useDialogFocusTrap } from "../../hooks/useDialogFocusTrap";
-import { useTutorialAnchor } from "../../hooks/useTutorialAnchor";
+import { findTutorialAnchorElement, useTutorialAnchor } from "../../hooks/useTutorialAnchor";
 import { useTutorialStore } from "../../stores/tutorialStore";
 import Button from "../ui/Button";
 import { computeTutorialCardPosition } from "./tutorialPlacement";
+import { PrintSizeIllustration, TutorialPalettes } from "./TutorialVisuals";
 import type { TutorialRect, TutorialSize } from "./tutorialPlacement";
 
 /** Extra room drawn around the spotlighted element. 高亮框相对目标的外扩距离。 */
@@ -31,6 +32,35 @@ function useViewportSize(): TutorialSize {
 }
 
 const stopEvent = (event: SyntheticEvent) => event.stopPropagation();
+
+const MODAL_SELECTOR = '[role="dialog"][aria-modal="true"], [role="alertdialog"]';
+
+/**
+ * True while a dialog the user opened (device picker, crop, a confirmation…)
+ * is on screen and is not the step's own target. The tour then steps aside so
+ * the dialog can be used, and comes back when it closes.
+ * 用户打开的对话框（设备选择、裁剪、确认框等）在屏幕上、且不是本步目标时为真。
+ * 此时引导让开，对话框关闭后再回来。
+ */
+function hasForeignModal(anchor: TutorialStep["anchor"]): boolean {
+  const target = findTutorialAnchorElement(anchor);
+  return Array.from(document.querySelectorAll<HTMLElement>(MODAL_SELECTOR)).some(
+    (modal) =>
+      !modal.closest('[data-testid="tutorial-tour"]') &&
+      !(target && modal.contains(target)) &&
+      modal.getClientRects().length > 0,
+  );
+}
+
+function isEditableTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  return (
+    target.isContentEditable ||
+    target instanceof HTMLInputElement ||
+    target instanceof HTMLTextAreaElement ||
+    target instanceof HTMLSelectElement
+  );
+}
 
 /**
  * Transparent layer that blocks the app. With a `hole`, it is built from four
@@ -110,6 +140,18 @@ function TutorialStepDetails({ step }: { step: TutorialStep }) {
   return (
     <>
       <TutorialControlList step={step} />
+      {step.palettes && step.palettes.length > 0 ? (
+        <TutorialPalettes palettes={step.palettes} />
+      ) : null}
+      {step.illustration === "print-size" ? <PrintSizeIllustration /> : null}
+      {step.interactive && !step.controlHints ? (
+        <p
+          className="mt-3 text-xs leading-5 text-blue-700 dark:text-blue-300"
+          data-testid="tutorial-interactive-hint"
+        >
+          {t(step.advance ? "tutorial_interactive_auto_hint" : "tutorial_interactive_hint")}
+        </p>
+      ) : null}
       {step.flowKeys && step.flowKeys.length > 0 ? (
         <ol
           className="mt-3 flex flex-wrap items-center gap-1.5"
@@ -163,14 +205,15 @@ function TutorialStepDetails({ step }: { step: TutorialStep }) {
  * shows an explanation card beside it.
  * 分步高亮引导：压暗界面、框出当前步骤的元素，并在旁边显示说明卡片。
  *
- * The app is blocked while the tour runs so a stray click cannot open a file
- * picker or start a job; the tour only explains. Steps marked `interactive`
- * (the 3D view) leave only the spotlight usable so the user may try the
- * gestures, but never have to. When the element cannot be found the card is
- * centered and the tour continues.
- * 引导期间屏蔽界面，避免误触打开文件选择框或启动任务；引导只做讲解。标记为
- * `interactive` 的步骤（3D 预览）只放开高亮区域，用户可以试用但不强制。
- * 找不到目标元素时卡片居中显示，引导照常进行。
+ * Outside the spotlight the app is blocked so a stray click cannot start a
+ * job. Steps marked `interactive` leave the spotlight usable, so the user can
+ * set things up right there (pick a device, choose materials, set the layer
+ * height…) but never has to. When the user opens a dialog from the spotlight
+ * the tour steps aside until it closes. When the element cannot be found the
+ * card is centered and the tour continues.
+ * 高亮区域外的界面被屏蔽，避免误触启动任务。标记为 `interactive` 的步骤放开高亮
+ * 区域，用户可以直接在引导里完成设置（选设备、选耗材、设层高等），但不强制。用户
+ * 从高亮区域打开对话框时，引导暂时让开，关闭后再回来。找不到目标元素时卡片居中显示。
  */
 export default function TutorialTour(): JSX.Element | null {
   const { t } = useI18n();
@@ -187,7 +230,20 @@ export default function TutorialTour(): JSX.Element | null {
   const cardRef = useRef<HTMLDivElement>(null);
   const bodyRef = useRef<HTMLDivElement>(null);
   const [cardSize, setCardSize] = useState<TutorialSize>(DEFAULT_CARD_SIZE);
-  useDialogFocusTrap(cardRef, true);
+  const [suspended, setSuspended] = useState(false);
+  // Interactive steps let focus move into the spotlight (e.g. a search box).
+  // 可操作的步骤允许焦点进入高亮区域（例如搜索框）。
+  useDialogFocusTrap(cardRef, !step.interactive && !suspended);
+
+  useEffect(() => {
+    const check = () => {
+      const foreign = hasForeignModal(step.anchor);
+      setSuspended((previous) => (previous === foreign ? previous : foreign));
+    };
+    check();
+    const timer = window.setInterval(check, 150);
+    return () => window.clearInterval(timer);
+  }, [step.anchor]);
 
   // Card height changes with each step's copy; re-measure whenever it resizes.
   useLayoutEffect(() => {
@@ -212,11 +268,13 @@ export default function TutorialTour(): JSX.Element | null {
     const observer = new ResizeObserver(measure);
     observer.observe(card);
     return () => observer.disconnect();
-  }, []);
+    // Re-attach when the card mounts again after the tour stepped aside.
+    // 引导让开后卡片重新挂载时需要重新测量。
+  }, [suspended]);
 
   useEffect(() => {
-    cardRef.current?.focus({ preventScroll: true });
-  }, [stepIndex, anchor.status]);
+    if (!suspended) cardRef.current?.focus({ preventScroll: true });
+  }, [stepIndex, anchor.status, suspended]);
 
   // Each step starts reading from the top of its (possibly scrolled) copy.
   useEffect(() => {
@@ -224,23 +282,39 @@ export default function TutorialTour(): JSX.Element | null {
   }, [stepIndex]);
 
   useEffect(() => {
+    if (suspended) {
+      // A dialog the user opened has the keyboard (Escape closes it, not the tour).
+      // 用户打开的对话框处理键盘（Esc 关闭对话框而不是引导）。
+      return undefined;
+    }
+    // Capture phase + stopPropagation: the tour owns these keys, so a dialog it
+    // has opened underneath (the material picker) does not also react to
+    // Escape. Arrow keys inside a text field keep moving the caret.
+    // 捕获阶段并阻止传播：这些按键由引导处理，避免其下方打开的对话框（耗材选择框）
+    // 同时响应 Esc；在输入框里按方向键仍用于移动光标。
     const handleKeyDown = (event: KeyboardEvent) => {
+      // Checked at key time too: a dialog may have just opened before React
+      // has re-run this effect. 按键时再检查一次：对话框可能刚打开、本效果尚未重跑。
+      if (hasForeignModal(step.anchor)) return;
       if (event.key === "Escape") {
         event.preventDefault();
+        event.stopPropagation();
         skip("escape");
-      } else if (event.key === "ArrowRight") {
+      } else if (event.key === "ArrowRight" || event.key === "ArrowLeft") {
+        if (isEditableTarget(event.target)) return;
         event.preventDefault();
-        next();
-      } else if (event.key === "ArrowLeft") {
-        event.preventDefault();
-        back();
+        event.stopPropagation();
+        if (event.key === "ArrowRight") next();
+        else back();
+      } else if (event.key === "Tab" && !step.interactive) {
+        event.stopPropagation();
       }
     };
-    document.addEventListener("keydown", handleKeyDown);
-    return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [next, back, skip]);
+    document.addEventListener("keydown", handleKeyDown, true);
+    return () => document.removeEventListener("keydown", handleKeyDown, true);
+  }, [next, back, skip, suspended, step.interactive, step.anchor]);
 
-  if (typeof document === "undefined") {
+  if (typeof document === "undefined" || suspended) {
     return null;
   }
 
@@ -260,9 +334,11 @@ export default function TutorialTour(): JSX.Element | null {
   const passThroughHole = step.interactive && spotlight ? spotlight : null;
 
   return createPortal(
-    <div className="pointer-events-none fixed inset-0 z-[9000]" data-testid="tutorial-tour">
-      {/* Click shield: blocks the app while the tour explains. Interactive
-          steps leave the spotlight open so the user can try it there. */}
+    <div className="pointer-events-none fixed inset-0 z-[10005]" data-testid="tutorial-tour">
+      {/* Click shield: blocks the app outside the spotlight. Interactive steps
+          leave the spotlight open so the user can set things up there. The
+          tour sits above dialogs (z 9999–10000) but below dropdown menus
+          (z 10010), so a dropdown opened in the spotlight stays usable. */}
       <TutorialClickShield hole={passThroughHole} dimmed={!spotlight} />
 
       {spotlight ? (

@@ -10,10 +10,12 @@ import { StarIcon } from "@heroicons/react/24/solid";
 import {
   useEffect,
   useId,
+  useImperativeHandle,
   useMemo,
   useRef,
   useState,
 } from "react";
+import type { Ref } from "react";
 import { createPortal } from "react-dom";
 
 import type { SavedMaterialLibraryItem } from "../../api/types";
@@ -49,6 +51,13 @@ interface MaterialPickerDialogProps {
   onConfirm: (selected: string[]) => void;
   onCancel: () => void;
   onRetry?: () => void;
+  /** Lets a caller (the beginner tour) press Done on the user's behalf. 允许调用方（新手引导）代为点击「完成」。 */
+  ref?: Ref<MaterialPickerDialogHandle>;
+}
+
+export interface MaterialPickerDialogHandle {
+  /** Same as clicking Done, including the mixed-type confirmation. 等同点击「完成」，含混合类型确认。 */
+  done: (onConfirmed?: () => void) => void;
 }
 
 const FOCUSABLE_SELECTOR = [
@@ -138,6 +147,7 @@ export default function MaterialPickerDialog({
   onConfirm,
   onCancel,
   onRetry,
+  ref,
 }: MaterialPickerDialogProps) {
   const { t } = useI18n();
   const titleId = useId();
@@ -149,6 +159,7 @@ export default function MaterialPickerDialog({
   const searchInputRef = useRef<HTMLInputElement>(null);
   const confirmBackRef = useRef<HTMLButtonElement>(null);
   const previouslyFocusedRef = useRef<HTMLElement | null>(null);
+  const afterConfirmRef = useRef<(() => void) | undefined>(undefined);
 
   const [staged, setStaged] = useState<string[]>(initialSelected);
   const materialByDirectory = useMemo(
@@ -183,6 +194,7 @@ export default function MaterialPickerDialog({
     setSort("name");
     setExpandedGroupKeys(new Set());
     setFavoriteKeys(loadMaterialProfileFavorites());
+    afterConfirmRef.current = undefined;
     setShowMixedConfirmation(false);
     setSelectionEffectDirectory(null);
 
@@ -211,6 +223,7 @@ export default function MaterialPickerDialog({
       if (event.key === "Escape") {
         event.preventDefault();
         if (showMixedConfirmation) {
+          afterConfirmRef.current = undefined;
           setShowMixedConfirmation(false);
         } else {
           onCancel();
@@ -348,13 +361,27 @@ export default function MaterialPickerDialog({
     });
   };
 
-  const handleDone = () => {
+  const confirmSelection = () => {
+    const afterConfirm = afterConfirmRef.current;
+    afterConfirmRef.current = undefined;
+    onConfirm(staged);
+    afterConfirm?.();
+  };
+  const cancelMixedConfirmation = () => {
+    afterConfirmRef.current = undefined;
+    setShowMixedConfirmation(false);
+  };
+  const handleDone = (onConfirmed?: () => void) => {
+    afterConfirmRef.current = onConfirmed;
     if (selectedTypeSummary.requiresConfirmation) {
       setShowMixedConfirmation(true);
       return;
     }
-    onConfirm(staged);
+    confirmSelection();
   };
+  const handleDoneRef = useRef(handleDone);
+  handleDoneRef.current = handleDone;
+  useImperativeHandle(ref, () => ({ done: (onConfirmed) => handleDoneRef.current(onConfirmed) }), []);
 
   const renderFavoriteButton = (
     profile: SavedMaterialLibraryItem,
@@ -709,6 +736,7 @@ export default function MaterialPickerDialog({
             <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
               <div
                 role="tablist"
+                data-tutorial="material-picker-tabs"
                 aria-label={t("basic_material_picker_dialog_title")}
                 className="flex min-w-0 gap-1 overflow-x-auto rounded-2xl bg-slate-100/80 p-1 dark:bg-slate-800/70"
               >
@@ -735,7 +763,7 @@ export default function MaterialPickerDialog({
               </div>
 
               <div className="flex min-w-0 flex-1 flex-col gap-2 sm:flex-row lg:max-w-[35rem] lg:justify-end">
-                <label className="relative min-w-0 flex-1">
+                <label className="relative min-w-0 flex-1" data-tutorial="material-picker-search">
                   <span className="sr-only">
                     {t("basic_material_picker_search_placeholder")}
                   </span>
@@ -854,6 +882,7 @@ export default function MaterialPickerDialog({
             <aside
               className="hidden min-h-0 flex-col border-r border-slate-200/80 dark:border-slate-700/80 md:flex"
               data-testid="material-picker-brand-sidebar"
+              data-tutorial="material-picker-brands"
             >
               <p className="px-4 pb-2 pt-4 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">
                 {t("basic_material_picker_brand_filter_label")}
@@ -913,7 +942,10 @@ export default function MaterialPickerDialog({
                 </label>
               </div>
 
-              <div className="dock-scrollbar min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-4 sm:px-5">
+              <div
+                className="dock-scrollbar min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-4 sm:px-5"
+                data-tutorial="material-picker-cards"
+              >
                 {loading ? (
                   <div className="flex min-h-48 items-center justify-center text-sm text-slate-500 dark:text-slate-400">
                     {t("basic_material_loading")}
@@ -967,7 +999,10 @@ export default function MaterialPickerDialog({
             </main>
           </div>
 
-          <footer className="border-t border-slate-200/80 px-4 py-3 dark:border-slate-700/80 sm:px-6">
+          <footer
+            className="border-t border-slate-200/80 px-4 py-3 dark:border-slate-700/80 sm:px-6"
+            data-tutorial="material-picker-footer"
+          >
             {selectedTypeSummary.requiresConfirmation && (
               <StatusBanner
                 role="status"
@@ -993,7 +1028,7 @@ export default function MaterialPickerDialog({
                 />
                 <Button
                   label={t("basic_material_picker_done")}
-                  onClick={handleDone}
+                  onClick={() => handleDone()}
                   size="sm"
                   variant="primary"
                 />
@@ -1010,7 +1045,7 @@ export default function MaterialPickerDialog({
           style={{ background: "var(--surface-scrim)" }}
           onMouseDown={(event) => {
             if (event.target === event.currentTarget) {
-              setShowMixedConfirmation(false);
+              cancelMixedConfirmation();
             }
           }}
         >
@@ -1035,7 +1070,7 @@ export default function MaterialPickerDialog({
               >
                 {t("basic_material_picker_mixed_confirm_title")}
               </h3>
-              <CloseButton label={t("common_close")} onClick={() => setShowMixedConfirmation(false)} />
+              <CloseButton label={t("common_close")} onClick={cancelMixedConfirmation} />
             </div>
             <p
               id={confirmDescriptionId}
@@ -1050,14 +1085,14 @@ export default function MaterialPickerDialog({
               <button
                 ref={confirmBackRef}
                 type="button"
-                onClick={() => setShowMixedConfirmation(false)}
+                onClick={cancelMixedConfirmation}
                 className="min-h-10 rounded-xl border border-slate-200/80 px-4 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-100 focus:outline-none focus:ring-4 focus:ring-[var(--focus-ring)] dark:border-slate-700/80 dark:text-slate-200 dark:hover:bg-slate-800"
               >
                 {t("basic_material_picker_mixed_back")}
               </button>
               <button
                 type="button"
-                onClick={() => onConfirm(staged)}
+                onClick={confirmSelection}
                 className="action-control action-control-primary min-h-9 rounded-lg px-4 text-sm font-semibold"
               >
                 {t("basic_material_picker_mixed_continue")}

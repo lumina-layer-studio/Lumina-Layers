@@ -628,6 +628,7 @@ export default function SettingsPanel() {
           </header>
           {activeCategory === "device" && (
             <section
+              data-tutorial="device-settings"
               className="settings-content mx-auto flex w-full max-w-4xl flex-col gap-5"
             >
               <div>

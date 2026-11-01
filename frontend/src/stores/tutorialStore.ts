@@ -43,6 +43,13 @@ interface TutorialState {
   back: () => void;
   skip: (via: TutorialSkipVia) => void;
   finish: () => void;
+  /** The open picker completes its existing confirmation before navigation. */
+  confirmMaterialPicker: ((onConfirmed: () => void) => void) | null;
+  /**
+   * Report that the material picker opened or closed, so a step waiting for
+   * that action moves on by itself. 报告耗材选择框打开/关闭，等待该操作的步骤自动前进。
+   */
+  notifyMaterialPicker: (open: boolean) => void;
   /**
    * Restore the workspace left changed by a tour interrupted by a reload.
    * 恢复因刷新而中断的引导留下的工作区改动。
@@ -212,14 +219,30 @@ function trackStepView(trigger: TutorialTrigger, stepIndex: number): void {
 }
 
 export const useTutorialStore = create<TutorialState>()((set, get) => {
+  const afterMaterialPicker = (proceed: () => void, nextStep?: TutorialStep) => {
+    const { phase, stepIndex, confirmMaterialPicker } = get();
+    if (
+      phase === "touring" &&
+      TUTORIAL_STEPS[stepIndex]?.prepare?.materialPicker &&
+      !nextStep?.prepare?.materialPicker &&
+      confirmMaterialPicker
+    ) {
+      confirmMaterialPicker(proceed);
+    } else {
+      proceed();
+    }
+  };
+
   const goToStep = (stepIndex: number) => {
     const step = TUTORIAL_STEPS[stepIndex];
     if (!step) {
       return;
     }
-    applyTutorialStepPrepare(step);
-    set({ stepIndex });
-    trackStepView(get().trigger, stepIndex);
+    afterMaterialPicker(() => {
+      applyTutorialStepPrepare(step);
+      set({ stepIndex });
+      trackStepView(get().trigger, stepIndex);
+    }, step);
   };
 
   return {
@@ -227,6 +250,7 @@ export const useTutorialStore = create<TutorialState>()((set, get) => {
     stepIndex: 0,
     trigger: "auto",
     startedAtMs: null,
+    confirmMaterialPicker: null,
 
     offerFirstRun: () => {
       if (get().phase !== "idle" || hasTutorialBeenOffered()) {
@@ -270,7 +294,7 @@ export const useTutorialStore = create<TutorialState>()((set, get) => {
       goToStep(stepIndex - 1);
     },
 
-    skip: (via) => {
+    skip: (via) => afterMaterialPicker(() => {
       const { phase, stepIndex, trigger, startedAtMs } = get();
       if (phase === "idle") {
         return;
@@ -287,9 +311,9 @@ export const useTutorialStore = create<TutorialState>()((set, get) => {
       });
       restoreWorkspace();
       set({ phase: "idle", stepIndex: 0, startedAtMs: null });
-    },
+    }),
 
-    finish: () => {
+    finish: () => afterMaterialPicker(() => {
       const { phase, trigger, startedAtMs } = get();
       if (phase !== "touring") {
         return;
@@ -302,6 +326,25 @@ export const useTutorialStore = create<TutorialState>()((set, get) => {
       });
       restoreWorkspace();
       set({ phase: "idle", stepIndex: 0, startedAtMs: null });
+    }),
+
+    notifyMaterialPicker: (open) => {
+      const { phase, stepIndex } = get();
+      if (phase !== "touring") {
+        return;
+      }
+      const advance = TUTORIAL_STEPS[stepIndex]?.advance;
+      if (!advance) {
+        return;
+      }
+      if (open && advance.on === "material-picker-opened") {
+        get().next();
+      } else if (!open && advance.on === "material-picker-closed") {
+        const target = TUTORIAL_STEPS.findIndex((step) => step.id === advance.to);
+        if (target >= 0) {
+          goToStep(target);
+        }
+      }
     },
 
     recoverInterruptedTour: () => {

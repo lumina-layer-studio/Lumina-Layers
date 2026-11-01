@@ -30,8 +30,11 @@ import { CropModal } from "../ui/CropModal";
 import type { CropData } from "../ui/CropModal";
 import ImportConfirmDialog from "../ui/ImportConfirmDialog";
 import MaterialPickerDialog from "../ui/MaterialPickerDialog";
+import type { MaterialPickerDialogHandle } from "../ui/MaterialPickerDialog";
 import MaterialSolverCacheDialog from "../MaterialSolverCacheDialog";
 import LegacyLutSelector from "./LegacyLutSelector";
+import { TUTORIAL_STEPS } from "../../data/tutorialSteps";
+import { useTutorialStore } from "../../stores/tutorialStore";
 import { useI18n } from "../../i18n/context";
 import {
   prepareImport,
@@ -860,8 +863,45 @@ export default function BasicSettings() {
     [setSelectedMaterialDirNames],
   );
 
-  // Compact summary for the trigger button: shows the first few material names
-  // plus a "+N more" suffix when truncated.
+  // The beginner tour walks the user through the picker dialog. Entering its
+  // steps opens the picker (unless the user already did); navigation first
+  // completes Done, so restoring another page cannot discard the selection.
+  // Open/close is reported back so a step waiting for that action moves on.
+  // 新手引导会带用户使用耗材选择框：进入相关步骤时打开（用户已打开则不动）；离开时
+  // 先完成「完成」及必要确认，再切换页面，保留用户勾选。打开/关闭会回报给引导。
+  const tutorialWantsMaterialPicker = useTutorialStore(
+    (state) =>
+      state.phase === "touring" &&
+      Boolean(TUTORIAL_STEPS[state.stepIndex]?.prepare?.materialPicker),
+  );
+  const notifyTutorialMaterialPicker = useTutorialStore((state) => state.notifyMaterialPicker);
+  const materialPickerRef = useRef<MaterialPickerDialogHandle>(null);
+  const tutorialWantedPickerRef = useRef(false);
+  useEffect(() => {
+    const wanted = tutorialWantsMaterialPicker && source_version === "material";
+    const wasWanted = tutorialWantedPickerRef.current;
+    tutorialWantedPickerRef.current = wanted;
+    if (wanted && !wasWanted && !materialPickerOpen) {
+      setMaterialPickerOpen(true);
+    }
+  }, [tutorialWantsMaterialPicker, source_version, materialPickerOpen]);
+  useEffect(() => {
+    if (!tutorialWantsMaterialPicker || !materialPickerOpen) return;
+    const confirmMaterialPicker = (onConfirmed: () => void) => {
+      materialPickerRef.current?.done(onConfirmed);
+    };
+    useTutorialStore.setState({ confirmMaterialPicker });
+    return () => {
+      useTutorialStore.setState({ confirmMaterialPicker: null });
+    };
+  }, [tutorialWantsMaterialPicker, materialPickerOpen]);
+  const reportedPickerOpenRef = useRef(materialPickerOpen);
+  useEffect(() => {
+    if (reportedPickerOpenRef.current === materialPickerOpen) return;
+    reportedPickerOpenRef.current = materialPickerOpen;
+    notifyTutorialMaterialPicker(materialPickerOpen);
+  }, [materialPickerOpen, notifyTutorialMaterialPicker]);
+
   const materialSummary = useMemo(() => {
     if (selectedMaterialDirNames.length === 0) {
       return null;
@@ -1150,18 +1190,20 @@ export default function BasicSettings() {
       <ConversionPresets />
 
       <Block label={t("basic_group_color_source")} tutorial="color-source" className="gap-5">
-        <RadioGroup
-          label={t("basic_source_version_label")}
-          tooltip={t("basic_source_version_hint")}
-          wikiPath={WIKI_DOCS.sourceType}
-          value={source_version}
-          options={sourceVersionOptions}
-          onChange={(value) => setSourceVersion(value as "legacy" | "material")}
-        />
+        <div data-tutorial="color-source-mode" className="min-w-0">
+          <RadioGroup
+            label={t("basic_source_version_label")}
+            tooltip={t("basic_source_version_hint")}
+            wikiPath={WIKI_DOCS.sourceType}
+            value={source_version}
+            options={sourceVersionOptions}
+            onChange={(value) => setSourceVersion(value as "legacy" | "material")}
+          />
+        </div>
 
         {source_version === "material" ? (
           <div className="flex min-w-0 flex-col gap-5">
-            <div className="flex min-w-0 flex-col gap-2">
+            <div data-tutorial="material-picker" className="flex min-w-0 flex-col gap-2">
               <label htmlFor="basic-material-picker" className={workstationFieldLabelClass}>{t("basic_material_select_label")}</label>
 
               <button
@@ -1220,6 +1262,7 @@ export default function BasicSettings() {
               </button>
 
               <MaterialPickerDialog
+                ref={materialPickerRef}
                 open={materialPickerOpen}
                 materials={materialLibrary}
                 loading={materialLibraryLoading}
@@ -1231,70 +1274,76 @@ export default function BasicSettings() {
               />
             </div>
             <div className="flex min-w-0 flex-col gap-3">
-              <Dropdown
-                label={t("basic_material_layer_height_label")}
-                tooltip={t("basic_material_layer_height_hint")}
-                wikiPath={WIKI_DOCS.materialArchiveSource}
-                value={String(materialLayerHeightMm)}
-                options={materialLayerHeightOptions}
-                onChange={(v) => setMaterialLayerHeightMm(Number(v))}
-              />
-
-              <Checkbox
-                label={t("basic_material_dynamic_layer_count_label")}
-                tooltip={t("basic_material_dynamic_layer_count_hint")}
-                wikiPath={WIKI_DOCS.materialArchiveSource}
-                checked={materialDynamicLayerCountEnabled}
-                onChange={setMaterialDynamicLayerCountEnabled}
-              />
-
-              {materialDynamicLayerCountEnabled ? (
-                <>
-                  <Slider
-                    label={t("basic_material_min_layer_count_label")}
-                    tooltip={t("basic_material_min_layer_count_hint")}
-                    wikiPath={WIKI_DOCS.materialArchiveSource}
-                    value={materialMinLayerCount}
-                    min={MATERIAL_DYNAMIC_LAYER_COUNT_MIN}
-                    max={MATERIAL_DYNAMIC_LAYER_COUNT_MAX}
-                    step={1}
-                    onChange={(v) => setMaterialMinLayerCount(Math.round(v))}
-                  />
-                  <Slider
-                    label={t("basic_material_max_layer_count_label")}
-                    tooltip={t("basic_material_max_layer_count_hint")}
-                    wikiPath={WIKI_DOCS.materialArchiveSource}
-                    value={materialMaxLayerCount}
-                    min={MATERIAL_DYNAMIC_LAYER_COUNT_MIN}
-                    max={MATERIAL_DYNAMIC_LAYER_COUNT_MAX}
-                    step={1}
-                    onChange={(v) => setMaterialMaxLayerCount(Math.round(v))}
-                  />
-                </>
-              ) : (
-                <Slider
-                  label={t("basic_material_layer_count_label")}
-                  tooltip={t("basic_material_layer_count_hint")}
+              <div data-tutorial="material-layer-height" className="min-w-0">
+                <Dropdown
+                  label={t("basic_material_layer_height_label")}
+                  tooltip={t("basic_material_layer_height_hint")}
                   wikiPath={WIKI_DOCS.materialArchiveSource}
-                  value={materialLayerCount}
-                  min={5}
-                  max={10}
-                  step={1}
-                  onChange={(v) => setMaterialLayerCount(Math.round(v))}
+                  value={String(materialLayerHeightMm)}
+                  options={materialLayerHeightOptions}
+                  onChange={(v) => setMaterialLayerHeightMm(Number(v))}
                 />
-              )}
+              </div>
+
+              <div data-tutorial="material-layer-count" className="flex min-w-0 flex-col gap-3">
+                <Checkbox
+                  label={t("basic_material_dynamic_layer_count_label")}
+                  tooltip={t("basic_material_dynamic_layer_count_hint")}
+                  wikiPath={WIKI_DOCS.materialArchiveSource}
+                  checked={materialDynamicLayerCountEnabled}
+                  onChange={setMaterialDynamicLayerCountEnabled}
+                />
+
+                {materialDynamicLayerCountEnabled ? (
+                  <>
+                    <Slider
+                      label={t("basic_material_min_layer_count_label")}
+                      tooltip={t("basic_material_min_layer_count_hint")}
+                      wikiPath={WIKI_DOCS.materialArchiveSource}
+                      value={materialMinLayerCount}
+                      min={MATERIAL_DYNAMIC_LAYER_COUNT_MIN}
+                      max={MATERIAL_DYNAMIC_LAYER_COUNT_MAX}
+                      step={1}
+                      onChange={(v) => setMaterialMinLayerCount(Math.round(v))}
+                    />
+                    <Slider
+                      label={t("basic_material_max_layer_count_label")}
+                      tooltip={t("basic_material_max_layer_count_hint")}
+                      wikiPath={WIKI_DOCS.materialArchiveSource}
+                      value={materialMaxLayerCount}
+                      min={MATERIAL_DYNAMIC_LAYER_COUNT_MIN}
+                      max={MATERIAL_DYNAMIC_LAYER_COUNT_MAX}
+                      step={1}
+                      onChange={(v) => setMaterialMaxLayerCount(Math.round(v))}
+                    />
+                  </>
+                ) : (
+                  <Slider
+                    label={t("basic_material_layer_count_label")}
+                    tooltip={t("basic_material_layer_count_hint")}
+                    wikiPath={WIKI_DOCS.materialArchiveSource}
+                    value={materialLayerCount}
+                    min={5}
+                    max={10}
+                    step={1}
+                    onChange={(v) => setMaterialLayerCount(Math.round(v))}
+                  />
+                )}
+              </div>
             </div>
             <div className="flex min-w-0 flex-col gap-3">
-              <Dropdown
-                label={t("basic_material_backing_label")}
-                tooltip={t("basic_material_backing_hint")}
-                wikiPath={WIKI_DOCS.materialArchiveSource}
-                value={resolvedMaterialBackingDirName}
-                options={materialBackingOptions}
-                onChange={(v) => setMaterialBackingMaterialDirName(v || null)}
-                disabled={selectedMaterialDirNames.length === 0}
-                placeholder={t("basic_material_backing_placeholder")}
-              />
+              <div data-tutorial="material-backing" className="min-w-0">
+                <Dropdown
+                  label={t("basic_material_backing_label")}
+                  tooltip={t("basic_material_backing_hint")}
+                  wikiPath={WIKI_DOCS.materialArchiveSource}
+                  value={resolvedMaterialBackingDirName}
+                  options={materialBackingOptions}
+                  onChange={(v) => setMaterialBackingMaterialDirName(v || null)}
+                  disabled={selectedMaterialDirNames.length === 0}
+                  placeholder={t("basic_material_backing_placeholder")}
+                />
+              </div>
 
               {!materialDynamicLayerCountEnabled && (
                 <MaterialSolverCacheDialog

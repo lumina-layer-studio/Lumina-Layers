@@ -1,4 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import { TUTORIAL_STEPS } from "../data/tutorialSteps";
+import { useTutorialStore } from "../stores/tutorialStore";
+import { useWidgetStore } from "../stores/widgetStore";
+import TutorialTour from "../components/tutorial/TutorialTour";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import BasicSettings from "../components/sections/BasicSettings";
 import BedSizeSelector from "../components/sections/BedSizeSelector";
@@ -1036,6 +1040,163 @@ describe("BasicSettings", () => {
     const dots = screen.getByTestId("material-picker-summary-dots").children;
     expect(dots).toHaveLength(8);
     expect(dots[1]).toHaveStyle({ backgroundColor: "rgb(200, 30, 40)" });
+  });
+
+  it("opens the picker for the tour's picker steps and closes it afterwards", async () => {
+    vi.mocked(extractorApi.listGradientCardMaterials).mockResolvedValue({
+      status: "success",
+      message: "ok",
+      materials: [makeMaterial("JAYO/red-pla", "Red PLA")],
+    });
+    useConverterStore.setState({
+      source_version: "material",
+      selectedMaterialDirNames: [],
+      materialBackingMaterialDirName: null,
+    });
+    const searchStep = TUTORIAL_STEPS.findIndex((step) => step.id === "picker-palette");
+    const summaryStep = TUTORIAL_STEPS.findIndex((step) => step.id === "materials-summary");
+
+    render(<BasicSettings />);
+    expect(screen.queryByTestId("material-picker-dialog")).not.toBeInTheDocument();
+
+    act(() => {
+      useTutorialStore.setState({ phase: "touring", stepIndex: searchStep });
+    });
+    expect(await screen.findByTestId("material-picker-dialog")).toBeInTheDocument();
+
+    act(() => {
+      while (useTutorialStore.getState().stepIndex < summaryStep) useTutorialStore.getState().next();
+    });
+    await waitFor(() =>
+      expect(screen.queryByTestId("material-picker-dialog")).not.toBeInTheDocument(),
+    );
+    act(() => {
+      useTutorialStore.setState({ phase: "idle", stepIndex: 0 });
+    });
+  });
+
+  it("keeps what the user selected in the picker when the tour moves on", async () => {
+    vi.mocked(extractorApi.listGradientCardMaterials).mockResolvedValue({
+      status: "success",
+      message: "ok",
+      materials: [makeMaterial("JAYO/red-pla", "Red PLA")],
+    });
+    useConverterStore.setState({
+      source_version: "material",
+      selectedMaterialDirNames: [],
+      materialBackingMaterialDirName: null,
+    });
+    const paletteStep = TUTORIAL_STEPS.findIndex((step) => step.id === "picker-palette");
+    const backingStep = TUTORIAL_STEPS.findIndex((step) => step.id === "materials-backing");
+
+    render(<BasicSettings />);
+    act(() => {
+      useTutorialStore.setState({ phase: "touring", stepIndex: paletteStep });
+    });
+    const dialog = await screen.findByTestId("material-picker-dialog");
+    fireEvent.click(await within(dialog).findByRole("button", { name: "选择 Red PLA" }));
+
+    act(() => {
+      while (useTutorialStore.getState().stepIndex < backingStep) useTutorialStore.getState().next();
+    });
+    await waitFor(() =>
+      expect(screen.queryByTestId("material-picker-dialog")).not.toBeInTheDocument(),
+    );
+    expect(useConverterStore.getState().selectedMaterialDirNames).toEqual(["JAYO/red-pla"]);
+    act(() => {
+      useTutorialStore.setState({ phase: "idle", stepIndex: 0 });
+    });
+  });
+
+  describe("leaving the interactive material tutorial", () => {
+    function TutorialWorkspace() {
+      const tab = useWidgetStore((state) => state.activeTab);
+      const phase = useTutorialStore((state) => state.phase);
+      return <>
+        {tab === "converter" && <BasicSettings />}
+        {phase === "touring" && <TutorialTour />}
+      </>;
+    }
+
+    async function startMaterialTour(tab: "converter" | "settings", mixed = false) {
+      vi.mocked(extractorApi.listGradientCardMaterials).mockResolvedValue({
+        status: "success",
+        message: "ok",
+        materials: [
+          { ...makeMaterial("review/red", "Red PLA"), material_type: "PLA" },
+          ...(mixed ? [{ ...makeMaterial("review/black", "Black PETG"), material_type: "PETG" }] : []),
+        ],
+      });
+      useConverterStore.setState({
+        source_version: "material",
+        selectedMaterialDirNames: [],
+        materialBackingMaterialDirName: null,
+      });
+      useTutorialStore.setState({ phase: "idle", stepIndex: 0 });
+      useWidgetStore.setState({ activeTab: tab, activeConverterSubTab: "core" });
+      render(<TutorialWorkspace />);
+      act(() => {
+        useTutorialStore.getState().startTour("manual");
+        const cardsStep = TUTORIAL_STEPS.findIndex((step) => step.id === "picker-cards");
+        for (let i = 0; i < cardsStep; i += 1) useTutorialStore.getState().next();
+      });
+      fireEvent.click(await screen.findByRole("button", { name: "选择 Red PLA" }));
+      if (mixed) fireEvent.click(screen.getByRole("button", { name: "选择 Black PETG" }));
+      await screen.findByRole("button", { name: "跳过引导" });
+    }
+
+    it.each([
+      ["converter", "skip"], ["settings", "skip"],
+      ["converter", "escape"], ["settings", "escape"],
+    ] as const)("keeps material edits when exiting via %s/%s", async (tab, exit) => {
+      await startMaterialTour(tab);
+      if (exit === "skip") fireEvent.click(screen.getByRole("button", { name: "跳过引导" }));
+      else fireEvent.keyDown(document, { key: "Escape" });
+
+      await waitFor(() => expect(useTutorialStore.getState().phase).toBe("idle"));
+      expect(useConverterStore.getState().selectedMaterialDirNames).toEqual(["review/red"]);
+      expect(useWidgetStore.getState().activeTab).toBe(tab);
+      expect(screen.queryByTestId("material-picker-dialog")).not.toBeInTheDocument();
+    });
+
+    it.each(["skip", "done"] as const)("waits for mixed confirmation; cancel then %s follows the new action", async (nextAction) => {
+      await startMaterialTour("settings", true);
+      fireEvent.click(screen.getByRole("button", { name: "跳过引导" }));
+
+      expect(await screen.findByRole("alertdialog", { name: "确认混合耗材类型？" })).toBeInTheDocument();
+      expect(useTutorialStore.getState().phase).toBe("touring");
+      expect(useWidgetStore.getState().activeTab).toBe("converter");
+      expect(useConverterStore.getState().selectedMaterialDirNames).toEqual([]);
+
+      fireEvent.click(screen.getByRole("button", { name: "返回调整" }));
+      expect(useTutorialStore.getState().phase).toBe("touring");
+      if (nextAction === "skip") {
+        fireEvent.click(await screen.findByRole("button", { name: "跳过引导" }));
+      } else {
+        fireEvent.click(screen.getByRole("button", { name: "完成" }));
+      }
+      fireEvent.click(await screen.findByRole("button", { name: "仍然使用" }));
+
+      await waitFor(() => expect(screen.queryByTestId("material-picker-dialog")).not.toBeInTheDocument());
+      expect(useTutorialStore.getState().phase).toBe(nextAction === "skip" ? "idle" : "touring");
+      expect(useWidgetStore.getState().activeTab).toBe(nextAction === "skip" ? "settings" : "converter");
+      expect(useConverterStore.getState().selectedMaterialDirNames).toEqual(["review/red", "review/black"]);
+    });
+  });
+
+  it("does not open the picker for the tour in Classic LUT mode", () => {
+    useConverterStore.setState({ source_version: "legacy" });
+    const searchStep = TUTORIAL_STEPS.findIndex((step) => step.id === "picker-palette");
+    act(() => {
+      useTutorialStore.setState({ phase: "touring", stepIndex: searchStep });
+    });
+
+    render(<BasicSettings />);
+
+    expect(screen.queryByTestId("material-picker-dialog")).not.toBeInTheDocument();
+    act(() => {
+      useTutorialStore.setState({ phase: "idle", stepIndex: 0 });
+    });
   });
 
   it("lets users retry a failed material-library load from the picker", async () => {

@@ -3373,24 +3373,32 @@ export const translations: Record<string, Record<"zh" | "en", string>> = {
     en: "About smooth lightweight SVG preview",
   },
   "settings.auto_replace_gradient_heading": {
-    zh: "自动清理渐变条纹",
-    en: "Clean gradient banding automatically",
+    zh: "自动合并渐变色",
+    en: "Merge gradient colors automatically",
   },
   "settings.auto_replace_gradient_description": {
-    zh: "预览完成后，将同一渐变中的近似耗材色合并为代表色；仍可在颜色工作站撤销或继续调整。",
-    en: "After preview, merge similar material colors in each gradient into one representative color. You can still undo or refine it in the Color Workstation.",
+    zh: "预览时将渐变中的近似耗材色合并为单色，会减少渐变细节。已有的合并可在颜色工作站撤销。",
+    en: "Merge similar material colors into a single color during preview, reducing gradient detail. Applied merges can be undone in the Color Workstation.",
   },
   "settings.auto_replace_gradient_label": {
-    zh: "自动清理渐变条纹",
-    en: "Clean gradient banding automatically",
+    zh: "自动合并渐变色",
+    en: "Merge gradient colors automatically",
   },
   "settings.auto_replace_gradient_default_hint": {
     zh: "默认关闭：预览保留原始渐变，由你在颜色工作站里按需替换。",
     en: "Off by default: previews keep the original banded gradient, you apply the fix manually from the Color Workstation.",
   },
   "settings.auto_replace_gradient_tip": {
-    zh: "开启后渐变较多的图片在预览后会略慢一步出现最终效果（需要额外的批量替换）。若关闭，同样的功能仍可在颜色工作站里手动使用。",
-    en: "With this on, images rich in gradients show the final banding-free result a beat later (extra batch replacement runs). Turning it off keeps the same capability available as a manual action in the Color Workstation.",
+    zh: "开启后，预览会等待颜色合并完成。关闭不会撤销已有合并；可在颜色工作站撤销，或关闭后重新导入原图。",
+    en: "Preview waits for color merging to finish. Turning this off does not undo existing merges; undo them in the Color Workstation or re-import the original image after disabling it.",
+  },
+  action_preview_with_gradient: {
+    zh: "预览并合并渐变色…",
+    en: "Previewing and merging gradients…",
+  },
+  action_auto_gradient_hint: {
+    zh: "将渐变合并为单色。已有合并可在颜色工作站撤销。",
+    en: "Gradients become single colors. Undo applied merges in the Color Workstation.",
   },
 
   // ==================== Settings Panel (Slicer Settings) ====================
@@ -6912,8 +6920,8 @@ export const translations: Record<string, Record<"zh" | "en", string>> = {
     en: "Region {index}",
   },
   gradient_groups_auto_banner: {
-    zh: "已按设置自动替换为代表色，可在高级设置关闭。",
-    en: "Auto-replaced with representative colors (toggle off in Advanced Settings).",
+    zh: "已开启自动合并渐变色，可在预览按钮下方关闭；已有合并可撤销。",
+    en: "Automatic gradient merging is enabled. Turn it off below Preview; applied merges can be undone.",
   },
   gradient_groups_apply_now: {
     zh: "一键去除海带纹",

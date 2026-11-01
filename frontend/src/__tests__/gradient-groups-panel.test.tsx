@@ -397,11 +397,11 @@ describe("GradientGroupsPanel", () => {
     expect(state.colorRemapMap).toMatchObject({ cb9994: "d2aeb4" });
   });
 
-  it("shows the auto-replaced banner when the setting is enabled", () => {
+  it("shows that automatic merging is enabled without claiming an edit already completed", () => {
     useSettingsStore.setState({ autoReplaceGradientBanding: true });
     render(<GradientGroupsPanel />);
     expect(
-      screen.getByText(/auto-replaced|已按设置自动替换/i),
+      screen.getByText(/Automatic gradient merging is enabled|已开启自动合并渐变色/i),
     ).toBeInTheDocument();
   });
 

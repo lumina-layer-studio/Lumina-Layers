@@ -1,6 +1,8 @@
 import { useMemo, useState, useRef, useEffect } from "react"
 import { buildLayerImagesSourceKey, CONVERTER_ERROR_KEYS, resolveConverterSourceSelection, useConverterStore } from "../../stores/converter"
 import Button from "../ui/Button"
+import Checkbox from "../ui/Checkbox"
+import { useSettingsStore } from "../../stores/settingsStore"
 import { cardDividerClass } from "../ui/panelPrimitives"
 import BatchResultSummary from "../ui/BatchResultSummary"
 import LayerMaskViewerDialog from "../ui/LayerMaskViewerDialog"
@@ -80,6 +82,8 @@ export default function ActionBar() {
   const lutListFull = useConverterStore((s) => s.lutListFull)
   const legacyCatalogGroups = useConverterStore((s) => s.legacyCatalogGroups)
   const sourceVersion = useConverterStore((s) => s.source_version)
+  const autoReplaceGradientBanding = useSettingsStore((s) => s.autoReplaceGradientBanding)
+  const setAutoReplaceGradientBanding = useSettingsStore((s) => s.setAutoReplaceGradientBanding)
   const selectedNativeBrandKey = useConverterStore((s) => s.selectedNativeBrandKey)
   const selectedNativeDbNames = useConverterStore((s) => s.selectedNativeDbNames)
   const nativeBrandGroups = useConverterStore((s) => s.nativeBrandGroups)
@@ -204,6 +208,7 @@ export default function ActionBar() {
 
     if (
       !hasPreview ||
+      isLoading ||
       !layerImagesCurrentKey ||
       layerImagesLoading ||
       activeLayerImages.length > 0
@@ -221,6 +226,7 @@ export default function ActionBar() {
     activeLayerImages.length,
     fetchLayerImages,
     hasPreview,
+    isLoading,
     layerImagesCurrentKey,
     layerImagesLoading,
     sessionId,
@@ -286,7 +292,7 @@ export default function ActionBar() {
           <div className="grid grid-cols-1 gap-2">
             <div data-tutorial="preview-button" className="grid">
               <Button
-                label={t("action_preview")}
+                label={t(isLoading && sourceSelection.isMaterial && autoReplaceGradientBanding ? "action_preview_with_gradient" : "action_preview")}
                 variant="primary"
                 onClick={submitPreview}
                 disabled={!canSubmit || isLoading}
@@ -294,6 +300,22 @@ export default function ActionBar() {
                 className="w-full"
               />
             </div>
+            {sourceSelection.isMaterial && (
+              <div>
+                <Checkbox
+                  label={t("settings.auto_replace_gradient_heading")}
+                  checked={autoReplaceGradientBanding}
+                  onChange={setAutoReplaceGradientBanding}
+                  disabled={isLoading || isGenerating || replacePreviewLoading}
+                  tooltip={t("settings.auto_replace_gradient_description")}
+                />
+                {autoReplaceGradientBanding && (
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    {t("action_auto_gradient_hint")}
+                  </p>
+                )}
+              </div>
+            )}
             {largeFormatModelSurfaceConflict && error !== CONVERTER_ERROR_KEYS.largeFormatModelSurfaceConflict && (
               <p role="status" className="text-xs text-amber-700 dark:text-amber-300">
                 {t("large_format_model_surface_conflict")}
@@ -324,7 +346,7 @@ export default function ActionBar() {
                         })
                         .finally(() => setIsExporting(false))
                     }}
-                    disabled={isExporting || modelSurfaceEnabled}
+                    disabled={isExporting || modelSurfaceEnabled || isLoading || replacePreviewLoading}
                     loading={isExporting}
                     leadingIcon={<DownloadIcon />}
                     title={modelSurfaceEnabled ? t("recipe_export_model_surface_unavailable") : undefined}
@@ -343,7 +365,7 @@ export default function ActionBar() {
                         })
                         .finally(() => setIsExporting(false))
                     }}
-                    disabled={isExporting || modelSurfaceEnabled}
+                    disabled={isExporting || modelSurfaceEnabled || isLoading || replacePreviewLoading}
                     leadingIcon={<DownloadIcon />}
                     title={modelSurfaceEnabled ? t("recipe_export_model_surface_unavailable") : undefined}
                     className="flex-1"
@@ -432,7 +454,7 @@ export default function ActionBar() {
         <SlicerSelector
           threemfDiskPath={threemfDiskPath}
           downloadUrl={downloadUrl}
-          canSubmit={!nativeMaterialSelectionLoading && (batchMode ? canBatchSubmit && !batchLoading : canSubmitSlicerOutput)}
+          canSubmit={!nativeMaterialSelectionLoading && (batchMode ? canBatchSubmit && !batchLoading : canSubmitSlicerOutput && !isLoading && !replacePreviewLoading && contentCommitStatus !== "unknown")}
           largeFormat={batchMode ? false : largeFormatEnabled || (separatedBacking && backingOutput === "separate_project")}
           onAutoGenerate={async () => {
             if (batchMode) {

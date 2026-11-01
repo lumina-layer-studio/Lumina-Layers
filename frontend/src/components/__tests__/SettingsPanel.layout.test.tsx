@@ -298,9 +298,9 @@ describe("SettingsPanel information architecture", () => {
     expect(
       screen.getByRole("switch", { name: "颜色计算精度" }),
     ).toBeInTheDocument();
-    expect(screen.getAllByText("自动清理渐变条纹")).toHaveLength(1);
+    expect(screen.getAllByText("自动合并渐变色")).toHaveLength(1);
     expect(
-      screen.getByRole("switch", { name: "自动清理渐变条纹" }),
+      screen.getByRole("switch", { name: "自动合并渐变色" }),
     ).toBeInTheDocument();
     expect(screen.getAllByText("平滑 SVG 轻量预览")).toHaveLength(1);
     const smoothVectorSwitch = screen.getByRole("switch", {

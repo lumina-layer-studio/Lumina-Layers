@@ -1882,6 +1882,8 @@ export interface BatchPreviewItem {
 }
 
 export interface BatchConvertParams {
+  enable_outline?: boolean;
+  outline_width?: number;
   backing_output?: BackingOutput;
   svg_hole_compensation_enabled?: boolean;
   svg_hole_max_area_mm2?: number;

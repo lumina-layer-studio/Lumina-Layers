@@ -49,6 +49,8 @@ const arbBatchConvertParams: fc.Arbitrary<BatchConvertParams> = fc.record({
   separate_backing: fc.boolean(),
   enable_coating: fc.boolean(),
   coating_height_mm: fc.constantFrom(0.04, 0.08, 0.12),
+  enable_outline: fc.boolean(),
+  outline_width: fc.double({ min: 0.5, max: 10, noNaN: true, noDefaultInfinity: true }),
   hue_weight: fc.double({ min: 0, max: 2 }),
   chroma_gate: fc.integer({ min: 0, max: 50 }),
   enable_relief: fc.boolean(),

@@ -922,6 +922,8 @@ def worker_batch_convert_item(
     coating_height_mm: float = 0.08,
     native_filament_profiles: dict[str, str] | None = None,
     coating_material: dict[str, str] | None = None,
+    enable_outline: bool = False,
+    outline_width: float = 2.0,
 ) -> dict:
     """Execute a single batch conversion item in a worker process.
     在工作进程中执行单个批量转换项。
@@ -1075,6 +1077,9 @@ def worker_batch_convert_item(
         enable_coating=enable_coating,
         coating_height_mm=coating_height_mm,
         coating_material=coating_material,
+        enable_outline=enable_outline,
+        outline_width=outline_width,
+        batch_preview=True,
     )
 
     # Conversion failure surfaces as no 3MF; keep the legacy contract

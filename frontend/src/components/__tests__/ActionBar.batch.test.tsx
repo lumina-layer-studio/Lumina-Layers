@@ -5,6 +5,7 @@ import { buildLayerImagesSourceKey } from "../../stores/converter/store";
 import * as recipeImportFlow from "../../recipe/importFlow";
 import ActionBar from "../sections/ActionBar";
 import { translations } from "../../i18n/translations";
+import { useSettingsStore } from "../../stores/settingsStore";
 
 let capturedSlicerSelectorProps: Record<string, unknown> | null = null;
 
@@ -39,6 +40,7 @@ describe("ActionBar — auto batch mode", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     capturedSlicerSelectorProps = null;
+    useSettingsStore.setState({ autoReplaceGradientBanding: false });
     useConverterStore.setState({
       batchMode: false,
       batchFiles: [],
@@ -53,6 +55,9 @@ describe("ActionBar — auto batch mode", () => {
       selectedNativeBrandKey: "",
       selectedNativeDbNames: [],
       isLoading: false,
+      isGenerating: false,
+      replacePreviewLoading: false,
+      contentCommitStatus: "committed",
       error: null,
       previewImageUrl: null,
       previewBaseImageUrl: null,
@@ -77,6 +82,32 @@ describe("ActionBar — auto batch mode", () => {
   });
 
   // --- SingleMode (batchFiles empty → batchMode false) ---
+
+  it("exposes the automatic gradient setting next to preview for material workflows", () => {
+    useConverterStore.setState({ source_version: "material" });
+    useSettingsStore.setState({ autoReplaceGradientBanding: true });
+    render(<ActionBar />);
+    const toggle = screen.getByRole("switch", { name: translations["settings.auto_replace_gradient_heading"].zh });
+    expect(toggle).toBeChecked();
+    expect(screen.getByText(translations.action_auto_gradient_hint.zh)).toBeInTheDocument();
+    fireEvent.click(toggle);
+    expect(useSettingsStore.getState().autoReplaceGradientBanding).toBe(false);
+    expect(toggle).not.toBeChecked();
+  });
+
+  it("blocks output and layer thumbnails while preview postprocessing is running", () => {
+    useConverterStore.setState({
+      source_version: "material", selectedMaterialDirNames: ["test/white"],
+      imageFile: makeFile("gradient.png"), sessionId: "processing",
+      previewImageUrl: "/api/files/intermediate.png", isLoading: true,
+    });
+    useSettingsStore.setState({ autoReplaceGradientBanding: true });
+    render(<ActionBar />);
+    expect(capturedSlicerSelectorProps?.canSubmit).toBe(false);
+    expect(useConverterStore.getState().fetchLayerImages).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: translations.recipe_export_btn.zh })).toBeDisabled();
+    expect(screen.getByRole("button", { name: translations.recipe_export_sidecar_btn.zh })).toBeDisabled();
+  });
 
   it.each(['recipe_export_btn', 'recipe_export_sidecar_btn'])("shows actual save outcomes for %s", async (buttonKey) => {
     useConverterStore.setState({ imageFile: makeFile('art.png'), sessionId: 'save-test', previewImageUrl: '/preview.png' });

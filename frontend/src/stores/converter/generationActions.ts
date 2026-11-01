@@ -438,6 +438,7 @@ export function createGenerationActions(
     },
     submitGenerate: async () => {
       let state = _get();
+      if (state.isLoading) return null;
       if (!state.sessionId) {
         set({ error: "请先预览图片" });
         return null;

@@ -6646,7 +6646,7 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
         // Abandon the response if the user moved on to another session
         // between the request start and the response arrival.
         // 期间换了 session 则丢弃这次结果。
-        if (_get().sessionId !== sessionId) {
+        if (signal.aborted || _get().sessionId !== sessionId) {
           return;
         }
         set({
@@ -6655,19 +6655,8 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
           gradientGroupsError: null,
           gradientGroupsSessionId: sessionId,
         });
-        // Advanced setting: after groups land, automatically collapse every
-        // gradient to its representative colour so the user sees a clean
-        // preview without touching the color workstation.
-        // 高级设置：分组拉到手后，如果开启了"渐变自动换色"，自动批量折叠。
-        if (
-          useSettingsStore.getState().autoReplaceGradientBanding &&
-          response.status === "ok" &&
-          response.groups.length > 0
-        ) {
-          void _get().applyAutoGradientReplace();
-        }
       } catch (err) {
-        if (signal.aborted) {
+        if (signal.aborted || _get().sessionId !== sessionId) {
           return; // Superseded by a newer fetch or an explicit clear.
         }
         set({
@@ -7131,7 +7120,6 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
         });
 
         set({
-          isLoading: false,
           sessionId: response.session_id,
           previewImageUrl: previewUrl,
           originalPreviewUrl: sourcePreviewUrl,
@@ -7263,6 +7251,25 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
         if (!glbUrl) {
           _get()._pollAsyncGlb();
         }
+        // Automatic colour edits belong to this preview request. Reading the
+        // groups elsewhere must never repaint an already confirmed preview.
+        const previewSessionId = response.session_id;
+        if (sourceSelection.isMaterial && useSettingsStore.getState().autoReplaceGradientBanding) {
+          await _get().fetchGradientGroups(previewSessionId);
+          if (isStalePreviewRequest() || _get().sessionId !== previewSessionId) return;
+          if (_get().gradientGroupsError) {
+            set({ error: _get().gradientGroupsError });
+            return;
+          }
+          if (useSettingsStore.getState().autoReplaceGradientBanding) {
+            await _get().applyAutoGradientReplace();
+            if (isStalePreviewRequest() || _get().sessionId !== previewSessionId) return;
+            if (_get().error || _get().contentCommitStatus === "unknown") return;
+          }
+        } else {
+          void _get().fetchGradientGroups(previewSessionId);
+        }
+        set({ isLoading: false });
         console.log(
           "[DEBUG] submitPreview success: cleared layerImages for new sessionId",
         );
@@ -7292,7 +7299,6 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
         // After the preview binds a session, refresh the channel palette for
         // the custom recipe editor so material-archive / native-bundle flows
         // also see the per-channel material list, not just legacy named LUTs.
-        const previewSessionId = response.session_id;
         void apiFetchSessionLutInfo(previewSessionId)
           .then((info) => {
             // Only apply if the user hasn't moved on to another session.
@@ -7304,10 +7310,6 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
             // Best-effort: if the session hasn't been bound yet or the
             // endpoint errors, leave selectedLutInfo untouched.
           });
-        // Non-blocking fetch of gradient-banding groups. Backend computed
-        // these synchronously during preview, so this is a cheap read.
-        // 非阻塞拉取渐变分组：后端已在预览流程中同步算完，这里只是读缓存。
-        void _get().fetchGradientGroups(previewSessionId);
       } catch (err) {
         if (isStalePreviewRequest()) {
           return;
@@ -7342,6 +7344,9 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
           void closeSession(freshSessionId);
         }
         if (_previewAbortController === requestController) {
+          if (!isStalePreviewRequest() && (!freshSessionId || _get().sessionId === freshSessionId)) {
+            set({ isLoading: false });
+          }
           _previewAbortController = null;
           _endPreviewTimer();
         }

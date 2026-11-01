@@ -99,16 +99,19 @@ def resolve_preview_color_for_slot(
     slot_name: str,
     slot_index: int,
     preview_colors: Mapping[object, object],
+    *,
+    palette_index_is_authoritative: bool = False,
 ) -> tuple[RGB, str]:
-    """Resolve a colour by name, numbered slot, then palette index.
-
-    按名称、带编号的槽名、调色板索引依次解析颜色。
+    """Resolve a colour using material identity before legacy display labels.
 
     Args:
         slot_name: Display material or slot name. 材料或槽位显示名。
         slot_index: Zero-based palette index. 从零开始的调色板索引。
         preview_colors: Name or numeric key to preview channels.
             名称或数值键到预览颜色通道的映射。
+        palette_index_is_authoritative: The index comes from the complete
+            source palette, rather than enumeration of a sparse mesh list.
+            In that case, ignore any old slot number in the display name.
 
     Returns:
         RGB and the resolution source used for existing diagnostics.
@@ -116,7 +119,7 @@ def resolve_preview_color_for_slot(
     """
     if slot_name in preview_colors:
         return coerce_preview_rgb(preview_colors[slot_name]), "by name"
-    match = re.match(r"Slot\s+(\d+)\b", slot_name)
+    match = None if palette_index_is_authoritative else re.match(r"Slot\s+(\d+)\b", slot_name)
     if match is not None:
         slot_key = int(match.group(1)) - 1
         for key in (slot_key, str(slot_key)):

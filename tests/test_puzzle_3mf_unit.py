@@ -169,17 +169,21 @@ def _metadata_value(element, key):
     return next((row.get("value") for row in element.findall("metadata") if row.get("key") == key), None)
 
 @pytest.mark.parametrize("material_index", [1, 2, 3])
+@pytest.mark.parametrize("numbered_names", [False, True])
 @pytest.mark.parametrize("slicer,printer_id", [
     ("BambuStudio", "bambu-h2d"),
     ("OrcaSlicer", "bambu-h2d"),
     ("SnapmakerOrca", "snapmaker-u1"),
 ])
 def test_single_material_piece_object_uses_its_global_extruder(
-    tmp_path: Path, material_index: int, slicer: str, printer_id: str,
+    tmp_path: Path, material_index: int, numbered_names: bool, slicer: str, printer_id: str,
 ) -> None:
     """Slicers must retain the material when collapsing a one-volume object."""
 
     slot_names = ["赛纳PLA蓝色", "纵维立方PLA红色", "赛纳PLA黄色", "Bambu PLA Basic 玉石白"]
+    if numbered_names:
+        # A merged palette can retain slot numbers from its original LUTs.
+        slot_names = [f"Slot {4 - index} ({name})" for index, name in enumerate(slot_names)]
     palette = [(47, 49, 129), (182, 61, 68), (248, 224, 65), (255, 254, 252)]
     material_name = slot_names[material_index]
     piece_path = tmp_path / "single-material-piece.3mf"
@@ -208,8 +212,10 @@ def test_single_material_piece_object_uses_its_global_extruder(
         enable_wipe_tower_auto_placement=False,
     )
     with zipfile.ZipFile(output_path) as archive:
+        project = json.loads(archive.read("Metadata/project_settings.config"))
         settings = ET.fromstring(archive.read("Metadata/model_settings.config"))
         meshes = ET.fromstring(archive.read("3D/Objects/object_1.model"))
+    assert project["filament_colour"] == ["#%02X%02X%02X" % rgb for rgb in palette]
     obj = settings.find("object")
     assert obj is not None
     parts = obj.findall("part")

@@ -1028,6 +1028,7 @@ class Slicer3MFWriter:
                 slot_name=slot_name,
                 slot_index=slot_index,
                 preview_colors=preview_colors,
+                palette_index_is_authoritative=True,
             )
             name_to_index[slot_name] = len(palette)
             palette.append((slot_name, color_rgb))
@@ -2035,6 +2036,7 @@ def export_scene_with_slicer_metadata(
         for index, name in enumerate(source_palette):
             named_colors[name] = _resolve_preview_color_for_slot_name(
                 slot_name=name, slot_index=index, preview_colors=preview_colors,
+                palette_index_is_authoritative=bool(project_slot_names),
             )[0]
         return export_separate_backing_projects(
             scene, output_path, project_slot_names=source_palette,
@@ -2116,6 +2118,7 @@ def export_scene_with_slicer_metadata(
             slot_name=material_name,
             slot_index=resolved_slot_index,
             preview_colors=preview_colors,
+            palette_index_is_authoritative=material_name in project_slot_indices,
         )
         name_to_color[slot_name] = color_rgb
         color_sources[source] = color_sources.get(source, 0) + 1

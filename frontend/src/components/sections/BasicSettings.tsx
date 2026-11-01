@@ -864,11 +864,11 @@ export default function BasicSettings() {
   );
 
   // The beginner tour walks the user through the picker dialog. Entering its
-  // steps opens the picker (unless the user already did); leaving them presses
-  // Done, so the user's own selection is kept. Open/close is reported back so
-  // a step waiting for that action moves on.
+  // steps opens the picker (unless the user already did); navigation first
+  // completes Done, so restoring another page cannot discard the selection.
+  // Open/close is reported back so a step waiting for that action moves on.
   // 新手引导会带用户使用耗材选择框：进入相关步骤时打开（用户已打开则不动）；离开时
-  // 代为点击「完成」，保留用户自己的勾选。打开/关闭会回报给引导，等待该操作的步骤自动前进。
+  // 先完成「完成」及必要确认，再切换页面，保留用户勾选。打开/关闭会回报给引导。
   const tutorialWantsMaterialPicker = useTutorialStore(
     (state) =>
       state.phase === "touring" &&
@@ -883,10 +883,18 @@ export default function BasicSettings() {
     tutorialWantedPickerRef.current = wanted;
     if (wanted && !wasWanted && !materialPickerOpen) {
       setMaterialPickerOpen(true);
-    } else if (!wanted && wasWanted && materialPickerOpen) {
-      materialPickerRef.current?.done();
     }
   }, [tutorialWantsMaterialPicker, source_version, materialPickerOpen]);
+  useEffect(() => {
+    if (!tutorialWantsMaterialPicker || !materialPickerOpen) return;
+    const confirmMaterialPicker = (onConfirmed: () => void) => {
+      materialPickerRef.current?.done(onConfirmed);
+    };
+    useTutorialStore.setState({ confirmMaterialPicker });
+    return () => {
+      useTutorialStore.setState({ confirmMaterialPicker: null });
+    };
+  }, [tutorialWantsMaterialPicker, materialPickerOpen]);
   const reportedPickerOpenRef = useRef(materialPickerOpen);
   useEffect(() => {
     if (reportedPickerOpenRef.current === materialPickerOpen) return;

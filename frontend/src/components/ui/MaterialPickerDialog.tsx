@@ -57,7 +57,7 @@ interface MaterialPickerDialogProps {
 
 export interface MaterialPickerDialogHandle {
   /** Same as clicking Done, including the mixed-type confirmation. 等同点击「完成」，含混合类型确认。 */
-  done: () => void;
+  done: (onConfirmed?: () => void) => void;
 }
 
 const FOCUSABLE_SELECTOR = [
@@ -159,6 +159,7 @@ export default function MaterialPickerDialog({
   const searchInputRef = useRef<HTMLInputElement>(null);
   const confirmBackRef = useRef<HTMLButtonElement>(null);
   const previouslyFocusedRef = useRef<HTMLElement | null>(null);
+  const afterConfirmRef = useRef<(() => void) | undefined>(undefined);
 
   const [staged, setStaged] = useState<string[]>(initialSelected);
   const materialByDirectory = useMemo(
@@ -193,6 +194,7 @@ export default function MaterialPickerDialog({
     setSort("name");
     setExpandedGroupKeys(new Set());
     setFavoriteKeys(loadMaterialProfileFavorites());
+    afterConfirmRef.current = undefined;
     setShowMixedConfirmation(false);
     setSelectionEffectDirectory(null);
 
@@ -221,6 +223,7 @@ export default function MaterialPickerDialog({
       if (event.key === "Escape") {
         event.preventDefault();
         if (showMixedConfirmation) {
+          afterConfirmRef.current = undefined;
           setShowMixedConfirmation(false);
         } else {
           onCancel();
@@ -358,16 +361,27 @@ export default function MaterialPickerDialog({
     });
   };
 
-  const handleDone = () => {
+  const confirmSelection = () => {
+    const afterConfirm = afterConfirmRef.current;
+    afterConfirmRef.current = undefined;
+    onConfirm(staged);
+    afterConfirm?.();
+  };
+  const cancelMixedConfirmation = () => {
+    afterConfirmRef.current = undefined;
+    setShowMixedConfirmation(false);
+  };
+  const handleDone = (onConfirmed?: () => void) => {
+    afterConfirmRef.current = onConfirmed;
     if (selectedTypeSummary.requiresConfirmation) {
       setShowMixedConfirmation(true);
       return;
     }
-    onConfirm(staged);
+    confirmSelection();
   };
   const handleDoneRef = useRef(handleDone);
   handleDoneRef.current = handleDone;
-  useImperativeHandle(ref, () => ({ done: () => handleDoneRef.current() }), []);
+  useImperativeHandle(ref, () => ({ done: (onConfirmed) => handleDoneRef.current(onConfirmed) }), []);
 
   const renderFavoriteButton = (
     profile: SavedMaterialLibraryItem,
@@ -1014,7 +1028,7 @@ export default function MaterialPickerDialog({
                 />
                 <Button
                   label={t("basic_material_picker_done")}
-                  onClick={handleDone}
+                  onClick={() => handleDone()}
                   size="sm"
                   variant="primary"
                 />
@@ -1031,7 +1045,7 @@ export default function MaterialPickerDialog({
           style={{ background: "var(--surface-scrim)" }}
           onMouseDown={(event) => {
             if (event.target === event.currentTarget) {
-              setShowMixedConfirmation(false);
+              cancelMixedConfirmation();
             }
           }}
         >
@@ -1056,7 +1070,7 @@ export default function MaterialPickerDialog({
               >
                 {t("basic_material_picker_mixed_confirm_title")}
               </h3>
-              <CloseButton label={t("common_close")} onClick={() => setShowMixedConfirmation(false)} />
+              <CloseButton label={t("common_close")} onClick={cancelMixedConfirmation} />
             </div>
             <p
               id={confirmDescriptionId}
@@ -1071,14 +1085,14 @@ export default function MaterialPickerDialog({
               <button
                 ref={confirmBackRef}
                 type="button"
-                onClick={() => setShowMixedConfirmation(false)}
+                onClick={cancelMixedConfirmation}
                 className="min-h-10 rounded-xl border border-slate-200/80 px-4 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-100 focus:outline-none focus:ring-4 focus:ring-[var(--focus-ring)] dark:border-slate-700/80 dark:text-slate-200 dark:hover:bg-slate-800"
               >
                 {t("basic_material_picker_mixed_back")}
               </button>
               <button
                 type="button"
-                onClick={() => onConfirm(staged)}
+                onClick={confirmSelection}
                 className="action-control action-control-primary min-h-9 rounded-lg px-4 text-sm font-semibold"
               >
                 {t("basic_material_picker_mixed_continue")}

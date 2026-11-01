@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import math
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Sequence
@@ -13,7 +14,7 @@ from typing import Any, Callable, Sequence
 import numpy as np
 
 try:
-    from numba import njit, prange
+    from numba import njit
 
     _NUMBA_AVAILABLE = True
 except ImportError:  # pragma: no cover - exercised through import isolation
@@ -25,11 +26,6 @@ except ImportError:  # pragma: no cover - exercised through import isolation
         if args and callable(args[0]):
             return args[0]
         return lambda function: function
-
-    def prange(*args):
-        """Use the built-in range only for import-time fallback definitions."""
-
-        return range(*args)
 
 from core.colorchecker.color_metrics import delta_e_2000
 from core.material_cache import MaterialSolverCache, canonical_palette_order
@@ -44,11 +40,17 @@ from core.material_color_solver import (
     rgb_to_lab,
 )
 from core.material_lut_provider import load_dynamic_candidate_runtime
+from core.task_parallelism import (
+    resolve_task_parallelism_plan,
+    task_parallelism_worker_scope,
+)
+from core.task_parallelism_runtime import current_demand_snapshot_path
 
 
 MIN_DYNAMIC_LAYER_COUNT = 5
 MAX_DYNAMIC_LAYER_COUNT = 10
 _NUMPY_CANDIDATE_CHUNK_SIZE = 65_536
+_MIN_PARALLEL_SEARCH_COMPARISONS = 10_000
 
 
 class DynamicMaterialSolverError(RuntimeError):
@@ -598,7 +600,7 @@ def _search_exact_numpy(
     return best_indices, best_values, fixed_max_values
 
 
-@njit(parallel=True, fastmath=False, cache=True)
+@njit(nogil=True, fastmath=False, cache=True)
 def _search_exact_numba_kernel(
     target_lab: np.ndarray,
     candidate_lab: np.ndarray,
@@ -614,7 +616,7 @@ def _search_exact_numba_kernel(
     best_values = np.full((target_count, cap_count), np.inf, dtype=np.float64)
     fixed_max_values = np.full(target_count, np.inf, dtype=np.float64)
 
-    for target_index in prange(target_count):
+    for target_index in range(target_count):
         target_lightness = target_lab[target_index, 0]
         target_a = target_lab[target_index, 1]
         target_b = target_lab[target_index, 2]
@@ -648,6 +650,63 @@ def _search_exact_numba_kernel(
                 fixed_max_values[target_index] = candidate_value
 
     return best_indices, best_values, fixed_max_values
+
+
+def _search_exact_numba_block(
+    target_lab: np.ndarray,
+    candidate_lab: np.ndarray,
+    minimum_actual_layer_counts: np.ndarray,
+    max_layer_reachable: np.ndarray,
+    min_layer_count: int,
+    max_layer_count: int,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    with task_parallelism_worker_scope():
+        return _search_exact_numba_kernel(
+            target_lab, candidate_lab, minimum_actual_layer_counts,
+            max_layer_reachable, min_layer_count, max_layer_count,
+        )
+
+
+def _search_exact_numba(
+    target_lab: np.ndarray,
+    candidate_lab: np.ndarray,
+    minimum_actual_layer_counts: np.ndarray,
+    max_layer_reachable: np.ndarray,
+    min_layer_count: int,
+    max_layer_count: int,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Parallelize independent target rows without Numba's process-wide runtime.
+
+    OpenMP can conflict with the native 3MF writer, while Numba's workqueue
+    aborts on concurrent requests. GIL-free blocks use Lumina's bounded thread
+    scheduling and keep candidate order and exact per-target reductions intact.
+    """
+    plan = resolve_task_parallelism_plan(
+        "material",
+        work_items=len(target_lab),
+        work_units=len(target_lab) * len(candidate_lab),
+        min_parallel_work_units=_MIN_PARALLEL_SEARCH_COMPARISONS,
+        hard_max_workers=None,
+        # Synchronous API edits and standalone calls are one task, without a
+        # pool snapshot. Pool tasks retain live demand and its failure fallback.
+        outer_demand=1 if current_demand_snapshot_path() is None else None,
+    )
+    shared_args = (
+        candidate_lab, minimum_actual_layer_counts, max_layer_reachable,
+        min_layer_count, max_layer_count,
+    )
+    if plan.workers == 1:
+        return _search_exact_numba_block(target_lab, *shared_args)
+
+    blocks = np.array_split(target_lab, plan.workers)
+    with ThreadPoolExecutor(max_workers=plan.workers) as executor:
+        futures = [executor.submit(_search_exact_numba_block, block, *shared_args) for block in blocks]
+        results = [future.result() for future in futures]
+    return (
+        np.concatenate([result[0] for result in results]),
+        np.concatenate([result[1] for result in results]),
+        np.concatenate([result[2] for result in results]),
+    )
 
 
 def _validate_layer_bound(value: Any, name: str) -> int:
@@ -882,7 +941,7 @@ def search_dynamic_catalog_exact(
     numba_error: Exception | None = None
     if prefer_numba and _NUMBA_AVAILABLE:
         try:
-            indices, values, fixed = _search_exact_numba_kernel(*kernel_arguments)
+            indices, values, fixed = _search_exact_numba(*kernel_arguments)
             return ExactDynamicSearchResult(
                 cumulative_best_candidate_indices=indices,
                 cumulative_best_delta_e00=values,

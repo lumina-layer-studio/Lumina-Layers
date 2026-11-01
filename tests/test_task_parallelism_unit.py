@@ -58,8 +58,10 @@ def test_auto_parallelism_uses_outer_worker_fair_share(
         ("99", "1", 12, 4, 4),
     ],
 )
+@pytest.mark.parametrize("workload", ["vector", "material"])
 def test_explicit_parallelism_respects_all_safety_bounds(
     monkeypatch: pytest.MonkeyPatch,
+    workload: task_parallelism.WorkloadKind,
     requested: str,
     outer_workers: str,
     work_items: int,
@@ -67,11 +69,11 @@ def test_explicit_parallelism_respects_all_safety_bounds(
     expected: int,
 ) -> None:
     _set_cpu_count(monkeypatch, 10)
-    monkeypatch.setenv("LUMINA_VECTOR_PARALLELISM", requested)
+    monkeypatch.setenv(f"LUMINA_{workload.upper()}_PARALLELISM", requested)
     monkeypatch.setenv("LUMINA_MAX_WORKERS", outer_workers)
 
     resolved = resolve_task_parallelism(
-        "vector",
+        workload,
         work_items=work_items,
         hard_max_workers=hard_max,
     )
@@ -145,6 +147,7 @@ def test_invalid_value_warns_once_and_falls_back_to_auto(
     task_parallelism._WARNED_INVALID_VALUES.clear()
     caplog.set_level(logging.WARNING)
     target_logger = logging.getLogger("lumina.core.task_parallelism")
+    monkeypatch.setattr(target_logger, "propagate", False)
     target_logger.addHandler(caplog.handler)
     try:
         first = resolve_task_parallelism("vector", work_items=20)

@@ -630,6 +630,50 @@ describe("BasicSettings", () => {
     expect(useConverterStore.getState().imageFile).toBe(file);
   });
 
+  it("previews a thumbnail while cropping keeps the source image", () => {
+    const createdImages: HTMLImageElement[] = [];
+    vi.stubGlobal("Image", function FakeImage() {
+      const image = document.createElement("img");
+      Object.defineProperty(image, "naturalWidth", { value: 6000 });
+      Object.defineProperty(image, "naturalHeight", { value: 4000 });
+      createdImages.push(image);
+      return image;
+    });
+    const getContext = vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue({
+      drawImage: vi.fn(),
+    } as never);
+    const toBlob = vi.spyOn(HTMLCanvasElement.prototype, "toBlob").mockImplementation((callback) => {
+      callback(new Blob(["thumbnail"], { type: "image/png" }));
+    });
+    const createObjectURL = vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:thumbnail");
+
+    try {
+      useConverterStore.setState({
+        imageFile: new File(["img"], "large.png", { type: "image/png" }),
+        imagePreviewUrl: "blob:large-source",
+        enableCrop: false,
+      });
+      render(<BasicSettings />);
+
+      const sourceLoader = createdImages.find((image) => image.getAttribute("src") === "blob:large-source");
+      act(() => sourceLoader?.onload?.(new Event("load")));
+
+      expect(document.querySelector("[data-unified-uploader-drop-zone] img")).toHaveAttribute(
+        "src", "blob:thumbnail",
+      );
+
+      fireEvent.click(screen.getByRole("button", { name: "裁切与旋转" }));
+      expect(within(screen.getByRole("dialog")).getByRole("img")).toHaveAttribute(
+        "src", "blob:large-source",
+      );
+    } finally {
+      getContext.mockRestore();
+      toBlob.mockRestore();
+      createObjectURL.mockRestore();
+      vi.unstubAllGlobals();
+    }
+  });
+
   it.each([
     { imagePreviewUrl: null, isLoading: false, isCropping: false },
     { imagePreviewUrl: "blob:image", isLoading: true, isCropping: false },

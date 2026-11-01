@@ -29,8 +29,8 @@ const apiClient = axios.create({
   timeout: 3_600_000,
 });
 
-// Long write requests become pollable backend jobs so reverse proxies do not
-// cut them off with 504. 长请求改为后台任务轮询，避免反向代理超时。
+// Only preview/generate opt into polling; unrelated writes keep their transport.
+// 仅预览与生成启用任务轮询，避免代理超时；其他写请求保持原样。
 apiClient.defaults.adapter = createAsyncJobAdapter(
   axios.getAdapter(axios.defaults.adapter),
 );

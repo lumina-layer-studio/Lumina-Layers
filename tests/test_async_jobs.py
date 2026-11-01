@@ -16,6 +16,7 @@ ASYNC = {"X-Lumina-Async": "1"}
 
 def _app() -> FastAPI:
     app = FastAPI()
+    app.state.slow_calls = 0
     app.add_middleware(AsyncJobMiddleware, inline_wait=0.2, poll_wait=0.2, ttl=60)
 
     @app.post("/api/fast")
@@ -24,6 +25,7 @@ def _app() -> FastAPI:
 
     @app.post("/api/slow")
     async def slow(payload: dict):
+        app.state.slow_calls += 1
         await asyncio.sleep(0.7)
         return JSONResponse({"echo": payload}, status_code=201, headers={"X-Extra": "yes"})
 
@@ -80,7 +82,8 @@ async def test_requests_without_opt_in_are_untouched():
 
 @pytest.mark.anyio
 async def test_slow_request_becomes_a_job_and_replays_the_response():
-    async with _client(_app()) as client:
+    app = _app()
+    async with _client(app) as client:
         first = await client.post("/api/slow", json={"a": 2}, headers=ASYNC)
         assert first.status_code == 202
         job_id = first.headers["x-lumina-job"]
@@ -89,9 +92,30 @@ async def test_slow_request_becomes_a_job_and_replays_the_response():
         assert final.status_code == 201
         assert final.headers["x-extra"] == "yes"
         assert final.json() == {"echo": {"a": 2}}
-        # A delivered result is consumed.
+        # A proxy may lose the first completed response; retry the same job.
         again = await client.get(f"/api/jobs/{job_id}")
-        assert again.status_code == 404
+        assert again.status_code == final.status_code
+        assert again.content == final.content
+        assert again.headers["x-extra"] == "yes"
+        assert app.state.slow_calls == 1
+
+
+@pytest.mark.anyio
+async def test_completed_result_expires_at_existing_ttl(monkeypatch):
+    from types import SimpleNamespace
+
+    clock = [100.0]
+    monkeypatch.setattr("api.async_jobs.time", SimpleNamespace(monotonic=lambda: clock[0]))
+    app = _app()
+    async with _client(app) as client:
+        first = await client.post("/api/slow", json={}, headers=ASYNC)
+        job_id = first.json()["job_id"]
+        assert (await _poll(client, job_id)).status_code == 201
+        clock[0] += 59
+        assert (await client.get(f"/api/jobs/{job_id}")).status_code == 201
+        clock[0] += 2
+        assert (await client.get(f"/api/jobs/{job_id}")).status_code == 404
+        assert app.state.slow_calls == 1
 
 
 @pytest.mark.anyio

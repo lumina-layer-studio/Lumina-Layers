@@ -88,8 +88,8 @@ class AsyncJobMiddleware:
             if poll_wait is not None
             else _env_seconds("LUMINA_ASYNC_POLL_SECONDS", 10.0)
         )
-        # Finished results nobody fetched, and running jobs nobody polls, are
-        # dropped after this long. 无人领取的结果、无人轮询的任务在此时长后清理。
+        # Keep finished results replayable until TTL; a proxy may lose a reply.
+        # 完成结果保留到 TTL，允许丢包后重取；无人轮询的运行任务也按此时长清理。
         self.ttl = ttl if ttl is not None else _env_seconds("LUMINA_ASYNC_JOB_TTL_SECONDS", 900.0)
         self._jobs: dict[str, _Job] = {}
 
@@ -187,7 +187,6 @@ class AsyncJobMiddleware:
             await _send_json(send, 405, {"detail": "Method Not Allowed"})
             return
         if await _wait(job.done, self.poll_wait):
-            self._jobs.pop(job.job_id, None)
             await _replay(job, send)
             return
         await _send_pending(send, job)

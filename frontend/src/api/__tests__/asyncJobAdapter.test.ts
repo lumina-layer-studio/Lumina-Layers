@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import axios, { AxiosHeaders, type AxiosAdapter, type AxiosResponse } from "axios";
 import { createAsyncJobAdapter } from "../asyncJobAdapter";
+import { createServer } from "node:http";
+import { once } from "node:events";
 
 function res(status: number, data: unknown, headers: Record<string, string> = {}): AxiosResponse {
   return { status, statusText: "", data, headers, config: {} as never, request: {} };
@@ -61,5 +63,66 @@ describe("async job adapter", () => {
     const { client, calls } = clientWith([res(200, [])]);
     await client.get("/lut/list");
     expect(calls[0].async).toBeUndefined();
+  });
+
+  it.each([
+    ["post", "/settings"],
+    ["put", "/materials/one"],
+    ["patch", "/materials/one"],
+    ["delete", "/sessions/one"],
+    ["post", "/convert/export-materials"],
+  ])("leaves unrelated %s %s requests on the original transport", async (method, url) => {
+    const { client, calls } = clientWith([res(200, { ok: true })]);
+    await client.request({ method, url });
+    expect(calls).toEqual([{ method, url, async: undefined }]);
+  });
+
+  it.each(["signal", "cancelToken"])("sends cancellation over real XHR after %s is cancelled", async (kind) => {
+    const methods: string[] = [];
+    let polling!: () => void;
+    const pollStarted = new Promise<void>((resolve) => { polling = resolve; });
+    const server = createServer((request, response) => {
+      response.setHeader("Access-Control-Allow-Origin", "*");
+      response.setHeader("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS");
+      response.setHeader("Access-Control-Allow-Headers", "Content-Type, X-Lumina-Async");
+      if (request.method === "OPTIONS") {
+        response.writeHead(204).end();
+        return;
+      }
+      methods.push(request.method!);
+      if (request.method === "GET") {
+        polling();
+        return; // Keep the poll open until the client cancels it.
+      }
+      response.setHeader("Content-Type", "application/json");
+      if (request.method === "POST") {
+        response.writeHead(202).end(JSON.stringify({ job_id: "j1" }));
+      } else {
+        response.end(JSON.stringify({ status: "cancelled" }));
+      }
+    });
+    server.listen(0, "127.0.0.1");
+    await once(server, "listening");
+    const address = server.address() as { port: number };
+    const client = axios.create({
+      baseURL: `http://127.0.0.1:${address.port}/api`,
+      adapter: createAsyncJobAdapter(axios.getAdapter("xhr")),
+    });
+    const controller = new AbortController();
+    const source = axios.CancelToken.source();
+    try {
+      const outcome = client.post("/convert/preview", {}, {
+        ...(kind === "signal" ? { signal: controller.signal } : { cancelToken: source.token }),
+      }).catch((error: unknown) => error);
+      await pollStarted;
+      if (kind === "signal") controller.abort();
+      else source.cancel();
+      expect(axios.isCancel(await outcome)).toBe(true);
+      await vi.waitFor(() => expect(methods).toContain("DELETE"), { timeout: 1000 });
+      expect(methods.filter((method) => method === "POST")).toHaveLength(1);
+    } finally {
+      server.closeAllConnections();
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
   });
 });

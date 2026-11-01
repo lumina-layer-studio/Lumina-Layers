@@ -2,7 +2,7 @@
  * Axios adapter that survives reverse-proxy timeouts on long requests.
  * 让耗时请求在反向代理（Lucky、nginx、Cloudflare 等）后面也不会 504。
  *
- * Write requests carry `X-Lumina-Async: 1`. The backend answers normally if
+ * Preview and generation requests carry `X-Lumina-Async: 1`. The backend answers normally if
  * the work finishes within ~10 s; otherwise it replies 202 with a job id and
  * this adapter polls `GET /jobs/{id}` (each poll is held open ≤10 s) until the
  * original response is available. The caller, interceptors and error handling
@@ -17,7 +17,7 @@ import axios, {
 } from "axios";
 
 export const ASYNC_REQUEST_HEADER = "X-Lumina-Async";
-const ASYNC_METHODS = new Set(["post", "put", "patch", "delete"]);
+const ASYNC_PATHS = new Set(["/convert/preview", "/convert/generate"]);
 const MAX_CONSECUTIVE_POLL_FAILURES = 5;
 
 function sleep(ms: number, signal?: AbortSignal | null): Promise<void> {
@@ -40,8 +40,7 @@ function sleep(ms: number, signal?: AbortSignal | null): Promise<void> {
 
 function wantsAsync(config: InternalAxiosRequestConfig): boolean {
   const method = (config.method ?? "get").toLowerCase();
-  if (!ASYNC_METHODS.has(method)) return false;
-  if (config.url?.includes("/jobs/")) return false;
+  if (method !== "post" || !ASYNC_PATHS.has(config.url ?? "")) return false;
   return config.responseType !== "stream";
 }
 
@@ -76,6 +75,9 @@ function jobConfig(
     url: `/jobs/${encodeURIComponent(jobId)}`,
     data: undefined,
     params: undefined,
+    // The cleanup request must outlive the request that the user just aborted.
+    signal: method === "delete" ? undefined : config.signal,
+    cancelToken: method === "delete" ? undefined : config.cancelToken,
     headers: new AxiosHeaders({ Accept: "application/json, text/plain, */*" }),
     onUploadProgress: undefined,
     onDownloadProgress: method === "get" ? config.onDownloadProgress : undefined,

@@ -163,6 +163,8 @@ describe("submitBatch API 调用和状态管理", () => {
       enable_relief: false,
       enable_coating: false,
       coating_height_mm: 0.08,
+      enable_outline: false,
+      outline_width: 2,
       printer_id: "bambu-p1s",
       slicer: "OrcaSlicer",
       nozzle_size: "0.2",

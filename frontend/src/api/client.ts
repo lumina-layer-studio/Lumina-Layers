@@ -1,6 +1,6 @@
 import axios from "axios";
 import { createAsyncJobAdapter } from "./asyncJobAdapter";
-import { createEditorRetryAdapter } from "./editorRetryAdapter";
+import { createRequestRetryAdapter } from "./requestRetryAdapter";
 import { postClientLog, summarizeErrorForLog } from "../utils/clientLog";
 import { useActionHistoryStore } from "../stores/actionHistoryStore";
 import { useErrorTicketPromptStore } from "../stores/errorTicketPromptStore";
@@ -32,10 +32,10 @@ const apiClient = axios.create({
   timeout: 3_600_000,
 });
 
-// Preview/generate use polling. Batch edits can retry once with their original
-// commit identity; unrelated writes keep their transport.
+// Preview/generate use polling. Independent image processing, catalog reads,
+// and identified batch edits can recover once from an interrupted request.
 apiClient.defaults.adapter = createAsyncJobAdapter(
-  createEditorRetryAdapter(axios.getAdapter(axios.defaults.adapter)),
+  createRequestRetryAdapter(axios.getAdapter(axios.defaults.adapter)),
 );
 
 function isHttpUrl(value: string): boolean {

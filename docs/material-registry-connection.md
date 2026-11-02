@@ -2,6 +2,14 @@
 
 本文说明如何让 Lumina Studio 连接自建或已获授权的耗材 Registry。源码安装默认不配置云端服务，本地耗材档案可离线使用。上传、审批和频道权限由服务部署方管理；相关集成说明见 [耗材与 LUT Registry 运维参考](cloud-registry-handoff.md)。
 
+## 本地耗材目录
+
+源码仓库不附带预置的 `materials/` 档案。源码启动时会自动创建这个可写目录，其内容不纳入 Git；也可通过 `LUMINA_MATERIALS_DIR` 指定其他存储位置。
+
+首次使用可手动导入耗材包，或按下文配置 Registry 同步。部署时可通过 `LUMINA_MATERIALS_SEED_PATH` 或 `LUMINA_MATERIALS_SEED_URL` 提供 seed 包，并用可选的 `LUMINA_MATERIALS_SEED_SHA256` 校验；启动时仅在耗材库为空时安装。
+
+更新现有检出前，请先备份旧 `materials/` 中需要保留的档案；Git 会删除原先跟踪的文件。更新后可恢复备份，或将 `LUMINA_MATERIALS_DIR` 指向仓库外的档案目录。
+
 ## 与 LUT 云库的关系
 
 Lumina 的云端资料库分成两条并列能力：

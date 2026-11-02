@@ -1,0 +1,48 @@
+name: Close issues waiting for information
+
+on:
+  schedule:
+    - cron: "37 1 * * *"
+  workflow_dispatch:
+    inputs:
+      dry-run:
+        description: "Preview without commenting, changing labels, or closing issues"
+        type: boolean
+        default: true
+
+permissions:
+  actions: write # actions/stale stores its scan cursor in the Actions cache.
+  issues: write
+
+concurrency:
+  group: needs-info-maintenance
+  cancel-in-progress: false
+
+jobs:
+  needs-info:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/stale@4391f3da665fdf50b6810c1a66712fb9ba21aa93 # v11
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+          # Apply needs-info manually after requesting the missing details.
+          only-issue-labels: needs-info
+          days-before-issue-stale: 30
+          days-before-issue-close: 14
+          stale-issue-label: needs-info-stale
+          close-issue-reason: not_planned
+          remove-issue-stale-when-updated: true
+          # A reply after the reminder ends this round; re-triage before opting in again.
+          labels-to-remove-when-unstale: needs-info
+          stale-issue-message: >-
+            这条 Issue 仍在等待此前请求的补充信息，已经 30 天没有新进展。
+            请补充上面提到的内容；如再过 14 天仍无回复，这条 Issue 将自动关闭。
+            新回复会取消本轮关闭。感谢反馈！
+          close-issue-message: >-
+            提醒后又过了 14 天，仍未收到补充信息，因此先关闭这条 Issue。
+            这不代表问题已经修复；之后准备好资料，欢迎在这里补充并请求重新打开。
+          # Never mark or close PRs, including ones carrying the same label.
+          days-before-pr-stale: -1
+          days-before-pr-close: -1
+          remove-pr-stale-when-updated: false
+          debug-only: ${{ github.event_name == 'workflow_dispatch' && inputs.dry-run }}

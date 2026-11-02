@@ -300,8 +300,8 @@ assets/workshop-seed/*.lumina-workshop.sha256
 # Application runtime logs (machine-local, regenerated each run)
 logs/
 
-# Material solver exhaustive cache (regenerable per palette)
-materials/_solver_cache/
+# Writable material library (installed, imported, and generated locally)
+/materials/
 # Local backup dirs (never commit these — restore from git history instead)
 materials_*_ago/
 materials_backup*/

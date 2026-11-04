@@ -28,7 +28,7 @@
 - [x] Verify save → fresh environment → restore → edit → save, with real LUT/material bytes, raster/SVG, model surface, each workflow adapter and Workshop unsaved state.
 - [x] Verify application UI, packaged/open integration where available, and actual slicer import after 3MF embedding; record observed coverage per workflow.
 - [x] Review final changes and run relevant regression/build/lint checks.
-- [ ] Stop task-owned processes, push the topic branch and create the Layers PR with AI disclosure and exact validation results.
+- [x] Stop task-owned processes, push the topic branch and create the Layers PR with AI disclosure and exact validation results.
 
 ## Compatibility
 
@@ -39,3 +39,5 @@ Existing JSON and PNG imports remain supported. Legacy `.lum` documents that con
 2026-11-04: New branch based on current Layers main; old Studio branch preserved. Restored archive, identity, session and recovery primitives with their format/lifecycle regression tests.
 
 2026-11-04 acceptance: all implementation items above are complete. Real application runs cover private LUT + spatial edits, SVG, model surface, vectorization and live Workshop edit/restore/undo; actual Bambu imports cover standard, large-format, puzzle and batch outputs. The full evidence and unexecuted installed-package release checks are recorded in [the acceptance report](../../projects/acceptance-report.md). Five companion draft PRs are linked from [the architecture](../../projects/architecture.md).
+
+Delivery: [Layers #284](https://github.com/lumina-layer-studio/Lumina-Layers/pull/284) and its five companion draft PRs are open for review. Task-owned API, Vite, browser and worker processes were stopped. Source and local reproduction evidence are retained while these PRs remain unmerged.

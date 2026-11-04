@@ -1047,9 +1047,16 @@ describe("Workshop runtime helpers", () => {
         maxExclusive: "2.0.0",
       }),
     ).toBe(true);
+    // The host implements Workshop API 1.1.0 (module backends).
     expect(
       isWorkshopApiCompatible({
         min: "1.1.0",
+        maxExclusive: "2.0.0",
+      }),
+    ).toBe(true);
+    expect(
+      isWorkshopApiCompatible({
+        min: "1.2.0",
         maxExclusive: "2.0.0",
       }),
     ).toBe(false);

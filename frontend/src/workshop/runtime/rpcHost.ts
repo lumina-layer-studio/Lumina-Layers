@@ -5,10 +5,10 @@ import {
   isRpcEnvelopeShape,
   isWorkshopRpcMethod,
   responseEnvelope,
+  type HostWorkshopRpcMethod,
   type WorkshopModuleIdentity,
   type WorkshopPermissionName,
   type WorkshopRpcEventName,
-  type WorkshopRpcMethod,
   type WorkshopRpcResponse,
   type WorkshopUiState,
 } from "../contracts";
@@ -44,7 +44,7 @@ export type WorkshopRpcHandler = (
 ) => unknown | Promise<unknown>;
 
 export type WorkshopRpcHandlers = Partial<
-  Record<WorkshopRpcMethod, WorkshopRpcHandler>
+  Record<HostWorkshopRpcMethod, WorkshopRpcHandler>
 >;
 
 export interface WorkshopRpcScheduler {
@@ -65,6 +65,8 @@ export interface CreateWorkshopRpcHostOptions {
   permissions: ReadonlySet<string>;
   handlers: WorkshopRpcHandlers;
   supportedEvents?: ReadonlySet<string>;
+  /** The exact module version declares a backend (manifest v2). */
+  backendEnabled?: boolean;
   now?: () => number;
   scheduler?: WorkshopRpcScheduler;
 }
@@ -186,11 +188,13 @@ class TokenBucket {
   }
 }
 
-function requestTimeout(method: WorkshopRpcMethod): number {
+function requestTimeout(method: HostWorkshopRpcMethod): number {
   switch (method) {
     case "image.pick":
       return IMAGE_PICK_TIMEOUT_MS;
     case "handoff.image":
+    case "backend.submit":
+    case "backend.readOutput":
       return HANDOFF_TIMEOUT_MS;
     default:
       return REQUEST_TIMEOUT_MS;
@@ -203,6 +207,7 @@ class WorkshopRpcHostImpl implements WorkshopRpcHost {
 
   private readonly handlers: WorkshopRpcHandlers;
   private readonly supportedEvents: ReadonlySet<string>;
+  private readonly backendEnabled: boolean;
   private readonly scheduler: WorkshopRpcScheduler;
   private readonly bucket: TokenBucket;
   private readonly pending = new Map<string, PendingRequest>();
@@ -216,6 +221,7 @@ class WorkshopRpcHostImpl implements WorkshopRpcHost {
     );
     this.handlers = Object.freeze({ ...options.handlers });
     this.supportedEvents = new Set(options.supportedEvents ?? []);
+    this.backendEnabled = options.backendEnabled === true;
     this.scheduler = options.scheduler ?? DEFAULT_SCHEDULER;
     this.bucket = new TokenBucket(options.now ?? defaultNow);
   }
@@ -269,6 +275,7 @@ class WorkshopRpcHostImpl implements WorkshopRpcHost {
       !hasMethodPermission(
         this.permissions,
         value.method,
+        { backend: this.backendEnabled },
       )
     ) {
       return errorResponseEnvelope(
@@ -402,7 +409,7 @@ class WorkshopRpcHostImpl implements WorkshopRpcHost {
 
   private runHandler(
     requestId: string,
-    method: WorkshopRpcMethod,
+    method: HostWorkshopRpcMethod,
     payload: unknown,
     handler: WorkshopRpcHandler,
   ): Promise<WorkshopRpcResponse> {

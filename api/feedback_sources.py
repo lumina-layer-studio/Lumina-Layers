@@ -200,9 +200,14 @@ def _collect_session_archive(
 
 
 def _collect_log_archive(path: Path) -> dict[str, Any]:
+    flushed: set[logging.Handler] = set()
     for logger_name in ("lumina", ""):
         for handler in logging.getLogger(logger_name).handlers:
-            handler.flush()
+            # Only disk logs are archived. A detached console must not prevent
+            # collecting the files that explain the original failure.
+            if isinstance(handler, logging.FileHandler) and handler not in flushed:
+                handler.flush()
+                flushed.add(handler)
     configured_log = os.environ.get("LUMINA_LOG_PATH")
     logs = sorted((REPO_ROOT / "logs").glob("lumina_*.log*"))
     if configured_log:

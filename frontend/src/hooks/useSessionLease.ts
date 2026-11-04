@@ -65,9 +65,12 @@ export function useSessionLease(
   sessionId: string | null | undefined,
   workstream: Workstream = "converter",
   keepFileIds: readonly string[] = EMPTY_KEEP_FILE_IDS,
+  onExpired?: (sessionId: string) => void,
 ): void {
   const keepFileIdsRef = useRef<string[]>([]);
   keepFileIdsRef.current = normalizeKeepFileIds(keepFileIds);
+  const onExpiredRef = useRef(onExpired);
+  onExpiredRef.current = onExpired;
 
   useEffect(() => {
     if (!sessionId) {
@@ -88,14 +91,23 @@ export function useSessionLease(
 
     const controller = new AbortController();
     let retryPending = false;
+    let renewing = false;
+    let expired = false;
     let timerId: number;
     const renew = async (): Promise<void> => {
+      if (controller.signal.aborted || renewing || expired) return;
+      window.clearTimeout(timerId);
+      renewing = true;
       let nextDelay = HEARTBEAT_INTERVAL_MS;
       try {
         await heartbeatSession(sessionId, controller.signal);
         retryPending = false;
       } catch (error: unknown) {
-        if (isMissingSessionHeartbeat(error)) return;
+        if (isMissingSessionHeartbeat(error)) {
+          expired = true;
+          if (!controller.signal.aborted) onExpiredRef.current?.(sessionId);
+          return;
+        }
         // One prompt retry per cycle; prolonged outages keep the normal cadence.
         if (!retryPending && isTransientHeartbeatFailure(error)) {
           retryPending = true;
@@ -103,12 +115,17 @@ export function useSessionLease(
         } else {
           retryPending = false;
         }
+      } finally {
+        renewing = false;
       }
       if (!controller.signal.aborted) {
         timerId = window.setTimeout(() => void renew(), nextDelay);
       }
     };
     timerId = window.setTimeout(() => void renew(), HEARTBEAT_INTERVAL_MS);
+    const renewOnResume = (): void => {
+      if (document.visibilityState === "visible") void renew();
+    };
 
     const handleBeforeUnload = () => {
       if (isSessionCloseRequested(sessionId)) {
@@ -118,12 +135,18 @@ export function useSessionLease(
     };
 
     window.addEventListener("beforeunload", handleBeforeUnload);
+    window.addEventListener("focus", renewOnResume);
+    window.addEventListener("online", renewOnResume);
+    document.addEventListener("visibilitychange", renewOnResume);
 
     return () => {
       controller.abort();
       window.clearTimeout(timerId);
       window.removeEventListener("beforeunload", handleBeforeUnload);
-      scheduleSessionClose(sessionId, keepFileIdsRef.current);
+      window.removeEventListener("focus", renewOnResume);
+      window.removeEventListener("online", renewOnResume);
+      document.removeEventListener("visibilitychange", renewOnResume);
+      if (!expired) scheduleSessionClose(sessionId, keepFileIdsRef.current);
     };
   }, [sessionId, workstream]);
 }

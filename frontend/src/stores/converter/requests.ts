@@ -14,6 +14,7 @@ import {
   resolveRecipeAwareLayerCount,
 } from "./sources";
 import type { ConverterState } from "./types";
+import { resolveConverterSettings } from "./project";
 
 type SourceParams = NonNullable<ReturnType<typeof buildConversionSourceParams>>;
 
@@ -139,6 +140,7 @@ export function buildPreviewParams(
   sourceParams: SourceParams,
   previewReplacementRegions: ColorReplacementItem[],
 ) {
+  settings = resolveConverterSettings(state, settings);
   const shouldReplayGlobalReplacements = previewReplacementRegions.length > 0;
   return {
     ...buildConversionInputParams(state, settings, sourceParams),
@@ -159,6 +161,7 @@ export function buildGenerateParams(
   mergedReplacements: ColorReplacementItem[] | undefined,
   confirmedEditorContentRevision: number | undefined,
 ) {
+  settings = resolveConverterSettings(state, settings);
   const input = buildConversionInputParams(state, settings, sourceParams);
   return {
     ...input,
@@ -212,6 +215,7 @@ export function buildBatchParams(
   settings: SettingsState,
   sourceParams: SourceParams,
 ) {
+  settings = resolveConverterSettings(state, settings);
   const relief = buildReliefParams(state);
   return {
     ...buildConversionInputParams(state, settings, sourceParams),

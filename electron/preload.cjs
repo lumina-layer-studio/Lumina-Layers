@@ -2,6 +2,28 @@ const { contextBridge, ipcRenderer } = require("electron");
 
 contextBridge.exposeInMainWorld("electronAPI", {
   platform: process.platform,
+  projects: {
+    ready: () => ipcRenderer.invoke('projects-ready'),
+    progress: (id, state) => ipcRenderer.invoke('projects-progress', id, state),
+    setDirty: (dirty) => ipcRenderer.invoke('projects-dirty', dirty),
+    closeAnswer: (id, accepted) => ipcRenderer.invoke('projects-close-answer', id, accepted),
+    onClose: (listener) => {
+      const handler = (_event, id) => listener(id);
+      ipcRenderer.on('project-close-request', handler);
+      return () => ipcRenderer.removeListener('project-close-request', handler);
+    },
+    open: (requestId) => ipcRenderer.invoke('projects-open', requestId),
+    openEntry: (fileEntryId) => ipcRenderer.invoke('projects-open-entry', fileEntryId),
+    complete: (requestId, state, metadata) => ipcRenderer.invoke('projects-complete', requestId, state, metadata),
+    save: (payload) => ipcRenderer.invoke('projects-save', payload),
+    catalog: () => ipcRenderer.invoke('projects-catalog'),
+    updateEntry: (id, change) => ipcRenderer.invoke('projects-update-entry', id, change),
+    onOpen: (listener) => {
+      const forward = (_event, value) => listener(value);
+      ipcRenderer.on('project-open', forward);
+      return () => ipcRenderer.removeListener('project-open', forward);
+    },
+  },
   alignTrafficLights: (centerY, controlsHeight) => ipcRenderer.invoke("align-traffic-lights", centerY, controlsHeight),
   setTitlebarTheme: (theme, scrimmed) => ipcRenderer.send("set-titlebar-theme", theme, scrimmed === true),
   setApplicationMenuState: (state) => ipcRenderer.send("application-menu-state", state),

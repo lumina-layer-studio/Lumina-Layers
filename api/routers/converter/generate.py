@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from typing import Annotated, Literal, NamedTuple
+from api.project_resources import stage_project_resources, discard_project_resources
 
 import asyncio
 from concurrent.futures.process import BrokenProcessPool
@@ -26,6 +27,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from PIL import Image
 from pydantic import BaseModel, StrictBool, TypeAdapter, ValidationError
 
+from api.project_export import embed_generated_project, revision_bytes
 from api.dependencies import get_file_registry, get_session_store, get_worker_pool
 from api.editor_commit import get_editor_content_revision
 from api.errors import to_http_exception
@@ -2000,6 +2002,7 @@ async def convert_generate(
 
     # 1. Session validation and immutable input snapshot (main thread).
     request = body.params
+    revision_bytes(request.project_revision_file_id, registry)
     (
         session_data,
         committed_content_revision,
@@ -2561,6 +2564,7 @@ async def convert_generate(
         "preview_glb_path": preview_glb_path,
         "vector_parse_clip_cache_path": vector_parse_clip_cache_path,
         "material_source": session_material_source,
+        "materials_dir": session_data.get("project_materials_dir"),
         "material_dynamic_layer_count_enabled": dynamic_material_settings[0],
         "material_min_layer_count": dynamic_material_settings[1],
         "material_max_layer_count": dynamic_material_settings[2],
@@ -2713,6 +2717,7 @@ async def convert_generate(
                     session_data.get("source_basename")
                 )
                 download_filename = str(Path(download_filename).with_suffix(Path(threemf_path).suffix))
+            embed_generated_project(threemf_path, request.project_revision_file_id, registry)
             download_id = registry.register_path(
                 str(uuid.uuid4()),
                 threemf_path,
@@ -3007,6 +3012,7 @@ def _resolve_large_format_shared_params(
         "material_delta_e00_tolerance": dynamic_material_settings[3],
     }
     if str(session_data.get("material_source") or "lut") == "material_archive":
+        params["materials_dir"] = session_data.get("project_materials_dir")
         params["material_source"] = "material_archive"
         params["selected_materials"] = session_data.get("selected_materials") or []
         params["material_layer_count"] = session_data.get("material_layer_count")
@@ -3184,6 +3190,7 @@ async def _generate_large_format_svg_native(
     zip_registered = False
     try:
         try:
+            embed_generated_project(zip_path, getattr(request, "project_revision_file_id", None), registry)
             download_id = registry.register_path(
                 str(uuid.uuid4()),
                 zip_path,
@@ -3870,6 +3877,7 @@ async def _generate_large_format_raster(
             for label, tp in successful_paths:
                 zf.write(tp, f"{label}.3mf")
         try:
+            embed_generated_project(zip_path, getattr(request, "project_revision_file_id", None), registry)
             download_id = registry.register_path(
                 str(uuid.uuid4()),
                 zip_path,
@@ -3922,6 +3930,7 @@ async def convert_generate_large_format(
     """
     lf = body.params
     request = lf.params
+    revision_bytes(request.project_revision_file_id, registry)
     # 1. Session validation and immutable input snapshot
     (
         session_data,
@@ -4584,6 +4593,9 @@ def _select_batch_preview_subset(
 @router.post("/batch")
 async def convert_batch(
     images: list[UploadFile] = File(..., description="批量图像"),
+    project_revision_file_id: Annotated[str | None, Form(max_length=128)] = None,
+    project_lut: Annotated[UploadFile | None, File()] = None,
+    project_materials: Annotated[UploadFile | None, File()] = None,
     source_kind: str = Form("legacy_single", description="源类型: legacy_single | legacy_multi | native_bundle"),
     lut_name: str | None = Form(None, description="LUT 名称"),
     lut_names: list[str] | str | None = Form(None, description="经典 LUT 名称列表"),
@@ -4695,6 +4707,7 @@ async def convert_batch(
         separate_backing: Emit the backing as a separate mesh object when true.
             (为 true 时将底板作为独立网格对象输出。)
     """
+    revision_bytes(project_revision_file_id, registry)
     if backing_output != "same_project":
         raise HTTPException(status_code=422, detail="Independent backing projects are available for single-model generation, not batch merging.")
     validate_export_device_selection(
@@ -4765,15 +4778,18 @@ async def convert_batch(
             }
             if source_selection.source_kind == "legacy_multi":
                 source_kwargs["lut_names"] = source_selection.lut_names
-            lut_path, resolved_lut_name = LUTManager.resolve_source_selection(
-                **source_kwargs
-            )
+            if project_lut is not None:
+                lut_path, resolved_lut_name = "", source_selection.lut_name or "Project source"
+            else:
+                lut_path, resolved_lut_name = LUTManager.resolve_source_selection(
+                    **source_kwargs
+                )
         except ValueError as exc:
             detail = str(exc)
             status_code = 404 if detail.startswith("LUT not found:") else 422
             raise HTTPException(status_code=status_code, detail=detail) from exc
         resolved_source_kind = source_selection.source_kind
-        if resolved_source_kind in ("native_bundle", "legacy_multi"):
+        if project_lut is None and resolved_source_kind in ("native_bundle", "legacy_multi"):
             resolved_lut_path = os.path.abspath(lut_path)
             try:
                 Path(resolved_lut_path).resolve().relative_to(Path(TEMP_DIR).resolve())
@@ -4782,7 +4798,13 @@ async def convert_batch(
             else:
                 temp_native_bundle_path = resolved_lut_path
 
+    project_resources = None
     try:
+        if (project_lut is not None and material_source == "material_archive") or (project_materials is not None and material_source != "material_archive"):
+            raise HTTPException(422, "Project resources do not match the selected color source")
+        project_resources = await stage_project_resources(project_lut, project_materials, selected_material_names)
+        if project_resources and project_resources.lut_path:
+            lut_path = project_resources.lut_path
         try:
             selected_native_profiles = TypeAdapter(dict[str, str]).validate_json(
                 native_filament_profiles or "{}",
@@ -4799,6 +4821,7 @@ async def convert_batch(
             "material_type": material_type, "vendor": vendor,
             "db_names": _normalize_batch_string_list(db_names),
             "material_source": material_source, "selected_materials": selected_material_names,
+            "materials_dir": project_resources.materials_dir if project_resources else None,
             "printer_id": printer_id, "slicer": slicer, "nozzle_size": nozzle_size,
             "device_profile_id": device_profile_id, "build_plate_id": build_plate_id,
             "custom_3mf_template_id": custom_3mf_template_id, "color_mode": color_mode,
@@ -4914,7 +4937,8 @@ async def convert_batch(
             ),
             requested_color_layers=color_layers,
         )
-    except Exception:
+    except BaseException:
+        discard_project_resources(project_resources)
         _remove_temp_path(temp_native_bundle_path)
         raise
 
@@ -4981,6 +5005,7 @@ async def convert_batch(
         selected_coating_material,
         enable_outline,
         outline_width,
+        project_resources.materials_dir if project_resources else None,
     )
     batch_size = max(1, int(pool.max_workers))
     workers_completed = False
@@ -5048,6 +5073,7 @@ async def convert_batch(
         # Release returned artifacts on cancellation or any fatal failure.
         if not workers_completed:
             _cleanup_intermediates(intermediates, batch_run_id)
+        discard_project_resources(project_resources)
         _remove_temp_path(temp_native_bundle_path)
 
     # --- Merge phase: layout -> writers -> FileRegistry -> cleanup ---
@@ -5174,6 +5200,7 @@ async def convert_batch(
                 )
             )
 
+        embed_generated_project(str(merged_3mf_path), project_revision_file_id, registry)
         # Step 4: FileRegistry registration
         stage = "file_registry"
         download_id = registry.register_path(

@@ -12,13 +12,17 @@ import threading
 import tempfile
 import time
 from pathlib import Path, PureWindowsPath
-from typing import Any
+from typing import Annotated, Any
 
 import msgpack
 import numpy as np
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Header, HTTPException, UploadFile
+from fastapi.responses import Response
 
 from api.dependencies import get_session_store
+from api.project_workflows import resolve_project_lut
+
+ProjectContext = Annotated[str | None, Header(alias="X-Lumina-Project-Context")]
 from api.preview_cache_artifacts import is_preview_cache_artifact_ref
 from api.session_store import SessionStore
 from api.services.lut_presentation import (
@@ -51,6 +55,7 @@ from api.schemas.lut import (
     LutPlotPoint,
     LutPlotPoint3D,
     LutSourceCatalogResponse,
+    LutSourceSelection,
     MergeRequest,
     MergeResponse,
     MergeStats,
@@ -306,6 +311,34 @@ def get_source_catalog() -> LutSourceCatalogResponse:
         _canonicalize_source_catalog_color_modes(LUTManager.get_source_catalog())
     )
     return LutSourceCatalogResponse.model_validate(catalog)
+
+
+@router.post("/project-source")
+def project_lut_source(selection: LutSourceSelection, project_context: ProjectContext = None) -> Response:
+    """Freeze the selected source and native dependencies for a portable project."""
+    from core.projects.dependencies import pack_lut_source
+    from config import TEMP_DIR
+
+    path: str | None = None
+    try:
+        if project_context and selection.source_kind == "legacy_single":
+            path = resolve_project_lut(selection.lut_name, project_context)
+            if not path:
+                raise HTTPException(404, _LUT_NOT_FOUND_DETAIL)
+        else:
+            path, _ = LUTManager.resolve_source_selection(**selection.model_dump())
+        return Response(
+            pack_lut_source(path),
+            media_type="application/zip",
+            headers={"X-Project-Filename": "source.lut.zip"},
+        )
+    except (ValueError, OSError, KeyError) as exc:
+        raise HTTPException(422, str(exc)) from exc
+    finally:
+        if path and selection.source_kind in {"native_bundle", "legacy_multi"}:
+            candidate = Path(path).resolve()
+            if candidate.is_relative_to(Path(TEMP_DIR).resolve()):
+                candidate.unlink(missing_ok=True)
 
 
 @router.get("/details/catalog", response_model=LutDetailsCatalogResponse)
@@ -644,7 +677,7 @@ async def upload_lut(file: UploadFile = File(..., description="LUT 文件 (.npy/
 
 
 @router.post("/merge")
-def merge_luts_endpoint(request: MergeRequest) -> MergeResponse:
+def merge_luts_endpoint(request: MergeRequest, project_context: ProjectContext = None) -> MergeResponse:
     """Execute LUT merge: primary + multiple secondary LUTs.
     执行 LUT 合并：主 LUT + 多个辅助 LUT。
 
@@ -662,7 +695,7 @@ def merge_luts_endpoint(request: MergeRequest) -> MergeResponse:
         )
 
     # 2. Resolve primary path / 解析主 LUT 路径
-    primary_path: str | None = LUTManager.get_lut_path(request.primary_name)
+    primary_path: str | None = resolve_project_lut(request.primary_name, project_context)
     if primary_path is None:
         raise HTTPException(
             status_code=404,
@@ -687,7 +720,7 @@ def merge_luts_endpoint(request: MergeRequest) -> MergeResponse:
 
         # 5. Load each secondary, skip Merged / 加载辅助 LUT，跳过 Merged
         for sec_name in request.secondary_names:
-            sec_path: str | None = LUTManager.get_lut_path(sec_name)
+            sec_path: str | None = resolve_project_lut(sec_name, project_context)
             if sec_path is None:
                 continue
             sec_mode, _ = LUTMerger.detect_color_mode(sec_path)
@@ -810,15 +843,15 @@ def merge_luts_endpoint(request: MergeRequest) -> MergeResponse:
 
 
 @router.post("/compare")
-def compare_luts_endpoint(request: CompareRequest) -> CompareResponse:
+def compare_luts_endpoint(request: CompareRequest, project_context: ProjectContext = None) -> CompareResponse:
     """Compare two LUTs by shared recipe keys.
     按共享配方键比较两个 LUT。
     """
-    path_a: str | None = LUTManager.get_lut_path(request.lut_a_name)
+    path_a: str | None = resolve_project_lut(request.lut_a_name, project_context)
     if path_a is None:
         raise HTTPException(status_code=404, detail=_LUT_NOT_FOUND_DETAIL)
 
-    path_b: str | None = LUTManager.get_lut_path(request.lut_b_name)
+    path_b: str | None = resolve_project_lut(request.lut_b_name, project_context)
     if path_b is None:
         raise HTTPException(status_code=404, detail=_LUT_NOT_FOUND_DETAIL)
 
@@ -920,11 +953,17 @@ def compare_luts_endpoint(request: CompareRequest) -> CompareResponse:
 
 
 @router.get("/{lut_name}/colors")
-def get_lut_colors(lut_name: str) -> LutColorsResponse:
+def get_lut_colors(lut_name: str, session_id: str | None = None, store: SessionStore = Depends(get_session_store)) -> LutColorsResponse:
     """Return all unique colors available in a LUT file.
     返回 LUT 文件中所有可用的唯一颜色。
     """
-    path: str | None = LUTManager.get_lut_path(lut_name)
+    if session_id:
+        session = store.get(session_id)
+        if session is None:
+            raise HTTPException(404, "Project preview session expired")
+        path = session.get("lut_path")
+    else:
+        path = LUTManager.get_lut_path(lut_name)
     if path is None:
         raise HTTPException(status_code=404, detail=_LUT_NOT_FOUND_DETAIL)
 
@@ -1062,11 +1101,11 @@ def _build_material_archive_lut_info(session_data: dict) -> LutInfoResponseV2:
 
 
 @router.get("/{lut_name}/info")
-def get_lut_info(lut_name: str) -> LutInfoResponseV2:
+def get_lut_info(lut_name: str, project_context: ProjectContext = None) -> LutInfoResponseV2:
     """Return color mode and color count for a specific LUT.
     返回指定 LUT 的颜色模式和颜色数量。
     """
-    path: str | None = LUTManager.get_lut_path(lut_name)
+    path: str | None = resolve_project_lut(lut_name, project_context)
     if path is None:
         raise HTTPException(status_code=404, detail=_LUT_NOT_FOUND_DETAIL)
     return _build_lut_info_from_path(path, lut_name)
@@ -1132,13 +1171,19 @@ def get_session_lut_info(
 
 
 @router.get("/{lut_name}/details", response_model=LutDetailsResponse)
-def get_lut_details(lut_name: str) -> LutDetailsResponse:
+def get_lut_details(lut_name: str, project_context: ProjectContext = None) -> LutDetailsResponse:
     """Return the detailed LUT metadata and visualization payload.
     返回 LUT 的详细元数据和可视化载荷。
     """
 
     try:
-        detail = _resolve_lut_details_service().get_lut_details(lut_name)
+        if project_context:
+            source = resolve_project_lut(lut_name, project_context)
+            if source is None:
+                raise KeyError(lut_name)
+            detail = _resolve_lut_details_service().get_lut_details_from_path(lut_name, Path(source))
+        else:
+            detail = _resolve_lut_details_service().get_lut_details(lut_name)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=_LUT_NOT_FOUND_DETAIL) from exc
     except Exception as exc:

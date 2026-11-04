@@ -442,6 +442,7 @@ class CoatingMaterialReference(BaseModel):
 
 
 class ConvertGenerateRequest(LutSourceSelection, SvgHoleCompensationOptions):
+    project_revision_file_id: str | None = Field(None, max_length=128, description="Explicit frozen project revision to embed in the final output")
     """Request model for generating a final 3MF model.
     生成最终 3MF 模型的请求模型。
 

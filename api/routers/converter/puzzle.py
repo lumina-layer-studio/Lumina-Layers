@@ -25,6 +25,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from PIL import Image
 
+from api.project_export import embed_generated_project, revision_bytes
 from api.dependencies import get_file_registry, get_session_store, get_worker_pool
 from api.errors import to_http_exception
 from api.export_device_validation import validate_export_device_selection
@@ -1067,6 +1068,7 @@ async def generate_puzzle(
 
     request = body.params
     generate_params = request.params
+    revision_bytes(generate_params.project_revision_file_id, registry)
     (
         session_data,
         committed_content_revision,
@@ -1439,6 +1441,7 @@ async def generate_puzzle(
                     ),
                 )
         if session_material_source == "material_archive":
+            worker_params["materials_dir"] = session_data.get("project_materials_dir")
             worker_params["material_source"] = "material_archive"
             worker_params["selected_materials"] = selected_materials
             worker_params["material_layer_count"] = session_data.get("material_layer_count")
@@ -1645,6 +1648,7 @@ async def generate_puzzle(
         ):
             if warning_code not in warnings:
                 warnings.append(warning_code)
+        embed_generated_project(combined_3mf_path, generate_params.project_revision_file_id, registry)
         download_id = registry.register_path(
             str(uuid.uuid4()),
             combined_3mf_path,

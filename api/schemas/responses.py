@@ -1126,6 +1126,7 @@ class ExtractResponse(BaseModel):
     """颜色提取响应。"""
 
     session_id: str
+    workspace_session_id: str | None = None
     status: str
     message: str
     lut_download_url: str

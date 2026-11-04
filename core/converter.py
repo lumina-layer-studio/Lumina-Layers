@@ -364,6 +364,7 @@ def convert_image_to_3d(
     svg_hole_max_area_mm2: float = 0.5,
     svg_hole_max_width_mm: float = 0.1,
     batch_preview: bool = False,
+    materials_dir: Optional[str] = None,
 ):
     """Main conversion function: Convert image to 3D model.
     主要转换函数：将图像转换为 3D 模型。
@@ -525,6 +526,7 @@ def convert_image_to_3d(
         "fridge_magnets": fridge_magnets,
         "material_source": material_source,
         "selected_materials": selected_materials,
+        "materials_dir": materials_dir,
         "material_layer_count": material_layer_count,
         "material_layer_height_mm": material_layer_height_mm,
         "material_grid_resolution": material_grid_resolution,
@@ -600,6 +602,7 @@ def generate_preview_cached(
     svg_hole_compensation_enabled: bool = False,
     svg_hole_max_area_mm2: float = 0.5,
     svg_hole_max_width_mm: float = 0.1,
+    materials_dir: str | None = None,
 ):
     """Generate preview and cache data. Thin wrapper, delegates to coordinator.
     生成预览图和缓存数据。薄包装函数，委托给 coordinator。
@@ -629,6 +632,7 @@ def generate_preview_cached(
         tuple: (display_image, cache_data, status_message)
     """
     ctx = {
+        "materials_dir": materials_dir,
         "image_path": image_path,
         "lut_path": lut_path,
         "target_width_mm": target_width_mm,
@@ -808,6 +812,7 @@ def generate_final_model(
     svg_hole_compensation_enabled: bool = False,
     svg_hole_max_area_mm2: float = 0.5,
     svg_hole_max_width_mm: float = 0.1,
+    materials_dir: Optional[str] = None,
 ):
     """Wrapper function for generating final model.
     包装函数，用于生成最终模型。
@@ -1015,6 +1020,7 @@ def generate_final_model(
         enable_fridge_magnet=enable_fridge_magnet,
         fridge_magnets=fridge_magnets,
         material_source=material_source,
+        materials_dir=materials_dir,
         selected_materials=selected_materials,
         material_layer_count=material_layer_count,
         material_layer_height_mm=material_layer_height_mm,

@@ -63,7 +63,7 @@ function scheduleSessionClose(
 
 export function useSessionLease(
   sessionId: string | null | undefined,
-  workstream: Workstream = "converter",
+  workstream: Workstream | null = "converter",
   keepFileIds: readonly string[] = EMPTY_KEEP_FILE_IDS,
 ): void {
   const keepFileIdsRef = useRef<string[]>([]);
@@ -84,7 +84,7 @@ export function useSessionLease(
     // labelled; this wiring only provides the plumbing.
     // 把会话 id 登记到操作历史的会话环中，便于反馈复现包在后端 session 已清理
     // 后仍能追溯近期会话。工作流分类的精细化由后续任务 1.4 处理。
-    useActionHistoryStore.getState().observeSession(workstream, sessionId);
+    if (workstream) useActionHistoryStore.getState().observeSession(workstream, sessionId);
 
     const controller = new AbortController();
     let retryPending = false;
@@ -117,12 +117,12 @@ export function useSessionLease(
       beaconCloseSession(sessionId, keepFileIdsRef.current);
     };
 
-    window.addEventListener("beforeunload", handleBeforeUnload);
+    window.addEventListener("pagehide", handleBeforeUnload);
 
     return () => {
       controller.abort();
       window.clearTimeout(timerId);
-      window.removeEventListener("beforeunload", handleBeforeUnload);
+      window.removeEventListener("pagehide", handleBeforeUnload);
       scheduleSessionClose(sessionId, keepFileIdsRef.current);
     };
   }, [sessionId, workstream]);

@@ -1,3 +1,4 @@
+import { workflowSettings } from "../project/workflowRuntime";
 import { create } from "zustand";
 import { apiErrorToVisibleMessage } from "../api/client";
 import type { CalibrationColorMode } from "../api/types";
@@ -204,14 +205,14 @@ export const useCalibrationStore = create<
 
   submitLegacyGenerate: async () => {
     const state = get();
-    const settings = useSettingsStore.getState();
+    const settings = workflowSettings("calibration");
     const requestIdentity = captureGeneratedArtifactIdentity(
       settings.deviceProfileId,
       settings.buildPlateId,
     );
     const requestSequence = ++calibrationGenerateSequence;
     const isCurrentRequest = (): boolean => {
-      const latestSettings = useSettingsStore.getState();
+      const latestSettings = workflowSettings("calibration");
       return (
         requestSequence === calibrationGenerateSequence &&
         isGeneratedArtifactIdentityCurrent(
@@ -262,14 +263,14 @@ export const useCalibrationStore = create<
 
   submitSingleStageGenerate: async () => {
     const state = get();
-    const settings = useSettingsStore.getState();
+    const settings = workflowSettings("calibration");
     const requestIdentity = captureGeneratedArtifactIdentity(
       settings.deviceProfileId,
       settings.buildPlateId,
     );
     const requestSequence = ++calibrationGenerateSequence;
     const isCurrentRequest = (): boolean => {
-      const latestSettings = useSettingsStore.getState();
+      const latestSettings = workflowSettings("calibration");
       return (
         requestSequence === calibrationGenerateSequence &&
         isGeneratedArtifactIdentityCurrent(

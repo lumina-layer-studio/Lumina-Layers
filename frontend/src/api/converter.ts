@@ -50,9 +50,12 @@ export async function convertPreview(
   image: File,
   params: ConvertPreviewRequest,
   signal?: AbortSignal,
+  resources?: { lut?: File | null; materials?: File | null },
 ): Promise<PreviewResponse> {
   const fd = new FormData();
   fd.append("image", image);
+  if (resources?.lut) fd.append("project_lut", resources.lut);
+  if (resources?.materials) fd.append("project_materials", resources.materials);
   for (const [key, value] of Object.entries(params)) {
     if (value === null || value === undefined) {
       continue;
@@ -97,7 +100,16 @@ export async function convertGenerate(
 export async function fetchExportMaterialSelection(
   sessionId: string | null,
   params: ConvertGenerateRequest | BatchConvertParams,
+  resources?: { lut?: File | null; materials?: File | null },
 ): Promise<ExportMaterialSelection> {
+  if (!sessionId && (resources?.lut || resources?.materials)) {
+    const form = new FormData();
+    form.append("request_json", JSON.stringify({ params }));
+    if (resources.lut) form.append("project_lut", resources.lut);
+    if (resources.materials) form.append("project_materials", resources.materials);
+    const response = await apiClient.post<ExportMaterialSelection>("/convert/project-export-materials", form, { timeout: 60_000 });
+    return response.data;
+  }
   const response = await apiClient.post<ExportMaterialSelection>(
     "/convert/export-materials",
     { session_id: sessionId, params },
@@ -279,10 +291,12 @@ export async function uploadHeightmap(
 export async function fetchLutColors(
   lutName: string,
   signal?: AbortSignal,
+  sessionId?: string | null,
 ): Promise<LutColorsResponse> {
   const response = await apiClient.get<LutColorsResponse>(
     `/lut/${encodeURIComponent(lutName)}/colors`,
     {
+      params: sessionId ? { session_id: sessionId } : undefined,
       timeout: 3_600_000,
       ...(signal ? { signal } : {}),
     },
@@ -321,8 +335,11 @@ export async function cropImage(
 export async function convertBatch(
   images: File[],
   params: BatchConvertParams,
+  resources?: { lut?: File | null; materials?: File | null },
 ): Promise<BatchResponse> {
   const fd = new FormData();
+  if (resources?.lut) fd.append("project_lut", resources.lut);
+  if (resources?.materials) fd.append("project_materials", resources.materials);
   for (const file of images) {
     fd.append("images", file);
   }

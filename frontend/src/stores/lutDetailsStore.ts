@@ -9,6 +9,7 @@ import {
   fetchLutDetailsCatalog as apiFetchLutDetailsCatalog,
 } from "../api/lut";
 import { lutErrorToVisibleMessage } from "./lutErrorMessages";
+import { workflowRuntime } from "../project/workflowRuntime";
 
 export interface FilteredLutDetailsCatalog {
   manufacturers: string[];
@@ -295,8 +296,13 @@ export const useLutDetailsStore = create<LutDetailsState & LutDetailsActions>(
           if (requestId != catalogRequestId) {
             return;
           }
-          const catalog = response.groups ?? [];
           const current = get();
+          const bound = new Set(Object.keys(workflowRuntime("lut-details")?.lutFiles ?? {}));
+          const catalog = (response.groups ?? []).map((group) => ({ ...group, items: group.items.filter((item) => !bound.has(item.name)) }));
+          for (const group of current.catalog) {
+            const items = group.items.filter((item) => bound.has(item.name));
+            if (items.length) catalog.push({ ...group, items });
+          }
           const previousLoadedItem = findItemByName(current.catalog, current.loadedLutName);
           const { manufacturer, lutName } = resolveSelection(
             catalog,

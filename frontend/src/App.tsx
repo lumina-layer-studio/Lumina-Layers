@@ -30,6 +30,7 @@ import { buildErrorTicketDescription } from "./utils/errorTicketDescription";
 import { useErrorTicketPromptCapture } from "./hooks/useErrorTicketPromptCapture";
 import { useErrorTicketPromptStore } from "./stores/errorTicketPromptStore";
 import { HeaderMenu } from "./components/HeaderMenu";
+import ProjectWorkspace from "./components/projects/ProjectWorkspace";
 import { LanguageToggle } from "./components/LanguageToggle";
 import { ThemeToggle } from "./components/ThemeToggle";
 import { TutorialHost } from "./components/tutorial/TutorialHost";
@@ -62,6 +63,7 @@ import FiveColorQueryPanel from "./components/FiveColorQueryPanel";
 import SettingsPanel from "./components/SettingsPanel";
 import VectorizerPanel from "./components/VectorizerPanel";
 import WorkshopPanel from "./workshop/WorkshopPanel";
+import { useWorkshopProjectRuntime } from "./project/workshopRuntime";
 import { useSingleStageStore } from "./stores/singleStageStore";
 import { useExtractorStore } from "./stores/extractorStore";
 import { collectConverterKeepFileIds, useConverterStore } from "./stores/converter";
@@ -294,6 +296,7 @@ function AppContent({ connected }: { connected: boolean | null }) {
     : "px-3 sm:px-4 lg:px-6";
 
   const [announcementReady, setAnnouncementReady] = useState(false);
+  const workshopMounted = useWorkshopProjectRuntime((state) => state.mounted);
   const [bugReportOpen, setBugReportOpen] = useState(false);
   const [infoPage, setInfoPage] = useState<"about" | "credits" | null>(null);
   const infoOpen = infoPage !== null;
@@ -333,6 +336,9 @@ function AppContent({ connected }: { connected: boolean | null }) {
     setBugReportPreset("");
   }, [dismissErrorTicketPrompt]);
   const activeTab = useWidgetStore((s) => s.activeTab);
+  useEffect(() => {
+    if (activeTab === "workshop") useWorkshopProjectRuntime.setState({ mounted: true });
+  }, [activeTab]);
   const activeConverterSubTab = useWidgetStore((s) => s.activeConverterSubTab);
   const setActiveTab = useWidgetStore((s) => s.setActiveTab);
   const converterEntrySequence = useRef(0);
@@ -507,6 +513,7 @@ function AppContent({ connected }: { connected: boolean | null }) {
           </AlignedNavStrip>
         </div>
       </header>
+      {!reproMode.enabled && <ProjectWorkspace />}
 
       <main inert={infoOpen} aria-hidden={infoOpen || undefined}
         style={{ visibility: infoOpen ? "hidden" : undefined }}
@@ -581,7 +588,7 @@ function AppContent({ connected }: { connected: boolean | null }) {
           </div>
         )}
         {activeTab === 'vectorizer' && <VectorizerPanel />}
-        {activeTab === 'workshop' && <WorkshopPanel />}
+        {(workshopMounted || activeTab === "workshop") && <div className={activeTab === "workshop" ? "h-full min-h-0" : "hidden"}><WorkshopPanel /></div>}
         {activeTab === 'settings' && <SettingsPanel />}
         </div>
       </main>

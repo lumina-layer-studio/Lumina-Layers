@@ -30,6 +30,7 @@ const COLORCHECKER_SOURCE_PREVIEW_TIMEOUT_MS = 3_600_000;
 export async function extractColors(
   image: File | null,
   params: {
+    workspaceSessionId?: string;
     corner_points: Array<[number, number]>;
     color_mode: string;
     page: string;
@@ -50,6 +51,7 @@ export async function extractColors(
     fd.append("image", image);
   }
   fd.append("corner_points", JSON.stringify(params.corner_points));
+  if (params.workspaceSessionId) fd.append("workspace_session_id", params.workspaceSessionId);
   fd.append("color_mode", params.color_mode);
   fd.append("page", params.page);
   fd.append("eight_color_full_export", String(params.eight_color_full_export));
@@ -682,21 +684,22 @@ export async function resolveLutPreviewCell(
 /** 合并 8 色分页 LUT */
 export async function mergeEightColor(
   eightColorFullExport: boolean,
+  workspaceSessionId?: string | null,
 ): Promise<ExtractResponse> {
   const response = await apiClient.post<ExtractResponse>(
     "/extractor/merge-8color",
     { eight_color_full_export: eightColorFullExport },
-    { timeout: 3_600_000 },
+    { timeout: 3_600_000, params: workspaceSessionId ? { workspace_session_id: workspaceSessionId } : undefined },
   );
   return response.data;
 }
 
 /** 合并 5 色扩展双页 LUT */
-export async function mergeFiveColorExtended(): Promise<ExtractResponse> {
+export async function mergeFiveColorExtended(workspaceSessionId?: string | null): Promise<ExtractResponse> {
   const response = await apiClient.post<ExtractResponse>(
     "/extractor/merge-5color-extended",
     {},
-    { timeout: 3_600_000 },
+    { timeout: 3_600_000, params: workspaceSessionId ? { workspace_session_id: workspaceSessionId } : undefined },
   );
   return response.data;
 }

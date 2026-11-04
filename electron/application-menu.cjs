@@ -1,7 +1,8 @@
 const { stepInterfaceScalePreference } = require('./interface-scale.cjs');
 
-const COMMANDS = ['about', 'settings', 'import', 'export', 'report'];
+const COMMANDS = ['about', 'settings', 'import', 'export', 'report', 'projectNew', 'projectOpen', 'projectSave', 'projectSaveAs'];
 const DEFAULT_LABELS = {
+  projectNew: 'New Project…', projectOpen: 'Open Project…', projectSave: 'Save Project', projectSaveAs: 'Save Project As…',
   about: 'About Lumina Studio', settings: 'Settings…', services: 'Services',
   hide: 'Hide Lumina Studio', hideOthers: 'Hide Others', unhide: 'Show All', quit: 'Quit Lumina Studio',
   file: 'File', import: 'Import image / SVG / share card…', export: 'Save generated file…', close: 'Close Window',
@@ -49,7 +50,7 @@ function createApplicationMenu({ Menu, app, getWindow, getScale, openDocs, onErr
         } }, command('settings', 'Command+,'), separator,
         role('services'), separator, role('hide'), role('hideOthers'), role('unhide'), separator, role('quit'),
       ] },
-      { label: labels.file, submenu: [command('import', 'Command+O'), command('export', 'Command+Shift+S'), separator, role('close')] },
+      { label: labels.file, submenu: [command('projectNew', 'CommandOrControl+N'), command('projectOpen', 'CommandOrControl+O'), command('projectSave', 'CommandOrControl+S'), command('projectSaveAs', 'CommandOrControl+Shift+S'), separator, command('import', 'CommandOrControl+I'), command('export', 'CommandOrControl+Alt+S'), separator, role('close')] },
       { label: labels.edit, submenu: [role('undo'), role('redo'), separator, role('cut'), role('copy'), role('paste'), role('selectAll')] },
       { label: labels.view, submenu: [scale('zoomIn', 'in', 'Command+Plus'), scale('zoomOut', 'out', 'Command+-'), scale('resetZoom', 'reset', 'Command+0'), separator, role('togglefullscreen')] },
       { label: labels.window, submenu: [role('minimize'), role('zoom'), separator, role('front')] },

@@ -138,6 +138,7 @@ export interface CoatingMaterialReference {
 export type BackingOutput = "same_project" | "separate_project";
 
 export type ConvertGenerateRequest = ConvertPreviewRequest & {
+  project_revision_file_id?: string;
   spacer_thick: number;
   backing_infill_density_percent?: number;
   structure_mode: StructureMode;
@@ -866,6 +867,7 @@ export interface ConfirmPaletteRequest {
 }
 
 export interface ExtractResponse {
+  workspace_session_id?: string | null;
   session_id: string;
   status: string;
   message: string;
@@ -1882,6 +1884,7 @@ export interface BatchPreviewItem {
 }
 
 export interface BatchConvertParams {
+  project_revision_file_id?: string;
   enable_outline?: boolean;
   outline_width?: number;
   backing_output?: BackingOutput;

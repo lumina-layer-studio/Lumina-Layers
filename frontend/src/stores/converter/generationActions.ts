@@ -1,4 +1,6 @@
 import { trackLuminaEvent } from "../../analytics/umami";
+import { freezeGenerationProject } from "../../project/generationExport";
+import { useProjectSessionStore } from "../projectSessionStore";
 import { apiErrorToVisibleMessage as visibleConverterError } from "../../api/client";
 import {
   convertBatch as apiConvertBatch,
@@ -29,6 +31,7 @@ import {
   registerSingleItemDownloadInvalidator,
 } from "../generatedArtifactInvalidation";
 import { useSettingsStore } from "../settingsStore";
+import { boundProjectResources, resolveConverterSettings } from "./project";
 import { isGenerateRevisionConflict } from "./editorRevision";
 import {
   materialSelectionFromExportError,
@@ -213,7 +216,7 @@ export function createGenerationActions(
     action: NativeMaterialSelectionAction,
     isCurrent: () => boolean,
   ): Promise<boolean> {
-    const response = await fetchExportMaterialSelection(sessionId, params);
+    const response = await fetchExportMaterialSelection(sessionId, params, boundProjectResources(_get()));
     if (!isCurrent()) return false;
     if (action === "edit" || !response.ready) {
       showMaterialSelection(response, sessionId, params, action, isCurrent);
@@ -286,7 +289,7 @@ export function createGenerationActions(
       if (!sessionId || state.batchMode || state.isLoading || state.isGenerating ||
         state.batchLoading || state.nativeMaterialSelectionLoading ||
         state.contentCommitStatus === "unknown") return;
-      const settings = useSettingsStore.getState();
+      const settings = resolveConverterSettings(state, useSettingsStore.getState());
       const identity = captureGeneratedArtifactIdentity(settings.deviceProfileId, settings.buildPlateId);
       const sourceIdentity = JSON.stringify(buildConversionSourceParams(state));
       const sequence = ++_generateRequestSequence;
@@ -299,7 +302,7 @@ export function createGenerationActions(
         error: null,
       });
       const isCurrentInput = (): boolean => {
-        const currentSettings = useSettingsStore.getState();
+        const currentSettings = resolveConverterSettings(_get(), useSettingsStore.getState());
         return _isCurrentGenerateRequest(sequence, sessionId, () => _get().sessionId) &&
           !_get().batchMode &&
           JSON.stringify(buildConversionSourceParams(_get())) === sourceIdentity &&
@@ -354,7 +357,7 @@ export function createGenerationActions(
       const isLatest = (): boolean => pendingMaterialSelection === pending &&
         pending.refreshSequence === sequence && _get().nativeMaterialSelection === pending.response;
       try {
-        const response = await fetchExportMaterialSelection(pending.sessionId, params);
+        const response = await fetchExportMaterialSelection(pending.sessionId, params, boundProjectResources(_get()));
         if (!isLatest()) return;
         if (!pending.isCurrent()) {
           _get().cancelNativeMaterialSelection();
@@ -411,23 +414,24 @@ export function createGenerationActions(
         if (!selectedName || (requested && selectedName !== requested)) return;
         selectedProfiles[material.name] = selectedName;
       }
-      const settings = useSettingsStore.getState();
+      const settings = resolveConverterSettings(_get(), useSettingsStore.getState());
       const previousProfiles = scopedNativeFilamentProfiles(_get(), settings) ?? {};
       const profilesChanged = Object.keys(previousProfiles).length !== Object.keys(selectedProfiles).length ||
         Object.entries(selectedProfiles).some(([name, profile]) => previousProfiles[name] !== profile);
       pendingMaterialSelection = null;
-      settings.setBuildPlateForMachine(
-        pending.response.machine_profile_id,
-        plate.id,
-      );
+      if (_get().projectSettings) {
+        set({ projectSettings: { ..._get().projectSettings!, buildPlateId: plate.id } });
+      } else {
+        useSettingsStore.getState().setBuildPlateForMachine(pending.response.machine_profile_id, plate.id);
+        void useSettingsStore.getState().syncToBackend();
+      }
       if (profilesChanged) invalidateGeneratedArtifacts({ preservePreviews: true });
-      void useSettingsStore.getState().syncToBackend();
       set({
         nativeMaterialSelection: null,
         nativeMaterialSelectionAction: null,
         nativeMaterialSelectionError: null,
         native_filament_profiles: selectedProfiles,
-        nativeFilamentProfileScope: nativeFilamentProfileScope(useSettingsStore.getState()),
+        nativeFilamentProfileScope: nativeFilamentProfileScope(resolveConverterSettings(_get(), useSettingsStore.getState())),
         error: null,
       });
       if (pending.action === "batch") {
@@ -517,7 +521,7 @@ export function createGenerationActions(
         return null;
       }
 
-      const generateSettings = useSettingsStore.getState();
+      const generateSettings = resolveConverterSettings(state, useSettingsStore.getState());
       const generateIdentity = captureGeneratedArtifactIdentity(
         generateSettings.deviceProfileId,
         generateSettings.buildPlateId,
@@ -546,7 +550,7 @@ export function createGenerationActions(
           ? generateSequence
           : null;
       const shouldIgnoreStaleGenerateResponse = (): boolean => {
-        const latestSettings = useSettingsStore.getState();
+        const latestSettings = resolveConverterSettings(_get(), useSettingsStore.getState());
         if (
           _isCurrentGenerateRequest(
             generateSequence,
@@ -609,7 +613,8 @@ export function createGenerationActions(
           });
           return null;
         }
-        const baseParams = buildGenerateParams(state, generateSettings, sourceParams, mergedReplacements, editor.confirmedEditorRevision(sessionId));
+        const baseParams: ConvertGenerateRequest = buildGenerateParams(state, generateSettings, sourceParams, mergedReplacements, editor.confirmedEditorRevision(sessionId));
+        const projectSequence = useProjectSessionStore.getState().changeSequence;
         preparedParams = baseParams;
 
         if (!await preflightMaterials(
@@ -618,6 +623,9 @@ export function createGenerationActions(
           "generate",
           () => !shouldIgnoreStaleGenerateResponse(),
         )) return null;
+
+        const projectRevision = await freezeGenerationProject(projectSequence);
+        if (projectRevision) baseParams.project_revision_file_id = projectRevision;
 
         _clientLog("generate: request prepared", {
           source_kind: sourceParams.source_kind,
@@ -884,7 +892,7 @@ export function createGenerationActions(
         set({ error: "请先设置颜色高度映射后再批量生成" });
         return;
       }
-      const settings = useSettingsStore.getState();
+      const settings = resolveConverterSettings(state, useSettingsStore.getState());
       const batchIdentity = captureGeneratedArtifactIdentity(
         settings.deviceProfileId,
         settings.buildPlateId,
@@ -892,7 +900,7 @@ export function createGenerationActions(
       const batchSequence = ++_batchRequestSequence;
       const batchSourceIdentity = JSON.stringify(buildConversionSourceParams(state));
       const isCurrentBatchRequest = (): boolean => {
-        const latestSettings = useSettingsStore.getState();
+        const latestSettings = resolveConverterSettings(_get(), useSettingsStore.getState());
         const isCurrent = (
           batchSequence === _batchRequestSequence &&
           _get().batchFiles === state.batchFiles &&
@@ -935,10 +943,16 @@ export function createGenerationActions(
           });
           return;
         }
-        const params = buildBatchParams(state, settings, sourceParams);
+        const params: BatchConvertParams = buildBatchParams(state, settings, sourceParams);
+        const projectSequence = useProjectSessionStore.getState().changeSequence;
         preparedParams = params;
         if (!await preflightMaterials(null, params, "batch", isCurrentBatchRequest)) return;
-        const result = await apiConvertBatch(state.batchFiles, params);
+        const projectRevision = await freezeGenerationProject(projectSequence);
+        if (projectRevision) params.project_revision_file_id = projectRevision;
+        const resources = boundProjectResources(state);
+        const result = resources.lut || resources.materials
+          ? await apiConvertBatch(state.batchFiles, params, resources)
+          : await apiConvertBatch(state.batchFiles, params);
         if (!isCurrentBatchRequest()) return;
         const previewItems = (result.preview_items ?? [])
           .slice(0, BATCH_PREVIEW_BROWSER_SAFE_LIMIT)

@@ -156,7 +156,7 @@ async function fixture(t, platform, mode = "healthy", prepareUserData = () => {}
     __dirname: path.dirname(mainPath), console: { log() {} }, URL, Response, Headers,
     setTimeout(callback, delay) { const timer = setTimeout(callback, delay); timers.add(timer); return timer; },
     clearTimeout,
-    process: { platform, env: { LUMINA_MATERIAL_REGISTRY_URL: "https://custom.example/materials" },
+    process: { platform, argv: ["electron"], env: { LUMINA_MATERIAL_REGISTRY_URL: "https://custom.example/materials" },
       kill(pid, signal) { signals.push({ pid, signal }); } },
   }, { filename: mainPath });
   await until(() => healthCallback || app.quitted);
@@ -246,12 +246,14 @@ for (const platform of ["win32", "darwin"]) {
     assert.equal(f.mainWindow().visible, true);
     f.ipcMain.emit("set-language", {}, "en");
     f.mainWindow().close();
+    await until(() => f.dialogs.length === 1);
     assert.deepEqual(Array.from(f.dialogs[0].options.buttons), ["Cancel", "Quit"]);
     f.dialogs[0].resolve({ response: 0 });
     await new Promise(resolve => setImmediate(resolve));
     assert.equal(f.mainWindow().isDestroyed(), false);
     assert.equal(f.app.quitted, undefined);
     f.mainWindow().close();
+    await until(() => f.dialogs.length === 2);
     f.dialogs[1].resolve({ response: 1 });
     await until(() => f.app.quitted);
     assert.equal(f.mainWindow().isDestroyed(), true);

@@ -7,6 +7,8 @@ import {
 
 import { useI18n } from "../../i18n/context";
 import { createRandomId } from "../../utils/randomId";
+import { registerWorkshopProject, workshopProjectChanged } from "../../project/workshopRuntime";
+import { WorkshopProjectChannel } from "./projectChannel";
 import {
   WORKSHOP_API_VERSION,
   WORKSHOP_RPC_EVENT_NAMES,
@@ -48,6 +50,8 @@ export interface WorkshopFrameModule {
   candidate: boolean;
   previousVersion: string | null;
   consecutiveStartFailures: number;
+  projectSnapshotProtocol?: number | null;
+  projectSnapshotSchemas?: readonly string[];
 }
 
 export interface WorkshopFrameChannel {
@@ -210,6 +214,7 @@ export function WorkshopFrame({
   > | null>(null);
   const hostRef = useRef<WorkshopRpcHost | null>(null);
   const detachPortRef = useRef<(() => void) | null>(null);
+  const detachProjectRef = useRef<(() => void) | null>(null);
   const handshakeAcceptedRef = useRef(false);
   const failureHandledRef = useRef(false);
   const mountedRef = useRef(true);
@@ -236,6 +241,8 @@ export function WorkshopFrame({
   const runtimePermissionsJson = JSON.stringify(
     module.permissions,
   );
+  const snapshotSchemasJson = JSON.stringify(module.projectSnapshotSchemas ?? []);
+  const snapshotProtocol = module.projectSnapshotProtocol;
 
   useEffect(() => {
     candidatePropRef.current = module.candidate;
@@ -260,6 +267,8 @@ export function WorkshopFrame({
 
   const closeConnection = useCallback(() => {
     clearHandshakeTimer();
+    detachProjectRef.current?.();
+    detachProjectRef.current = null;
     const detach = detachPortRef.current;
     detachPortRef.current = null;
     detach?.();
@@ -481,6 +490,9 @@ export function WorkshopFrame({
       const upstreamReady = selectedHandlers[
         "lifecycle.ready"
       ] as WorkshopRpcHandler | undefined;
+      const projectChannel = snapshotProtocol === 1 && event.data?.projectSnapshotProtocol === 1 && (JSON.parse(runtimePermissionsJson) as string[]).includes("project.storage")
+        ? new WorkshopProjectChannel({ moduleId: runtimeModuleId, moduleVersion: runtimeModuleVersion }, JSON.parse(snapshotSchemasJson) as string[], workshopProjectChanged)
+        : undefined;
       const runtimeHandlers: WorkshopRpcHandlers = {
         ...selectedHandlers,
         "status.progress": async (payload, context) => {
@@ -520,6 +532,9 @@ export function WorkshopFrame({
           if (mountedRef.current) {
             setProgress(null);
             setPhase("ready");
+            if (projectChannel && !detachProjectRef.current) {
+              detachProjectRef.current = registerWorkshopProject(projectChannel);
+            }
           }
           return undefined;
         },
@@ -540,6 +555,7 @@ export function WorkshopFrame({
           ),
           handlers: runtimeHandlers,
           supportedEvents,
+          projectChannel,
         });
         channel = createChannel();
         detachPortRef.current = host.attach(channel.port1);
@@ -576,6 +592,8 @@ export function WorkshopFrame({
     runtimeModuleId,
     runtimeModuleVersion,
     runtimePermissionsJson,
+    snapshotSchemasJson,
+    snapshotProtocol,
     runtimeMode,
     syntheticHandlers,
   ]);

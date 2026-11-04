@@ -1,4 +1,6 @@
 import { create } from "zustand";
+import { boundProjectResources, resolveConverterSettings } from "./project";
+import { previewResultState } from "./previewResult";
 import { subscribeWithSelector } from "zustand/middleware";
 import { trackLuminaEvent } from "../../analytics/umami";
 import {
@@ -1706,7 +1708,7 @@ function buildImageAspectRatioState(state: ConverterState, ratio: number): Parti
     target_width_mm: ratio >= 1 ? longestEdge : Math.max(10, Math.round(longestEdge * ratio)),
     target_height_mm: ratio >= 1 ? Math.max(10, Math.round(longestEdge / ratio)) : longestEdge,
   };
-  const dimensions = fitTargetDimensions(requested, state, useSettingsStore.getState().printerModel);
+  const dimensions = fitTargetDimensions(requested, state, resolveConverterSettings(state, useSettingsStore.getState()).printerModel);
   return {
     aspectRatio: ratio,
     ...dimensions,
@@ -1718,7 +1720,7 @@ function buildImageAspectRatioState(state: ConverterState, ratio: number): Parti
 }
 
 function buildPrinterDimensionState(state: ConverterState): Partial<ConverterState> {
-  const dimensions = fitTargetDimensions(state, state, useSettingsStore.getState().printerModel);
+  const dimensions = fitTargetDimensions(state, state, resolveConverterSettings(state, useSettingsStore.getState()).printerModel);
   if (dimensions.target_width_mm === state.target_width_mm && dimensions.target_height_mm === state.target_height_mm) return {};
   return {
     ...buildSvgHoleCompensationResizeState(state, dimensions),
@@ -1882,6 +1884,11 @@ function persistMaterialBackingMaterialDirName(name: string | null): void {
 const DEFAULT_LUT_NAME = loadLutName();
 
 export const DEFAULT_STATE: ConverterState = {
+  projectSettings: null,
+  projectLutFile: null,
+  projectMaterialArchiveFile: null,
+  projectSourceKey: null,
+  projectResourceSessionIds: [],
   imageFile: null,
   imagePreviewUrl: null,
   aspectRatio: null,
@@ -2202,6 +2209,12 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
     ...createConversionPresetActions(set, _get),
 
     // --- 图片 ---
+    commitProjectRestore: (state) => {
+      _cancelPreviewWork();
+      invalidateGenerationRequests();
+      _materialSuggestCache.clear();
+      set({ ...state, previewRequestRevision: _get().previewRequestRevision + 1, previewSubmissionSequence: _get().previewSubmissionSequence + 1 });
+    },
     setImageFile: (file: File | null) => {
       const currentFile = _get().imageFile;
       // Rotations and other derived images still belong to the current project.
@@ -6256,7 +6269,14 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
       set({ lutListLoading: true });
       try {
         const response = await apiFetchLutList(options);
-        const luts = response.luts.map(normalizeLutColorMode);
+        let luts = response.luts.map(normalizeLutColorMode);
+        const bound = _get();
+        if (boundProjectResources(bound).lut) {
+          const names = new Set([bound.lut_name, ...bound.lut_names]);
+          luts = [...luts.filter((lut) => !names.has(lut.name)), ...bound.lutListFull.filter((lut) => names.has(lut.name))];
+          set({ lutList: luts.map((lut) => lut.name), lutListFull: luts, lutListLoading: false });
+          return;
+        }
         const updates: Partial<ConverterState> = {
           lutList: luts.map((l) => l.name),
           lutListFull: luts,
@@ -6320,6 +6340,18 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
         );
         const legacyLuts = legacyGroups.flatMap((group) => group.items ?? []);
         const currentState = _get();
+        if (boundProjectResources(currentState).lut) {
+          // Refresh the library without replacing a project's independent source.
+          const boundNames = new Set([currentState.lut_name, ...currentState.lut_names]);
+          const boundBrand = currentState.nativeBrandGroups.find((brand) => brand.brand_key === currentState.selectedNativeBrandKey);
+          set({
+            lutList: [...new Set([...legacyLuts.map((lut) => lut.name), ...boundNames])],
+            lutListFull: [...legacyLuts.filter((lut) => !boundNames.has(lut.name)), ...currentState.lutListFull.filter((lut) => boundNames.has(lut.name))],
+            nativeBrandGroups: boundBrand ? [...groups.filter((brand) => brand.brand_key !== boundBrand.brand_key), boundBrand] : groups,
+            nativeBrandGroupsLoading: false,
+          });
+          return;
+        }
         const updates: Partial<ConverterState> = {
           lutList: legacyLuts.map((lut) => lut.name),
           lutListFull: legacyLuts,
@@ -6434,6 +6466,12 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
       signal?: AbortSignal,
     ) => {
       const requestToken = ++_lutColorsRequestToken;
+      if (boundProjectResources(_get()).lut && !_get().sessionId) {
+        // A portable draft has no globally installed LUT. Its first preview
+        // creates the private session from which the palette can be read.
+        set({ lutColors: [], lutColorCards: [], lutColorsLutName: "", lutColorsLoading: false });
+        return;
+      }
       if (!lutName) {
         set({
           lutColors: [],
@@ -6450,7 +6488,7 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
       }
       set({ lutColorsLoading: true });
       try {
-        const response = await apiFetchLutColors(lutName, signal);
+        const response = await apiFetchLutColors(lutName, signal, boundProjectResources(_get()).lut ? _get().sessionId : null);
         if (
           signal?.aborted ||
           requestToken !== _lutColorsRequestToken
@@ -6522,13 +6560,13 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
       const { signal } = _materialSuggestAbortController;
       const requestToken = ++_materialSuggestRequestToken;
       const suggestionLayerCount = resolveMaterialPrintLayerCount(state);
-      const settingsState = useSettingsStore.getState();
+      const settingsState = resolveConverterSettings(state, useSettingsStore.getState());
       const gridResolutionOverride =
         settingsState.enableSolverCacheGridSelection
           ? settingsState.solverCacheGridResolution
           : undefined;
 
-      const cacheKey = _materialSuggestCacheKey({
+      const cacheKey = (boundProjectResources(state).materials ? `${state.sessionId}:` : "") + _materialSuggestCacheKey({
         directoryNames: dirNames,
         layerCount: suggestionLayerCount,
         layerHeightMm: state.materialLayerHeightMm,
@@ -6568,6 +6606,7 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
           },
           cleaned,
           { signal, gridResolution: gridResolutionOverride },
+          ...(boundProjectResources(state).materials ? [state.sessionId] as const : []),
         );
         const currentSettingsState = useSettingsStore.getState();
         const currentGridResolution =
@@ -7047,6 +7086,7 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
           imageFile,
           previewParams,
           signal,
+          boundProjectResources(state),
         );
         freshSessionId = response.session_id;
         if (isStalePreviewRequest()) {
@@ -7120,7 +7160,7 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
         });
 
         set({
-          sessionId: response.session_id,
+          ...previewResultState(state, response),
           previewImageUrl: previewUrl,
           originalPreviewUrl: sourcePreviewUrl,
           previewBaseImageUrl:
@@ -7310,6 +7350,7 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
             // Best-effort: if the session hasn't been bound yet or the
             // endpoint errors, leave selectedLutInfo untouched.
           });
+        if (boundProjectResources(_get()).lut) void _get().fetchLutColors(_get().lut_name);
       } catch (err) {
         if (isStalePreviewRequest()) {
           return;

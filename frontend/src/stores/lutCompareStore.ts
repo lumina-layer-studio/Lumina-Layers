@@ -1,3 +1,4 @@
+import { includeProjectLuts } from "../project/workflowRuntime";
 import { create } from "zustand";
 import type { CompareResponse, LutInfo, LutInfoResponse } from "../api/types";
 import { compareLuts, fetchLutInfo } from "../api/lut";
@@ -48,7 +49,7 @@ export const useLutCompareStore = create<LutCompareState & LutCompareActions>(
       set({ lutListLoading: true, error: null });
       try {
         const response = await apiFetchLutList();
-        set({ lutList: response.luts, lutListLoading: false, error: null });
+        set({ lutList: includeProjectLuts("lut-compare", response.luts, get().lutList), lutListLoading: false, error: null });
       } catch (err) {
         set({
           lutListLoading: false,
@@ -71,7 +72,7 @@ export const useLutCompareStore = create<LutCompareState & LutCompareActions>(
       }
 
       try {
-        const info = await fetchLutInfo(name);
+        const info = await fetchLutInfo(name, "lut-compare");
         if (get().lutAName !== name) {
           return;
         }
@@ -104,7 +105,7 @@ export const useLutCompareStore = create<LutCompareState & LutCompareActions>(
       }
 
       try {
-        const info = await fetchLutInfo(name);
+        const info = await fetchLutInfo(name, "lut-compare");
         if (get().lutBName !== name) {
           return;
         }

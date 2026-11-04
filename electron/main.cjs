@@ -25,6 +25,7 @@ if (launcherStartup.enabled) {
 }
 const { saveGeneratedFile } = require("./generated-file-save.cjs");
 const { createApplicationMenu } = require("./application-menu.cjs");
+const { createProjectsHost } = require("./projects.cjs");
 const {
   createGeneratedFileDirectoryState,
   pickGeneratedFileDirectory,
@@ -390,7 +391,8 @@ const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) {
   app.quit();
 } else {
-  app.on("second-instance", () => {
+  app.on("second-instance", (_event, argv) => {
+    projectsHost.enqueueArgv(argv);
     if (win) {
       if (win.isMinimized()) win.restore();
       win.focus();
@@ -412,12 +414,17 @@ let splashController = null;
 let isQuitting = false;
 let quitConfirmationPending = false;
 let trustedMainFrameUrl = null;
+const projectsHost = createProjectsHost({ app, ipcMain, dialog, shell, getWindow: () => win, getTrustedUrl: () => trustedMainFrameUrl });
+if (gotLock) projectsHost.enqueueArgv(process.argv);
 
 async function confirmQuit() {
   if (isQuitting || quitConfirmationPending) return;
   quitConfirmationPending = true;
   const dlg = QUIT_DIALOG[currentLang] || QUIT_DIALOG.zh;
   try {
+    const projectChoice = await projectsHost.confirmProjectClose();
+    if (projectChoice === false) return;
+    if (projectChoice === true) { isQuitting = true; app.quit(); return; }
     const { response } = await dialog.showMessageBox(win, {
       type: "question",
       title: dlg.title,

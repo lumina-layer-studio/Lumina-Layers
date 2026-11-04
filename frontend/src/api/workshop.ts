@@ -25,6 +25,8 @@ export interface InstalledWorkshopVersion {
   details_url: string;
   icon_url: string;
   asset_base_url: string;
+  project_snapshot_protocol?: number | null;
+  project_snapshot_schemas?: string[];
 }
 
 export type WorkshopInstallSource =

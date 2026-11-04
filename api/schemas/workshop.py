@@ -145,6 +145,8 @@ class InstalledWorkshopVersionResponse(WorkshopHttpModel):
     details_url: str
     icon_url: str
     asset_base_url: str
+    project_snapshot_protocol: int | None = None
+    project_snapshot_schemas: tuple[str, ...] = ()
 
 
 class InstalledWorkshopModuleResponse(WorkshopHttpModel):

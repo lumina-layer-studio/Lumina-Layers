@@ -19,10 +19,16 @@ def _root() -> Path:
 
 
 def _path(template_id: str) -> Path:
+    project_local = template_id.startswith("project:") if isinstance(template_id, str) else False
+    if project_local:
+        template_id = template_id.removeprefix("project:")
     try:
         canonical = UUID(template_id).hex
     except (ValueError, AttributeError) as error:
         raise ValueError("Invalid custom 3MF template ID") from error
+    if project_local:
+        from config import TEMP_DIR
+        return Path(TEMP_DIR) / "project_3mf_templates" / f"{canonical}.json"
     return _root() / f"{canonical}.json"
 
 

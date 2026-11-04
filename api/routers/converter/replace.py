@@ -517,7 +517,7 @@ def _recalc_matched_rgb_for_padded_pixels(
     import numpy as np
     selected_materials = session_data.get('selected_materials') or []
     try:
-        materials = load_multiple_materials(selected_materials)
+        materials = load_multiple_materials(selected_materials, **({"materials_dir": session_data["project_materials_dir"]} if session_data.get("project_materials_dir") else {}))
     except Exception:
         return
     recipes = material_matrix[non_override_mask, :]
@@ -1132,7 +1132,7 @@ def _sync_material_archive_matrix_for_diff(
         return
 
     try:
-        materials = load_multiple_materials(selected_materials)
+        materials = load_multiple_materials(selected_materials, **({"materials_dir": session_data["project_materials_dir"]} if session_data.get("project_materials_dir") else {}))
     except (FileNotFoundError, OSError, TypeError, ValueError) as exc:
         if dynamic_enabled:
             from core.material_dynamic_solver import DynamicMaterialCandidateError
@@ -3572,7 +3572,7 @@ def region_requantize(
                 detail="Session has no selected materials for material-archive mode.",
             )
         try:
-            materials = load_multiple_materials(list(selected_materials))
+            materials = load_multiple_materials(list(selected_materials), **({"materials_dir": session_data["project_materials_dir"]} if session_data.get("project_materials_dir") else {}))
         except (FileNotFoundError, OSError, TypeError, ValueError) as exc:
             _raise_region_requantize_error(
                 exc,
@@ -4730,7 +4730,7 @@ def predict_recipe(
             # 替代之前仅返回最顶层颜色的简单兜底。
             selected_materials = session_data.get("selected_materials") or []
             try:
-                materials = load_multiple_materials(selected_materials)
+                materials = load_multiple_materials(selected_materials, **({"materials_dir": session_data["project_materials_dir"]} if session_data.get("project_materials_dir") else {}))
                 prediction_recipe = list(request.recipe)
                 prediction_recipe_order = request.layer_order
                 if bool(
@@ -5504,7 +5504,7 @@ def apply_recipe_override(
                 if is_material_archive:
                     selected_materials = session_data.get("selected_materials") or []
                     try:
-                        materials = load_multiple_materials(selected_materials)
+                        materials = load_multiple_materials(selected_materials, **({"materials_dir": session_data["project_materials_dir"]} if session_data.get("project_materials_dir") else {}))
                         prediction_recipe = (
                             dynamic_manual_recipe["print_recipe_top_to_bottom"]
                             if dynamic_manual_recipe is not None

@@ -172,6 +172,7 @@ class TestParameterAnnotations:
             "high_precision_3d_preview", "replacement_regions",
             "svg_hole_compensation_enabled", "svg_hole_max_area_mm2",
             "svg_hole_max_width_mm",
+            "materials_dir",
         }
         assert set(sig.parameters.keys()) == expected
 

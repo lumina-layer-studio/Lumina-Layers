@@ -296,6 +296,8 @@ describe("useSessionLease", () => {
 
     act(() => {
       window.dispatchEvent(new Event("beforeunload"));
+      expect(beaconCloseSessionMock).not.toHaveBeenCalled();
+      window.dispatchEvent(new Event("pagehide"));
     });
 
     expect(beaconCloseSessionMock).toHaveBeenCalledTimes(1);

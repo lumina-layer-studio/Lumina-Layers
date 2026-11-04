@@ -180,6 +180,23 @@ describe('Feature: palette-optimization, Property 1: LUT 颜色缓存命中跳�
     expect(state.lutColorsLoading).toBe(false);
   });
 
+  it('waits for a portable draft session instead of looking up its private LUT globally', async () => {
+    const { converterSourceKey } = await import('../stores/converter/project');
+    const previous = useConverterStore.getState();
+    useConverterStore.setState({ source_version: 'legacy', lut_name: 'Portable', lut_names: ['Portable'], projectLutFile: new File(['lut'], 'source.zip'), sessionId: null, error: null });
+    useConverterStore.setState({ projectSourceKey: converterSourceKey(useConverterStore.getState()) });
+    try {
+      mockApiFetchLutColors.mockClear();
+      await useConverterStore.getState().fetchLutColors('Portable');
+      expect(mockApiFetchLutColors).not.toHaveBeenCalled();
+      expect(useConverterStore.getState().error).toBeNull();
+      useConverterStore.setState({ sessionId: 'private-session' });
+      mockApiFetchLutColors.mockResolvedValueOnce({ colors: [] });
+      await useConverterStore.getState().fetchLutColors('Portable');
+      expect(mockApiFetchLutColors).toHaveBeenCalledWith('Portable', undefined, 'private-session');
+    } finally { useConverterStore.setState(previous); }
+  });
+
   it('fetchLutColors ignores an older response that arrives last', async () => {
     const firstResponse = deferred<{
       colors: LutColorEntry[];

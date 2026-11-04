@@ -277,6 +277,8 @@ def _installed_version_response(
         details_url=f"{version_base}/details",
         icon_url=f"{asset_base_url}/icon.png",
         asset_base_url=asset_base_url,
+        project_snapshot_protocol=manifest.project_snapshots.protocol if manifest.project_snapshots else None,
+        project_snapshot_schemas=manifest.project_snapshots.schemas if manifest.project_snapshots else (),
     )
 
 

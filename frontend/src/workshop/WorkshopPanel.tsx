@@ -17,6 +17,7 @@ import {
   type WorkshopManagerApi,
 } from "../api/workshop";
 import Button from "../components/ui/Button";
+import { retainWorkshopProject } from "../project/workshopRuntime";
 import CloseButton from "../components/ui/CloseButton";
 import {
   PanelIntro,
@@ -573,8 +574,9 @@ export function WorkshopPanel({
     setReturningHome(true);
     returnHomeTimerRef.current = window.setTimeout(() => {
       returnHomeTimerRef.current = null;
-      setReturningHome(false);
-      returnHome();
+      void retainWorkshopProject().then(returnHome).catch((error) => {
+        setOperationError(error instanceof Error ? error.message : String(error));
+      }).finally(() => setReturningHome(false));
     }, WORKSHOP_RUNTIME_CLOSE_GRACE_MS);
   }, [returnHome]);
 
@@ -1170,6 +1172,8 @@ export function WorkshopPanel({
               previousVersion: selectedModule.previous_version,
               consecutiveStartFailures:
                 selectedModule.consecutive_start_failures,
+              projectSnapshotProtocol: selectedVersion.project_snapshot_protocol,
+              projectSnapshotSchemas: selectedVersion.project_snapshot_schemas,
             }}
             runtimeMode={frameRuntimeMode(runtimeMode)}
             handlers={handlers}

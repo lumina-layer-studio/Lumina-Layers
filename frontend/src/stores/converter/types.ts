@@ -161,6 +161,11 @@ export type NativeMaterialSelectionAction = "edit" | "generate" | "batch";
 // ========== State Interface ==========
 
 export interface ConverterState {
+  projectSettings: import("./project").ProjectConverterSettings | null;
+  projectLutFile: File | null;
+  projectMaterialArchiveFile: File | null;
+  projectSourceKey: string | null;
+  projectResourceSessionIds: string[];
   native_filament_profiles: Record<string, string>;
   nativeFilamentProfileScope: NativeFilamentProfileScope | null;
   nativeMaterialSelection: ExportMaterialSelection | null;
@@ -506,6 +511,8 @@ export interface ConverterState {
 // ========== Actions Interface ==========
 
 export interface ConverterActions {
+  /** Publish a fully prepared project without resetting/re-importing its source. */
+  commitProjectRestore: (state: ConverterState) => void;
   restoreConversionDefaults: () => void;
   applyConversionPreset: (id: string | null) => boolean;
   saveConversionPreset: (name: string, options?: PresetOptions) => SavePresetResult;

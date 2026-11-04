@@ -124,6 +124,18 @@ class WorkshopPermission(StrictFrozenModel):
         return normalized
 
 
+class WorkshopProjectSnapshots(StrictFrozenModel):
+    protocol: Literal[1]
+    schemas: tuple[str, ...] = Field(min_length=1, max_length=32)
+
+    @field_validator("schemas")
+    @classmethod
+    def schemas_are_bounded(cls, value: tuple[str, ...]) -> tuple[str, ...]:
+        if len(set(value)) != len(value) or any(not item or len(item) > 128 for item in value):
+            raise ValueError("invalid project snapshot schemas")
+        return value
+
+
 class WorkshopManifestV1(StrictFrozenModel):
     manifest_version: int = Field(alias="manifestVersion")
     id: str = Field(min_length=3, max_length=128)
@@ -135,6 +147,7 @@ class WorkshopManifestV1(StrictFrozenModel):
     lumina_version: LuminaVersionRange = Field(alias="luminaVersion")
     entrypoints: WorkshopEntrypoints
     permissions: tuple[WorkshopPermission, ...] = Field(max_length=32)
+    project_snapshots: WorkshopProjectSnapshots | None = Field(default=None, alias="projectSnapshots")
 
     @field_validator("manifest_version")
     @classmethod
@@ -168,6 +181,8 @@ class WorkshopManifestV1(StrictFrozenModel):
         names = [permission.name for permission in self.permissions]
         if len(names) != len(set(names)):
             raise ValueError("manifest contains duplicate permission entries")
+        if self.project_snapshots and "project.storage" not in names:
+            raise ValueError("project snapshots require project.storage permission")
         return self
 
 

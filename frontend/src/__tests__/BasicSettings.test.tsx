@@ -986,6 +986,12 @@ describe("BasicSettings", () => {
     });
     expect(dynamicToggle).not.toBeChecked();
     expect(screen.getByRole("slider", { name: "叠色层数" })).toHaveValue("7");
+    // Locked to 10 layers until the advanced switch is turned on.
+    expect(screen.getByRole("slider", { name: "叠色层数" })).toHaveAttribute(
+      "max",
+      "10",
+    );
+    act(() => useConverterStore.getState().setMaterialLayersUnlocked(true));
     expect(screen.getByRole("slider", { name: "叠色层数" })).toHaveAttribute(
       "max",
       "30",

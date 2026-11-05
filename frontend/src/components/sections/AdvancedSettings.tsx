@@ -36,6 +36,8 @@ export default function AdvancedSettings() {
   const setHighPrecision3dPreview = useConverterStore((s) => s.setHighPrecision3dPreview);
   const setChromaGate = useConverterStore((s) => s.setChromaGate);
   const setQuantizeColorsUnlocked = useConverterStore((s) => s.setQuantizeColorsUnlocked);
+  const materialLayersUnlocked = useConverterStore((s) => s.materialLayersUnlocked);
+  const setMaterialLayersUnlocked = useConverterStore((s) => s.setMaterialLayersUnlocked);
 
   return (
     <div className="flex flex-col gap-4">
@@ -118,6 +120,12 @@ export default function AdvancedSettings() {
         wikiPath={WIKI_DOCS.unlockQuantizeCeiling}
         checked={quantize_colors_unlocked}
         onChange={setQuantizeColorsUnlocked}
+      />
+      <Checkbox
+        label={t("adv_unlock_material_layers")}
+        tooltip={t("adv_unlock_material_layers_hint")}
+        checked={materialLayersUnlocked}
+        onChange={setMaterialLayersUnlocked}
       />
     </div>
   );

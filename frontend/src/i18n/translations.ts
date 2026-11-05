@@ -6112,6 +6112,14 @@ export const translations: Record<string, Record<"zh" | "en", string>> = {
     zh: "解锁后颜色数量上限从 256 提升到 8192。会明显增加内存占用和处理时间，仅在确有需要时使用。",
     en: "Unlocking raises the color count ceiling from 256 to 8192. This noticeably increases memory use and processing time; enable only when truly needed.",
   },
+  adv_unlock_material_layers: {
+    zh: "解锁 30 层叠色",
+    en: "Unlock 30 colour layers",
+  },
+  adv_unlock_material_layers_hint: {
+    zh: "耗材档案模式的叠色层数上限从 10 层提高到 30 层（固定层数和动态层数范围都适用），主要用于 0.04 mm 等细层高打印。层数越多，首次预览构建求解运行时越慢；关闭后超过 10 层的设置会自动收回到 10 层。",
+    en: "Raises the material-archive colour layer limit from 10 to 30 (fixed count and dynamic range), mainly for fine layer heights such as 0.04 mm. More layers make the first preview's solver build slower; turning this off pulls any setting above 10 back to 10.",
+  },
   adv_chroma_gate: {
     zh: "暗色彩度门槛",
     en: "Dark Chroma Gate",

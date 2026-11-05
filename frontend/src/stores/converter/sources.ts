@@ -43,6 +43,14 @@ export const MATERIAL_DYNAMIC_LAYER_COUNT_DEFAULT_MAX = 10;
 /** Upper bound for fixed material-archive colour layers (layer-wise DP > 10). */
 export const MATERIAL_LAYER_COUNT_MAX = 30;
 
+/** Layer cap while the advanced "unlock 30 layers" switch is off. 未解锁时的层数上限。 */
+export const MATERIAL_LAYER_COUNT_LOCKED_MAX = 10;
+
+/** Effective material layer cap for the current unlock state. 当前解锁状态下的层数上限。 */
+export function materialLayerCountLimit(unlocked: boolean): number {
+  return unlocked ? MATERIAL_LAYER_COUNT_MAX : MATERIAL_LAYER_COUNT_LOCKED_MAX;
+}
+
 export function normalizeDynamicMaterialLayerCount(
   value: number,
   fallback: number,

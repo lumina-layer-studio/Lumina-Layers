@@ -146,7 +146,7 @@ import {
 } from "./previewCommitGuard";
 import { buildMissingAutoReliefHeightMap,buildPreviewParams } from "./requests";
 import {
-  buildConversionSourceParams,buildNativeModelDefaults,buildNativeModelState,clampValue,filterNativeBrandGroups,getMaterialArchiveReliefMinimumExtraHeight,getNativeBrandGroupByKey,getNativeDbNamesForGroup,getNativeDbOptionNames,getSelectedNativeBrandGroup,getSupportedModeByPair,inferDefaultMaterialBackingDirName,isDynamicMaterialActive,MATERIAL_DYNAMIC_LAYER_COUNT_DEFAULT_MAX,MATERIAL_DYNAMIC_LAYER_COUNT_MIN,MATERIAL_LAYER_COUNT_MAX,normalizeDynamicMaterialLayerCount,normalizeLegacyLutNames,normalizeLutColorMode,normalizeLutDrivenReliefState,normalizeLutGroups,normalizeNativeBrandGroups,normalizePublicColorMode,normalizeStringArray,RELIEF_MAX_EXTRA_HEIGHT_MM,resolveConverterSourceSelection,resolveMaterialPrintLayerCount,resolveNativeBrandSelection,resolveNativeSupportedModeForBrand,resolvePreferredSupportedMode,
+  buildConversionSourceParams,buildNativeModelDefaults,buildNativeModelState,clampValue,filterNativeBrandGroups,getMaterialArchiveReliefMinimumExtraHeight,getNativeBrandGroupByKey,getNativeDbNamesForGroup,getNativeDbOptionNames,getSelectedNativeBrandGroup,getSupportedModeByPair,inferDefaultMaterialBackingDirName,isDynamicMaterialActive,MATERIAL_DYNAMIC_LAYER_COUNT_DEFAULT_MAX,MATERIAL_DYNAMIC_LAYER_COUNT_MIN,materialLayerCountLimit,MATERIAL_LAYER_COUNT_LOCKED_MAX,normalizeDynamicMaterialLayerCount,normalizeLegacyLutNames,normalizeLutColorMode,normalizeLutDrivenReliefState,normalizeLutGroups,normalizeNativeBrandGroups,normalizePublicColorMode,normalizeStringArray,RELIEF_MAX_EXTRA_HEIGHT_MM,resolveConverterSourceSelection,resolveMaterialPrintLayerCount,resolveNativeBrandSelection,resolveNativeSupportedModeForBrand,resolvePreferredSupportedMode,
 } from "./sources";
 import type {
   ConverterActions,ConverterState,ModelSurfaceModelRotation,ModelSurfacePlacement,PendingReplacement,RegionData,SelectionMode,SelectionTool,SourceVersion,
@@ -154,7 +154,7 @@ import type {
 export { CONVERTER_ERROR_KEYS } from "./generationActions";
 export { buildLayerImagesSourceKey } from "./previewArtifacts";
 export {
-  clampValue,getMaterialArchiveReliefMinimumExtraHeight,getMaterialArchiveReliefMinimumTotalHeight,inferDefaultMaterialBackingDirName,isDynamicMaterialActive,MATERIAL_DYNAMIC_LAYER_COUNT_DEFAULT_MAX,MATERIAL_DYNAMIC_LAYER_COUNT_MAX,MATERIAL_DYNAMIC_LAYER_COUNT_MIN,MATERIAL_LAYER_COUNT_MAX,resolveConverterSourceSelection,
+  clampValue,getMaterialArchiveReliefMinimumExtraHeight,getMaterialArchiveReliefMinimumTotalHeight,inferDefaultMaterialBackingDirName,isDynamicMaterialActive,MATERIAL_DYNAMIC_LAYER_COUNT_DEFAULT_MAX,MATERIAL_DYNAMIC_LAYER_COUNT_MAX,MATERIAL_DYNAMIC_LAYER_COUNT_MIN,MATERIAL_LAYER_COUNT_MAX,MATERIAL_LAYER_COUNT_LOCKED_MAX,materialLayerCountLimit,resolveConverterSourceSelection,
 } from "./sources";
 export type {
   ContentCommitStatus,ConverterActions,ConverterState,ModelSurfaceModelRotation,ModelSurfacePlacement,ModelSurfacePlacementMode,PendingReplacement,RegionData,SelectionDocument,SelectionMode,SelectionTool,SourceVersion,WorkshopConverterImageInput,
@@ -1986,6 +1986,7 @@ export const DEFAULT_STATE: ConverterState = {
   materialLayerBenefitPixelCount: 0,
   quantize_colors: 48,
   quantize_colors_unlocked: false,
+  materialLayersUnlocked: false,
   high_precision_3d_preview: false,
   enable_cleanup: true,
   ...loadSvgHoleCompensationSettings(),
@@ -3207,7 +3208,11 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
     setMaterialLayerCount: documentCommand((count: number) => {
       const materialSuggestionReset = _cancelMaterialSuggestionWork();
       set((state) => {
-        const materialLayerCount = clampValue(Math.round(count), 1, MATERIAL_LAYER_COUNT_MAX);
+        const materialLayerCount = clampValue(
+          Math.round(count),
+          1,
+          materialLayerCountLimit(state.materialLayersUnlocked),
+        );
         return {
           materialLayerCount,
           ...materialSuggestionReset,
@@ -3250,16 +3255,20 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
       _cancelPreviewWork();
       const materialSuggestionReset = _cancelMaterialSuggestionWork();
       set((state) => {
-        const materialMinLayerCount = normalizeDynamicMaterialLayerCount(
-          count,
-          state.materialMinLayerCount,
+        const limit = materialLayerCountLimit(state.materialLayersUnlocked);
+        const materialMinLayerCount = Math.min(
+          normalizeDynamicMaterialLayerCount(count, state.materialMinLayerCount),
+          limit,
         );
-        const materialMaxLayerCount = Math.max(
-          normalizeDynamicMaterialLayerCount(
-            state.materialMaxLayerCount,
-            MATERIAL_DYNAMIC_LAYER_COUNT_DEFAULT_MAX,
+        const materialMaxLayerCount = Math.min(
+          Math.max(
+            normalizeDynamicMaterialLayerCount(
+              state.materialMaxLayerCount,
+              MATERIAL_DYNAMIC_LAYER_COUNT_DEFAULT_MAX,
+            ),
+            materialMinLayerCount,
           ),
-          materialMinLayerCount,
+          limit,
         );
         return {
           materialMinLayerCount,
@@ -3283,9 +3292,9 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
       _cancelPreviewWork();
       const materialSuggestionReset = _cancelMaterialSuggestionWork();
       set((state) => {
-        const materialMaxLayerCount = normalizeDynamicMaterialLayerCount(
-          count,
-          state.materialMaxLayerCount,
+        const materialMaxLayerCount = Math.min(
+          normalizeDynamicMaterialLayerCount(count, state.materialMaxLayerCount),
+          materialLayerCountLimit(state.materialLayersUnlocked),
         );
         const materialMinLayerCount = Math.min(
           normalizeDynamicMaterialLayerCount(
@@ -3640,6 +3649,34 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
         quantize_colors: clampValue(state.quantize_colors, 8, upperBound),
         threemfDiskPath: null,
         downloadUrl: null,
+      });
+    }),
+    setMaterialLayersUnlocked: documentCommand((unlocked: boolean) => {
+      const state = _get();
+      if (state.materialLayersUnlocked === unlocked) return;
+      if (unlocked) {
+        set({ materialLayersUnlocked: true });
+        return;
+      }
+      // Locking back to 10 layers pulls any deeper setting down to the cap.
+      // 关闭解锁时，把超过 10 层的设置收回到上限。
+      const cap = MATERIAL_LAYER_COUNT_LOCKED_MAX;
+      const exceeds =
+        state.materialLayerCount > cap ||
+        state.materialMinLayerCount > cap ||
+        state.materialMaxLayerCount > cap;
+      if (!exceeds) {
+        set({ materialLayersUnlocked: false });
+        return;
+      }
+      _cancelPreviewWork();
+      set({
+        materialLayersUnlocked: false,
+        materialLayerCount: Math.min(state.materialLayerCount, cap),
+        materialMinLayerCount: Math.min(state.materialMinLayerCount, cap),
+        materialMaxLayerCount: Math.min(state.materialMaxLayerCount, cap),
+        ..._cancelMaterialSuggestionWork(),
+        ...buildPreviewSessionResetState(state, true),
       });
     }),
     setHighPrecision3dPreview: documentCommand((enabled: boolean) =>

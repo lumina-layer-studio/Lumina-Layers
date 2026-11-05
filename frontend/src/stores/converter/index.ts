@@ -13,6 +13,8 @@ export {
   MATERIAL_DYNAMIC_LAYER_COUNT_MAX,
   MATERIAL_DYNAMIC_LAYER_COUNT_MIN,
   MATERIAL_LAYER_COUNT_MAX,
+  MATERIAL_LAYER_COUNT_LOCKED_MAX,
+  materialLayerCountLimit,
   buildLayerImagesSourceKey,
   collectConverterKeepFileIds,
   getMaterialArchiveReliefMinimumExtraHeight,

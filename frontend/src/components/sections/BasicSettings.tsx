@@ -4,9 +4,8 @@ import { useShallow } from "zustand/react/shallow";
 import {
   useConverterStore,
   ACCEPT_IMAGE_FORMATS,
-  MATERIAL_DYNAMIC_LAYER_COUNT_MAX,
   MATERIAL_DYNAMIC_LAYER_COUNT_MIN,
-  MATERIAL_LAYER_COUNT_MAX,
+  materialLayerCountLimit,
   inferDefaultMaterialBackingDirName,
   isValidImageType,
   hasOnlySvgInputs,
@@ -905,6 +904,11 @@ export default function BasicSettings() {
     notifyTutorialMaterialPicker(materialPickerOpen);
   }, [materialPickerOpen, notifyTutorialMaterialPicker]);
 
+  const materialLayersUnlocked = useConverterStore((s) => s.materialLayersUnlocked);
+  // Above 10 layers only after the advanced "unlock 30 layers" switch.
+  // 高级里打开“解锁 30 层”后滑块上限才到 30。
+  const materialLayerMax = materialLayerCountLimit(materialLayersUnlocked);
+
   const materialSummary = useMemo(() => {
     if (selectedMaterialDirNames.length === 0) {
       return null;
@@ -1305,7 +1309,7 @@ export default function BasicSettings() {
                       wikiPath={WIKI_DOCS.materialArchiveSource}
                       value={materialMinLayerCount}
                       min={MATERIAL_DYNAMIC_LAYER_COUNT_MIN}
-                      max={MATERIAL_DYNAMIC_LAYER_COUNT_MAX}
+                      max={materialLayerMax}
                       step={1}
                       onChange={(v) => setMaterialMinLayerCount(Math.round(v))}
                     />
@@ -1315,7 +1319,7 @@ export default function BasicSettings() {
                       wikiPath={WIKI_DOCS.materialArchiveSource}
                       value={materialMaxLayerCount}
                       min={MATERIAL_DYNAMIC_LAYER_COUNT_MIN}
-                      max={MATERIAL_DYNAMIC_LAYER_COUNT_MAX}
+                      max={materialLayerMax}
                       step={1}
                       onChange={(v) => setMaterialMaxLayerCount(Math.round(v))}
                     />
@@ -1327,7 +1331,7 @@ export default function BasicSettings() {
                     wikiPath={WIKI_DOCS.materialArchiveSource}
                     value={materialLayerCount}
                     min={5}
-                    max={MATERIAL_LAYER_COUNT_MAX}
+                    max={materialLayerMax}
                     step={1}
                     onChange={(v) => setMaterialLayerCount(Math.round(v))}
                   />

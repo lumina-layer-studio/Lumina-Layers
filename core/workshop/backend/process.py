@@ -358,6 +358,34 @@ class BackendProcess:
     def alive(self) -> bool:
         return self._process is not None and self._process.poll() is None
 
+    def _descendants_without_job(self) -> list[psutil.Process]:
+        """Descendants no job object owns (POSIX, or Windows without a job)."""
+
+        process = self._process
+        if process is None or self._job is not None or process.poll() is not None:
+            return []
+        try:
+            return psutil.Process(process.pid).children(recursive=True)
+        except psutil.Error:
+            return []
+
+    def shutdown(self, *, wait_seconds: float, grace_seconds: float) -> None:
+        """Ask the backend to exit, then end it and every helper it started.
+
+        A helper outlives its exiting parent on POSIX and can no longer be
+        found from it, so the tree is listed before the request. On Windows
+        the job object ends the whole tree when the parent exits.
+        """
+
+        helpers = self._descendants_without_job()
+        try:
+            self.send({"type": "shutdown"})
+        except (OSError, ValueError):
+            pass
+        if self.wait(timeout=wait_seconds) is None:
+            self.terminate(grace_seconds=grace_seconds)
+        _end_processes(helpers, grace_seconds=grace_seconds)
+
     def terminate(self, *, grace_seconds: float) -> None:
         """End the backend and every descendant; idempotent."""
 
@@ -372,19 +400,7 @@ class BackendProcess:
                 members = [root, *root.children(recursive=True)]
             except psutil.Error:
                 members = []
-            signal_method = "terminate" if grace_seconds > 0 else "kill"
-            for member in members:
-                try:
-                    getattr(member, signal_method)()
-                except psutil.Error:
-                    pass
-            if grace_seconds > 0 and members:
-                _gone, alive = psutil.wait_procs(members, timeout=grace_seconds)
-                for member in alive:
-                    try:
-                        member.kill()
-                    except psutil.Error:
-                        pass
+            _end_processes(members, grace_seconds=grace_seconds)
         try:
             process.wait(timeout=15)
         except subprocess.TimeoutExpired:
@@ -400,6 +416,24 @@ class BackendProcess:
             return self._process.wait(timeout=timeout)
         except subprocess.TimeoutExpired:
             return None
+
+
+def _end_processes(members: list[psutil.Process], *, grace_seconds: float) -> None:
+    """Terminate ``members``, killing any still running after the grace period."""
+
+    signal_method = "terminate" if grace_seconds > 0 else "kill"
+    for member in members:
+        try:
+            getattr(member, signal_method)()
+        except psutil.Error:
+            pass
+    if grace_seconds > 0 and members:
+        _gone, alive = psutil.wait_procs(members, timeout=grace_seconds)
+        for member in alive:
+            try:
+                member.kill()
+            except psutil.Error:
+                pass
 
 
 def process_tree_alive(pid: int, create_time: float) -> bool:

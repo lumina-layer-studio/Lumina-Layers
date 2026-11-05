@@ -42,6 +42,15 @@ def _now() -> datetime:
     return datetime.now(timezone.utc)
 
 
+def stored_input_path(inputs_dir: Path, index: int, file_name: str) -> Path:
+    """Path of input ``index``; its own folder keeps the module's file name.
+
+    Inputs with equal file names therefore never overwrite each other.
+    """
+
+    return inputs_dir / f"{index:02d}" / file_name
+
+
 def _iso(value: datetime) -> str:
     return value.isoformat(timespec="seconds")
 

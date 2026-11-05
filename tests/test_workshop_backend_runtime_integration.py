@@ -278,6 +278,31 @@ def test_task_result_outlives_backend_stop_and_keeps_png_alpha(harness: Harness)
     assert hashlib.sha256(path.read_bytes()).hexdigest() == entry.sha256
 
 
+def test_inputs_keep_their_names_and_never_overwrite_each_other(harness: Harness) -> None:
+    harness.install("fixture.alpha", "1.0.0", lock_text([harness.wheels["shared"]]))
+    harness.prepare("fixture.alpha", "1.0.0")
+    file_name = "a" * 124 + ".png"  # the longest name the public contract accepts
+    first, second = harness.tmp_path / "first.bin", harness.tmp_path / "second.bin"
+    first.write_bytes(b"first input")
+    second.write_bytes(b"second input")
+    record = harness.run(
+        "fixture.alpha",
+        "1.0.0",
+        "inputs",
+        inputs=[
+            TaskInputFile(name="left", file_name=file_name, mime_type="image/png", path=first),
+            TaskInputFile(name="right", file_name=file_name, mime_type="image/png", path=second),
+        ],
+    )
+    assert record.status == "succeeded", record.error
+    assert [item.file_name for item in record.inputs] == [file_name, file_name]
+    seen = {item["name"]: item for item in harness.output_json(record, "inputs")}
+    assert seen["left"]["fileName"] == seen["right"]["fileName"] == file_name
+    assert seen["left"]["path"] != seen["right"]["path"]
+    assert seen["left"]["sha256"] == hashlib.sha256(b"first input").hexdigest()
+    assert seen["right"]["sha256"] == hashlib.sha256(b"second input").hexdigest()
+
+
 def test_cancel_ends_backend_that_ignores_cooperative_cancel(harness: Harness) -> None:
     harness.install("fixture.alpha", "1.0.0", lock_text([harness.wheels["shared"]]))
     harness.prepare("fixture.alpha", "1.0.0")
@@ -1020,6 +1045,51 @@ def test_reviewed_update_reuses_consent_unless_capabilities_expand(harness: Harn
     with pytest.raises(WorkshopBackendError) as error:
         harness.runtime.submit(module_id, "1.1.0", operation="echo", params={}, inputs=[], idempotency_key=None)
     assert error.value.code == "module-version-blocked"
+
+
+def test_queued_task_rechecks_review_and_registry_before_it_runs(harness: Harness) -> None:
+    module_id = "fixture.revoked"
+    package = write_backend_package(
+        harness.packages / "revoked",
+        module_id=module_id,
+        version="1.0.0",
+        lock=lock_text([harness.wheels["shared"]]),
+        manifest=backend_manifest(module_id, "1.0.0"),
+    )
+    sha = hashlib.sha256(package.read_bytes()).hexdigest()
+    registry = _registry_for(module_id, {"1.0.0": package})
+    harness.review = ReviewContext(registry=registry, attestations=frozenset({(module_id, "1.0.0", sha)}))
+    harness.installer().install_candidate(
+        package, source="registry", source_repository="https://github.com/acme/backend-module", official=False
+    )
+    harness.prepare(module_id, "1.0.0")
+
+    def queue_behind_running_task():  # noqa: ANN202
+        running = harness.runtime.submit(
+            module_id, "1.0.0", operation="slow", params={"steps": 400, "delay": 0.05}, inputs=[], idempotency_key=None
+        )
+        wait_until(lambda: harness.runtime.get_task(module_id, running.task_id).status == "running")
+        queued = harness.runtime.submit(module_id, "1.0.0", operation="echo", params={}, inputs=[], idempotency_key=None)
+        return running, queued
+
+    # Review withdrawn while the task waits: it needs a new confirmation first.
+    running, queued = queue_behind_running_task()
+    harness.review = ReviewContext(registry=registry, attestations=frozenset())
+    harness.runtime.cancel_task(module_id, running.task_id)
+    refused = wait_terminal(harness.runtime, module_id, queued.task_id)
+    assert refused.status == "failed" and refused.error is not None
+    assert refused.error.code == "backend-authorization-required"
+    assert refused.started_at is None and refused.outputs == ()
+
+    # Registry block while the task waits: it never runs.
+    harness.runtime.authorize(module_id, "1.0.0", acknowledge_unreviewed=True)
+    running, queued = queue_behind_running_task()
+    harness.review = ReviewContext(registry=_registry_for(module_id, {"1.0.0": package}, blocked={"1.0.0"}), attestations=None)
+    harness.runtime.cancel_task(module_id, running.task_id)
+    refused = wait_terminal(harness.runtime, module_id, queued.task_id)
+    assert refused.status == "failed" and refused.error is not None
+    assert refused.error.code == "module-version-blocked"
+    assert refused.started_at is None and refused.outputs == ()
 
 
 def test_version_needed_by_running_task_survives_pruning(harness: Harness) -> None:

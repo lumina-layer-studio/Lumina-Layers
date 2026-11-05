@@ -37,6 +37,7 @@ from .tasks import (
     TaskProgress,
     TaskRecord,
     TaskStore,
+    stored_input_path,
 )
 
 
@@ -380,11 +381,11 @@ class ModuleBackendSupervisor:
             "inputs": [
                 {
                     "name": item.name,
-                    "path": str(inputs_dir / item.file_name),
+                    "path": str(stored_input_path(inputs_dir, index, item.file_name)),
                     "fileName": item.file_name,
                     "mimeType": item.mime_type,
                 }
-                for item in running.inputs
+                for index, item in enumerate(running.inputs)
             ],
             "outputDir": str(outputs_dir),
             "workDir": str(work_dir),
@@ -643,12 +644,7 @@ class ModuleBackendSupervisor:
             process = self._process
         if process is None:
             return
-        try:
-            process.send({"type": "shutdown"})
-        except (OSError, ValueError):
-            pass
-        if process.wait(timeout=0.5) is None:
-            process.terminate(grace_seconds=1.0)
+        process.shutdown(wait_seconds=0.5, grace_seconds=1.0)
         with self._condition:
             if self._process is process:
                 self._process = None

@@ -265,6 +265,7 @@ def decode_png_rgba(data: bytes) -> tuple[int, int, bytes]:
 # cooperative cancellation, ignored cancellation with a helper process,
 # failure, dependency version reporting, and a transparent PNG output.
 FIXTURE_BACKEND_MAIN = r'''"""Lumina Workshop runtime test backend (control protocol v1)."""
+import hashlib
 import json
 import os
 import queue
@@ -405,6 +406,14 @@ def run(message):
         os.write(1, b"raw fd1 noise\n")
         write_json(output_dir, "noisy.json", {"ok": True})
         send({"type": "result", "taskId": task_id, "outputs": [{"name": "result", "fileName": "noisy.json", "mimeType": "application/json"}]})
+    elif operation == "inputs":
+        received = []
+        for item in message["inputs"]:
+            with open(item["path"], "rb") as stream:
+                digest = hashlib.sha256(stream.read()).hexdigest()
+            received.append({"name": item["name"], "fileName": item["fileName"], "path": item["path"], "sha256": digest})
+        write_json(output_dir, "inputs.json", received)
+        send({"type": "result", "taskId": task_id, "outputs": [{"name": "inputs", "fileName": "inputs.json", "mimeType": "application/json"}]})
     elif operation == "alpha-invert":
         source = next(item for item in message["inputs"] if item["name"] == "image")
         with open(source["path"], "rb") as stream:

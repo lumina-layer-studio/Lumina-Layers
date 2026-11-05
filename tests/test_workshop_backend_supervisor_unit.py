@@ -60,6 +60,9 @@ class ScriptedProcess:
             self._alive = False
             self._on_exit(1, None)
 
+    def shutdown(self, *, wait_seconds: float, grace_seconds: float) -> None:
+        self.send({"type": "shutdown"})
+
 
 def supervisor_for(tmp_path: Path, script: dict) -> tuple[ModuleBackendSupervisor, TaskStore]:  # noqa: ANN001
     ScriptedProcess.script = script

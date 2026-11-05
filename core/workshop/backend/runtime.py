@@ -72,6 +72,7 @@ from .tasks import (
     TaskFile,
     TaskRecord,
     TaskStore,
+    stored_input_path,
 )
 from .tooling import (
     CancelToken,
@@ -758,12 +759,7 @@ class WorkshopBackendRuntime:
                     "The module backend did not start correctly during preparation.",
                 )
         finally:
-            try:
-                process.send({"type": "shutdown"})
-            except (OSError, ValueError):
-                pass
-            if process.wait(timeout=5) is None:
-                process.terminate(grace_seconds=1.0)
+            process.shutdown(wait_seconds=5, grace_seconds=1.0)
 
     def _run_preparation(self, task: TaskRecord, token: CancelToken) -> None:
         module_id, version = task.module_id, task.module_version
@@ -915,12 +911,33 @@ class WorkshopBackendRuntime:
             },
         )
 
-    def _resolve_target(self, task: TaskRecord) -> RunTarget:
-        module_id, version = task.module_id, task.module_version
+    def _require_runnable(
+        self,
+        module_id: str,
+        version: str,
+    ) -> tuple[WorkshopManifestV2, Path, BackendVersionRecord]:
+        """Checks a task passes when submitted and again before it runs.
+
+        A queued task may wait behind a long one; disabling, a withdrawn
+        review, or a Registry block in the meantime keeps it from running.
+        """
+
+        state = self._installed_state(module_id)
+        if not state.enabled:
+            raise WorkshopBackendError("module-disabled", "The Workshop module is disabled.")
+        if version not in state.versions:
+            raise WorkshopBackendError("module-version-unavailable", "The module version is not installed.")
         manifest, root = self._manifest(module_id, version)
         record = self._record(module_id, version)
+        self._require_authorized(state, record, manifest)
         if record.preparation != "prepared" or record.environment_key is None:
-            raise WorkshopBackendError("backend-not-prepared", "The module backend is not prepared.")
+            raise WorkshopBackendError("backend-not-prepared", "Prepare this module's backend first.")
+        return manifest, root, record
+
+    def _resolve_target(self, task: TaskRecord) -> RunTarget:
+        module_id, version = task.module_id, task.module_version
+        manifest, root, record = self._require_runnable(module_id, version)
+        assert record.environment_key is not None
         models = {
             model.id: str(self.models.view_dir(module_id, version) / model.file_name)
             for model in manifest.backend.models
@@ -974,16 +991,7 @@ class WorkshopBackendRuntime:
         inputs: Sequence[TaskInputFile],
         idempotency_key: str | None,
     ) -> TaskRecord:
-        state = self._installed_state(module_id)
-        if not state.enabled:
-            raise WorkshopBackendError("module-disabled", "The Workshop module is disabled.")
-        if version not in state.versions:
-            raise WorkshopBackendError("module-version-unavailable", "The module version is not installed.")
-        manifest, _root = self._manifest(module_id, version)
-        record = self._record(module_id, version)
-        self._require_authorized(state, record, manifest)
-        if record.preparation != "prepared":
-            raise WorkshopBackendError("backend-not-prepared", "Prepare this module's backend first.")
+        self._require_runnable(module_id, version)
         encoded = json.dumps(params, ensure_ascii=False, separators=(",", ":"))
         if len(encoded.encode("utf-8")) > MAX_BACKEND_TASK_PARAMS_BYTES:
             raise WorkshopBackendError("task-params-too-large", "Backend task parameters exceed 64 KiB.")
@@ -1006,14 +1014,14 @@ class WorkshopBackendRuntime:
         def prepare_files(_record: TaskRecord, inputs_dir: Path) -> tuple[TaskFile, ...]:
             files: list[TaskFile] = []
             for index, item in enumerate(inputs):
-                stored_name = f"{index:02d}-{item.file_name}"
-                destination = inputs_dir / stored_name
+                destination = stored_input_path(inputs_dir, index, item.file_name)
+                destination.parent.mkdir()
                 shutil.copyfile(item.path, destination)
                 data = destination.read_bytes()
                 files.append(
                     TaskFile(
                         name=item.name,
-                        file_name=stored_name,
+                        file_name=item.file_name,
                         mime_type=item.mime_type,
                         size_bytes=len(data),
                         sha256=hashlib.sha256(data).hexdigest(),

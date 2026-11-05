@@ -6120,6 +6120,30 @@ export const translations: Record<string, Record<"zh" | "en", string>> = {
     zh: "耗材档案模式的叠色层数上限从 10 层提高到 30 层（固定层数和动态层数范围都适用），主要用于 0.04 mm 等细层高打印。层数越多，首次预览构建求解运行时越慢；关闭后超过 10 层的设置会自动收回到 10 层。",
     en: "Raises the material-archive colour layer limit from 10 to 30 (fixed count and dynamic range), mainly for fine layer heights such as 0.04 mm. More layers make the first preview's solver build slower; turning this off pulls any setting above 10 back to 10.",
   },
+  adv_unlock_material_layers_confirm_title: {
+    zh: "解锁 30 层叠色？",
+    en: "Unlock 30 colour layers?",
+  },
+  adv_unlock_material_layers_warn_speed: {
+    zh: "速度：超过 10 层后，首次预览要先构建求解数据，可能需要几十秒，配置较低的电脑会更久；求解缓存也会占用更多内存和磁盘。",
+    en: "Speed: above 10 layers the first preview builds solver data first, which can take tens of seconds (longer on slower computers), and the solver cache uses more memory and disk.",
+  },
+  adv_unlock_material_layers_warn_raster: {
+    zh: "层高：高保真和像素模式的模型固定按 0.08 mm 层高生成。使用 0.04 mm 等其他层高时请用矢量模式，否则颜色会不准。",
+    en: "Layer height: High-Fidelity and Pixel modes always build the model at 0.08 mm layers. For other layer heights such as 0.04 mm, use Vector mode, or the colours will be off.",
+  },
+  adv_unlock_material_layers_warn_lock: {
+    zh: "关闭后，超过 10 层的设置会自动收回到 10 层。",
+    en: "Turning this off pulls any setting above 10 layers back to 10.",
+  },
+  adv_unlock_material_layers_confirm: {
+    zh: "解锁",
+    en: "Unlock",
+  },
+  adv_unlock_material_layers_cancel: {
+    zh: "取消",
+    en: "Cancel",
+  },
   adv_chroma_gate: {
     zh: "暗色彩度门槛",
     en: "Dark Chroma Gate",

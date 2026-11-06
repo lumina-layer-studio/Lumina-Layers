@@ -2878,7 +2878,7 @@ def restore_editor_project(
         if get_editor_content_revision(session) != 0 or get_selection_revision(session) != 0:
             raise HTTPException(status_code=409, detail="Project edits can only initialize a fresh preview session.")
         try:
-            checkpoint = decode_editor_project(payload, session)
+            checkpoint = decode_editor_project(payload, session, allow_resize=True)
         except (ValueError, OSError) as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
         begin_editor_commit(session_id, store, session, operation_id=operation_id, operation="project_restore")
@@ -2886,6 +2886,8 @@ def restore_editor_project(
         restore_replacement_checkpoint(session_id, store, session, checkpoint)
         persisted = persist_preview_cache(session_id, store, cache)
         session["preview_cache"] = persisted
+        if session.get("gradient_region_id_map") is None:
+            recompute_gradient_groups_into_session(cache, session_id, store)
         _invalidate_and_prewarm_visible_region_cache(session_id, store, session, cache)
         mask = session.get("editor_selection_mask")
         if isinstance(mask, np.ndarray):

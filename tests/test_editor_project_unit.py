@@ -41,6 +41,7 @@ def _session(image_path: Path | None = None) -> dict:
             "original_material_matrix": matrix.copy(),
             "mask_solid": np.ones((4, 6), dtype=bool),
             "quantized_image": rgb.copy(),
+            "original_quantized_image": rgb.copy(),
             "target_w": 6,
             "target_h": 4,
             "target_width_mm": 0.6,
@@ -264,7 +265,10 @@ def test_editor_import_rejects_pickle_and_corrupt_compression() -> None:
             decode_editor_project(payload, _session())
 
 
-def test_editor_routes_restore_a_fresh_session_with_committed_selection(source_image: Path, monkeypatch) -> None:
+@pytest.mark.parametrize("resize", [False, True])
+def test_editor_routes_restore_a_fresh_session_with_committed_selection(
+    source_image: Path, monkeypatch: pytest.MonkeyPatch, resize: bool,
+) -> None:
     from fastapi.testclient import TestClient
     from api.app import app
     from api.dependencies import get_file_registry, get_session_store
@@ -275,12 +279,25 @@ def test_editor_routes_restore_a_fresh_session_with_committed_selection(source_i
     source = _session(source_image)
     mask = source["editor_selection_mask"]
     source["preview_cache"]["matched_rgb"][mask] = [20, 210, 40]
+    source["preview_cache"]["material_matrix"][mask] = [1, 0, 1]
+    source["recipe_overrides"] = [{"region_id": "saved-region", "recipe": [1, 0, 1], "layer_order": "Top2Bottom"}]
+    source["recipe_override_applied_masks"] = {"saved-region": pack_applied_region_mask(mask)}
     source["region_replacement_count"] = 1
     original = store.create()
     fresh = store.create()
     for key, value in source.items():
         store.put(original, key, value)
-    for key, value in _session(source_image).items():
+    target = _session(source_image)
+    if resize:
+        cache = target["preview_cache"]
+        for key, value in list(cache.items()):
+            if isinstance(value, np.ndarray):
+                cache[key] = value.repeat(2, axis=0).repeat(2, axis=1)
+        cache.update(target_w=12, target_h=8, target_width_mm=1.2)
+        # A new-size preview has its own unedited analysis and geometry.
+        cache["matched_rgb"][:] = [190, 20, 30]
+        cache["original_matched_rgb"] = cache["matched_rgb"].copy()
+    for key, value in target.items():
         store.put(fresh, key, value)
     store.put(fresh, "editor_selection_revision", 0)
     store.put(fresh, "editor_selection_mask", None)
@@ -303,7 +320,17 @@ def test_editor_routes_restore_a_fresh_session_with_committed_selection(source_i
         assert restored.json()["result"]["region_replacement_count"] == 1
         selection = client.get(f"/api/convert/selection/{fresh}")
         assert selection.status_code == 200, selection.text
-        assert selection.json()["selected_pixel_count"] == 2
+        expected_mask = mask.repeat(2, axis=0).repeat(2, axis=1) if resize else mask
+        assert selection.json()["selected_pixel_count"] == int(expected_mask.sum())
+        from api.preview_cache_artifacts import hydrate_preview_cache_for_worker
+        session = store.get(fresh)
+        cache = hydrate_preview_cache_for_worker(session["preview_cache"], mmap=False)
+        np.testing.assert_array_equal(cache["matched_rgb"][expected_mask], np.tile([20, 210, 40], (expected_mask.sum(), 1)))
+        np.testing.assert_array_equal(cache["material_matrix"][expected_mask], np.tile([1, 0, 1], (expected_mask.sum(), 1)))
+        np.testing.assert_array_equal(cache["matched_rgb"][~expected_mask], target["preview_cache"]["matched_rgb"][~expected_mask])
+        assert cache["target_width_mm"] == (1.2 if resize else 0.6)
+        resolved = resolve_recipe_override_masks(session, session["recipe_overrides"], expected_mask.shape)
+        np.testing.assert_array_equal(resolved["saved-region"], expected_mask)
         assert selection.json()["editor_content_revision"] == restored.json()["editor_content_revision"]
         assert selection.json()["editor_content_revision"] > 0
         again = client.post(
@@ -319,9 +346,11 @@ def test_editor_routes_restore_a_fresh_session_with_committed_selection(source_i
         client.close()
 
 
+@pytest.mark.parametrize("resize", [False, True])
 def test_imported_project_recipe_masks_survive_next_recipe_application(
     source_image: Path,
     monkeypatch: pytest.MonkeyPatch,
+    resize: bool,
 ) -> None:
     from fastapi.testclient import TestClient
     from api.app import app
@@ -344,6 +373,11 @@ def test_imported_project_recipe_masks_survive_next_recipe_application(
         cache["matched_rgb"][:2] = [255, 255, 255]
         cache["quantized_image"] = cache["matched_rgb"].copy()
         cache["lut_metadata"] = metadata
+        if resize and session_id == fresh:
+            for key, value in list(cache.items()):
+                if isinstance(value, np.ndarray):
+                    cache[key] = value.repeat(2, axis=0).repeat(2, axis=1)
+            cache.update(target_w=12, target_h=8, target_width_mm=1.2)
         session.update({
             "lut_path": str(lut_path),
             "editor_selection_mask": None,
@@ -406,9 +440,10 @@ def test_imported_project_recipe_masks_survive_next_recipe_application(
         apply_recipe(fresh, new_region, 0)
 
         session = store.get(fresh)
-        resolved = resolve_recipe_override_masks(session, session["recipe_overrides"], (4, 6))
-        first_mask = np.zeros((4, 6), dtype=bool)
-        first_mask[:2] = True
+        shape = (8, 12) if resize else (4, 6)
+        resolved = resolve_recipe_override_masks(session, session["recipe_overrides"], shape)
+        first_mask = np.zeros(shape, dtype=bool)
+        first_mask[:shape[0] // 2] = True
         np.testing.assert_array_equal(resolved[first_region], first_mask)
         np.testing.assert_array_equal(resolved[new_region], ~first_mask)
         assert document["selection_revision"] > saved_selection["selection_revision"]
@@ -418,6 +453,123 @@ def test_imported_project_recipe_masks_survive_next_recipe_application(
         store.close(original)
         store.close(fresh)
         client.close()
+
+
+@pytest.mark.parametrize("scale", [0.5, 1, 2])
+@pytest.mark.parametrize("layer_order", ["Top2Bottom", "Bottom2Top"])
+def test_resize_replays_deltas_and_global_bases_without_replacing_fresh_analysis(
+    source_image: Path, scale: float, layer_order: str,
+) -> None:
+    from api.editor_project import build_editor_project, decode_editor_project
+
+    source = _session(source_image)
+    old = source["preview_cache"]
+    old["lut_metadata"].layer_order = layer_order
+    mask = source["editor_selection_mask"]
+    old["matched_rgb"][mask] = [20, 210, 40]
+    old["quantized_image"][mask] = [10, 200, 30]
+    # A four-layer manual recipe on a three-layer preview; the added backing
+    # layer must survive, including Bottom2Top stacking and transparent edges.
+    old["material_matrix"] = np.zeros((4, 6, 4), dtype=np.int16)
+    old["material_matrix"][mask] = [1, 0, 1, 1]
+    source["global_replacement_base_matched_rgb"] = old["matched_rgb"].copy()
+    source["global_replacement_base_material_matrix"] = old["material_matrix"].copy()
+    fresh = _session(source_image)
+    cache = fresh["preview_cache"]
+    shape = (int(4 * scale), int(6 * scale))
+    for key, value in list(cache.items()):
+        if isinstance(value, np.ndarray):
+            cache[key] = np.ones(shape, dtype=bool) if value.ndim == 2 else np.zeros((*shape, value.shape[2]), dtype=value.dtype)
+    cache.update(target_w=shape[1], target_h=shape[0], target_width_mm=0.6 * scale + 0.01)
+    cache["lut_metadata"].layer_order = layer_order
+    for key in ("matched_rgb", "original_matched_rgb", "quantized_image", "original_quantized_image"):
+        cache[key][:] = [180, 40, 50]
+    cache["height_identity_rgb"] = cache["matched_rgb"].copy()
+    cache["mask_solid"][-1, -1] = False
+    if scale == 2:
+        cache["mask_solid"][2, 2] = False
+    cache["material_matrix"][~cache["mask_solid"]] = -1
+    cache["original_material_matrix"] = cache["material_matrix"].copy()
+    expected = mask.repeat(2, axis=0).repeat(2, axis=1) if scale == 2 else mask[1::2, 1::2] if scale == 0.5 else mask.copy()
+    expected &= cache["mask_solid"]
+
+    restored = decode_editor_project(build_editor_project(source), fresh, allow_resize=True)
+    arrays, fields = restored["preview_cache_arrays"], restored["session_fields"]
+    for key in ("original_matched_rgb", "original_material_matrix", "original_quantized_image", "height_identity_rgb", "mask_solid"):
+        np.testing.assert_array_equal(arrays[key], cache[key])
+    np.testing.assert_array_equal(arrays["matched_rgb"][~expected], cache["matched_rgb"][~expected])
+    np.testing.assert_array_equal(arrays["matched_rgb"][expected], np.tile([20, 210, 40], (expected.sum(), 1)))
+    np.testing.assert_array_equal(arrays["quantized_image"][expected], np.tile([10, 200, 30], (expected.sum(), 1)))
+    np.testing.assert_array_equal(arrays["material_matrix"][expected], np.tile([1, 0, 1, 1], (expected.sum(), 1)))
+    np.testing.assert_array_equal(arrays["material_matrix"][-1, -1], [-1] * 4)
+    np.testing.assert_array_equal(fields["editor_selection_mask"], expected)
+    for name in ("matched_rgb", "material_matrix"):
+        np.testing.assert_array_equal(fields[f"global_replacement_base_{name}"], arrays[name])
+    # Resaving the migrated session establishes the new grid as its binding.
+    reopened = {**fresh, **fields, "preview_cache": arrays}
+    again = decode_editor_project(build_editor_project(reopened), fresh)
+    np.testing.assert_array_equal(again["preview_cache_arrays"]["material_matrix"], arrays["material_matrix"])
+
+
+def test_resize_keeps_global_base_compatible_with_extended_recipe_layers(source_image: Path) -> None:
+    from api.editor_project import build_editor_project, decode_editor_project
+
+    source = _session(source_image)
+    source["global_replacement_base_material_matrix"] = source["preview_cache"]["material_matrix"].copy()
+    source["preview_cache"]["material_matrix"] = np.ones((4, 6, 4), dtype=np.int16)
+    fresh = _session(source_image)
+    fresh["preview_cache"]["target_width_mm"] = 0.7
+    restored = decode_editor_project(build_editor_project(source), fresh, allow_resize=True)
+    base = restored["session_fields"]["global_replacement_base_material_matrix"]
+    assert base.shape == restored["preview_cache_arrays"]["material_matrix"].shape == (4, 6, 4)
+    np.testing.assert_array_equal(base, np.zeros((4, 6, 4), dtype=np.int16))
+
+
+def test_resize_rejects_recipe_masks_that_vanish_before_publishing(source_image: Path) -> None:
+    from api.editor_project import build_editor_project, decode_editor_project
+    from api.session_value_codec import encode_session_value
+
+    source = _session(source_image)
+    mask = np.zeros((4, 6), dtype=bool)
+    mask[0, 0] = True
+    source["recipe_overrides"] = [{"region_id": "tiny", "recipe": [1, 0, 1], "layer_order": "Top2Bottom"}]
+    source["recipe_override_applied_masks"] = {"tiny": pack_applied_region_mask(mask)}
+    fresh = _session(source_image)
+    cache = fresh["preview_cache"]
+    for key, value in list(cache.items()):
+        if isinstance(value, np.ndarray):
+            cache[key] = value[1::2, 1::2].copy()
+    cache.update(target_w=3, target_h=2, target_width_mm=0.3)
+    before = encode_session_value(fresh)
+    with pytest.raises(ValueError, match="mask"):
+        decode_editor_project(build_editor_project(source), fresh, allow_resize=True)
+    assert encode_session_value(fresh) == before
+
+
+@pytest.mark.parametrize("mismatch", ["image", "mode", "material", "grid", "scale"])
+def test_resize_still_rejects_incompatible_or_malformed_bindings(
+    source_image: Path, mismatch: str,
+) -> None:
+    from api.editor_project import build_editor_project, decode_editor_project
+    from api.session_value_codec import encode_session_value
+
+    payload = build_editor_project(_session(source_image))
+    fresh = _session(source_image)
+    fresh["preview_cache"]["target_width_mm"] = 0.7
+    if mismatch == "image":
+        Image.new("RGB", (6, 4), (10, 40, 220)).save(source_image)
+    elif mismatch == "mode":
+        fresh["preview_cache"]["modeling_mode"] = "vector"
+    elif mismatch == "material":
+        fresh["preview_cache"]["lut_metadata"].palette[0].material = "PLA"
+    else:
+        document = json.loads(gzip.decompress(payload))
+        document["binding"]["width" if mismatch == "grid" else "pixel_scale"] = 7 if mismatch == "grid" else 0
+        payload = gzip.compress(json.dumps(document).encode())
+    before = encode_session_value(fresh)
+    with pytest.raises(ValueError):
+        decode_editor_project(payload, fresh, allow_resize=True)
+    assert encode_session_value(fresh) == before
 
 
 def test_editor_restore_route_rejects_different_source_before_session_mutation(source_image: Path) -> None:

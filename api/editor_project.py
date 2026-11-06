@@ -10,6 +10,7 @@ import gzip
 import hashlib
 from io import BytesIO
 import json
+import math
 from typing import Any
 import zlib
 
@@ -22,6 +23,7 @@ from api.replacement_history import (
 )
 from api.selection_state import pack_applied_region_mask, resolve_recipe_override_masks
 from api.session_value_codec import decode_session_value, encode_session_value
+from core.edit_projection import EditProjectionGrid
 from core.material_lut_synthesis import infer_material_archive_base_channel_idx
 
 EDITOR_PROJECT_MAX_BYTES = 512 * 1024 * 1024
@@ -31,6 +33,7 @@ _ARRAY_FIELDS = frozenset({
     "original_quantized_image",
 })
 _METADATA_FIELDS = REPLACEMENT_CACHE_METADATA_FIELDS
+_GRID_BINDING_FIELDS = frozenset({"width", "height", "target_width_mm", "pixel_scale"})
 
 
 def _cache(session: dict[str, Any]) -> dict[str, Any]:
@@ -174,7 +177,95 @@ def build_editor_project(session: dict[str, Any]) -> bytes:
     return gzip.compress(raw, mtime=0)
 
 
-def decode_editor_project(payload: bytes, session: dict[str, Any]) -> dict[str, Any]:
+def _binding_shape(binding: dict[str, Any]) -> tuple[int, int]:
+    shape = (binding["height"], binding["width"])
+    if any(type(value) is not int or value <= 0 for value in shape):
+        raise ValueError("Project edit grid dimensions are invalid")
+    for name in ("target_width_mm", "pixel_scale"):
+        value = binding[name]
+        if not isinstance(value, (int, float)) or not math.isfinite(value) or value <= 0:
+            raise ValueError("Project edit grid scale is invalid")
+    return shape
+
+
+def _project_checkpoint(
+    checkpoint: dict[str, Any], cache: dict[str, Any], binding: dict[str, Any],
+) -> dict[str, Any]:
+    """Replay explicit edits onto fresh analysis using the generation grid mapping."""
+    saved = checkpoint["preview_cache_arrays"]
+    fields = checkpoint["session_fields"]
+    source_solid, target_solid = saved["mask_solid"], np.asarray(cache["mask_solid"])
+    grid = EditProjectionGrid(source_solid.shape, target_solid.shape)
+    arrays = deepcopy(cache)
+
+    def replay(name: str, edited: np.ndarray) -> np.ndarray:
+        pristine = saved.get(f"original_{name}")
+        fresh = cache.get(name)
+        if not isinstance(pristine, np.ndarray) or not isinstance(fresh, np.ndarray):
+            raise ValueError(f"Project edit resize requires the original {name} analysis")
+        if not isinstance(edited, np.ndarray) or edited.ndim != 3 or edited.shape[:2] != grid.source_shape:
+            raise ValueError(f"Project edit coordinates do not match: {name}")
+        if name == "material_matrix":
+            if edited.dtype.kind not in "iu":
+                raise ValueError("Project edit material data must use integer channels")
+            # Match recipe application: added layers are backing material inside
+            # the silhouette and Air outside, on the backing side of the stack.
+            layers = max(edited.shape[2], pristine.shape[2], fresh.shape[2], saved["material_matrix"].shape[2])
+
+            def pad(matrix: np.ndarray, solid: np.ndarray) -> np.ndarray:
+                if matrix.shape[2] == layers:
+                    return matrix
+                matrix = matrix.astype(np.result_type(matrix.dtype, np.int32), copy=False)
+                extra = np.full((*solid.shape, layers - matrix.shape[2]), -1, dtype=matrix.dtype)
+                extra[solid] = int(binding["base_channel_idx"])
+                parts = (extra, matrix) if binding["layer_order"] == "Bottom2Top" else (matrix, extra)
+                return np.concatenate(parts, axis=2)
+
+            edited, pristine, fresh = pad(edited, source_solid), pad(pristine, source_solid), pad(fresh, target_solid)
+        elif edited.dtype != np.uint8 or edited.shape[2] != 3:
+            raise ValueError(f"Project edit RGB data is invalid: {name}")
+        changed = grid.project_change_mask(
+            edited, pristine, source_solid=source_solid, target_solid=target_solid,
+        )
+        result = fresh.copy()
+        result[changed] = grid.sample_target_mask(edited, changed)
+        return result
+
+    for name in ("matched_rgb", "material_matrix", "quantized_image"):
+        if name in saved:
+            arrays[name] = replay(name, saved[name])
+    # Keep fresh originals and height identity: resizing must not turn the old
+    # raster into the new source analysis or alter the relief's height regions.
+    for name in _METADATA_FIELDS:
+        if name in saved and not name.startswith("original_"):
+            arrays[name] = deepcopy(saved[name])
+    arrays["color_layers"] = arrays["material_matrix"].shape[2]
+    for name in ("matched_rgb", "material_matrix"):
+        key = f"global_replacement_base_{name}"
+        if fields.get(key) is not None:
+            fields[key] = replay(name, fields[key])
+    masks = resolve_recipe_override_masks(fields, fields.get("recipe_overrides"), grid.source_shape)
+    if fields.get("editor_selection_mask") is not None:
+        fields["editor_selection_mask"] = grid.project_mask(
+            fields["editor_selection_mask"], target_solid=target_solid,
+        )
+    fields["recipe_override_applied_masks"] = {
+        region: pack_applied_region_mask(grid.project_mask(mask, target_solid=target_solid))
+        for region, mask in masks.items()
+    }
+    # An override too small for the new grid must fail before publication,
+    # rather than leave a session that can no longer be saved or generated.
+    resolve_recipe_override_masks(fields, fields.get("recipe_overrides"), grid.target_shape)
+    # Derived segmentation includes pixel bounds; the restore boundary rebuilds
+    # it from the restored image instead of publishing old-size region indices.
+    fields["gradient_groups"] = None
+    fields["gradient_region_id_map"] = None
+    return {"session_fields": fields, "preview_cache_arrays": arrays}
+
+
+def decode_editor_project(
+    payload: bytes, session: dict[str, Any], *, allow_resize: bool = False,
+) -> dict[str, Any]:
     """Validate a portable checkpoint and bind it to a fresh source preview.
 
     校验可携带快照并绑定新会话的原始预览；保留新会话资源身份，不信任旧路径。
@@ -182,6 +273,7 @@ def decode_editor_project(payload: bytes, session: dict[str, Any]) -> dict[str, 
     Args:
         payload: Embedded compressed checkpoint. 内嵌压缩快照。
         session: Newly generated source preview. 新生成的原始预览会话。
+        allow_resize: Explicitly project edits when only the working grid changed.
 
     Returns:
         Validated checkpoint using the fresh session's cache resources.
@@ -198,18 +290,30 @@ def decode_editor_project(payload: bytes, session: dict[str, Any]) -> dict[str, 
         if document["format"] != "lumina-editor-checkpoint" or document["version"] != 1:
             raise ValueError("Unsupported project edit asset")
         cache = _cache(session)
-        if document["binding"] != _binding(session, cache):
+        saved_binding, fresh_binding = document["binding"], _binding(session, cache)
+        resized = saved_binding != fresh_binding
+        compatible = isinstance(saved_binding, dict) and saved_binding.keys() == fresh_binding.keys() and all(
+            saved_binding[key] == value for key, value in fresh_binding.items() if key not in _GRID_BINDING_FIELDS
+        )
+        if resized and not (allow_resize and compatible):
             raise ValueError("Project edit source or coordinates do not match the current preview")
         _validate_codec(document["checkpoint"])
         checkpoint = decode_session_value(document["checkpoint"])
         shape = np.asarray(cache["mask_solid"]).shape
-        _validate_checkpoint(checkpoint, shape)
-        if not np.array_equal(checkpoint["preview_cache_arrays"]["mask_solid"], cache["mask_solid"]):
+        if _binding_shape(fresh_binding) != shape:
+            raise ValueError("Project edit coordinates do not match the current preview")
+        _validate_checkpoint(checkpoint, _binding_shape(saved_binding))
+        if resized:
+            checkpoint = _project_checkpoint(checkpoint, cache, saved_binding)
+        elif not np.array_equal(checkpoint["preview_cache_arrays"]["mask_solid"], cache["mask_solid"]):
             raise ValueError("Project edit image footprint does not match the current preview")
     except (OSError, EOFError, zlib.error, UnicodeError, json.JSONDecodeError, KeyError, TypeError, RecursionError) as exc:
         raise ValueError("Project edit asset is damaged or unsupported") from exc
     return {
         "label": "project", "kind": "content",
         "session_fields": checkpoint["session_fields"],
-        "preview_cache_arrays": {**deepcopy(cache), **checkpoint["preview_cache_arrays"]},
+        "preview_cache_arrays": (
+            checkpoint["preview_cache_arrays"] if resized
+            else {**deepcopy(cache), **checkpoint["preview_cache_arrays"]}
+        ),
     }

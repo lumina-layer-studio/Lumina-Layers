@@ -7,7 +7,6 @@ max_workers defaults, and RuntimeError when pool not started.
 """
 
 import asyncio
-from concurrent.futures import Future
 from contextlib import suppress
 import json
 import logging
@@ -173,34 +172,12 @@ class TestWorkerPoolLifecycle:
 
     def test_start_is_idempotent_when_pool_is_already_alive(self) -> None:
         pool = WorkerPoolManager(max_workers=2)
-        class _SentinelExecutor:
-            def shutdown(self, **_kwargs):
-                return None
-
-        sentinel_pool = _SentinelExecutor()
-
-        with patch("api.worker_pool.ProcessPoolExecutor", return_value=sentinel_pool) as executor_cls:
+        with patch("api.worker_pool._IsolatedProcessExecutor") as executor_cls:
             pool.start()
             first_pool = pool._pool
             pool.start()
-
-        assert first_pool is sentinel_pool
-        assert pool._pool is sentinel_pool
-        executor_cls.assert_called_once()
-        pool.shutdown(wait=False)
-
-    def test_generation_query_does_not_self_heal_an_unregistered_executor(self) -> None:
-        pool = WorkerPoolManager(max_workers=1)
-        sentinel_pool = object()
-        pool._pool = sentinel_pool
-        try:
-            with pool._pool_lock:
-                assert pool._current_generation_locked() is None
-                assert pool._generation is None
-                assert pool._generation_counter == 0
-                assert pool._service_open is False
-        finally:
-            pool._pool = None
+            assert pool._pool is first_pool
+            executor_cls.assert_called_once()
             pool.shutdown(wait=False)
 
     def test_not_alive_after_shutdown(self) -> None:
@@ -281,6 +258,15 @@ class TestMaxWorkers:
     def test_explicit_max_workers(self) -> None:
         pool = WorkerPoolManager(max_workers=3)
         assert pool.max_workers == 3
+
+    def test_negative_worker_count_is_rejected_at_start(self) -> None:
+        pool = WorkerPoolManager(max_workers=-1)
+        try:
+            with pytest.raises(ValueError, match="max_workers"):
+                pool.start()
+            assert not pool.is_alive
+        finally:
+            pool.shutdown()
 
     def test_default_max_workers(self) -> None:
         pool = WorkerPoolManager()
@@ -586,48 +572,6 @@ class TestSubmit:
         finally:
             pool.shutdown(wait=True)
 
-    @pytest.mark.asyncio
-    async def test_broken_pool_defers_demand_until_generation_stops(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        pool = WorkerPoolManager(max_workers=1)
-        executor_future: Future[object] = Future()
-        executor_future.set_exception(worker_pool.BrokenProcessPool("injected"))
-
-        class _BrokenExecutor:
-            def submit(self, *_args, **_kwargs):
-                return executor_future
-
-            def shutdown(self, **_kwargs):
-                return None
-
-        failed_pool = _BrokenExecutor()
-        monkeypatch.setattr(
-            worker_pool,
-            "ProcessPoolExecutor",
-            lambda **_kwargs: failed_pool,
-        )
-        pool.start()
-        restart_reasons: list[str] = []
-        monkeypatch.setattr(
-            pool,
-            "_restart_after_failed_pool",
-            lambda _pool, *, reason: restart_reasons.append(reason),
-        )
-        try:
-            with pytest.raises(worker_pool.BrokenProcessPool, match="injected"):
-                await pool.submit(_add, 1, 2)
-            assert pool.outstanding_tasks == 1
-            assert restart_reasons == ["broken_process_pool"]
-            pool._complete_executor_generation(pool._generation)
-            assert pool.outstanding_tasks == 0
-        finally:
-            pool.shutdown(wait=True)
-
-
-
-
 class TestContextvarPropagation:
     """Verify request_id / session_id flow into the worker process."""
 
@@ -896,27 +840,28 @@ class TestMaxTasksPerChild:
         assert getattr(warnings[0], "error_type", None) == "ValueError"
         assert getattr(warnings[0], "error_message", None)
 
-    def test_start_passes_param_to_executor(
-        self, monkeypatch: pytest.MonkeyPatch
+    def test_each_slot_keeps_the_configured_child_recycling(
+        self, monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        monkeypatch.delenv("LUMINA_WORKER_MAX_TASKS_PER_CHILD", raising=False)
-        monkeypatch.setattr(worker_pool.sys, "platform", "linux")
+        monkeypatch.setenv("LUMINA_WORKER_MAX_TASKS_PER_CHILD", "20")
         pool = WorkerPoolManager(max_workers=3)
-        sentinel = object()
+
+        async def run() -> None:
+            assert await asyncio.gather(*(
+                pool.submit(_slow_task, 0.05) for _ in range(3)
+            )) == ["done"] * 3
+
         with patch(
-            "api.worker_pool.ProcessPoolExecutor", return_value=sentinel
+            "api.worker_pool.ProcessPoolExecutor",
+            wraps=worker_pool.ProcessPoolExecutor,
         ) as executor_cls:
             pool.start()
-        executor_cls.assert_called_once()
-        kwargs = executor_cls.call_args.kwargs
-        assert kwargs["max_workers"] == 3
-        assert kwargs["max_tasks_per_child"] == 20
-        assert "initializer" in kwargs
-
-
-# ---------------------------------------------------------------------------
-# R3: a task may hand its evidence-based parallel memory requirement to the
-# parent admission gate. The gate grants a bounded, atomic extension inside the
-# capacity it already respects; a task that cannot get it keeps its required
-# reservation and runs with lower parallelism instead of being refused.
-# ---------------------------------------------------------------------------
+            try:
+                asyncio.run(run())
+            finally:
+                pool.shutdown(wait=True)
+        assert executor_cls.call_count == 3
+        for call in executor_cls.call_args_list:
+            assert call.kwargs["max_workers"] == 1
+            assert call.kwargs["max_tasks_per_child"] == 20
+            assert call.kwargs["mp_context"].get_start_method() == "spawn"

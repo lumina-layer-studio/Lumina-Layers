@@ -222,7 +222,6 @@ export function createWorkflowAdapter<S extends object>(spec: WorkflowSpec<S>): 
       store.setState({ ...store.getInitialState(), ...catalogs }); setWorkflowRuntime(spec.kind, undefined);
       if (runtime?.contextId) void spec.refreshCatalog?.();
     },
-    enumerateDependencies: (document) => [...document.resourceRefs],
     commitRestore(value, context) {
       assertRestoreIsCurrent(context);
       const prepared = value as PreparedWorkflow;
@@ -241,7 +240,5 @@ export function createWorkflowAdapter<S extends object>(spec: WorkflowSpec<S>): 
       runtime?.colorcheckerIds?.forEach((id) => { void colorcheckerRelease(id); });
       void spec.refreshCatalog?.();
     },
-    migration: (document) => document,
-    normalizeForCompare: (document) => document.payload,
   };
 }

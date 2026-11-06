@@ -21,9 +21,6 @@ export class ProjectAdapterRegistry {
     return adapter;
   }
   capture(kind: string, options?: { allowGenerating?: boolean }) { return this.require(kind).capture(options); }
-  unsupported(snapshot: ProjectSnapshot): WorkflowDocument[] {
-    return Object.values(snapshot.documents).filter((doc) => !this.get(doc.kind));
-  }
   async unavailable(snapshot: ProjectSnapshot): Promise<WorkflowDocument[]> {
     const result: WorkflowDocument[] = [];
     for (const doc of Object.values(snapshot.documents)) {

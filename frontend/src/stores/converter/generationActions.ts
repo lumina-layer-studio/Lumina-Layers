@@ -46,6 +46,7 @@ import {
   resolveConverterSourceSelection,
 } from "./sources";
 import type { ConverterActions, ConverterState, NativeMaterialSelectionAction } from "./types";
+import type { DocumentCommandWrapper } from "./documentCommands";
 
 const BATCH_PREVIEW_BROWSER_SAFE_LIMIT = 96;
 
@@ -173,6 +174,7 @@ export function createGenerationActions(
     confirmedEditorRevision: (sessionId: string) => number | undefined;
     refreshConfirmedEditorContentRevision: (sessionId: string) => Promise<boolean>;
   },
+  documentCommand: DocumentCommandWrapper,
 ): Pick<ConverterActions,
   | "submitGenerate"
   | "submitBatch"
@@ -390,7 +392,7 @@ export function createGenerationActions(
         batchLoading: false,
       });
     },
-    applyNativeMaterialSelection: async (profiles, buildPlateId) => {
+    applyNativeMaterialSelection: documentCommand(async (profiles, buildPlateId) => {
       const pending = pendingMaterialSelection;
       if (!pending || _get().nativeMaterialSelection !== pending.response) return;
       if (_get().nativeMaterialSelectionLoading || _get().nativeMaterialSelectionError ||
@@ -441,7 +443,7 @@ export function createGenerationActions(
       } else if (pending.action === "generate") {
         await _get().submitGenerate();
       }
-    },
+    }, { blocked: () => Promise.resolve() }),
     submitGenerate: async () => {
       let state = _get();
       if (state.isLoading) return null;

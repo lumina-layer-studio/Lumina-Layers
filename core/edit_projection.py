@@ -11,6 +11,8 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from core.recipe_order import pad_material_matrix_layers
+
 
 MAX_EDIT_PROJECTION_PIXELS = 64_000_000
 
@@ -184,3 +186,34 @@ class EditProjectionGrid:
             ),
             target_solid=target_solid,
         )
+
+    def replay(
+        self, edited: np.ndarray, pristine: np.ndarray, fresh: np.ndarray,
+        *, source_solid: np.ndarray, target_solid: np.ndarray,
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """Copy explicit deltas only; fresh analysis owns all other pixels."""
+        if fresh.shape[:2] != self.target_shape or fresh.shape[2:] != edited.shape[2:]:
+            raise ValueError("fresh analysis does not match the projected edit values")
+        changed = self.project_change_mask(
+            edited, pristine, source_solid=source_solid, target_solid=target_solid,
+        )
+        result = fresh.copy()
+        result[changed] = self.sample_target_mask(edited, changed)
+        return result, changed
+
+    def replay_materials(
+        self, edited: np.ndarray, pristine: np.ndarray, fresh: np.ndarray,
+        *, source_solid: np.ndarray, target_solid: np.ndarray,
+        base_channel_idx: int, layer_order: str, target_layers: int,
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """Align backing layers before comparing edits, then use the output depth.
+
+        Project restoration retains all saved layers. Generation supplies its
+        requested depth; changing that depth never changes the source checkpoint.
+        """
+        layers = max(edited.shape[2], pristine.shape[2], fresh.shape[2], target_layers)
+        aligned = [pad_material_matrix_layers(matrix, layers, base_channel_idx, layer_order, solid)
+                   for matrix, solid in ((edited, source_solid), (pristine, source_solid), (fresh, target_solid))]
+        result, changed = self.replay(*aligned, source_solid=source_solid, target_solid=target_solid)
+        view_layers = slice(-target_layers, None) if layer_order == "Bottom2Top" else slice(None, target_layers)
+        return result[..., view_layers], changed

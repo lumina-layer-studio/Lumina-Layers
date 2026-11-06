@@ -23,6 +23,23 @@ from core.projects.errors import (
 from core.projects.migrations import migrate_legacy_recipe
 from core.projects.schema import AssetBlob, ProjectSnapshot, WorkflowDocument
 
+CONFORMANCE = json.loads((Path(__file__).parent / "fixtures/project_payload_conformance.json").read_text(encoding="utf-8"))
+
+
+@pytest.mark.parametrize("payload", CONFORMANCE["accepted"])
+def test_shared_payload_contract_roundtrip(payload: dict) -> None:
+    document = WorkflowDocument(document_id="contract", kind="converter", schema_version=1, payload=payload)
+    snapshot = ProjectSnapshot.new(name="Contract", workflow_kinds=("converter",), documents=(document,))
+    assert read_project(build_project_bytes(snapshot)).documents[0].payload == payload
+
+
+@pytest.mark.parametrize("key", CONFORMANCE["runtimeKeys"])
+def test_shared_payload_contract_rejects_runtime_keys(key: str) -> None:
+    for payload in ({key: "test-only"}, {"nested": [{key: "test-only"}]}):
+        with pytest.raises(ProjectValidationError, match="runtime-only"):
+            document = WorkflowDocument(document_id="contract", kind="converter", schema_version=1, payload=payload)
+            build_project_bytes(ProjectSnapshot.new(name="Contract", workflow_kinds=("converter",), documents=(document,)))
+
 
 def make_snapshot() -> ProjectSnapshot:
     source = AssetBlob(

@@ -70,7 +70,6 @@ export function createWorkshopProjectAdapter(): ProjectAdapter {
       const payload: WorkshopPayload = { module, schema: value?.schemaVersion ?? null, state: stateAsset?.assetId ?? null };
       return { document: { documentId: "workshop.main", kind: "workshop", schemaVersion: 2, payload: payload as unknown as JsonObject, inputRevisionIds: [], resourceRefs: assets.map((asset) => asset.assetId), requiredCapabilities: ["workflow.workshop-v2"] }, assets };
     },
-    enumerateDependencies: (document) => [...document.resourceRefs],
     async prepareRestore(snapshot, context) {
       const document = Object.values(snapshot.documents).find((doc) => doc.kind === "workshop")!;
       const payload = validate(document);
@@ -112,7 +111,5 @@ export function createWorkshopProjectAdapter(): ProjectAdapter {
       if (prepared.token) await prepared.channel?.request("discard", prepared.token).catch(() => undefined);
       if (prepared.switched) await restorePrevious(prepared);
     },
-    migration: (document) => document,
-    normalizeForCompare: (document) => document.payload,
   };
 }

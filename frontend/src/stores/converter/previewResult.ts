@@ -7,6 +7,7 @@ export function previewResultState(state: ConverterState, response: PreviewRespo
   const previewUrl = normalizeResourceUrl(response.preview_url);
   return {
     sessionId: response.session_id,
+    confirmedEditorCommit: null,
     previewImageUrl: previewUrl,
     originalPreviewUrl: previewUrl,
     previewBaseImageUrl: normalizeResourceUrl(response.dimensions?.preview_raw_url) ?? previewUrl,
@@ -25,8 +26,8 @@ export function previewResultState(state: ConverterState, response: PreviewRespo
     materialLayerBenefitPixelCount: response.material_layer_benefit_pixel_count ?? 0,
     previewPixelWidth: response.dimensions?.width ?? null,
     previewPixelHeight: response.dimensions?.height ?? null,
-    preview_width_mm: state.target_width_mm,
-    preview_height_mm: state.target_height_mm,
+    preview_width_mm: response.dimensions?.width_mm ?? state.target_width_mm,
+    preview_height_mm: response.dimensions?.height_mm ?? state.target_height_mm,
     preview_spacer_thick: state.spacer_thick,
     previewPerformanceTiming: response.performance_timing ?? null,
     previewWarnings: response.warnings ?? [],

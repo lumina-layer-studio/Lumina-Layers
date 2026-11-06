@@ -7,7 +7,7 @@ export const EDITOR_RUNTIME_KEYS = [
   "palette", "colorContours", "materialDynamicRecipes", "materialLayerBenefitCurve", "materialLayerBenefitScope", "materialLayerBenefitPixelCount",
   "colorRemapMap", "remapHistory", "remapRedoHistory", "historyCanUndo", "historyCanRedo",
   "replacement_regions", "recipe_overrides", "customRecipeHistory", "free_color_set", "regionReplacementCount", "pendingEditorProject",
-  "selectionDocument", "selectedColor", "selectedColors", "selectedRegions", "regionData", "gradientSelection", "selectedGradientRegions",
+  "selectionDocument", "confirmedEditorCommit", "selectedColor", "selectedColors", "selectedRegions", "regionData", "gradientSelection", "selectedGradientRegions",
   "preview_width_mm", "preview_height_mm", "preview_spacer_thick", "previewPixelWidth", "previewPixelHeight", "modelBounds",
   "hasManualPreview", "previewAutoRefreshPending", "lutMatchMode", "lutMatchInfo", "previewWarnings",
   "layerImages", "layerImagesSourceKey", "gradientGroups", "gradientGroupsSessionId",

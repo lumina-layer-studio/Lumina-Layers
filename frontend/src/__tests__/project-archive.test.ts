@@ -11,6 +11,7 @@ import {
   serializeProject,
 } from "../project/archive";
 import type { WorkflowDocument } from "../project/types";
+import conformance from "../../../tests/fixtures/project_payload_conformance.json";
 
 const converterDocument: WorkflowDocument = {
   documentId: "doc-converter",
@@ -28,6 +29,23 @@ const converterDocument: WorkflowDocument = {
 };
 
 describe("lumina-project archive", () => {
+  it.each(conformance.accepted)("round-trips the shared payload contract: %j", async (payload) => {
+    const snapshot = createProjectSnapshot({ name: "Contract", workflowKinds: ["converter"], documents: [
+      { ...converterDocument, payload: JSON.parse(JSON.stringify(payload)), resourceRefs: [] },
+    ] });
+    const restored = await parseProject(await serializeProject(snapshot));
+    expect(restored.documents["doc-converter"].payload).toEqual(payload);
+  });
+
+  it.each(conformance.runtimeKeys)("rejects shared runtime key %s at every nesting level", async (key) => {
+    for (const payload of [{ [key]: "test-only" }, { nested: [{ [key]: "test-only" }] }]) {
+      const snapshot = createProjectSnapshot({ name: "Contract", workflowKinds: ["converter"], documents: [
+        { ...converterDocument, payload, resourceRefs: [] },
+      ] });
+      await expect(serializeProject(snapshot)).rejects.toThrow(/runtime-only/i);
+    }
+  });
+
   it("round-trips editable JSON and binary assets without embedding base64", async () => {
     const source = await createProjectAsset(
       "source",

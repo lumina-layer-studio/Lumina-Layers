@@ -40,6 +40,8 @@ const FORBIDDEN_RUNTIME_KEYS = new Set([
   "download_url",
   "localPath",
   "local_path",
+  "machineIp",
+  "machine_ip",
   "accessToken",
   "access_token",
   "command",

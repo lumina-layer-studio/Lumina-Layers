@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-vi.mock("../api/converter", async (original) => ({ ...await original<typeof import("../api/converter")>(), replacementHistory: vi.fn(), getGlbStatus: vi.fn(), convertPreview: vi.fn(), getEditorSelection: vi.fn(), getEditorCommitStatus: vi.fn() }));
+vi.mock("../api/converter", async (original) => ({ ...await original<typeof import("../api/converter")>(), replacementHistory: vi.fn(), getGlbStatus: vi.fn(), convertPreview: vi.fn(), getEditorSelection: vi.fn(), getEditorCommitStatus: vi.fn(), mutateEditorSelection: vi.fn() }));
 vi.mock("../api/session", () => ({ closeSession: vi.fn().mockResolvedValue(undefined) }));
-import { convertPreview, getEditorCommitStatus, replacementHistory } from "../api/converter";
+import { convertPreview, getEditorCommitStatus, replacementHistory, mutateEditorSelection } from "../api/converter";
 import { closeSession } from "../api/session";
 import { converterDocumentHistory as history, DEFAULT_STATE, useConverterStore as converter } from "../stores/converter";
 import { DEFAULT_SETTINGS, useSettingsStore } from "../stores/settingsStore";
@@ -15,6 +15,10 @@ import { rememberDerivedImageSource } from "../utils/sourceFileOrigins";
 
 let stopTracking: (() => void) | undefined;
 const selection = (revision: number) => ({ selection_revision: revision, content_revision: revision, editor_content_revision: revision, selected_pixel_count: 0, selected_component_count: 0, selected_color_hexes: [], region_ids: [], components: [], contours: [], can_undo: revision > 0, can_redo: false });
+async function commitSelection(revision: number) {
+  vi.mocked(mutateEditorSelection).mockResolvedValueOnce(selection(revision));
+  await converter.getState().applySelectionMutation({ operation: "clear" });
+}
 beforeEach(() => {
   vi.clearAllMocks();
   vi.spyOn(URL, "createObjectURL").mockImplementation(() => `blob:${Math.random()}`);
@@ -199,11 +203,21 @@ it("blocks a document switch while a backend edit is unconfirmed", () => {
   expect(history.store.getState().canUndo).toBe(false);
 });
 
+it("preserves command return contracts when an unresolved edit blocks them", async () => {
+  converter.setState({ contentCommitStatus: "unknown" });
+  expect(converter.getState().setTargetWidthMm(150)).toBeUndefined();
+  expect(converter.getState().applyConversionPreset("missing")).toBe(false);
+  const pending = converter.getState().autoDetectColors();
+  expect(pending).toBeInstanceOf(Promise);
+  await pending;
+  expect(converter.getState().target_width_mm).toBe(100);
+});
+
 it("orders backend edits with parameter edits and never restores old server revisions", async () => {
   converter.setState({ sessionId: "editor", selectionDocument: selection(10), previewBaseImageUrl: "/base.png" });
   history.reset();
   converter.getState().setTargetWidthMm(150);
-  converter.setState({ selectionDocument: selection(11), historyCanUndo: true, previewBaseImageUrl: "/edited.png" });
+  await commitSelection(11);
   vi.mocked(replacementHistory).mockResolvedValue({
     status: "ok", entry_kind: "selection", can_undo: false, can_redo: true,
     editor_content_revision: 12, selection: { ...selection(12), can_undo: false, can_redo: true },
@@ -223,8 +237,8 @@ it("orders backend edits with parameter edits and never restores old server revi
 });
 
 it("keeps an unfinished history operation reserved until its receipt resolves", async () => {
-  converter.setState({ sessionId: "editor", selectionDocument: selection(1) }); history.reset();
-  converter.setState({ selectionDocument: selection(2), historyCanUndo: true });
+  converter.setState({ sessionId: "pending-editor", selectionDocument: selection(1) }); history.reset();
+  await commitSelection(2);
   let finish!: (value: never) => void;
   vi.mocked(replacementHistory).mockImplementation(() => new Promise(resolve => { finish = resolve; }));
   const operation = history.undo();
@@ -254,7 +268,7 @@ it("discards an in-flight preview that finishes after parameter undo", async () 
 
 it("releases history navigation after an unknown undo is confirmed failed", async () => {
   converter.setState({ sessionId: "uncertain-editor", selectionDocument: selection(1) }); history.reset();
-  converter.setState({ selectionDocument: selection(2), historyCanUndo: true });
+  await commitSelection(2);
   const position = history.store.getState().position;
   vi.mocked(replacementHistory).mockRejectedValueOnce(new Error("connection lost"));
   vi.mocked(getEditorCommitStatus).mockResolvedValueOnce({ status: "unknown" } as never).mockResolvedValueOnce({ status: "failed" } as never);
@@ -263,4 +277,24 @@ it("releases history navigation after an unknown undo is confirmed failed", asyn
   await converter.getState().reconcileUnknownContentCommit();
   expect(history.store.getState()).toMatchObject({ position, busy: false, canUndo: true, canRedo: false });
   expect(replacementHistory).toHaveBeenCalledOnce();
+});
+
+it("does not invent an edit from state publications without a server acknowledgement", () => {
+  converter.setState({ sessionId: "hydrating", selectionDocument: selection(0) });
+  history.reset();
+  const position = history.store.getState().position;
+  converter.setState({ selectionDocument: selection(4), historyCanUndo: true, free_color_set: new Set(["112233"]) });
+  expect(history.store.getState()).toMatchObject({ position, canUndo: false });
+});
+
+it("uses the latest restored selection when the next operation starts", async () => {
+  converter.setState({ sessionId: "restored-selection", selectionDocument: selection(1) });
+  history.reset();
+  await commitSelection(2);
+  converter.setState({ selectionDocument: selection(5) });
+  await commitSelection(6);
+  expect(mutateEditorSelection).toHaveBeenLastCalledWith(expect.objectContaining({
+    base_selection_revision: 5, content_revision: 5,
+  }));
+  expect(converter.getState().selectionDocument?.selection_revision).toBe(6);
 });

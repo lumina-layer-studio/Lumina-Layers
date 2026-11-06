@@ -3,6 +3,7 @@ import { invalidatePreviewRequest } from "../previewRequestCoordinator";
 import { boundProjectResources, captureProjectSettings, resolveConverterSettings, withCurrentConverterCatalogs } from "./project";
 import { previewResultState } from "./previewResult";
 import { installConverterDocumentHistory } from "./documentHistory";
+import { createDocumentCommandWrapper } from "./documentCommands";
 import { subscribeWithSelector } from "zustand/middleware";
 import { trackLuminaEvent } from "../../analytics/umami";
 import {
@@ -295,10 +296,13 @@ function selectionUpdatesFromResponse(
   ) {
     return {};
   }
-  return selectionStateFromDocument(
-    document,
-    getPreviewBaseUrl(current) ?? "",
-  );
+  return {
+    ...selectionStateFromDocument(document, getPreviewBaseUrl(current) ?? ""),
+    confirmedEditorCommit: {
+      sessionId, selectionRevision: document.selection_revision,
+      contentRevision: document.editor_content_revision ?? document.content_revision,
+    },
+  };
 }
 
 function clearedHeightmapUploadState() {
@@ -359,6 +363,11 @@ function editorCommitStateFromResponse(
   return {
     contentCommitStatus: "committed",
     contentCommitOperationId: null,
+    confirmedEditorCommit: current.sessionId ? {
+      sessionId: current.sessionId,
+      selectionRevision: current.selectionDocument?.selection_revision ?? 0,
+      contentRevision: revision,
+    } : null,
     ...(selectionDocument ? { selectionDocument } : {}),
   };
 }
@@ -375,7 +384,7 @@ function dynamicMaterialResultState(
   Partial<
     Pick<
       ConverterState,
-      "contentCommitStatus" | "contentCommitOperationId" | "selectionDocument"
+      "contentCommitStatus" | "contentCommitOperationId" | "selectionDocument" | "confirmedEditorCommit"
     >
   > {
   return {
@@ -921,7 +930,7 @@ function rememberConfirmedEditorContentRevision(
   if (
     current.sessionId === sessionId &&
     current.selectionDocument &&
-    (current.selectionDocument.editor_content_revision ?? -1) <=
+    (current.selectionDocument.editor_content_revision ?? -1) <
       editorContentRevision
   ) {
     useConverterStore.setState({
@@ -1060,7 +1069,7 @@ async function reconcileContentCommitStatus(
           ) &&
           rememberConfirmedSelectionDocument(sessionId, document)
         ) {
-          setState(selectionStateFromDocument(document, getPreviewBaseUrl(currentAfterRead) ?? ""));
+          setState(selectionUpdatesFromResponse(currentAfterRead, sessionId, document));
         }
       } catch {
         // The operation receipt is authoritative even if selection hydration
@@ -1072,8 +1081,7 @@ async function reconcileContentCommitStatus(
         return { active: false, committed: false };
       }
       setState({
-        contentCommitStatus: "committed",
-        contentCommitOperationId: null,
+        ...editorCommitStateFromResponse(receipt),
         replacePreviewLoading: false,
         historyBusy: false,
         error: `${message}；服务端已确认本次编辑已提交（编辑版本 ${receipt.editor_content_revision}），已保留当前草稿。`,
@@ -1316,6 +1324,7 @@ function rememberConfirmedSelectionDocument(
 async function readConfirmedSelectionDocument(
   sessionId: string,
   canPublish: () => boolean = () => true,
+  recordMutation = false,
 ): Promise<void> {
   try {
     const document = await apiGetEditorSelection(sessionId);
@@ -1330,7 +1339,9 @@ async function readConfirmedSelectionDocument(
       }))
     ) return;
     rememberConfirmedSelectionDocument(sessionId, document);
-    useConverterStore.setState(selectionStateFromDocument(document, getPreviewBaseUrl(current) ?? ""));
+    useConverterStore.setState(recordMutation || document.can_undo
+      ? selectionUpdatesFromResponse(current, sessionId, document)
+      : selectionStateFromDocument(document, getPreviewBaseUrl(current) ?? ""));
   } catch {
     // Startup and error reconciliation are best-effort. Mutations expose their
     // own errors and keep using only server-confirmed revisions.
@@ -1537,6 +1548,7 @@ function buildPreviewSessionResetState(
     historyBusy: false,
     contentCommitStatus: "idle",
     contentCommitOperationId: null,
+    confirmedEditorCommit: null,
     replacement_regions: [],
     pendingEditorProject: preserveProjectComparisonState ? current.pendingEditorProject : null,
     recipe_overrides: [],
@@ -2010,6 +2022,7 @@ export const DEFAULT_STATE: ConverterState = {
   historyBusy: false,
   contentCommitStatus: "idle",
   contentCommitOperationId: null,
+  confirmedEditorCommit: null,
   pendingEditorProject: null,
   colorContours: {},
   autoHeightMode: "darker-higher" as AutoHeightMode,
@@ -2342,6 +2355,9 @@ async function navigateEditorHistory(
   }
 }
 
+const documentCommand = createDocumentCommandWrapper((action, blocked, options) =>
+  converterDocumentHistory.run(action, blocked, options));
+
 export const useConverterStore = create<ConverterState & ConverterActions>()(
   subscribeWithSelector((set, _get) => ({
     ...DEFAULT_STATE,
@@ -2351,11 +2367,11 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
       getReplacementEpoch: () => replacementPreviewEpoch,
       confirmedEditorRevision: (sessionId) => confirmedSelectionRevisions.get(sessionId)?.editorContentRevision,
       refreshConfirmedEditorContentRevision,
-    }),
+    }, documentCommand),
     ...createDerivedPreviewActions(set, _get),
-    ...createConversionPresetActions(set, _get),
+    ...createConversionPresetActions(set, _get, documentCommand),
 
-    setProjectSettings: (changes) => {
+    setProjectSettings: documentCommand((changes) => {
       const current = _get();
       const previous = captureProjectSettings(resolveConverterSettings(current, useSettingsStore.getState()));
       const settings = { ...previous, ...changes };
@@ -2370,7 +2386,7 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
       set({ projectSettings: settings, ...dimensions, downloadUrl: null, threemfDiskPath: null, nativeMaterialSelection: null });
       _get().clearMaterialSuggestions();
       if (previewChanged && (current.sessionId || current.isLoading || current.hasManualPreview)) _get().invalidatePreviewForAutoRefresh();
-    },
+    }),
 
     // --- 图片 ---
     commitProjectRestore: (state) => {
@@ -2382,7 +2398,7 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
       const bed = state.bedSizes.find((item) => item.printer_id === printer);
       set({ ...state, ...(bed ? { bed_label: bed.label } : {}), previewRequestRevision: _get().previewRequestRevision + 1, previewSubmissionSequence: _get().previewSubmissionSequence + 1 });
     },
-    setImageFile: (file: File | null) => {
+    setImageFile: documentCommand((file: File | null) => {
       const currentFile = _get().imageFile;
       // Rotations and other derived images still belong to the current project.
       // Restore daily defaults only when the underlying source is replaced or cleared.
@@ -2485,9 +2501,9 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
         ...buildPreviewSessionResetState(currentState),
         cropModalOpen: shouldOpenCrop,
       });
-    },
+    }, { joinAsync: true }),
 
-    rotateImageForExport: async (degrees: ImageRotationDegrees) => {
+    rotateImageForExport: documentCommand(async (degrees: ImageRotationDegrees) => {
       const state = _get();
       if (!state.imageFile || !state.imagePreviewUrl || state.batchMode) {
         return;
@@ -2530,9 +2546,9 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
           set({ isLoading: false });
         }
       }
-    },
+    }, { blocked: () => Promise.resolve() }),
 
-    loadVectorizedSvgIntoConverter: (file: File) => {
+    loadVectorizedSvgIntoConverter: documentCommand((file: File) => {
       restoreConversionDefaultsForNewSource();
       _cancelPreviewWork();
 
@@ -2586,9 +2602,9 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
         selectedGradientRegions: [],
         puzzleEnabled: false,
       });
-    },
+    }),
 
-    loadWorkshopImageIntoConverter: ({
+    loadWorkshopImageIntoConverter: documentCommand(({
       file,
       pixelWidth,
       pixelHeight,
@@ -2646,9 +2662,9 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
         puzzleEnabled: false,
         error: null,
       });
-    },
+    }),
 
-    setModelSurfaceEnabled: (enabled: boolean) => {
+    setModelSurfaceEnabled: documentCommand((enabled: boolean) => {
       set((state) => ({
         modelSurfaceEnabled: enabled,
         backing_infill_density_percent: enabled
@@ -2660,9 +2676,9 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
         modelSurfaceError: null,
         ...buildPreviewSessionResetState(state),
       }));
-    },
+    }),
 
-    uploadModelSurfaceFile: async (file: File) => {
+    uploadModelSurfaceFile: documentCommand(async (file: File) => {
       const currentState = _get();
       const prev = currentState.modelSurfacePreviewUrl;
       if (prev && prev.startsWith("blob:")) {
@@ -2716,9 +2732,9 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
           ),
         });
       }
-    },
+    }, { blocked: () => Promise.resolve() }),
 
-    clearModelSurface: () => {
+    clearModelSurface: documentCommand(() => {
       const currentState = _get();
       const prev = currentState.modelSurfacePreviewUrl;
       if (prev && prev.startsWith("blob:")) {
@@ -2742,9 +2758,9 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
         modelSurfaceWarnings: [],
         ...buildPreviewSessionResetState(currentState),
       });
-    },
+    }),
 
-    selectModelSurfaceFace: async (faceIndex: number, candidateId?: string) => {
+    selectModelSurfaceFace: documentCommand(async (faceIndex: number, candidateId?: string) => {
       const state = _get();
       if (state.modelSurfaceLoading || state.modelSurfaceSelecting) {
         return;
@@ -2798,9 +2814,9 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
           ),
         });
       }
-    },
+    }, { blocked: () => Promise.resolve() }),
 
-    updateModelSurfacePlacement: (updates: Partial<ModelSurfacePlacement>) => {
+    updateModelSurfacePlacement: documentCommand((updates: Partial<ModelSurfacePlacement>) => {
       const currentState = _get();
       const current = currentState.modelSurfacePlacement;
       set({
@@ -2812,9 +2828,9 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
         },
         ...buildPreviewSessionResetState(currentState),
       });
-    },
+    }),
 
-    updateModelSurfaceModelRotation: (updates: Partial<ModelSurfaceModelRotation>) => {
+    updateModelSurfaceModelRotation: documentCommand((updates: Partial<ModelSurfaceModelRotation>) => {
       const currentState = _get();
       const current = currentState.modelSurfaceModelRotation;
       set({
@@ -2824,17 +2840,17 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
         },
         ...buildPreviewSessionResetState(currentState),
       });
-    },
+    }),
 
-    fitModelSurfaceArtwork: () => {
+    fitModelSurfaceArtwork: documentCommand(() => {
       set((state) => ({
         modelSurfacePlacement: { ...DEFAULT_MODEL_SURFACE_PLACEMENT },
         ...buildPreviewSessionResetState(state),
       }));
-    },
+    }),
 
     // --- 基础参数 ---
-    setLutName: (name: string) => {
+    setLutName: documentCommand((name: string) => {
       const state = _get();
       const lutInfo = state.lutListFull.find((l) => l.name === name);
       const lutLocation = lutInfo
@@ -2929,9 +2945,9 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
             /* best effort */
           });
       }
-    },
+    }),
 
-    setLegacyLutNames: (names: string[]) => {
+    setLegacyLutNames: documentCommand((names: string[]) => {
       const state = _get();
       const normalized = normalizeLegacyLutNames(names, "");
       const primaryName = normalized[0] ?? "";
@@ -3037,7 +3053,7 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
             /* best effort */
           });
       }
-    },
+    }),
 
     setLegacyManufacturer: (name: string) => {
       // Browsing the catalog must not change the applied LUTs or preview.
@@ -3046,7 +3062,7 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
       });
     },
 
-    setSourceVersion: (version: SourceVersion) =>
+    setSourceVersion: documentCommand((version: SourceVersion) =>
       set((state) => {
         if (version === state.source_version) {
           return {};
@@ -3100,9 +3116,9 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
           ...buildNativeModelState(selectedBrand, state),
           ...buildPreviewSessionResetState(state, true),
         };
-      }),
+      })),
 
-    setSelectedMaterialDirNames: (names: string[]) => {
+    setSelectedMaterialDirNames: documentCommand((names: string[]) => {
       const state = _get();
       const currentBacking = state.materialBackingMaterialDirName;
       const nextBacking =
@@ -3126,8 +3142,8 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
         ..._cancelMaterialSuggestionWork(),
         ...buildPreviewSessionResetState(state, true),
       });
-    },
-    setMaterialLayerCount: (count: number) => {
+    }),
+    setMaterialLayerCount: documentCommand((count: number) => {
       const materialSuggestionReset = _cancelMaterialSuggestionWork();
       set((state) => {
         const materialLayerCount = clampValue(Math.round(count), 1, 20);
@@ -3147,8 +3163,8 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
           ...buildPreviewSessionResetState(state, true),
         };
       });
-    },
-    setMaterialDynamicLayerCountEnabled: (enabled: boolean) => {
+    }),
+    setMaterialDynamicLayerCountEnabled: documentCommand((enabled: boolean) => {
       _cancelPreviewWork();
       const materialSuggestionReset = _cancelMaterialSuggestionWork();
       set((state) => ({
@@ -3168,8 +3184,8 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
             : state.heightmap_max_height,
         ...buildPreviewSessionResetState(state, true),
       }));
-    },
-    setMaterialMinLayerCount: (count: number) => {
+    }),
+    setMaterialMinLayerCount: documentCommand((count: number) => {
       _cancelPreviewWork();
       const materialSuggestionReset = _cancelMaterialSuggestionWork();
       set((state) => {
@@ -3201,8 +3217,8 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
           ...buildPreviewSessionResetState(state, true),
         };
       });
-    },
-    setMaterialMaxLayerCount: (count: number) => {
+    }),
+    setMaterialMaxLayerCount: documentCommand((count: number) => {
       _cancelPreviewWork();
       const materialSuggestionReset = _cancelMaterialSuggestionWork();
       set((state) => {
@@ -3234,16 +3250,16 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
           ...buildPreviewSessionResetState(state, true),
         };
       });
-    },
-    setMaterialLayerHeightMm: (height: number) => {
+    }),
+    setMaterialLayerHeightMm: documentCommand((height: number) => {
       const materialSuggestionReset = _cancelMaterialSuggestionWork();
       set((state) => ({
         materialLayerHeightMm: height,
         ...materialSuggestionReset,
         ...buildPreviewSessionResetState(state, true),
       }));
-    },
-    setMaterialBackingMaterialDirName: (name: string | null) => {
+    }),
+    setMaterialBackingMaterialDirName: documentCommand((name: string | null) => {
       persistMaterialBackingMaterialDirName(name);
       if (isDynamicMaterialActive(_get())) {
         set({
@@ -3258,9 +3274,9 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
         threemfDiskPath: null,
         downloadUrl: null,
       });
-    },
+    }),
 
-    setNativeBrandKey: (brandKey: string) =>
+    setNativeBrandKey: documentCommand((brandKey: string) =>
       set((state) => {
         const selectedBrand = getNativeBrandGroupByKey(
           state.nativeBrandGroups,
@@ -3291,9 +3307,9 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
           ...buildNativeModelState(selectedBrand, state),
           ...buildPreviewSessionResetState(state, true),
         };
-      }),
+      })),
 
-    setNativeSupportedMode: (mode: {
+    setNativeSupportedMode: documentCommand((mode: {
       color_layers: number;
       layer_height_mm: number;
     }) =>
@@ -3331,9 +3347,9 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
           layer_height_mm: supported.layer_height_mm,
           ...buildPreviewSessionResetState(state, true),
         };
-      }),
+      })),
 
-    setNativeDbNames: (dbNames: string[]) =>
+    setNativeDbNames: documentCommand((dbNames: string[]) =>
       set((state) => {
         const selectedBrand = getSelectedNativeBrandGroup(state);
         const allowed = selectedBrand
@@ -3347,9 +3363,9 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
           selectedNativeDbNames: normalized,
           ...buildPreviewSessionResetState(state, true),
         };
-      }),
+      })),
 
-    setTargetWidthMm: (width: number) =>
+    setTargetWidthMm: documentCommand((width: number) =>
       set((state) => {
         const limits = getTargetDimensionLimits(state, useSettingsStore.getState().printerModel);
         const safeWidth = Number.isFinite(width) ? width : 10;
@@ -3378,9 +3394,9 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
           threemfDiskPath: null,
           downloadUrl: null,
         };
-      }),
+      })),
 
-    setTargetHeightMm: (height: number) =>
+    setTargetHeightMm: documentCommand((height: number) =>
       set((state) => {
         const limits = getTargetDimensionLimits(state, useSettingsStore.getState().printerModel);
         const safeHeight = Number.isFinite(height) ? height : 10;
@@ -3409,9 +3425,9 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
           threemfDiskPath: null,
           downloadUrl: null,
         };
-      }),
+      })),
 
-    setSpacerThick: (thick: number) =>
+    setSpacerThick: documentCommand((thick: number) =>
       set((state) => {
         const fridgeState = buildFridgeMagnetState(state, {
           base_spacer_thick: clampValue(thick, 0.2, 10),
@@ -3431,9 +3447,9 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
           threemfDiskPath: null,
           downloadUrl: null,
         };
-      }),
+      })),
 
-    setBackingInfillDensityPercent: (density: number) => {
+    setBackingInfillDensityPercent: documentCommand((density: number) => {
       const normalized = normalizeBackingInfillDensityPercent(density);
       persistBackingInfillDensityPercent(normalized);
       set({
@@ -3441,9 +3457,9 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
         threemfDiskPath: null,
         downloadUrl: null,
       });
-    },
+    }),
 
-    setStructureMode: (mode: StructureMode) =>
+    setStructureMode: documentCommand((mode: StructureMode) =>
       set((state) => {
         // Automatic single-sided constraints must not replace the user's choice.
         if (
@@ -3470,8 +3486,8 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
           threemfDiskPath: null,
           downloadUrl: null,
         };
-      }),
-    setColorMode: (mode: ColorMode) =>
+      })),
+    setColorMode: documentCommand((mode: ColorMode) =>
       set((state) => ({
         color_mode: mode,
         enable_relief:
@@ -3481,8 +3497,8 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
             : state.enable_relief,
         threemfDiskPath: null,
         downloadUrl: null,
-      })),
-    setModelingMode: (mode: ModelingMode) => {
+      }))),
+    setModelingMode: documentCommand((mode: ModelingMode) => {
       const state = _get();
       if (mode === ModelingModeEnum.VECTOR && !hasOnlySvgInputs(state)) {
         return;
@@ -3506,47 +3522,47 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
         threemfDiskPath: null,
         downloadUrl: null,
       });
-    },
-    setColorLayers: (layers: number | null) =>
+    }),
+    setColorLayers: documentCommand((layers: number | null) =>
       set({
         color_layers:
           layers == null ? null : clampValue(Math.round(layers), 1, 20),
         threemfDiskPath: null,
         downloadUrl: null,
-      }),
-    setLayerHeightMm: (height: number | null) =>
+      })),
+    setLayerHeightMm: documentCommand((height: number | null) =>
       set({
         layer_height_mm: height == null ? null : clampValue(height, 0.04, 0.2),
         threemfDiskPath: null,
         downloadUrl: null,
-      }),
-    setModelEnable: (enabled: boolean) =>
+      })),
+    setModelEnable: documentCommand((enabled: boolean) =>
       set({
         model_enable: enabled,
         threemfDiskPath: null,
         downloadUrl: null,
-      }),
-    setModelOnly: (enabled: boolean) =>
+      })),
+    setModelOnly: documentCommand((enabled: boolean) =>
       set({
         model_only: enabled,
         threemfDiskPath: null,
         downloadUrl: null,
-      }),
-    setModelThreshold: (value: number | null) =>
+      })),
+    setModelThreshold: documentCommand((value: number | null) =>
       set({
         model_threshold: value == null ? null : Number(value),
         threemfDiskPath: null,
         downloadUrl: null,
-      }),
-    setModelMargin: (value: number | null) =>
+      })),
+    setModelMargin: documentCommand((value: number | null) =>
       set({
         model_margin: value == null ? null : Number(value),
         threemfDiskPath: null,
         downloadUrl: null,
-      }),
+      })),
 
     // --- 高级设置 ---
-    setQuantizeColors: (colors: number) => {
+    setQuantizeColors: documentCommand((colors: number) => {
       const state = _get();
       const upperBound = state.quantize_colors_unlocked ? 8192 : 256;
       set({
@@ -3554,8 +3570,8 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
         threemfDiskPath: null,
         downloadUrl: null,
       });
-    },
-    setQuantizeColorsUnlocked: (unlocked: boolean) => {
+    }),
+    setQuantizeColorsUnlocked: documentCommand((unlocked: boolean) => {
       const state = _get();
       const upperBound = unlocked ? 8192 : 256;
       set({
@@ -3564,66 +3580,66 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
         threemfDiskPath: null,
         downloadUrl: null,
       });
-    },
-    setHighPrecision3dPreview: (enabled: boolean) =>
+    }),
+    setHighPrecision3dPreview: documentCommand((enabled: boolean) =>
       set({
         high_precision_3d_preview: enabled,
         previewGlbUrl: null,
         modelUrl: null,
         threemfDiskPath: null,
         downloadUrl: null,
-      }),
-    setEnableCleanup: (enabled: boolean) =>
+      })),
+    setEnableCleanup: documentCommand((enabled: boolean) =>
       set({
         enable_cleanup: enabled,
         threemfDiskPath: null,
         downloadUrl: null,
-      }),
-    setSvgHoleCompensationEnabled: (enabled: boolean) => {
+      })),
+    setSvgHoleCompensationEnabled: documentCommand((enabled: boolean) => {
       const current = _get();
       if (enabled === current.svg_hole_compensation_enabled) return;
       set(buildSvgHoleCompensationChangeState(current, { svg_hole_compensation_enabled: enabled }));
-    },
-    setSvgHoleMaxAreaMm2: (area: number) => {
+    }),
+    setSvgHoleMaxAreaMm2: documentCommand((area: number) => {
       const current = _get();
       if (!Number.isFinite(area) || area < 0 || area === current.svg_hole_max_area_mm2) return;
       set(buildSvgHoleCompensationChangeState(current, { svg_hole_max_area_mm2: area }));
-    },
-    setSvgHoleMaxWidthMm: (width: number) => {
+    }),
+    setSvgHoleMaxWidthMm: documentCommand((width: number) => {
       const current = _get();
       if (!Number.isFinite(width) || width < 0 || width === current.svg_hole_max_width_mm) return;
       set(buildSvgHoleCompensationChangeState(current, { svg_hole_max_width_mm: width }));
-    },
-    setHueEnable: (enabled: boolean) =>
+    }),
+    setHueEnable: documentCommand((enabled: boolean) =>
       set((state) => ({
         hue_enable:
           enabled && isDynamicMaterialActive(state) ? false : enabled,
         threemfDiskPath: null,
         downloadUrl: null,
-      })),
-    setUseLutConstrained: (enabled: boolean) =>
-      set({ use_lut_constrained: enabled }),
-    setAutoDynamicRange: (enabled: boolean) =>
+      }))),
+    setUseLutConstrained: documentCommand((enabled: boolean) =>
+      set({ use_lut_constrained: enabled })),
+    setAutoDynamicRange: documentCommand((enabled: boolean) =>
       set({
         auto_dynamic_range: enabled,
         threemfDiskPath: null,
         downloadUrl: null,
-      }),
-    setChromaGate: (gate: number) =>
+      })),
+    setChromaGate: documentCommand((gate: number) =>
       set({
         chroma_gate: clampValue(gate, 0, 50),
         threemfDiskPath: null,
         downloadUrl: null,
-      }),
-    setSeparateBacking: (enabled: boolean) =>
-      set({ separate_backing: enabled }),
-    setBackingOutput: (backingOutput) => {
+      })),
+    setSeparateBacking: documentCommand((enabled: boolean) =>
+      set({ separate_backing: enabled })),
+    setBackingOutput: documentCommand((backingOutput) => {
       invalidateGeneratedArtifacts({ preservePreviews: true });
       set({ backingOutput, threemfDiskPath: null, downloadUrl: null });
-    },
+    }),
 
     // --- 鎸備欢鐜?---
-    setAddLoop: (enabled: boolean) =>
+    setAddLoop: documentCommand((enabled: boolean) =>
       set((state) => ({
         add_loop:
           enabled && (state.puzzleEnabled || state.enable_fridge_magnet)
@@ -3631,23 +3647,23 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
             : enabled,
         threemfDiskPath: null,
         downloadUrl: null,
-      })),
-    setLoopWidth: (width: number) =>
-      set({ loop_width: clampValue(width, 2, 10) }),
-    setLoopLength: (length: number) =>
-      set({ loop_length: clampValue(length, 4, 15) }),
-    setLoopHole: (hole: number) => set({ loop_hole: clampValue(hole, 1, 5) }),
-    setLoopAngle: (angle: number) =>
-      set({ loop_angle: clampValue(angle, -180, 180) }),
-    setLoopOffsetX: (x: number) =>
-      set({ loop_offset_x: clampValue(x, -200, 200) }),
-    setLoopOffsetY: (y: number) =>
-      set({ loop_offset_y: clampValue(y, -200, 200) }),
-    setLoopPositionPreset: (preset: string) => {
+      }))),
+    setLoopWidth: documentCommand((width: number) =>
+      set({ loop_width: clampValue(width, 2, 10) })),
+    setLoopLength: documentCommand((length: number) =>
+      set({ loop_length: clampValue(length, 4, 15) })),
+    setLoopHole: documentCommand((hole: number) => set({ loop_hole: clampValue(hole, 1, 5) })),
+    setLoopAngle: documentCommand((angle: number) =>
+      set({ loop_angle: clampValue(angle, -180, 180) })),
+    setLoopOffsetX: documentCommand((x: number) =>
+      set({ loop_offset_x: clampValue(x, -200, 200) })),
+    setLoopOffsetY: documentCommand((y: number) =>
+      set({ loop_offset_y: clampValue(y, -200, 200) })),
+    setLoopPositionPreset: documentCommand((preset: string) => {
       set({ loop_position_preset: preset });
-    },
+    }),
 
-    setEnableFridgeMagnet: (enabled: boolean) =>
+    setEnableFridgeMagnet: documentCommand((enabled: boolean) =>
       set((state) => {
         const shouldSeedDefaults =
           enabled &&
@@ -3673,9 +3689,9 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
           threemfDiskPath: null,
           downloadUrl: null,
         };
-      }),
+      })),
 
-    resetFridgeMagnetLayout: () =>
+    resetFridgeMagnetLayout: documentCommand(() =>
       set((state) => ({
         ...buildFridgeMagnetState(state, {
           fridge_magnets: autoLayoutFridgeMagnets(
@@ -3686,9 +3702,9 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
         selectedFridgeMagnetId: null,
         threemfDiskPath: null,
         downloadUrl: null,
-      })),
+      }))),
 
-    addFridgeMagnet: () =>
+    addFridgeMagnet: documentCommand(() =>
       set((state) => {
         const nextFridgeMagnets = autoLayoutFridgeMagnets(
           getFallbackModelBounds(state),
@@ -3712,9 +3728,9 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
           threemfDiskPath: null,
           downloadUrl: null,
         };
-      }),
+      })),
 
-    removeFridgeMagnet: (id: string) =>
+    removeFridgeMagnet: documentCommand((id: string) =>
       set((state) => {
         const nextFridgeMagnets = state.fridge_magnets.filter(
           (item) => item.id !== id,
@@ -3731,9 +3747,9 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
           threemfDiskPath: null,
           downloadUrl: null,
         };
-      }),
+      })),
 
-    updateFridgeMagnet: (
+    updateFridgeMagnet: documentCommand((
       id: string,
       updates: Partial<Omit<FridgeMagnetItem, "id">>,
     ) =>
@@ -3787,9 +3803,9 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
           threemfDiskPath: null,
           downloadUrl: null,
         };
-      }),
+      })),
 
-    updateFridgeMagnetCenter: (id: string, centerX: number, centerY: number) =>
+    updateFridgeMagnetCenter: documentCommand((id: string, centerX: number, centerY: number) =>
       set((state) => {
         const nextFridgeMagnets = state.fridge_magnets.map((item) =>
           item.id === id
@@ -3808,7 +3824,7 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
           threemfDiskPath: null,
           downloadUrl: null,
         };
-      }),
+      })),
 
     selectFridgeMagnet: (id: string | null) =>
       set({ selectedFridgeMagnetId: id }),
@@ -3816,7 +3832,7 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
     clearSelectedFridgeMagnet: () => set({ selectedFridgeMagnetId: null }),
 
     // --- 浮雕（互斥） ---
-    setEnableRelief: (enabled: boolean) => {
+    setEnableRelief: documentCommand((enabled: boolean) => {
       set((state) => {
         if (
           enabled &&
@@ -3870,10 +3886,10 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
         }
         return updates;
       });
-    },
-    setColorHeightMap: (map: Record<string, number>) =>
-      set({ color_height_map: map }),
-    setHeightmapMaxHeight: (height: number) => {
+    }),
+    setColorHeightMap: documentCommand((map: Record<string, number>) =>
+      set({ color_height_map: map })),
+    setHeightmapMaxHeight: documentCommand((height: number) => {
       const state = _get();
       const minimumReliefExtraHeight = getMaterialArchiveReliefMinimumExtraHeight(state);
       const newMax = clampValue(
@@ -3893,33 +3909,33 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
       } else {
         set({ heightmap_max_height: newMax });
       }
-    },
+    }),
 
     // --- 描边 ---
-    setEnableOutline: (enabled: boolean) =>
+    setEnableOutline: documentCommand((enabled: boolean) =>
       set({
         enable_outline: enabled,
         threemfDiskPath: null,
         downloadUrl: null,
-      }),
-    setOutlineWidth: (width: number) =>
-      set({ outline_width: clampValue(width, 0.5, 10.0) }),
+      })),
+    setOutlineWidth: documentCommand((width: number) =>
+      set({ outline_width: clampValue(width, 0.5, 10.0) })),
 
     // --- 掐丝珐琅（互斥） ---
-    setEnableCloisonne: (enabled: boolean) =>
+    setEnableCloisonne: documentCommand((enabled: boolean) =>
       set((state) => ({
         enable_cloisonne: enabled,
         enable_relief: enabled ? false : state.enable_relief,
         threemfDiskPath: null,
         downloadUrl: null,
-      })),
-    setWireWidthMm: (width: number) =>
-      set({ wire_width_mm: clampValue(width, 0.2, 1.2) }),
-    setWireHeightMm: (height: number) =>
-      set({ wire_height_mm: clampValue(height, 0.04, 1.0) }),
+      }))),
+    setWireWidthMm: documentCommand((width: number) =>
+      set({ wire_width_mm: clampValue(width, 0.2, 1.2) })),
+    setWireHeightMm: documentCommand((height: number) =>
+      set({ wire_height_mm: clampValue(height, 0.04, 1.0) })),
 
     // --- 涂层 ---
-    setEnableCoating: (enabled: boolean) => {
+    setEnableCoating: documentCommand((enabled: boolean) => {
       invalidateGeneratedArtifacts({ preservePreviews: true });
       set({
         enable_coating: enabled,
@@ -3928,15 +3944,15 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
         threemfDiskPath: null,
         downloadUrl: null,
       });
-    },
-    setCoatingHeightMm: (height: number) => {
+    }),
+    setCoatingHeightMm: documentCommand((height: number) => {
       invalidateGeneratedArtifacts({ preservePreviews: true });
       set({ coating_height_mm: clampValue(height, 0.04, 0.12),
         threemfDiskPath: null, downloadUrl: null });
-    },
+    }),
 
     // --- 大画幅 ---
-    setLargeFormatEnabled: (enabled: boolean) =>
+    setLargeFormatEnabled: documentCommand((enabled: boolean) =>
       set((state) => ({
         largeFormatEnabled:
           enabled && (state.puzzleEnabled || state.enable_fridge_magnet)
@@ -3946,28 +3962,28 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
         largeFormatFailedTiles: [],
         threemfDiskPath: null,
         downloadUrl: null,
-      })),
-    setTileWidthMm: (width: number) =>
+      }))),
+    setTileWidthMm: documentCommand((width: number) =>
       set({
         tileWidthMm: Math.max(50, Number.isFinite(width) ? width : 50),
         largeFormatWarnings: [],
         largeFormatFailedTiles: [],
         threemfDiskPath: null,
         downloadUrl: null,
-      }),
-    setTileHeightMm: (height: number) =>
+      })),
+    setTileHeightMm: documentCommand((height: number) =>
       set({
         tileHeightMm: Math.max(50, Number.isFinite(height) ? height : 50),
         largeFormatWarnings: [],
         largeFormatFailedTiles: [],
         threemfDiskPath: null,
         downloadUrl: null,
-      }),
+      })),
     // View-only toggle: does not change generated output, so keep downloads.
     setLargeFormatTileOverlayVisible: (visible: boolean) =>
       set({ largeFormatTileOverlayVisible: visible }),
 
-    setPuzzleEnabled: (enabled: boolean) =>
+    setPuzzleEnabled: documentCommand((enabled: boolean) =>
       set((state) => {
         const puzzleEnabled = enabled && !state.batchMode;
         return {
@@ -3986,81 +4002,81 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
           threemfDiskPath: null,
           downloadUrl: null,
         };
-      }),
-    setPuzzleStyle: (style: PuzzleStyle) =>
+      })),
+    setPuzzleStyle: documentCommand((style: PuzzleStyle) =>
       set({
         puzzleStyle: style,
         threemfDiskPath: null,
         downloadUrl: null,
-      }),
-    setPuzzleSizingMode: (mode: PuzzleSizingMode) =>
+      })),
+    setPuzzleSizingMode: documentCommand((mode: PuzzleSizingMode) =>
       set({
         puzzleSizingMode: mode,
         threemfDiskPath: null,
         downloadUrl: null,
-      }),
-    setPieceWidthMm: (width: number) =>
+      })),
+    setPieceWidthMm: documentCommand((width: number) =>
       set({
         pieceWidthMm: clampValue(width, 5, 200),
         threemfDiskPath: null,
         downloadUrl: null,
-      }),
-    setPieceHeightMm: (height: number) =>
+      })),
+    setPieceHeightMm: documentCommand((height: number) =>
       set({
         pieceHeightMm: clampValue(height, 5, 200),
         threemfDiskPath: null,
         downloadUrl: null,
-      }),
-    setPuzzleRows: (rows: number) =>
+      })),
+    setPuzzleRows: documentCommand((rows: number) =>
       set({
         puzzleRows: clampValue(Math.round(rows), 1, 200),
         threemfDiskPath: null,
         downloadUrl: null,
-      }),
-    setPuzzleCols: (cols: number) =>
+      })),
+    setPuzzleCols: documentCommand((cols: number) =>
       set({
         puzzleCols: clampValue(Math.round(cols), 1, 200),
         threemfDiskPath: null,
         downloadUrl: null,
-      }),
-    setTargetPieceCount: (count: number) =>
+      })),
+    setTargetPieceCount: documentCommand((count: number) =>
       set({
         targetPieceCount: clampValue(Math.round(count), 2, 2000),
         threemfDiskPath: null,
         downloadUrl: null,
-      }),
-    setConnectorStyle: (style: PuzzleConnectorStyle) =>
+      })),
+    setConnectorStyle: documentCommand((style: PuzzleConnectorStyle) =>
       set({
         connectorStyle: style,
         threemfDiskPath: null,
         downloadUrl: null,
-      }),
-    setLabelsEnabled: (enabled: boolean) =>
+      })),
+    setLabelsEnabled: documentCommand((enabled: boolean) =>
       set({
         labelsEnabled: enabled,
         engraveBackLabels: false,
         threemfDiskPath: null,
         downloadUrl: null,
-      }),
-    setEngraveBackLabels: () => {
+      })),
+    setEngraveBackLabels: documentCommand(() => {
       set({
         engraveBackLabels: false,
         threemfDiskPath: null,
         downloadUrl: null,
       });
-    },
-    setIrregularityStrength: (strength: number) =>
+    }),
+    setIrregularityStrength: documentCommand((strength: number) =>
       set({
         irregularityStrength: clampValue(strength, 0, 1),
         threemfDiskPath: null,
         downloadUrl: null,
-      }),
-    setMinNeckWidthMm: (width: number) =>
+      })),
+    setMinNeckWidthMm: documentCommand((width: number) =>
       set({
         minNeckWidthMm: clampValue(width, 0.2, 20),
         threemfDiskPath: null,
         downloadUrl: null,
-      }),
+      })),
     submitPuzzleLayoutPreview: async () => {
       const state = _get();
       if (!state.puzzleEnabled || !state.sessionId) {
@@ -4239,6 +4255,8 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
         const state = _get();
         if (state.sessionId !== requestedSessionId) return false;
         const previousDocument = state.selectionDocument;
+        // A restored editor can publish a newer document than the last local request.
+        if (previousDocument) rememberConfirmedSelectionDocument(requestedSessionId, previousDocument);
         const confirmed = confirmedSelectionRevisions.get(requestedSessionId);
         const baseRevision =
           confirmed?.selectionRevision ?? state.selectionDocument?.selection_revision ?? 0;
@@ -4283,10 +4301,7 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
           // The document, union outline and history flags come from the same
           // confirmed operation. Pending gestures never invent server revisions.
           set({
-            ...selectionStateFromDocument(
-              document,
-              getPreviewBaseUrl(current) ?? "",
-            ),
+            ...selectionUpdatesFromResponse(current, requestedSessionId, document),
             gradientSelection: input.selectionSource ?? null,
             selectedGradientRegions: [],
             pendingSelectionMutations: current.pendingSelectionMutations.filter((item) => item.id !== mutationId),
@@ -4329,7 +4344,7 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
               pendingSelectionMutations: _get().pendingSelectionMutations.filter((item) => item.id !== mutationId),
             });
           }
-          await readConfirmedSelectionDocument(requestedSessionId);
+          await readConfirmedSelectionDocument(requestedSessionId, undefined, true);
           return false;
         }
       });
@@ -4563,7 +4578,7 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
       }));
     },
 
-    upsertRecipeOverrides: (
+    upsertRecipeOverrides: documentCommand((
       regionIds: string[],
       recipe: number[],
       layerOrder: string,
@@ -4610,9 +4625,9 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
           recipe_overrides: next,
         };
       });
-    },
+    }, { localEditor: true }),
 
-    clearRecipeOverrides: (regionIds?: string[]) => {
+    clearRecipeOverrides: documentCommand((regionIds?: string[]) => {
       if (!regionIds || regionIds.length === 0) {
         set({ recipe_overrides: [] });
         return;
@@ -4622,7 +4637,7 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
           (item) => !regionIds.includes(item.region_id),
         ),
       }));
-    },
+    }, { localEditor: true }),
 
     pushCustomRecipeHistory: (item: RecipeHistoryItem) => {
       set((state) => {
@@ -5770,7 +5785,7 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
     },
 
     // --- 全图颜色替换 ---
-    applyColorRemap: (origHex: string, newHex: string) => {
+    applyColorRemap: documentCommand((origHex: string, newHex: string) => {
       const state = _get();
       if (state.sessionId) {
         void commitColorRemap(_get, set, current =>
@@ -5794,7 +5809,7 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
         threemfDiskPath: null,
         downloadUrl: null,
       });
-    },
+    }, { localEditor: true }),
 
     undoColorRemap: async () => {
       const state = _get();
@@ -5847,7 +5862,7 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
       return state.historyCanRedo && !state.historyBusy;
     },
 
-    clearAllRemaps: async () => {
+    clearAllRemaps: documentCommand(async () => {
       let state = _get();
       const sessionId = state.sessionId;
       let contentReservation: ContentCommitReservation | undefined;
@@ -5986,16 +6001,16 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
           replacePreviewLoading: false,
         });
       }
-    },
+    }, { blocked: () => Promise.resolve(), localEditor: true }),
 
     // --- 浮雕高度 ---
-    updateColorHeight: (hex: string, heightMm: number) => {
+    updateColorHeight: documentCommand((hex: string, heightMm: number) => {
       set((state) => ({
         color_height_map: { ...state.color_height_map, [hex]: heightMm },
       }));
-    },
+    }),
 
-    applyAutoHeight: (mode: "darker-higher" | "lighter-higher") => {
+    applyAutoHeight: documentCommand((mode: "darker-higher" | "lighter-higher") => {
       const state = _get();
       const heightMap = computeAutoHeightMap(
         state.palette,
@@ -6003,23 +6018,23 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
         state.heightmap_max_height,
       );
       set({ color_height_map: heightMap });
-    },
+    }),
 
-    setAutoHeightMode: (mode: AutoHeightMode) =>
+    setAutoHeightMode: documentCommand((mode: AutoHeightMode) =>
       set((state) => ({
         autoHeightMode: mode,
         ...(mode === "use-heightmap" && state.autoHeightMode !== "use-heightmap"
           ? clearedHeightmapUploadState()
           : {}),
-      })),
+      }))),
 
     // --- 高度图 ---
-    setHeightmapFile: (file: File | null) =>
+    setHeightmapFile: documentCommand((file: File | null) =>
       set({
         ...clearedHeightmapUploadState(),
         heightmapFile: file,
         isLoading: false,
-      }),
+      })),
 
     uploadHeightmap: async () => {
       const state = _get();
@@ -6931,7 +6946,7 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
           imageFile,
           previewParams,
           signal,
-          boundProjectResources(state),
+          { ...boundProjectResources(state), editor: editorFile },
         );
         freshSessionId = response.session_id;
         if (isStalePreviewRequest()) {
@@ -7002,7 +7017,6 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
 
         set({
           ...publishedPreview,
-          ...editorCommitStateFromResponse(response),
           previewImageUrl: previewUrl,
           originalPreviewUrl: sourcePreviewUrl,
           previewBaseImageUrl:
@@ -7230,7 +7244,7 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
 
     setCropModalOpen: (open: boolean) => set({ cropModalOpen: open }),
 
-    submitCrop: async (x: number, y: number, width: number, height: number, rotation: 0 | ImageRotationDegrees = 0) => {
+    submitCrop: documentCommand(async (x: number, y: number, width: number, height: number, rotation: 0 | ImageRotationDegrees = 0) => {
       const state = _get();
       if (!state.imageFile) {
         set({ error: "No image file to crop" });
@@ -7290,10 +7304,10 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
           error: visibleConverterError(err, "Crop failed"),
         });
       }
-    },
+    }, { blocked: () => Promise.resolve() }),
 
     // --- 自动检测颜色 ---
-    autoDetectColors: async () => {
+    autoDetectColors: documentCommand(async () => {
       const state = _get();
       if (!state.imageFile) {
         set({ error: "请先上传图片" });
@@ -7321,10 +7335,10 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
           error: visibleConverterError(err, "Auto color detection failed"),
         });
       }
-    },
+    }, { blocked: () => Promise.resolve() }),
 
     // --- 批量模式 ---
-    addBatchFiles: (files: File[]) => {
+    addBatchFiles: documentCommand((files: File[]) => {
       const valid = files.filter((f) => isValidImageType(f.type, f.name));
       if (valid.length === 0) return;
       restoreConversionDefaultsForNewSource();
@@ -7332,9 +7346,9 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
         batchFiles: [...state.batchFiles, ...valid],
         workshopSource: null,
       }));
-    },
+    }),
 
-    removeBatchFile: (index: number) => {
+    removeBatchFile: documentCommand((index: number) => {
       const state = _get();
       const remaining = state.batchFiles.filter((_, i) => i !== index);
       _cancelPreviewWork();
@@ -7440,9 +7454,9 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
           previewRequestRevision: nextPreviewRevision,
         });
       }
-    },
+    }),
 
-    clearBatchFiles: () => {
+    clearBatchFiles: documentCommand(() => {
       const state = _get();
       _cancelPreviewWork();
       set({
@@ -7466,9 +7480,9 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
         previewRequestRevision: state.previewRequestRevision + 1,
         ...DEFAULT_PUZZLE_PREVIEW_STATE,
       });
-    },
+    }),
 
-    handleFilesSelect: (files: File[]) => {
+    handleFilesSelect: documentCommand((files: File[]) => {
       // Filter out falsy values and invalid formats
       const validFiles = files.filter(
         (f) => f && isValidImageType(f.type, f.name),
@@ -7704,7 +7718,7 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
         layerImagesOpen: false,
         batchResult: null,
       });
-    },
+    }),
 
     // --- 颜色替换：单次即时替换 ---
     submitSingleReplace: async (origHex: string, newHex: string) => {
@@ -7821,7 +7835,7 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
     },
 
     // --- 自由色 ---
-    toggleFreeColor: (hex: string) => {
+    toggleFreeColor: documentCommand((hex: string) => {
       const state = _get();
       if (!state.sessionId) {
         const selectionColors = state.selectionDocument?.selected_color_hexes ?? [];
@@ -7892,9 +7906,9 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
           set({ error: visibleConverterError(err, "Free color update failed") });
         }
       });
-    },
+    }, { localEditor: true }),
 
-    clearFreeColors: () => {
+    clearFreeColors: documentCommand(() => {
       const state = _get();
       if (!state.sessionId) {
         set({
@@ -7951,7 +7965,7 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
           set({ error: visibleConverterError(err, "Free color clear failed") });
         }
       });
-    },
+    }, { localEditor: true }),
 
     // --- UI 状态 ---
     setError: (error: string | null) => set({ error }),
@@ -7988,7 +8002,7 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
       return { state, editorFile };
     },
 
-    importRecipeState: (
+    importRecipeState: documentCommand((
       partial: Partial<ConverterState>,
       imageFile: File,
       heightmapFile?: File | null,
@@ -8050,7 +8064,7 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
       if (heightmapFile) {
         _get().setHeightmapFile(heightmapFile);
       }
-    },
+    }),
 
     cleanupAfterDownload: () => {
       const state = _get();

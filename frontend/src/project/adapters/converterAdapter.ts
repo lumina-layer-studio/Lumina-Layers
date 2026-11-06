@@ -205,7 +205,7 @@ async function prepareRestore(snapshot: ProjectSnapshot, context: ProjectRestore
     if (image && payload.editor.hadPreview) {
       const source = buildConversionSourceParams(state);
       if (!source) throw new Error("Project color source is incomplete");
-      const preview = await convertPreview(image, buildPreviewParams(state, resolveConverterSettings(state, useSettingsStore.getState()), source, state.replacement_regions), undefined, { lut, materials });
+      const preview = await convertPreview(image, buildPreviewParams(state, resolveConverterSettings(state, useSettingsStore.getState()), source, state.replacement_regions), undefined, { lut, materials, editor: editorFile });
       freshSessionId = preview.session_id;
       assertRestoreIsCurrent(context);
       state = { ...state, ...previewResultState(state, preview) };
@@ -252,7 +252,6 @@ export function createConverterProjectAdapter(): ProjectAdapter {
       converterDocumentHistory.reset();
     },
     validate: (document) => { payloadOf(document); },
-    enumerateDependencies: (document) => [...document.resourceRefs],
     prepareRestore,
     commitRestore: (prepared, context) => {
       assertRestoreIsCurrent(context);
@@ -284,7 +283,5 @@ export function createConverterProjectAdapter(): ProjectAdapter {
       const current = useConverterStore.getState();
       if (current.sessionId && !current.previewGlbUrl) current._pollAsyncGlb();
     },
-    migration: (document) => document,
-    normalizeForCompare: (document) => json(document.payload),
   };
 }

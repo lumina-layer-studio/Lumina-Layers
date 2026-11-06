@@ -147,6 +147,29 @@ def test_material_project_binding_uses_source_channels_before_and_after_recipe_e
     assert checkpoint["session_fields"]["recipe_overrides"] == source["recipe_overrides"]
 
 
+def test_lut_binding_is_stable_when_recipe_edit_adds_cache_metadata(source_image: Path, tmp_path: Path) -> None:
+    from api.editor_project import build_editor_project, decode_editor_project
+
+    lut = tmp_path / "source.npy"
+    np.save(lut, np.zeros((1024, 3), dtype=np.uint8))
+    source = _session(source_image)
+    source["lut_path"] = str(lut)
+    source["preview_cache"].pop("lut_metadata")
+    before = build_editor_project(source)
+    # The recipe dialog populates an initially absent vector metadata cache.
+    source["preview_cache"]["lut_metadata"] = LUTMetadata(palette=[PaletteEntry("Virtual", "User material")])
+    after = build_editor_project(source)
+    assert json.loads(gzip.decompress(before))["binding"] == json.loads(gzip.decompress(after))["binding"]
+    fresh = _session(source_image)
+    fresh["lut_path"] = str(lut)
+    fresh["preview_cache"].pop("lut_metadata")
+    decode_editor_project(after, fresh)
+    # Archives written before source metadata was bound remain readable.
+    legacy = json.loads(gzip.decompress(before))
+    legacy["binding"]["palette"] = {}
+    decode_editor_project(gzip.compress(json.dumps(legacy).encode()), fresh)
+
+
 @pytest.mark.parametrize("suffix", ["png", "svg"])
 def test_editor_project_binds_source_content_independently_of_path(
     tmp_path: Path, suffix: str,
@@ -544,6 +567,84 @@ def test_resize_rejects_recipe_masks_that_vanish_before_publishing(source_image:
     with pytest.raises(ValueError, match="mask"):
         decode_editor_project(build_editor_project(source), fresh, allow_resize=True)
     assert encode_session_value(fresh) == before
+
+
+def test_preview_grid_preserves_single_pixel_recipe_through_print_resize(source_image: Path) -> None:
+    from api.editor_project import build_editor_project, decode_editor_project, editor_project_preview_params
+
+    source = _session(source_image)
+    mask = np.zeros((4, 6), dtype=bool)
+    mask[0, 0] = True
+    source["editor_selection_mask"] = mask
+    source["recipe_overrides"] = [{"region_id": "tiny", "recipe": [1, 0, 1], "layer_order": "Top2Bottom"}]
+    source["recipe_override_applied_masks"] = {"tiny": pack_applied_region_mask(mask)}
+    source["preview_cache"]["matched_rgb"][mask] = [20, 210, 40]
+    source["preview_cache"]["material_matrix"][mask] = [1, 0, 1]
+    payload = build_editor_project(source)
+
+    for print_width in (0.3, 0.9, 0.6):
+        params = {"target_width_mm": print_width, **editor_project_preview_params(
+            payload, image_path=str(source_image), modeling_mode="high-fidelity",
+        )}
+        # Only the preview uses the editing basis. The document/generation
+        # parameters remain free to shrink or grow without resampling the edit.
+        assert params["target_width_mm"] == 0.6
+        fresh = _session(source_image)
+        restored = decode_editor_project(payload, fresh)
+        arrays, fields = restored["preview_cache_arrays"], restored["session_fields"]
+        np.testing.assert_array_equal(fields["editor_selection_mask"], mask)
+        np.testing.assert_array_equal(resolve_recipe_override_masks(fields, fields["recipe_overrides"], mask.shape)["tiny"], mask)
+        np.testing.assert_array_equal(arrays["matched_rgb"][mask], [[20, 210, 40]])
+        np.testing.assert_array_equal(arrays["material_matrix"][mask], [[1, 0, 1]])
+        payload = build_editor_project({**fresh, **fields, "preview_cache": arrays})
+
+
+def test_svg_preview_restores_sampling_density_independently_of_cropped_pixel_scale(tmp_path: Path) -> None:
+    from api.editor_project import build_editor_project, editor_project_preview_params
+
+    image = tmp_path / "margin.svg"
+    image.write_text('<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"><rect x="25" y="25" width="50" height="50"/></svg>')
+    source = _session(image)
+    source["preview_cache"]["svg_pixels_per_mm"] = 18.1
+    payload = build_editor_project(source)
+    params = editor_project_preview_params(payload, image_path=str(image), modeling_mode="high-fidelity")
+    assert params == {"target_width_mm": 0.6, "svg_pixels_per_mm": 18.1}
+    legacy = json.loads(gzip.decompress(payload))
+    legacy["binding"].pop("svg_pixels_per_mm")
+    params = editor_project_preview_params(gzip.compress(json.dumps(legacy).encode()), image_path=str(image), modeling_mode="high-fidelity")
+    assert params == {"target_width_mm": 0.6}
+
+
+def test_raster_checkpoint_recovers_scale_from_physical_width(source_image: Path) -> None:
+    from api.editor_project import build_editor_project, decode_editor_project, editor_project_preview_params
+
+    source = _session(source_image)
+    source["preview_cache"].pop("pixel_scale")
+    payload = build_editor_project(source)
+    assert editor_project_preview_params(payload, image_path=str(source_image), modeling_mode="high-fidelity") == {"target_width_mm": 0.6}
+    decode_editor_project(payload, source)
+    legacy = json.loads(gzip.decompress(payload))
+    legacy["binding"]["pixel_scale"] = None
+    payload = gzip.compress(json.dumps(legacy).encode())
+    decode_editor_project(payload, source)
+
+
+@pytest.mark.parametrize("mismatch", ["source", "mode", "scale", "grid"])
+def test_preview_basis_rejects_incompatible_or_invalid_checkpoint(source_image: Path, mismatch: str) -> None:
+    from api.editor_project import build_editor_project, editor_project_preview_params
+
+    payload = build_editor_project(_session(source_image))
+    mode = "high-fidelity"
+    if mismatch == "source":
+        Image.new("RGB", (6, 4), (10, 40, 220)).save(source_image)
+    elif mismatch == "mode":
+        mode = "vector"
+    else:
+        document = json.loads(gzip.decompress(payload))
+        document["binding"]["pixel_scale" if mismatch == "scale" else "width"] = 0
+        payload = gzip.compress(json.dumps(document).encode())
+    with pytest.raises(ValueError):
+        editor_project_preview_params(payload, image_path=str(source_image), modeling_mode=mode)
 
 
 @pytest.mark.parametrize("mismatch", ["image", "mode", "material", "grid", "scale"])

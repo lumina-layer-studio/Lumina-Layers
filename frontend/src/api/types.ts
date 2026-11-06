@@ -483,6 +483,8 @@ export interface PreviewResponse extends DynamicMaterialResultResponse {
   dimensions: {
     width: number;
     height: number;
+    width_mm?: number;
+    height_mm?: number;
     preview_raw_url?: string;
   };
   contours?: Record<string, number[][][]> | null; // hex -> list of contour polygons (world coords mm)

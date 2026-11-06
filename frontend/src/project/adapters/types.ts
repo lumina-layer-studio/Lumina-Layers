@@ -1,4 +1,4 @@
-import type { JsonObject, ProjectAsset, ProjectSnapshot, WorkflowDocument } from "../types";
+import type { ProjectAsset, ProjectSnapshot, WorkflowDocument } from "../types";
 
 export interface ProjectCaptureResult {
   document: WorkflowDocument;
@@ -29,7 +29,6 @@ export interface ProjectAdapter {
   assertReadyToReplace?(): void;
   capture(options?: { allowGenerating?: boolean }): Promise<ProjectCaptureResult>;
   validate(document: WorkflowDocument): void;
-  enumerateDependencies(document: WorkflowDocument): string[];
   prepareRestore(
     snapshot: ProjectSnapshot,
     context: ProjectRestoreContext,
@@ -47,8 +46,6 @@ export interface ProjectAdapter {
   discardRestore?(prepared: PreparedProjectRestore): Promise<void>;
   /** Release the previous editor's URLs after every document has committed. */
   finalizeRestore?(prepared: PreparedProjectRestore): void;
-  migration(document: WorkflowDocument): WorkflowDocument;
-  normalizeForCompare(document: WorkflowDocument): JsonObject;
 }
 
 export class ProjectStaleResponseError extends Error {

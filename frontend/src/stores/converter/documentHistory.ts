@@ -3,11 +3,12 @@ import { tRuntime } from "../../i18n/runtime";
 import { captureConverterDocument, equalDocumentValue, sameConverterDocument } from "./document";
 import { captureEditorRuntime, captureSourceRuntime, editorMutationPending, type EditorRuntime, type SourceRuntimeSnapshot } from "./editorRuntime";
 import { currentDocumentGesture } from "./documentGestures";
+import type { DocumentCommandOptions } from "./documentCommands";
 import { resolveSourceFile } from "../../utils/sourceFileOrigins";
 import type { ConverterActions, ConverterDocumentState, ConverterState } from "./types";
 
 type Store = ConverterState & ConverterActions;
-type EditorHandle = { value: EditorRuntime; settled: EditorRuntime };
+type EditorHandle = { value: EditorRuntime; confirmed: ConverterState["confirmedEditorCommit"] };
 type Node = { id: string; document: ConverterDocumentState; sources: SourceRuntimeSnapshot; editor: EditorHandle };
 type Entry = { kind: "document" | "editor"; before: Node; after: Node; group: symbol };
 export interface DocumentHistoryState {
@@ -18,41 +19,9 @@ export interface DocumentHistoryState {
   retainedSessionIds: string[];
 }
 
-// Only user document commands enter history. Catalog loads, view preferences and
-// async rendering publications update their owning node without inventing edits.
-const LOCAL_EDITOR_ACTIONS: readonly (keyof ConverterActions)[] = [
-  "applyColorRemap", "clearAllRemaps", "upsertRecipeOverrides", "clearRecipeOverrides", "toggleFreeColor", "clearFreeColors",
-];
-const DOCUMENT_ACTIONS = [
-  "setProjectSettings", "setImageFile", "rotateImageForExport", "loadVectorizedSvgIntoConverter", "loadWorkshopImageIntoConverter",
-  "setModelSurfaceEnabled", "uploadModelSurfaceFile", "clearModelSurface", "selectModelSurfaceFace", "updateModelSurfacePlacement", "updateModelSurfaceModelRotation", "fitModelSurfaceArtwork",
-  "restoreConversionDefaults", "applyConversionPreset", "importRecipeState", "setLutName", "setLegacyLutNames", "setTargetWidthMm", "setTargetHeightMm",
-  "setSpacerThick", "setBackingInfillDensityPercent", "setStructureMode", "setColorMode", "setModelingMode", "setColorLayers", "setLayerHeightMm",
-  "setModelEnable", "setModelOnly", "setModelThreshold", "setModelMargin", "setQuantizeColors", "setQuantizeColorsUnlocked", "setHighPrecision3dPreview",
-  "setEnableCleanup", "setSvgHoleCompensationEnabled", "setSvgHoleMaxAreaMm2", "setSvgHoleMaxWidthMm", "setHueEnable", "setUseLutConstrained", "setAutoDynamicRange", "setChromaGate",
-  "setSeparateBacking", "setBackingOutput", "setAddLoop", "setLoopWidth", "setLoopLength", "setLoopHole", "setLoopAngle", "setLoopOffsetX", "setLoopOffsetY", "setLoopPositionPreset",
-  "setEnableFridgeMagnet", "resetFridgeMagnetLayout", "addFridgeMagnet", "removeFridgeMagnet", "updateFridgeMagnet", "updateFridgeMagnetCenter",
-  "setEnableRelief", "setColorHeightMap", "setHeightmapMaxHeight", "setEnableOutline", "setOutlineWidth", "setEnableCloisonne", "setWireWidthMm", "setWireHeightMm",
-  "setEnableCoating", "setCoatingHeightMm", "setLargeFormatEnabled", "setTileWidthMm", "setTileHeightMm", "setPuzzleEnabled", "setPuzzleStyle", "setPuzzleSizingMode",
-  "setPieceWidthMm", "setPieceHeightMm", "setPuzzleRows", "setPuzzleCols", "setTargetPieceCount", "setConnectorStyle", "setLabelsEnabled", "setEngraveBackLabels", "setIrregularityStrength", "setMinNeckWidthMm",
-  "updateColorHeight", "applyAutoHeight", "setAutoHeightMode", "setHeightmapFile", "setSourceVersion", "setSelectedMaterialDirNames", "setMaterialLayerCount",
-  "setMaterialDynamicLayerCountEnabled", "setMaterialMinLayerCount", "setMaterialMaxLayerCount", "setMaterialLayerHeightMm", "setMaterialBackingMaterialDirName", "setNativeBrandKey", "setNativeSupportedMode", "setNativeDbNames",
-  "applyNativeMaterialSelection", "submitCrop", "autoDetectColors", "addBatchFiles", "removeBatchFile", "clearBatchFiles", "handleFilesSelect",
-  ...LOCAL_EDITOR_ACTIONS,
-] as const satisfies readonly (keyof ConverterActions)[];
-
 const LOCAL_EDITOR_KEYS = ["colorRemapMap", "replacement_regions", "recipe_overrides", "free_color_set"] as const;
 function localEditorChanged(a: ConverterState, b: ConverterState) {
   return LOCAL_EDITOR_KEYS.some(key => !equalDocumentValue(a[key], b[key]));
-}
-function confirmedEdit(a: EditorRuntime, b: ConverterState) {
-  if (!b.sessionId || a.sessionId !== b.sessionId || b.isLoading || b.historyBusy || b.replacePreviewLoading || b.contentCommitStatus === "pending" || b.contentCommitStatus === "unknown") return false;
-  const old = a.selectionDocument, next = b.selectionDocument;
-  if (!old && next?.can_undo) return true;
-  if (old && next && (next.selection_revision > old.selection_revision || (next.editor_content_revision ?? next.content_revision) > (old.editor_content_revision ?? old.content_revision))) return true;
-  return (!equalDocumentValue(a.free_color_set, b.free_color_set) && b.historyCanUndo)
-    || (b.contentCommitStatus === "committed"
-      && (a.regionReplacementCount !== b.regionReplacementCount || LOCAL_EDITOR_KEYS.some(key => !equalDocumentValue(a[key], b[key]))));
 }
 
 /** Coordinates document commands with the existing authoritative backend history. */
@@ -66,9 +35,16 @@ export function installConverterDocumentHistory(store: StoreApi<Store>, restore:
   let navigation: { entry: Entry; direction: "undo" | "redo" } | null = null;
   const runtime = (state: ConverterState): EditorHandle => {
     const value = captureEditorRuntime(state);
-    if (!state.sessionId) return { value, settled: value };
+    if (!state.sessionId) return { value, confirmed: null };
     let handle = handles.get(state.sessionId);
-    if (!handle) { handle = { value, settled: value }; handles.set(state.sessionId, handle); }
+    if (!handle) {
+      handle = { value, confirmed: {
+        sessionId: state.sessionId,
+        selectionRevision: state.selectionDocument?.selection_revision ?? 0,
+        contentRevision: state.selectionDocument?.editor_content_revision ?? state.selectionDocument?.content_revision ?? 0,
+      } };
+      handles.set(state.sessionId, handle);
+    }
     return handle;
   };
   const node = (state: ConverterState): Node => ({ id: `converter:${++serial}`, document: captureConverterDocument(state), sources: captureSourceRuntime(state), editor: runtime(state) });
@@ -136,7 +112,14 @@ export function installConverterDocumentHistory(store: StoreApi<Store>, restore:
     const handle = runtime(next);
     // The server revisions always move forward, including undo. Never restore an old revision.
     handle.value = captureEditorRuntime(next);
-    if (confirmedEdit(handle.settled, next)) {
+    const commit = next.confirmedEditorCommit;
+    const acknowledged = commit?.sessionId === next.sessionId && commit && (
+      commit.selectionRevision > (handle.confirmed?.selectionRevision ?? 0)
+      || commit.contentRevision > (handle.confirmed?.contentRevision ?? 0));
+    const settled = !next.historyBusy && !next.replacePreviewLoading
+      && next.contentCommitStatus !== "pending" && next.contentCommitStatus !== "unknown";
+    if (acknowledged && settled && !next.isLoading) {
+      handle.confirmed = commit;
       if (navigation) finishNavigation();
       else record("editor", next, Symbol("editor commit"));
     } else {
@@ -151,41 +134,38 @@ export function installConverterDocumentHistory(store: StoreApi<Store>, restore:
         current.editor = handle;
       }
     }
-    if (next.isLoading || (!next.historyBusy && !next.replacePreviewLoading && next.contentCommitStatus !== "pending" && next.contentCommitStatus !== "unknown")) handle.settled = handle.value;
+    if (next.isLoading && acknowledged) handle.confirmed = commit;
     publish();
   });
 
   const raw = store.getState();
-  const wrapped: Partial<ConverterActions> = {};
-  for (const key of DOCUMENT_ACTIONS) {
-    const original = raw[key] as (...args: unknown[]) => unknown;
-    const invoke = (...args: unknown[]) => {
-      const editorCommand = LOCAL_EDITOR_ACTIONS.includes(key);
-      const state = store.getState();
-      const unconfirmed = state.historyBusy || state.pendingSelectionMutations.length > 0 || state.contentCommitStatus === "pending" || state.contentCommitStatus === "unknown";
-      if (!syncGroup && !editorCommand && (navigation || unconfirmed)) {
-        store.getState().setError(tRuntime("recipe_export_wait_edits"));
-        return key === "applyConversionPreset" ? false : Promise.resolve();
+  function run<Result>(action: () => Result, blocked: () => Result, options: DocumentCommandOptions): Result {
+    const state = store.getState();
+    const unconfirmed = state.historyBusy || state.pendingSelectionMutations.length > 0
+      || state.contentCommitStatus === "pending" || state.contentCommitStatus === "unknown";
+    if (!syncGroup && !options.localEditor && (navigation || unconfirmed)) {
+      store.getState().setError(tRuntime("recipe_export_wait_edits"));
+      return blocked();
+    }
+    const parent = syncGroup;
+    const group = parent ?? currentDocumentGesture()
+      ?? (options.joinAsync ? [...asyncGroups.keys()].at(-1) : null) ?? Symbol("document command");
+    syncGroup = group;
+    try {
+      const result = action();
+      if (result instanceof Promise) {
+        asyncGroups.set(group, (asyncGroups.get(group) ?? 0) + 1);
+        publish();
+        const finish = () => {
+          const remaining = (asyncGroups.get(group) ?? 1) - 1;
+          if (remaining) asyncGroups.set(group, remaining); else asyncGroups.delete(group);
+          publish();
+        };
+        void result.then(finish, finish);
       }
-      const parent = syncGroup;
-      const group = parent ?? currentDocumentGesture() ?? (key === "setImageFile" ? [...asyncGroups.keys()].at(-1) : null) ?? Symbol(key);
-      syncGroup = group;
-      try {
-        const result = original(...args);
-        if (result instanceof Promise) {
-          asyncGroups.set(group, (asyncGroups.get(group) ?? 0) + 1); publish();
-          return result.finally(() => {
-            const remaining = (asyncGroups.get(group) ?? 1) - 1;
-            if (remaining) asyncGroups.set(group, remaining); else asyncGroups.delete(group);
-            publish();
-          });
-        }
-        return result;
-      } finally { syncGroup = parent; }
-    };
-    Object.assign(wrapped, { [key]: invoke });
+      return result;
+    } finally { syncGroup = parent; }
   }
-  store.setState(wrapped);
 
   const navigate = async (direction: "undo" | "redo") => {
     const state = store.getState();
@@ -210,6 +190,7 @@ export function installConverterDocumentHistory(store: StoreApi<Store>, restore:
   };
   return {
     store: history,
+    run,
     undo: () => navigate("undo"),
     redo: () => navigate("redo"),
     checkpoint() { checkpoint = current.id; },

@@ -340,6 +340,12 @@ export interface ConverterRuntimeState {
   historyBusy: boolean;
   contentCommitStatus: ContentCommitStatus;
   contentCommitOperationId: string | null;
+  /** Revisions explicitly acknowledged by authoritative editor responses. */
+  confirmedEditorCommit: {
+    sessionId: string;
+    selectionRevision: number;
+    contentRevision: number;
+  } | null;
   pendingEditorProject: File | null;
 
   // 颜色轮廓数据（后端 OpenCV 提取，用于 3D 高亮）

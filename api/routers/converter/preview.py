@@ -22,6 +22,7 @@ from pydantic import ValidationError
 
 from api.dependencies import get_file_registry, get_session_store, get_worker_pool
 from api.dynamic_material_response import dynamic_material_result_from_cache
+from api.editor_project import EDITOR_PROJECT_MAX_BYTES, editor_project_preview_params
 from api.file_bridge import ensure_png_tempfile, ndarray_to_png_bytes
 from api.file_registry import FileRegistry
 from api.project_resources import stage_project_resources, discard_project_resources
@@ -904,6 +905,7 @@ async def convert_preview(
     image: UploadFile = File(..., description="输入图像"),
     project_lut: Annotated[UploadFile | None, File()] = None,
     project_materials: Annotated[UploadFile | None, File()] = None,
+    project_editor: Annotated[UploadFile | None, File()] = None,
     source_kind: str = Form("legacy_single", description="源类型: legacy_single | legacy_multi | native_bundle"),
     lut_name: str | None = Form(None, description="LUT 名称"),
     lut_names: list[str] | str | None = Form(None, description="经典 LUT 名称列表"),
@@ -1151,6 +1153,19 @@ async def convert_preview(
             surface_original_image_path = temp_path
             temp_path = surface_config["surface_artwork_path"]
             target_width_mm = float(surface_config["target_width_mm"])
+        if project_editor is not None:
+            try:
+                editor_payload = await project_editor.read(EDITOR_PROJECT_MAX_BYTES + 1)
+                editor_params = await asyncio.to_thread(
+                    editor_project_preview_params, editor_payload,
+                    image_path=temp_path, modeling_mode=modeling_mode,
+                )
+            except ValueError as exc:
+                raise HTTPException(status_code=422, detail=str(exc)) from exc
+            finally:
+                await project_editor.close()
+            target_width_mm = editor_params["target_width_mm"]
+            svg_pixels_per_mm = editor_params.get("svg_pixels_per_mm", svg_pixels_per_mm)
         _t_upload = time.perf_counter() - _t
         is_svg_upload = str(temp_path).lower().endswith(".svg")
         _validate_svg_hole_compensation(
@@ -1804,6 +1819,8 @@ async def convert_preview(
                 dimensions = {
                     "width": cache_data.get("target_w", 0),
                     "height": cache_data.get("target_h", 0),
+                    "width_mm": target_width_mm,
+                    "height_mm": target_width_mm * cache_data.get("target_h", 0) / max(1, cache_data.get("target_w", 0)),
                 }
             if preview_raw_url:
                 dimensions["preview_raw_url"] = preview_raw_url

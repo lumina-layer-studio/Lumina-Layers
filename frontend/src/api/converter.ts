@@ -50,12 +50,13 @@ export async function convertPreview(
   image: File,
   params: ConvertPreviewRequest,
   signal?: AbortSignal,
-  resources?: { lut?: File | null; materials?: File | null },
+  resources?: { lut?: File | null; materials?: File | null; editor?: File | null },
 ): Promise<PreviewResponse> {
   const fd = new FormData();
   fd.append("image", image);
   if (resources?.lut) fd.append("project_lut", resources.lut);
   if (resources?.materials) fd.append("project_materials", resources.materials);
+  if (resources?.editor) fd.append("project_editor", resources.editor);
   for (const [key, value] of Object.entries(params)) {
     if (value === null || value === undefined) {
       continue;

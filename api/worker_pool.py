@@ -11,6 +11,7 @@ from concurrent.futures import Future as ConcurrentFuture
 from concurrent.futures import ProcessPoolExecutor
 from concurrent.futures.process import BrokenProcessPool
 from dataclasses import dataclass
+from multiprocessing.connection import wait as wait_for_process_exit
 from pathlib import Path
 from typing import Any, Callable, Literal, TypeVar
 import asyncio
@@ -209,17 +210,28 @@ def _terminate_executor_workers(
     terminated = 0
     survivors = 0
     for proc in list(processes.values()):
-        if proc is None or not proc.is_alive():
+        if proc is None:
             continue
         try:
+            # The executor's manager thread owns join()/waitpid(). Calling
+            # either here races that thread while it handles BrokenProcessPool,
+            # and can leave an exited process reporting is_alive() forever.
+            # The process sentinel independently confirms OS-level exit.
+            sentinel = proc.sentinel
+            if wait_for_process_exit([sentinel], timeout=0):
+                continue
             proc.terminate()
-            proc.join(timeout=_TERMINATE_GRACE_SECONDS)
-            if proc.is_alive():
+            exited = bool(wait_for_process_exit(
+                [sentinel], timeout=_TERMINATE_GRACE_SECONDS,
+            ))
+            if not exited:
                 kill = getattr(proc, "kill", None)
                 if callable(kill):
                     kill()
-                    proc.join(timeout=_TERMINATE_GRACE_SECONDS)
-            if proc.is_alive():
+                    exited = bool(wait_for_process_exit(
+                        [sentinel], timeout=_TERMINATE_GRACE_SECONDS,
+                    ))
+            if not exited:
                 survivors += 1
                 _log.error(
                     "Worker process survived terminate and kill",
@@ -236,12 +248,14 @@ def _terminate_executor_workers(
                 terminated += 1
         except (OSError, RuntimeError, ValueError) as exc:
             try:
-                still_alive = bool(proc.is_alive())
+                still_alive = not bool(wait_for_process_exit(
+                    [proc.sentinel], timeout=0,
+                ))
             except (OSError, RuntimeError, ValueError):
                 still_alive = True
             survivors += int(still_alive)
             _log.warning(
-                "Failed to terminate timed-out worker process",
+                "Failed to terminate a worker in the broken executor",
                 extra={
                     "event": "worker_pool_process_terminate_failed",
                     "pid": getattr(proc, "pid", None),

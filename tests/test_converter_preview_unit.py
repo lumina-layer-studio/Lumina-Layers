@@ -39,6 +39,7 @@ from api.preview_cache_artifacts import (
 from api.routers.converter.preview import (
     _compact_preview_cache_material_matrices,
     _enforce_preview_cache_size_limit,
+    _generate_preview_with_pool_recovery,
     _get_large_format_svg_preview_cache_max_bytes,
     _parse_selected_materials,
     _resolve_upload_source_basename,
@@ -2230,6 +2231,67 @@ class TestTimeoutReturns504:
 class TestGeneralExceptionReturns500:
     """Verify general Exception from pool.submit returns HTTP 500."""
 
+    @pytest.mark.parametrize("source_type", ["png", "svg"])
+    def test_preview_recovers_from_interrupted_pool_without_losing_input(
+        self, source_type: str, tmp_path: Path,
+    ) -> None:
+        """A sibling's worker crash must not discard a valid preview request."""
+        source = tmp_path / f"original.{source_type}"
+        if source_type == "png":
+            source.write_bytes(_make_test_image_buf().getvalue())
+        else:
+            source.write_text(
+                '<svg xmlns="http://www.w3.org/2000/svg" width="120" height="80">'
+                '<rect width="120" height="80" fill="#ff0000"/></svg>',
+                encoding="utf-8",
+            )
+        original_bytes = source.read_bytes()
+        worker_result = _create_worker_result_files()
+        calls: list[tuple[object, ...]] = []
+
+        async def interrupted_then_successful(*args: object) -> dict:
+            calls.append(args)
+            assert Path(str(args[1])).read_bytes() == original_bytes
+            if len(calls) == 1:
+                raise BrokenProcessPool("another worker exited")
+            return worker_result
+
+        _mock_pool.submit = AsyncMock(side_effect=interrupted_then_successful)
+        with (
+            patch(
+                "api.routers.converter.preview.LUTManager.get_lut_path",
+                return_value="/tmp/fake.npy",
+            ),
+            patch(
+                "api.routers.converter.preview.ensure_png_tempfile",
+                new=AsyncMock(return_value=str(source)),
+            ),
+            patch("api.routers.converter.preview.schedule_glb_build"),
+            patch.object(_test_store, "create", wraps=_test_store.create) as create,
+        ):
+            response = client.post(
+                "/api/convert/preview",
+                files={"image": (source.name, original_bytes)},
+                data={
+                    "lut_name": "test_lut", "color_mode": "4-Color",
+                    "modeling_mode": "vector" if source_type == "svg" else "high-fidelity",
+                    "target_width_mm": 100, "quantize_colors": 48,
+                },
+            )
+
+        assert response.status_code == 200, response.text
+        assert len(calls) == 2
+        assert calls[0] == calls[1]
+        create.assert_called_once()
+        data = response.json()
+        try:
+            assert _test_store.get(data["session_id"]) is not None
+            assert client.get(data["preview_url"]).status_code == 200
+            assert source.read_bytes() == original_bytes
+        finally:
+            _test_registry.cleanup_session(data["session_id"])
+            _test_store.close(data["session_id"])
+
     def test_preview_exception_returns_500(self) -> None:
         """Simulate pool.submit raising RuntimeError, expect 500."""
         buf = _make_test_image_buf()
@@ -2263,14 +2325,19 @@ class TestGeneralExceptionReturns500:
         )
         assert private_path not in response.text
         assert "Worker crashed" not in response.text
+        assert _mock_pool.submit.await_count == 1
         log_exception.assert_called_once()
         log_extra = log_exception.call_args.kwargs["extra"]
         assert log_extra["error_type"] == "RuntimeError"
         assert log_extra["error_message"] == response.json()["detail"]
         assert private_path not in log_extra["error_message"]
 
-    def test_preview_broken_worker_pool_returns_retryable_503(self) -> None:
+    def test_preview_broken_worker_pool_stops_after_one_retry(
+        self, tmp_path: Path,
+    ) -> None:
         buf = _make_test_image_buf()
+        source = tmp_path / "uploaded.png"
+        source.write_bytes(buf.getvalue())
         _mock_pool.submit = AsyncMock(
             side_effect=BrokenProcessPool("worker was killed")
         )
@@ -2282,7 +2349,7 @@ class TestGeneralExceptionReturns500:
             ),
             patch(
                 "api.routers.converter.preview.ensure_png_tempfile",
-                new=AsyncMock(return_value="/tmp/uploaded.png"),
+                new=AsyncMock(return_value=str(source)),
             ),
         ):
             response = client.post(
@@ -2292,9 +2359,37 @@ class TestGeneralExceptionReturns500:
             )
 
         assert response.status_code == 503
+        assert _mock_pool.submit.await_count == 2
+        assert not source.exists()
         assert response.json()["detail"] == (
             "Preview generation failed. Re-run preview and try again."
         )
+
+    def test_preview_does_not_restart_a_stopped_pool(self) -> None:
+        pool = MagicMock(spec=WorkerPoolManager)
+        pool.is_alive = False
+        pool.submit_timed = AsyncMock(side_effect=BrokenProcessPool("stopped"))
+
+        with pytest.raises(BrokenProcessPool, match="stopped"):
+            asyncio.run(_generate_preview_with_pool_recovery(pool, "source.png"))
+
+        pool.submit_timed.assert_awaited_once()
+        pool.start.assert_not_called()
+
+    @pytest.mark.parametrize("after_interruption", [False, True])
+    def test_preview_cancellation_does_not_start_another_attempt(
+        self, after_interruption: bool,
+    ) -> None:
+        pool = MagicMock(spec=WorkerPoolManager)
+        pool.is_alive = True
+        failures = ([BrokenProcessPool("interrupted")] if after_interruption else [])
+        failures.append(asyncio.CancelledError())
+        pool.submit_timed = AsyncMock(side_effect=failures)
+
+        with pytest.raises(asyncio.CancelledError):
+            asyncio.run(_generate_preview_with_pool_recovery(pool, "source.png"))
+
+        assert pool.submit_timed.await_count == len(failures)
 
     def test_preview_vector_source_mismatch_returns_actionable_422(self) -> None:
         """Known VECTOR + raster validation errors must remain user-visible."""

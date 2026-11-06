@@ -134,34 +134,6 @@ PREVIEW_RESPONSE_CACHE_FIELDS = {
 }
 
 
-async def _generate_preview_with_pool_recovery(
-    pool: WorkerPoolManager,
-    *worker_args: object,
-) -> tuple[dict, dict[str, float]]:
-    """Replay an interrupted preview once after the pool replaces its workers.
-
-    A sibling task can break the shared executor. Preview inputs remain owned
-    by the route until publication, so this computation can safely be replayed.
-    Domain errors and cancellation propagate without retrying.
-    """
-    try:
-        return await pool.submit_timed(worker_generate_preview, *worker_args)
-    except BrokenProcessPool:
-        if not pool.is_alive:
-            raise
-        log.warning(
-            "Worker pool stopped; retrying preview once in the rebuilt pool",
-            extra={
-                "event": "converter_preview_pool_retry",
-                "error_type": "BrokenProcessPool",
-                "error_message": "Preview interrupted by a failed worker pool",
-                "attempt": 2,
-                "max_attempts": 2,
-            },
-        )
-    return await pool.submit_timed(worker_generate_preview, *worker_args)
-
-
 def _get_large_format_svg_preview_cache_max_bytes() -> int | None:
     """Return the optional cache guardrail for full-resolution SVG previews.
 
@@ -1238,8 +1210,8 @@ async def convert_preview(
             )
 
         _worker_t0 = time.perf_counter()
-        result, worker_pool_timing = await _generate_preview_with_pool_recovery(
-            pool,
+        result, worker_pool_timing = await pool.submit_timed(
+            worker_generate_preview,
             temp_path,
             lut_path if material_source != "material_archive" else "__material_archive__",
             target_width_mm,

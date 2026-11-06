@@ -940,6 +940,16 @@ PRINTER_PROFILES: dict[str, PrinterProfile] = {
         nozzle_count=2,
         is_dual_head=True,
     ),
+    "bambu-h3c": PrinterProfile(
+        id="bambu-h3c",
+        display_name="Bambu Lab H3C",
+        brand="Bambu Lab",
+        bed_width=330,
+        bed_depth=320,
+        bed_height=325,
+        nozzle_count=1,
+        is_dual_head=False,
+    ),
     "snapmaker-u1": PrinterProfile(
         id="snapmaker-u1",
         display_name="Snapmaker U1",

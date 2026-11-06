@@ -934,15 +934,12 @@ class TestMergedWriterBambuCompatibility:
                 assert layer_object_ids != build_ids
                 for layer_object in layer_root.findall("object"):
                     ranges = layer_object.findall("range")
-                    assert [
-                        (
+                    assert len(ranges) == 3
+                    for item, expected in zip(ranges, [(0.0, 0.4), (0.4, 3.4), (3.4, 10.4)]):
+                        assert (
                             float(item.get("min_z", "nan")),
                             float(item.get("max_z", "nan")),
-                        )
-                        for item in ranges
-                    ] == pytest.approx(
-                        [(0.0, 0.4), (0.4, 3.4), (3.4, 10.4)]
-                    )
+                        ) == pytest.approx(expected)
                     density_options = [
                         next(
                             (

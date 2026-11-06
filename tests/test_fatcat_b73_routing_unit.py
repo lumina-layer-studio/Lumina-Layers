@@ -39,7 +39,7 @@ def test_each_real_alias_nozzle_and_valid_plate_delegates_hardware_selection(dev
         assert target is not None
         assert target.machine_uid == f"bambu-lab:{machine}"
         assert target.nozzle_uid == f"nozzle:{device.nozzle_size}mm"
-        assert target.application_version == {"BambuStudio": "02.08.02.61", "OrcaSlicer": "2.4.2"}[device.slicer_id]
+        assert target.application_version == {"BambuStudio": "02.09.01.70", "OrcaSlicer": "2.4.2"}[device.slicer_id]
 
 
 @pytest.mark.parametrize("printer_id", ["bambu-x1-carbon", "bambu-x1", "bambu-p1s"])

@@ -31,6 +31,7 @@ import { useErrorTicketPromptCapture } from "./hooks/useErrorTicketPromptCapture
 import { useErrorTicketPromptStore } from "./stores/errorTicketPromptStore";
 import { HeaderMenu } from "./components/HeaderMenu";
 import ProjectWorkspace from "./components/projects/ProjectWorkspace";
+import { useProjectSessionStore } from "./stores/projectSessionStore";
 import { LanguageToggle } from "./components/LanguageToggle";
 import { ThemeToggle } from "./components/ThemeToggle";
 import { TutorialHost } from "./components/tutorial/TutorialHost";
@@ -228,6 +229,7 @@ function WidgetToggles() {
 /* ---------- App Content (inside I18nProvider) ---------- */
 
 function AppContent({ connected }: { connected: boolean | null }) {
+  const projectOpening = useProjectSessionStore(state => state.status === "opening");
   const { t } = useI18n();
   const announcement = useAnnouncement();
   const converterSessionId = useConverterStore((s) => s.sessionId);
@@ -431,6 +433,15 @@ function AppContent({ connected }: { connected: boolean | null }) {
     return () => window.clearTimeout(timer);
   }, []);
 
+  const subTabNavigation = hasSubTabs(activeTab) && (
+    <AlignedNavStrip
+      alignment={headerNavAlignment}
+      centerShift={`calc((${subTabsCenterShift(headerNavFit)}) + var(--project-actions-width, 0px) / 2)`}
+    >
+      <SubTabBar activeTab={activeTab} onTabChange={handleTabChange} compact={workspace.isCompact} />
+    </AlignedNavStrip>
+  );
+
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-slate-200 text-slate-900 dark:bg-slate-950 dark:text-white">
       <header
@@ -513,12 +524,18 @@ function AppContent({ connected }: { connected: boolean | null }) {
           </AlignedNavStrip>
         </div>
       </header>
-      {!reproMode.enabled && <ProjectWorkspace />}
+      {!reproMode.enabled && <div inert={infoOpen} aria-hidden={infoOpen || undefined} className="shrink-0">
+        <ProjectWorkspace className={headerPaddingXClass} style={
+          headerNavAlignment === "left"
+            ? { paddingLeft: headerNavFit.primaryTabsInsetPx }
+            : { paddingLeft: headerNavFit.paddingLeft, paddingRight: headerNavFit.paddingRight }
+        }>{subTabNavigation}</ProjectWorkspace>
+      </div>}
 
-      <main inert={infoOpen} aria-hidden={infoOpen || undefined}
+      <main inert={infoOpen || projectOpening} aria-hidden={infoOpen || undefined} aria-busy={projectOpening || undefined}
         style={{ visibility: infoOpen ? "hidden" : undefined }}
         className="relative flex min-h-0 flex-1 flex-col overflow-hidden bg-slate-50 dark:bg-slate-950">
-        {hasSubTabs(activeTab) && (
+        {reproMode.enabled && hasSubTabs(activeTab) && (
           <div
             data-testid="sub-tab-row"
             className={`flex shrink-0 border-b panel-divider bg-slate-200 py-0.5 dark:bg-slate-950 ${headerPaddingXClass} ${subTabRowJustifyClass(headerNavAlignment)}`}
@@ -528,16 +545,7 @@ function AppContent({ connected }: { connected: boolean | null }) {
                 : { paddingLeft: headerNavFit.paddingLeft, paddingRight: headerNavFit.paddingRight }
             }
           >
-            <AlignedNavStrip
-              alignment={headerNavAlignment}
-              centerShift={subTabsCenterShift(headerNavFit)}
-            >
-              <SubTabBar
-                activeTab={activeTab}
-                onTabChange={handleTabChange}
-                compact={workspace.isCompact}
-              />
-            </AlignedNavStrip>
+            {subTabNavigation}
           </div>
         )}
 

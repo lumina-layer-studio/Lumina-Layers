@@ -201,6 +201,11 @@ export function forkProjectSnapshot(
     source.manifest.projectId,
     source.manifest.revisionId,
   );
+  built.manifest.thumbnail = source.manifest.thumbnail
+    ? { ...source.manifest.thumbnail }
+    : null;
+  built.manifest.entryDocumentId = source.manifest.entryDocumentId;
+  built.project.entryDocumentId = source.project.entryDocumentId;
   return {
     manifest: built.manifest,
     project: built.project,

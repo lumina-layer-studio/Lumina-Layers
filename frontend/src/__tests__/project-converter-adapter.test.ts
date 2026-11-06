@@ -85,13 +85,16 @@ describe("Layers converter project adapter", () => {
     expect(exportEditorProject).toHaveBeenCalledWith("source", 3, 2);
     expect(JSON.stringify(project.documents)).not.toContain("/api/files/");
     expect(new TextDecoder().decode(project.assets["converter.editor"].data)).toBe("current editor");
-    useConverterStore.setState({ ...DEFAULT_STATE, lutList: [], lutListFull: [] });
+    useConverterStore.setState({ ...DEFAULT_STATE, lutList: [], lutListFull: [], bedSizes: [
+      { label: "Bambu Lab H2D", printer_id: "bambu-h2d", width_mm: 350, height_mm: 320, is_default: false },
+    ] });
     await registry.restore(project, { projectId: project.project.projectId, revisionId: project.project.revisionId, runtimeEpoch: 1 });
     const restored = useConverterStore.getState();
     expect(restored.previewBaseImageUrl).toBe("/api/files/edited");
     expect(restored.regionReplacementCount).toBe(1);
     expect(restored.selectionDocument?.selected_pixel_count).toBe(2);
     expect(restored.projectSettings?.nozzleSize).toBe("0.2");
+    expect(restored.bed_label).toBe("Bambu Lab H2D");
     expect(useSettingsStore.getState().nozzleSize).toBe(DEFAULT_SETTINGS.nozzleSize);
     expect(convertPreview).toHaveBeenCalledWith(expect.any(File), expect.objectContaining({ svg_pixels_per_mm: 18 }), undefined, expect.objectContaining({ lut: expect.any(File) }));
     expect(await restored.projectLutFile!.text()).toBe("real LUT snapshot bytes");

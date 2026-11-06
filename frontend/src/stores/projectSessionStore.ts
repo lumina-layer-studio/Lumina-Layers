@@ -8,6 +8,29 @@ export type ProjectSessionStatus =
   | "recovering"
   | "error";
 
+export interface ProjectSavePoint {
+  runtimeEpoch: number;
+  documentVersions: Record<string, string>;
+}
+
+function sameVersions(left: Record<string, string>, right: Record<string, string>) {
+  return Object.keys(left).length === Object.keys(right).length
+    && Object.keys(left).every(key => left[key] === right[key]);
+}
+
+function savedState(current: ProjectSessionState, snapshot: ProjectSnapshot, sequence: number, point?: ProjectSavePoint) {
+  if (point ? current.runtimeEpoch !== point.runtimeEpoch : current.changeSequence !== sequence) return null;
+  const savedDocumentVersions = { ...(point?.documentVersions ?? current.documentVersions) };
+  const dirty = !sameVersions(current.documentVersions, savedDocumentVersions);
+  return {
+    activeProjectId: snapshot.manifest.projectId,
+    revisionId: dirty ? current.revisionId : snapshot.manifest.revisionId,
+    savedRevisionId: snapshot.manifest.revisionId,
+    dirty, snapshot, savedDocumentVersions,
+    lastError: null,
+  };
+}
+
 export interface ProjectSessionState {
   activeProjectId: string | null;
   revisionId: string | null;
@@ -16,6 +39,8 @@ export interface ProjectSessionState {
   recoveryRevisionId: string | null;
   /** Monotonic edit generation used to reject stale async saves. */
   changeSequence: number;
+  documentVersions: Record<string, string>;
+  savedDocumentVersions: Record<string, string> | null;
   runtimeEpoch: number;
   status: ProjectSessionStatus;
   lastError: string | null;
@@ -26,15 +51,19 @@ export interface ProjectSessionState {
   ) => void;
   markSaved: (revisionId: string) => void;
   markDirty: (revisionId: string) => void;
+  markDocumentChanged: (kind: string, version: string, revisionId: string) => void;
+  setDocumentBaseline: (versions: Record<string, string>) => void;
   commitSavedSnapshot: (
     snapshot: ProjectSnapshot,
     expectedChangeSequence: number,
+    point?: ProjectSavePoint,
   ) => boolean;
   /** Commit a Save As result only if the source project stayed active. */
   commitSavedFork: (
     snapshot: ProjectSnapshot,
     expectedChangeSequence: number,
     expectedProjectId: string | null,
+    point?: ProjectSavePoint,
   ) => boolean;
   setRecoveryRevision: (revisionId: string | null) => void;
   setStatus: (status: ProjectSessionStatus, error?: string | null) => void;
@@ -47,6 +76,8 @@ const INITIAL_STATE: Omit<
   | "activate"
   | "markSaved"
   | "markDirty"
+  | "markDocumentChanged"
+  | "setDocumentBaseline"
   | "commitSavedSnapshot"
   | "commitSavedFork"
   | "setRecoveryRevision"
@@ -60,6 +91,8 @@ const INITIAL_STATE: Omit<
   dirty: false,
   recoveryRevisionId: null,
   changeSequence: 0,
+  documentVersions: {},
+  savedDocumentVersions: {},
   runtimeEpoch: 0,
   status: "idle",
   lastError: null,
@@ -77,11 +110,12 @@ export const useProjectSessionStore = create<ProjectSessionState>((set, get) => 
       dirty:
         options.dirty ??
         options.savedRevisionId !== snapshot.manifest.revisionId,
-      status: "idle",
       lastError: null,
       snapshot,
       changeSequence: get().changeSequence + 1,
       runtimeEpoch: get().runtimeEpoch + 1,
+      documentVersions: {},
+      savedDocumentVersions: null,
     });
   },
   markSaved: (revisionId) => {
@@ -90,52 +124,45 @@ export const useProjectSessionStore = create<ProjectSessionState>((set, get) => 
       dirty: state.revisionId !== revisionId,
       status: "idle",
       lastError: null,
+      ...(state.revisionId === revisionId ? { savedDocumentVersions: { ...state.documentVersions } } : {}),
     }));
   },
   markDirty: (revisionId) => set((state) => ({
     revisionId,
     dirty: true,
     changeSequence: state.changeSequence + 1,
+    documentVersions: { ...state.documentVersions, other: revisionId },
   })),
-  commitSavedSnapshot: (snapshot, expectedChangeSequence) => {
+  setDocumentBaseline: (documentVersions) => set(state => ({
+    documentVersions,
+    savedDocumentVersions: state.dirty ? null : { ...documentVersions },
+  })),
+  markDocumentChanged: (kind, version, revisionId) => set(state => {
+    const documentVersions = { ...state.documentVersions, [kind]: version };
+    const saved = state.savedDocumentVersions;
+    const dirty = !saved || !sameVersions(documentVersions, saved);
+    return { documentVersions, dirty, revisionId, changeSequence: state.changeSequence + 1 };
+  }),
+  commitSavedSnapshot: (snapshot, expectedChangeSequence, point) => {
     const current = get();
-    if (
-      current.changeSequence !== expectedChangeSequence ||
-      (current.activeProjectId !== null &&
-        current.activeProjectId !== snapshot.manifest.projectId)
-    ) {
-      return false;
-    }
-    set({
-      activeProjectId: snapshot.manifest.projectId,
-      revisionId: snapshot.manifest.revisionId,
-      savedRevisionId: snapshot.manifest.revisionId,
-      dirty: false,
-      status: "idle",
-      lastError: null,
-      snapshot,
-    });
+    if (current.activeProjectId !== null && current.activeProjectId !== snapshot.manifest.projectId) return false;
+    const saved = savedState(current, snapshot, expectedChangeSequence, point);
+    if (!saved) return false;
+    set(saved);
     return true;
   },
-  commitSavedFork: (snapshot, expectedChangeSequence, expectedProjectId) => {
+  commitSavedFork: (snapshot, expectedChangeSequence, expectedProjectId, point) => {
     const current = get();
     if (
-      current.changeSequence !== expectedChangeSequence ||
       current.activeProjectId !== expectedProjectId ||
       (expectedProjectId !== null &&
         snapshot.project.sourceProjectId !== expectedProjectId)
     ) {
       return false;
     }
-    set({
-      activeProjectId: snapshot.manifest.projectId,
-      revisionId: snapshot.manifest.revisionId,
-      savedRevisionId: snapshot.manifest.revisionId,
-      dirty: false,
-      status: "idle",
-      lastError: null,
-      snapshot,
-    });
+    const saved = savedState(current, snapshot, expectedChangeSequence, point);
+    if (!saved) return false;
+    set(saved);
     return true;
   },
   setRecoveryRevision: (recoveryRevisionId) => set({ recoveryRevisionId }),

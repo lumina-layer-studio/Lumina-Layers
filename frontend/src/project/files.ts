@@ -2,6 +2,7 @@ import { zipSync } from "fflate";
 import { serializeProject } from "./archive";
 import { newProjectIdentity } from "./identity";
 import type { ProjectSnapshot } from "./types";
+import type { SaveOutcome } from "../utils/saveGeneratedFile";
 
 export interface ProjectFileHandle {
   name: string;
@@ -24,6 +25,7 @@ export interface ProjectFileEntry {
   bytes?: Uint8Array;
   thumbnail?: Uint8Array;
   thumbnailDataUrl?: string;
+  catalogWarning?: string;
 }
 export interface NativeProjectOpen {
   requestId?: string;
@@ -114,17 +116,16 @@ export async function openProjectEntry(entry: ProjectFileEntry): Promise<OpenedP
   if (entry.bytes) return { bytes: entry.bytes, entry };
   throw new Error("Locate the project file to reopen it");
 }
-async function metadata(snapshot: ProjectSnapshot) {
+function metadata(snapshot: ProjectSnapshot) {
   const { projectId, revisionId, name, workflowKinds, modifiedAt } = snapshot.manifest;
   let thumbnailDataUrl: string | undefined;
-  if (snapshot.thumbnail) {
-    try {
-      const image = await createImageBitmap(new Blob([snapshot.thumbnail.data], { type: "image/png" }));
-      const canvas = document.createElement("canvas"); canvas.width = 160; canvas.height = 100;
-      canvas.getContext("2d")?.drawImage(image, 0, 0, 160, 100); image.close();
-      const url = canvas.toDataURL("image/png");
-      if (url.length <= 96_000) thumbnailDataUrl = url;
-    } catch { /* A catalog thumbnail must not invalidate a successful file save. */ }
+  const cover = snapshot.thumbnail?.data;
+  // The archive already owns a validated PNG. Catalogs do not need a second,
+  // potentially stalled decoder or another render of the same cover.
+  if (cover && cover.length <= 71_980) {
+    let binary = "";
+    for (let offset = 0; offset < cover.length; offset += 8192) binary += String.fromCharCode(...cover.subarray(offset, offset + 8192));
+    thumbnailDataUrl = `data:image/png;base64,${btoa(binary)}`;
   }
   return { projectId, revisionId, name, workflowKinds, modifiedAt, thumbnailDataUrl };
 }
@@ -177,18 +178,33 @@ export async function saveProjectFile(snapshot: ProjectSnapshot, entry: ProjectF
     catch (error) { await stream.abort(); throw error; }
   } else { downloadBytes(bytes, suggestedName, "application/zip"); }
   let sameEntry = saveAs ? undefined : entry ?? undefined;
-  if (handle) for (const candidate of await listProjectFiles()) {
-    if (candidate.handle && await handle.isSameEntry(candidate.handle)) { sameEntry = candidate; break; }
+  try {
+    if (handle) for (const candidate of await listProjectFiles()) {
+      if (candidate.handle && await handle.isSameEntry(candidate.handle)) { sameEntry = candidate; break; }
+    }
+    const saved = await rememberProject(snapshot, { bytes, handle, entry: sameEntry });
+    return { persisted: Boolean(handle), entry: saved };
+  } catch (error) {
+    // A completed writable is the save receipt. Losing the optional catalog
+    // must not lose the handle or lie about the file that was just written.
+    return { persisted: Boolean(handle), entry: {
+      ...sameEntry, ...metadata(snapshot), fileEntryId: sameEntry?.fileEntryId ?? newProjectIdentity(),
+      pinned: sameEntry?.pinned ?? false, lastOpenedAt: new Date().toISOString(), handle,
+      ...(!handle ? { bytes } : {}), catalogWarning: `Project catalog update failed: ${String(error)}`,
+    } };
   }
-  const saved = await rememberProject(snapshot, { bytes, handle, entry: sameEntry });
-  return { persisted: Boolean(handle), entry: saved };
 }
-export async function exportProjectBundle(snapshot: ProjectSnapshot) {
+export async function exportProjectBundle(snapshot: ProjectSnapshot): Promise<SaveOutcome> {
   if (!snapshot.thumbnail) throw new Error("This project has no preview image");
   const project = await serializeProject(snapshot);
   const bytes = zipSync({ "project.lum": project, "preview.png": snapshot.thumbnail.data }, { level: 6 });
   const suggestedName = `${snapshot.manifest.name}.lumina.zip`;
-  if (nativeProjects) return nativeProjects.save({ bytes, suggestedName, metadata: {}, bundle: true });
+  if (nativeProjects) {
+    const result = await nativeProjects.save({ bytes, suggestedName, metadata: {}, bundle: true });
+    if (result.state === "cancelled") return "canceled";
+    if (result.state === "saved") return "saved";
+    throw new Error("file_save_failed");
+  }
   downloadBytes(bytes, suggestedName, "application/zip");
-  return { state: "downloaded" };
+  return "download-started";
 }

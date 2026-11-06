@@ -13,7 +13,7 @@ export function previewResultState(state: ConverterState, response: PreviewRespo
     previewGlbUrl: normalizeResourceUrl(response.preview_glb_url),
     lutMatchMode: response.lut_match_mode ?? "legacy",
     lutMatchInfo: response.lut_match_info ?? { match_mode: response.lut_match_mode ?? "legacy" },
-    palette: response.palette.map((entry) => ({
+    palette: (response.palette ?? []).map((entry) => ({
       ...entry,
       quantized_hex: entry.quantized_hex.replace(/^#/, ""),
       matched_hex: entry.matched_hex.replace(/^#/, ""),

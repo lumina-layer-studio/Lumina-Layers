@@ -1,4 +1,4 @@
-import { workflowSettings } from "../project/workflowRuntime";
+import { workflowRuntime, workflowSettings } from "../project/workflowRuntime";
 import { create } from "zustand";
 import { apiErrorToVisibleMessage } from "../api/client";
 import type { CalibrationColorMode } from "../api/types";
@@ -209,6 +209,7 @@ export const useCalibrationStore = create<
     const requestIdentity = captureGeneratedArtifactIdentity(
       settings.deviceProfileId,
       settings.buildPlateId,
+      !workflowRuntime("calibration")?.settings,
     );
     const requestSequence = ++calibrationGenerateSequence;
     const isCurrentRequest = (): boolean => {
@@ -267,6 +268,7 @@ export const useCalibrationStore = create<
     const requestIdentity = captureGeneratedArtifactIdentity(
       settings.deviceProfileId,
       settings.buildPlateId,
+      !workflowRuntime("calibration")?.settings,
     );
     const requestSequence = ++calibrationGenerateSequence;
     const isCurrentRequest = (): boolean => {
@@ -334,7 +336,8 @@ export const useCalibrationStore = create<
   clearError: () => set({ error: null }),
 }));
 
-registerGeneratedArtifactInvalidator(({ preservePreviews }) => {
+registerGeneratedArtifactInvalidator(({ preservePreviews, source }) => {
+  if (source === "defaults" && workflowRuntime("calibration")?.settings) return;
   calibrationGenerateSequence += 1;
   useCalibrationStore.setState({
     isLoading: false,

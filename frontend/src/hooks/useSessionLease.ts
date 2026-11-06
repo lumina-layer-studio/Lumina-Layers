@@ -14,6 +14,13 @@ const HEARTBEAT_RETRY_MS = 10_000;
 const SESSION_CLOSE_DELAY_MS = 30_000;
 const EMPTY_KEEP_FILE_IDS: readonly string[] = [];
 const pendingSessionCloseTimers = new Map<string, number>();
+const activeSessionLeases = new Map<string, number>();
+const leaseFileRefs = new Map<string, Set<{ current: string[] }>>();
+const releasedKeepFileIds = new Map<string, Set<string>>();
+function retainedFileIds(sessionId: string, extra: readonly string[] = []): string[] {
+  return [...new Set([...extra, ...(releasedKeepFileIds.get(sessionId) ?? []),
+    ...[...(leaseFileRefs.get(sessionId) ?? [])].flatMap(ref => ref.current)])];
+}
 
 function cancelPendingSessionClose(sessionId: string): void {
   const pendingTimer = pendingSessionCloseTimers.get(sessionId);
@@ -47,16 +54,18 @@ function scheduleSessionClose(
   keepFileIds: readonly string[] = EMPTY_KEEP_FILE_IDS,
 ): void {
   cancelPendingSessionClose(sessionId);
+  if (activeSessionLeases.has(sessionId)) return;
   if (isSessionCloseRequested(sessionId)) {
     return;
   }
-  const keepFileIdsSnapshot = normalizeKeepFileIds(keepFileIds);
+  const keepFileIdsSnapshot = retainedFileIds(sessionId, keepFileIds);
   const timerId = window.setTimeout(() => {
     pendingSessionCloseTimers.delete(sessionId);
     if (isSessionCloseRequested(sessionId)) {
       return;
     }
     void closeSession(sessionId, keepFileIdsSnapshot);
+    releasedKeepFileIds.delete(sessionId);
   }, SESSION_CLOSE_DELAY_MS);
   pendingSessionCloseTimers.set(sessionId, timerId);
 }
@@ -75,6 +84,9 @@ export function useSessionLease(
     }
 
     cancelPendingSessionClose(sessionId);
+    activeSessionLeases.set(sessionId, (activeSessionLeases.get(sessionId) ?? 0) + 1);
+    const refs = leaseFileRefs.get(sessionId) ?? new Set();
+    refs.add(keepFileIdsRef); leaseFileRefs.set(sessionId, refs);
 
     // Record this session id into the action-history session ring so the
     // bug-report bundle can reference recent sessions even after the source
@@ -114,7 +126,7 @@ export function useSessionLease(
       if (isSessionCloseRequested(sessionId)) {
         return;
       }
-      beaconCloseSession(sessionId, keepFileIdsRef.current);
+      beaconCloseSession(sessionId, retainedFileIds(sessionId));
     };
 
     window.addEventListener("pagehide", handleBeforeUnload);
@@ -123,6 +135,12 @@ export function useSessionLease(
       controller.abort();
       window.clearTimeout(timerId);
       window.removeEventListener("pagehide", handleBeforeUnload);
+      releasedKeepFileIds.set(sessionId, new Set(retainedFileIds(sessionId, keepFileIdsRef.current)));
+      refs.delete(keepFileIdsRef);
+      if (!refs.size) leaseFileRefs.delete(sessionId);
+      const remaining = (activeSessionLeases.get(sessionId) ?? 1) - 1;
+      if (remaining > 0) activeSessionLeases.set(sessionId, remaining);
+      else activeSessionLeases.delete(sessionId);
       scheduleSessionClose(sessionId, keepFileIdsRef.current);
     };
   }, [sessionId, workstream]);

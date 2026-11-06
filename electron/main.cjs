@@ -632,9 +632,26 @@ function createWindow() {
     });
   });
 
-  applicationMenu?.rebuild();
-  win.webContents.on("did-start-navigation", (_event, _url, isInPlace, isMainFrame) => {
-    if (isMainFrame && !isInPlace) applicationMenu?.reset();
+  applicationMenu?.attach(win);
+  let reloadApproved = false;
+  mainWindow.webContents.on("will-prevent-unload", event => {
+    if (isQuitting || reloadApproved) {
+      reloadApproved = false;
+      event.preventDefault();
+      return;
+    }
+    // Keep the old page alive while its normal Save / Discard / Cancel guard
+    // resolves. A dev-server reload must obey the same document boundary.
+    void projectsHost.confirmProjectClose().then(accepted => {
+      if (accepted === true && !mainWindow.isDestroyed()) {
+        reloadApproved = true;
+        mainWindow.webContents.reload();
+      }
+    }).catch(error => logErr(`Reload confirmation failed: ${error.message}`));
+  });
+  win.webContents.on("did-navigate", () => {
+    reloadApproved = false;
+    applicationMenu?.reset();
   });
   win.webContents.on("render-process-gone", () => applicationMenu?.reset());
 
@@ -751,11 +768,12 @@ function createWindow() {
     "did-fail-load",
     (
       _event,
-      _errorCode,
+      errorCode,
       _errorDescription,
       validatedUrl,
       isMainFrame,
     ) => {
+      if (errorCode === -3) return; // A canceled unload is not a failed server load.
       if (
         !shouldRetryFrontendLoad({
           isMainFrame,

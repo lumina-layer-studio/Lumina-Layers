@@ -1,5 +1,6 @@
 export interface GeneratedArtifactInvalidationOptions {
   preservePreviews?: boolean;
+  source?: "defaults";
 }
 
 type InvalidateGeneratedArtifacts = (
@@ -10,6 +11,7 @@ type InvalidateSingleItemDownload = () => void;
 
 export interface GeneratedArtifactIdentity {
   revision: number;
+  defaultsRevision: number | null;
   deviceProfileId: string;
   buildPlateId: string;
 }
@@ -20,6 +22,7 @@ const invalidateGeneratedArtifactsHandlers = new Set<
 let invalidatePreviewArtifactsHandler: InvalidatePreviewArtifacts | null = null;
 let invalidateSingleItemDownloadHandler: InvalidateSingleItemDownload | null = null;
 let generatedArtifactRevision = 0;
+let defaultsRevision = 0;
 
 export function registerGeneratedArtifactInvalidator(
   handler: InvalidateGeneratedArtifacts,
@@ -33,16 +36,19 @@ export function registerGeneratedArtifactInvalidator(
 export function invalidateGeneratedArtifacts(
   options: GeneratedArtifactInvalidationOptions = {},
 ): void {
-  generatedArtifactRevision += 1;
+  if (options.source === "defaults") defaultsRevision += 1;
+  else generatedArtifactRevision += 1;
   invalidateGeneratedArtifactsHandlers.forEach((handler) => handler(options));
 }
 
 export function captureGeneratedArtifactIdentity(
   deviceProfileId: string,
   buildPlateId: string,
+  usesDefaults = true,
 ): GeneratedArtifactIdentity {
   return {
     revision: generatedArtifactRevision,
+    defaultsRevision: usesDefaults ? defaultsRevision : null,
     deviceProfileId,
     buildPlateId,
   };
@@ -55,6 +61,7 @@ export function isGeneratedArtifactIdentityCurrent(
 ): boolean {
   return (
     identity.revision === generatedArtifactRevision &&
+    (identity.defaultsRevision === null || identity.defaultsRevision === defaultsRevision) &&
     identity.deviceProfileId === deviceProfileId &&
     identity.buildPlateId === buildPlateId
   );

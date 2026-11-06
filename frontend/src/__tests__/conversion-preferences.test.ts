@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { useConverterStore, DEFAULT_STATE } from "../stores/converter";
+import { useConverterStore, DEFAULT_STATE, converterDocumentHistory } from "../stores/converter";
 import { useSettingsStore, DEFAULT_SETTINGS } from "../stores/settingsStore";
 import { StructureMode } from "../api/types";
 import {
@@ -14,6 +14,7 @@ describe("conversion preferences", () => {
     localStorage.clear();
     useSettingsStore.setState({ ...DEFAULT_SETTINGS });
     useConverterStore.setState({ ...DEFAULT_STATE, lut_name: "", lut_names: [] });
+    converterDocumentHistory.reset();
   });
   afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
@@ -21,6 +22,19 @@ describe("conversion preferences", () => {
     const stop = bindConversionPreferences();
     try {
       expect(useConverterStore.getState().source_version).toBe("material");
+    } finally { stop(); }
+  });
+
+  it("does not turn startup defaults into a user undo step", () => {
+    useSettingsStore.setState({ conversionPreferences: { last: {
+      ...captureConversionParameters(useConverterStore.getState()), size_mm: 230,
+    }, presets: [] } });
+    const stop = bindConversionPreferences();
+    try {
+      expect(useConverterStore.getState().target_width_mm).toBe(230);
+      expect(converterDocumentHistory.store.getState().canUndo).toBe(false);
+      useConverterStore.getState().setTargetWidthMm(240);
+      expect(converterDocumentHistory.store.getState().canUndo).toBe(true);
     } finally { stop(); }
   });
 

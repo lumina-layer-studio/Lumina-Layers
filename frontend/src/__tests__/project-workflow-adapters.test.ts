@@ -8,6 +8,7 @@ vi.mock("../api/session", () => ({ closeSession: vi.fn().mockResolvedValue(undef
 vi.mock("../api/extractor", async () => ({ ...await vi.importActual<typeof import("../api/extractor")>("../api/extractor"), colorcheckerRelease: vi.fn().mockResolvedValue(undefined) }));
 
 import apiClient from "../api/client";
+import { ColorMode } from "../api/types";
 import { closeSession } from "../api/session";
 import { createWorkflowAdapters } from "../project/adapters/workflows";
 import { ProjectAdapterRegistry } from "../project/adapters/registry";
@@ -54,6 +55,22 @@ async function roundtrip(kind: string) {
 }
 
 describe("editable workflow projects", () => {
+  it("keeps the loaded local catalog when creating a new LUT workspace", () => {
+    const catalog = [{ name: "Local", color_mode: ColorMode.FOUR_COLOR_CMYW, path: "" }];
+    useLutManagerStore.setState({ lutList: catalog, primaryName: "previous", filteredSecondaryOptions: ["old secondary"] });
+    adapters.find(adapter => adapter.kind === "lut-manager")!.reset!();
+    expect(useLutManagerStore.getState()).toMatchObject({ lutList: catalog, primaryName: "", filteredSecondaryOptions: [] });
+  });
+
+  it("refreshes local choices after restore while keeping the portable source", async () => {
+    useLutManagerStore.setState({ primaryName: "Embedded", lutList: [{ name: "Embedded", color_mode: ColorMode.EIGHT_COLOR, path: "" }] });
+    const project = await roundtrip("lut-manager");
+    vi.mocked(apiClient.get).mockResolvedValue({ data: { luts: [{ name: "New local", color_mode: ColorMode.FOUR_COLOR_CMYW, path: "" }] } });
+    await project.restore();
+    await vi.waitFor(() => expect(useLutManagerStore.getState().lutList.map(item => item.name)).toEqual(["New local", "Embedded"]));
+    expect(useLutManagerStore.getState().primaryName).toBe("Embedded");
+    expect(workflowHeaders("lut-manager")).toEqual({ "X-Lumina-Project-Context": "fresh-session" });
+  });
   it("rejects machine-local preferences before replacing a workflow", async () => {
     const { snapshot, adapter } = await roundtrip("calibration");
     const document = snapshot.documents["calibration.main"];

@@ -8,13 +8,14 @@ import { buildFullRecipe, buildRecipeAssets, exportConverterRecipe } from "../..
 import { restoreConverterRecipe } from "../../recipe/importRecipe";
 import { migrateRecipe } from "../../recipe/migration";
 import type { ConverterRecipe } from "../../recipe/types";
-import { DEFAULT_STATE, useConverterStore } from "../../stores/converter";
+import { DEFAULT_STATE, useConverterStore, converterDocumentHistory } from "../../stores/converter";
 import { editorCommitResultStateFromResponse, selectionStateFromDocument } from "../../stores/converter/editorState";
 import {
   captureProjectSettings, converterSourceKey, PROJECT_SETTING_KEYS, resolveConverterSettings,
   type ProjectConverterSettings,
 } from "../../stores/converter/project";
 import { previewResultState } from "../../stores/converter/previewResult";
+import { editorMutationPending } from "../../stores/converter/editorRuntime";
 import { buildPreviewParams } from "../../stores/converter/requests";
 import { buildConversionSourceParams } from "../../stores/converter/sources";
 import type { ConverterState } from "../../stores/converter/types";
@@ -240,21 +241,15 @@ export function createConverterProjectAdapter(): ProjectAdapter {
     unavailable: async (document) => ![1, SCHEMA].includes(document.schemaVersion),
     assertReadyToReplace: () => {
       const state = useConverterStore.getState();
-      if (state.isLoading || state.isGenerating || state.batchLoading || state.isCropping || state.modelSurfaceLoading || state.modelSurfaceSelecting || state.replacePreviewLoading) throw new Error("Wait for the converter operation before opening another project");
+      if (state.isLoading || state.isGenerating || state.batchLoading || state.isCropping || state.modelSurfaceLoading || state.modelSurfaceSelecting || editorMutationPending(state) || converterDocumentHistory.store.getState().busy) throw new Error("Wait for the converter operation before opening another project");
     },
-    subscribe: (listener) => useConverterStore.subscribe((next, previous) => {
-      const signature = (state: ConverterState) => JSON.stringify([
-        exportConverterRecipe(state, resolveConverterSettings(state, useSettingsStore.getState())),
-        state.modelSurfaceEnabled, selectedFaceIndex(state), state.modelSurfaceModelRotation, state.modelSurfacePlacement,
-        state.batchMode, state.enableCrop, state.brushSizePx, state.colorRangeTolerance, state.selectionTool,
-        state.selectionDocument?.selected_pixel_count ?? 0,
-        state.selectionDocument?.selected_pixel_count ? state.selectionDocument.selection_revision : 0,
-      ]);
-      if (next.imageFile !== previous.imageFile || next.heightmapFile !== previous.heightmapFile || next.modelSurfaceFile !== previous.modelSurfaceFile || next.batchFiles !== previous.batchFiles || next.previewBaseImageUrl !== previous.previewBaseImageUrl || next.projectSettings !== previous.projectSettings || signature(next) !== signature(previous)) listener();
+    subscribe: (listener) => converterDocumentHistory.store.subscribe((next, previous) => {
+      if (next.position !== previous.position) listener();
     }),
     reset: () => {
       const current = useConverterStore.getState();
       current.commitProjectRestore({ ...DEFAULT_STATE, lutList: current.lutList, lutListFull: current.lutListFull, nativeBrandGroups: current.nativeBrandGroups, bedSizes: current.bedSizes });
+      converterDocumentHistory.reset();
     },
     validate: (document) => { payloadOf(document); },
     enumerateDependencies: (document) => [...document.resourceRefs],
@@ -266,11 +261,13 @@ export function createConverterProjectAdapter(): ProjectAdapter {
       if (state.imageFile && original) rememberDerivedImageSource(state.imageFile, original);
       state.imagePreviewUrl = state.imageFile ? URL.createObjectURL(state.imageFile) : null;
       state.modelSurfacePreviewUrl = state.modelSurfaceFile ? URL.createObjectURL(state.modelSurfaceFile) : null;
-      useConverterStore.getState().commitProjectRestore(state);
+      converterDocumentHistory.replaceRuntime(() => useConverterStore.getState().commitProjectRestore(state));
     },
     rollbackRestore: async (prepared, context) => {
       assertRestoreIsCurrent(context);
-      useConverterStore.setState(prepared.rollbackState as ConverterState);
+      converterDocumentHistory.replaceRuntime(() => useConverterStore.getState().commitProjectRestore(prepared.rollbackState as ConverterState));
+      const current = useConverterStore.getState();
+      if (current.sessionId && !current.previewGlbUrl) current._pollAsyncGlb();
     },
     discardRestore: async (prepared) => {
       const { freshSessionId, templateSessionId, state } = prepared as PreparedConverter;
@@ -279,8 +276,13 @@ export function createConverterProjectAdapter(): ProjectAdapter {
       for (const url of [state.imagePreviewUrl, state.modelSurfacePreviewUrl]) if (url?.startsWith("blob:")) URL.revokeObjectURL(url);
     },
     finalizeRestore: (prepared) => {
+      converterDocumentHistory.reset();
       const previous = prepared.rollbackState as ConverterState;
       for (const url of [previous.imagePreviewUrl, previous.modelSurfacePreviewUrl]) if (url?.startsWith("blob:")) URL.revokeObjectURL(url);
+      // Start derived work only after every workspace has committed. A failed
+      // multi-workspace restore must never publish its temporary 3D result.
+      const current = useConverterStore.getState();
+      if (current.sessionId && !current.previewGlbUrl) current._pollAsyncGlb();
     },
     migration: (document) => document,
     normalizeForCompare: (document) => json(document.payload),

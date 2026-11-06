@@ -100,21 +100,6 @@ export interface PendingReplacement {
 
 export type RemapSnapshot = Record<string, string>;
 
-export type AdjustmentSnapshot = {
-  colorRemapMap: Record<string, string>;
-  remapHistory: RemapSnapshot[];
-  replacement_regions: ColorReplacementItem[];
-  recipe_overrides: RecipeOverrideItem[];
-  regionReplacementCount: number;
-  previewImageUrl: string | null;
-  previewBaseImageUrl: string | null;
-  originalPreviewUrl: string | null;
-  previewGlbUrl: string | null;
-  color_layers: number | null;
-  layer_height_mm: number | null;
-  lutMatchMode: string | null;
-  lutMatchInfo: Record<string, unknown> | null;
-};
 
 export type ModelSurfacePlacementMode = "edge_to_edge" | "inset";
 
@@ -160,52 +145,23 @@ export type NativeMaterialSelectionAction = "edit" | "generate" | "batch";
 
 // ========== State Interface ==========
 
-export interface ConverterState {
+/** Durable artwork inputs. Runtime results and view preferences never belong in document history. */
+export interface ConverterDocumentState {
   projectSettings: import("./project").ProjectConverterSettings | null;
   projectLutFile: File | null;
   projectMaterialArchiveFile: File | null;
-  projectSourceKey: string | null;
-  projectResourceSessionIds: string[];
   native_filament_profiles: Record<string, string>;
   nativeFilamentProfileScope: NativeFilamentProfileScope | null;
-  nativeMaterialSelection: ExportMaterialSelection | null;
-  nativeMaterialSelectionAction: NativeMaterialSelectionAction | null;
-  nativeMaterialSelectionLoading: boolean;
-  nativeMaterialSelectionError: string | null;
-  // 图片
   imageFile: File | null;
-  imagePreviewUrl: string | null;
-  aspectRatio: number | null;
-  preferredSizeAxis: "width" | "height";
-  conversionParameterContext: "defaults" | "restoring" | "project";
   workshopSource: WorkshopRecipeSource | null;
-
-  // 模型覆面
   modelSurfaceEnabled: boolean;
   modelSurfaceFile: File | null;
-  modelSurfacePreviewUrl: string | null;
-  modelSurfaceModelFileId: string | null;
-  modelSurfaceSummary: ModelSurfaceMeshSummary | null;
-  modelSurfaceSelectionId: string | null;
   modelSurfaceSelection: Record<string, unknown> | null;
-  modelSurfaceFootprint: Record<string, unknown> | null;
-  modelSurfaceCandidates: ModelSurfaceCandidate[];
   modelSurfacePlacement: ModelSurfacePlacement;
   modelSurfaceModelRotation: ModelSurfaceModelRotation;
-  modelSurfaceLoading: boolean;
-  modelSurfaceSelecting: boolean;
-  modelSurfaceError: string | null;
-  modelSurfaceWarnings: string[];
-
-  // 会话（预览后由后端返回）
-  sessionId: string | null;
-
-  // 基础参数
   source_version: SourceVersion;
   lut_name: string;
   lut_names: string[];
-  nativeBrandGroups: NativeBrandGroup[];
-  nativeBrandGroupsLoading: boolean;
   selectedNativeBrandKey: string;
   selectedNativeDbNames: string[];
   target_width_mm: number;
@@ -221,9 +177,6 @@ export interface ConverterState {
   model_only: boolean;
   model_threshold: number | null;
   model_margin: number | null;
-  selectedLutInfo: LutInfoResponse | null;
-
-  // Material-archive mode
   selectedMaterialDirNames: string[];
   materialLayerCount: number;
   materialLayerHeightMm: number;
@@ -231,12 +184,6 @@ export interface ConverterState {
   materialDynamicLayerCountEnabled: boolean;
   materialMinLayerCount: number;
   materialMaxLayerCount: number;
-  materialDynamicRecipes: DynamicMaterialRecipe[];
-  materialLayerBenefitCurve: MaterialLayerBenefitPoint[];
-  materialLayerBenefitScope: MaterialLayerBenefitScope;
-  materialLayerBenefitPixelCount: number;
-
-  // 高级设置
   quantize_colors: number;
   quantize_colors_unlocked: boolean;
   high_precision_3d_preview: boolean;
@@ -250,8 +197,6 @@ export interface ConverterState {
   chroma_gate: number;
   separate_backing: boolean;
   backingOutput: BackingOutput;
-
-  // 挂件环
   add_loop: boolean;
   loop_width: number;
   loop_length: number;
@@ -262,33 +207,20 @@ export interface ConverterState {
   loop_position_preset: string; // 默认 "top-center"
   enable_fridge_magnet: boolean;
   fridge_magnets: FridgeMagnetItem[];
-  selectedFridgeMagnetId: string | null;
   base_spacer_thick: number;
-
-  // 浮雕
   enable_relief: boolean;
   color_height_map: Record<string, number>;
   heightmap_max_height: number;
-
-  // 描边
   enable_outline: boolean;
   outline_width: number;
-
-  // 掐丝珐琅
   enable_cloisonne: boolean;
   wire_width_mm: number;
   wire_height_mm: number;
-
-  // 涂层
   enable_coating: boolean;
   coating_height_mm: number;
-
-  // 大画幅
   largeFormatEnabled: boolean;
   tileWidthMm: number;
   tileHeightMm: number;
-  /** View-only: draw the tile cut lines over the 3D preview. */
-  largeFormatTileOverlayVisible: boolean;
   puzzleEnabled: boolean;
   puzzleStyle: PuzzleStyle;
   puzzleSizingMode: PuzzleSizingMode;
@@ -302,6 +234,85 @@ export interface ConverterState {
   engraveBackLabels: boolean;
   irregularityStrength: number;
   minNeckWidthMm: number;
+  autoHeightMode: AutoHeightMode;
+  heightmapFile: File | null;
+  batchMode: boolean;
+  batchFiles: File[];
+}
+
+/** Source-specific handles and metadata, rebuilt or leased independently of artwork inputs. */
+export interface ConverterSourceRuntimeState {
+  modelSurfacePreviewUrl: string | null;
+  imagePreviewUrl: string | null;
+  projectSourceKey: string | null;
+  projectResourceSessionIds: string[];
+  aspectRatio: number | null;
+  conversionParameterContext: "defaults" | "restoring" | "project";
+  modelSurfaceModelFileId: string | null;
+  modelSurfaceSummary: ModelSurfaceMeshSummary | null;
+  modelSurfaceSelectionId: string | null;
+  modelSurfaceFootprint: Record<string, unknown> | null;
+  modelSurfaceCandidates: ModelSurfaceCandidate[];
+  selectedLutInfo: LutInfoResponse | null;
+  heightmapThumbnailUrl: string | null;
+  heightmapUploadSessionId: string | null;
+}
+
+/** Local presentation and interaction preferences, outside the undo journal. */
+export interface ConverterViewState {
+  preferredSizeAxis: "width" | "height";
+  selectedFridgeMagnetId: string | null;
+  largeFormatTileOverlayVisible: boolean;
+  enableCrop: boolean;
+  cropModalOpen: boolean;
+  layerImagesOpen: boolean;
+  selectionMode: SelectionMode;
+  selectionTool: SelectionTool;
+  brushSizePx: number;
+  colorRangeTolerance: number;
+  selectionBlinkEnabled: boolean;
+}
+
+export interface ConverterRuntimeState {
+  nativeMaterialSelection: ExportMaterialSelection | null;
+  nativeMaterialSelectionAction: NativeMaterialSelectionAction | null;
+  nativeMaterialSelectionLoading: boolean;
+  nativeMaterialSelectionError: string | null;
+  // 图片
+
+  // 模型覆面
+  modelSurfaceLoading: boolean;
+  modelSurfaceSelecting: boolean;
+  modelSurfaceError: string | null;
+  modelSurfaceWarnings: string[];
+
+  // 会话（预览后由后端返回）
+  sessionId: string | null;
+
+  // 基础参数
+  nativeBrandGroups: NativeBrandGroup[];
+  nativeBrandGroupsLoading: boolean;
+
+  // Material-archive mode
+  materialDynamicRecipes: DynamicMaterialRecipe[];
+  materialLayerBenefitCurve: MaterialLayerBenefitPoint[];
+  materialLayerBenefitScope: MaterialLayerBenefitScope;
+  materialLayerBenefitPixelCount: number;
+
+  // 高级设置
+
+  // 挂件环
+
+  // 浮雕
+
+  // 描边
+
+  // 掐丝珐琅
+
+  // 涂层
+
+  // 大画幅
+  /** View-only: draw the tile cut lines over the 3D preview. */
   puzzleOverlayUrl: string | null;
   puzzleWarnings: string[];
   puzzleResolvedRows: number | null;
@@ -324,8 +335,6 @@ export interface ConverterState {
   colorRemapMap: Record<string, string>;
   remapHistory: RemapSnapshot[];
   remapRedoHistory: RemapSnapshot[];
-  adjustmentHistory: AdjustmentSnapshot[];
-  adjustmentRedoHistory: AdjustmentSnapshot[];
   historyCanUndo: boolean;
   historyCanRedo: boolean;
   historyBusy: boolean;
@@ -336,10 +345,6 @@ export interface ConverterState {
   // 颜色轮廓数据（后端 OpenCV 提取，用于 3D 高亮）
   colorContours: Record<string, number[][][]>;
   // 浮雕联动
-  autoHeightMode: AutoHeightMode;
-  heightmapFile: File | null;
-  heightmapThumbnailUrl: string | null;
-  heightmapUploadSessionId: string | null;
 
   // 3D 预览
   previewGlbUrl: string | null;
@@ -369,8 +374,6 @@ export interface ConverterState {
   } | null;
 
   // 裁剪
-  enableCrop: boolean;
-  cropModalOpen: boolean;
   isCropping: boolean;
 
   // 自动检测颜色
@@ -396,6 +399,7 @@ export interface ConverterState {
   lutColorCards: LutColorsCard[];
   lutColorsLoading: boolean;
   lutColorsLutName: string;
+  lutColorsSessionId: string | null;
 
   // 材料档案模式下的可达色建议（替换 lutColors 的作用）
   // Material-archive mode's achievable-color suggestions (replaces lutColors).
@@ -445,8 +449,6 @@ export interface ConverterState {
   bedSizesLoading: boolean;
 
   // 批量模式
-  batchMode: boolean;
-  batchFiles: File[];
   batchLoading: boolean;
   batchResult: BatchResponse | null;
   batchPreviewItems: BatchPreviewItem[];
@@ -463,23 +465,17 @@ export interface ConverterState {
   // 分层预览
   layerImages: { layer_index: number; name: string; url: string }[];
   layerImagesLoading: boolean;
-  layerImagesOpen: boolean;
   layerImagesSourceKey: string | null;
 
   // 选择工具与统一选区。Legacy fields remain during migration so existing
   // gradient/custom-recipe consumers can be moved without a flag day.
-  selectionMode: SelectionMode;
-  selectionTool: SelectionTool;
   selectionDocument: SelectionDocument | null;
   /** Unconfirmed gesture intents for immediate visual feedback only. */
   pendingSelectionMutations: PendingSelectionMutation[];
-  brushSizePx: number;
   /** CIEDE2000 tolerance used by the colour-range selection tool. */
-  colorRangeTolerance: number;
   selectedColors: Set<string>;
   regionData: RegionData | null;
   selectedRegions: RegionData[];
-  selectionBlinkEnabled: boolean;
 
   // 待确认颜色替换
   pendingReplacement: PendingReplacement | null;
@@ -508,9 +504,12 @@ export interface ConverterState {
   previewSubmissionSequence: number;
 }
 
+export interface ConverterState extends ConverterDocumentState, ConverterSourceRuntimeState, ConverterViewState, ConverterRuntimeState {}
+
 // ========== Actions Interface ==========
 
 export interface ConverterActions {
+  setProjectSettings: (changes: Partial<import("./project").ProjectConverterSettings>) => void;
   /** Publish a fully prepared project without resetting/re-importing its source. */
   commitProjectRestore: (state: ConverterState) => void;
   restoreConversionDefaults: () => void;
@@ -753,7 +752,7 @@ export interface ConverterActions {
    * flushing the batch through the existing replace-preview path.
    *
    * 把每个渐变分组统一替换为代表色：在 ``colorRemapMap`` 里注册非代表色 →
-   * 代表色的映射，然后走既有的 ``submitReplacePreview`` 批量通道。
+   * 代表色的映射，与手动换色共用批量提交与回执回滚流程。
    *
    * Called automatically when ``autoReplaceGradientBanding`` is on, but
    * also exposed so a button can trigger it on demand.

@@ -6,6 +6,8 @@ import {
 } from '../utils/colorUtils';
 import type { LutColorEntry } from '../api/types';
 import { tRuntime } from '../i18n/runtime';
+import { act, renderHook, waitFor } from '@testing-library/react';
+import { useConverterDataInit } from '../hooks/useConverterDataInit';
 const { mockApiFetchLutCatalog, mockApiFetchLutColors } = vi.hoisted(() => ({
   mockApiFetchLutCatalog: vi.fn(),
   mockApiFetchLutColors: vi.fn(),
@@ -243,6 +245,33 @@ describe('Feature: palette-optimization, Property 1: LUT 颜色缓存命中跳�
     });
   });
 
+  it('loads a restored private LUT and refreshes same-name colors across project sessions', async () => {
+    const { converterSourceKey } = await import('../stores/converter/project');
+    const { DEFAULT_STATE } = await import('../stores/converter');
+    const previous = useConverterStore.getState();
+    const colors = (hex: string): LutColorEntry[] => [{ hex, rgb: [1, 2, 3] }];
+    mockApiFetchLutColors.mockReset().mockResolvedValue({ colors: colors('#112233') });
+    useConverterStore.setState({ ...DEFAULT_STATE, lut_name: '', fetchLutCatalog: vi.fn().mockResolvedValue(undefined), fetchBedSizes: vi.fn().mockResolvedValue(undefined) });
+    const hook = renderHook(() => useConverterDataInit());
+    try {
+      await act(async () => { await Promise.resolve(); });
+      act(() => {
+        const source = { source_version: 'legacy' as const, lut_name: 'Shared name', lut_names: ['Shared name'], projectLutFile: new File(['private'], 'source.zip'), sessionId: 'project-a' };
+        useConverterStore.setState({ ...source, projectSourceKey: converterSourceKey({ ...useConverterStore.getState(), ...source }) });
+      });
+      await waitFor(() => expect(useConverterStore.getState().lutColors).toEqual(colors('#112233')));
+      expect(mockApiFetchLutColors).toHaveBeenLastCalledWith('Shared name', expect.any(AbortSignal), 'project-a');
+      mockApiFetchLutColors.mockResolvedValue({ colors: colors('#445566') });
+      act(() => useConverterStore.setState({ sessionId: 'project-b' }));
+      await waitFor(() => expect(useConverterStore.getState().lutColors).toEqual(colors('#445566')));
+      expect(mockApiFetchLutColors).toHaveBeenLastCalledWith('Shared name', expect.any(AbortSignal), 'project-b');
+      mockApiFetchLutColors.mockResolvedValue({ colors: colors('#778899') });
+      act(() => useConverterStore.setState({ projectLutFile: null }));
+      await waitFor(() => expect(useConverterStore.getState().lutColors).toEqual(colors('#778899')));
+      expect(mockApiFetchLutColors).toHaveBeenLastCalledWith('Shared name', expect.any(AbortSignal), null);
+    } finally { hook.unmount(); useConverterStore.setState(previous); }
+  });
+
   it('fetchLutCatalog ignores an older response that arrives last', async () => {
     const firstResponse = deferred<{
       legacy_groups: Array<{
@@ -354,8 +383,6 @@ describe('Feature: palette-optimization, Property 2: applyColorRemap 正确记�
       colorRemapMap: {},
       remapHistory: [],
       remapRedoHistory: [],
-      adjustmentHistory: [],
-      adjustmentRedoHistory: [],
       replacement_regions: [],
       recipe_overrides: [],
       regionReplacementCount: 0,
@@ -371,8 +398,6 @@ describe('Feature: palette-optimization, Property 2: applyColorRemap 正确记�
           colorRemapMap: {},
           remapHistory: [],
           remapRedoHistory: [],
-          adjustmentHistory: [],
-          adjustmentRedoHistory: [],
           replacement_regions: [],
           recipe_overrides: [],
           regionReplacementCount: 0,
@@ -403,8 +428,6 @@ describe('Feature: palette-optimization, Property 2: applyColorRemap 正确记�
             colorRemapMap: {},
             remapHistory: [],
             remapRedoHistory: [],
-            adjustmentHistory: [],
-            adjustmentRedoHistory: [],
             replacement_regions: [],
             recipe_overrides: [],
             regionReplacementCount: 0,
@@ -444,8 +467,6 @@ describe('Feature: palette-optimization, Property 3: undo round trip', () => {
       colorRemapMap: {},
       remapHistory: [],
       remapRedoHistory: [],
-      adjustmentHistory: [],
-      adjustmentRedoHistory: [],
       replacement_regions: [],
       recipe_overrides: [],
       regionReplacementCount: 0,
@@ -465,8 +486,6 @@ describe('Feature: palette-optimization, Property 3: undo round trip', () => {
             colorRemapMap: {},
             remapHistory: [],
             remapRedoHistory: [],
-            adjustmentHistory: [],
-            adjustmentRedoHistory: [],
             replacement_regions: [],
             recipe_overrides: [],
             regionReplacementCount: 0,
@@ -513,8 +532,6 @@ describe('Feature: palette-optimization, Property 3: undo round trip', () => {
           colorRemapMap: {},
           remapHistory: [],
           remapRedoHistory: [],
-          adjustmentHistory: [],
-          adjustmentRedoHistory: [],
           replacement_regions: [],
           recipe_overrides: [],
           regionReplacementCount: 0,
@@ -548,8 +565,6 @@ describe('Feature: palette-optimization, Property 4: 清空替换归零', () => 
       colorRemapMap: {},
       remapHistory: [],
       remapRedoHistory: [],
-      adjustmentHistory: [],
-      adjustmentRedoHistory: [],
       replacement_regions: [],
       recipe_overrides: [],
       regionReplacementCount: 0,
@@ -569,8 +584,6 @@ describe('Feature: palette-optimization, Property 4: 清空替换归零', () => 
             colorRemapMap: {},
             remapHistory: [],
             remapRedoHistory: [],
-            adjustmentHistory: [],
-            adjustmentRedoHistory: [],
             replacement_regions: [],
             recipe_overrides: [],
             regionReplacementCount: 0,
@@ -614,8 +627,6 @@ describe('Feature: palette-optimization, Property 4: 清空替换归零', () => 
             colorRemapMap: {},
             remapHistory: [],
             remapRedoHistory: [],
-            adjustmentHistory: [],
-            adjustmentRedoHistory: [],
             replacement_regions: [],
             recipe_overrides: [],
             regionReplacementCount: 0,

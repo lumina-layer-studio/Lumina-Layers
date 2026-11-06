@@ -30,6 +30,16 @@ function StrictModeWrapper({ children }: { children: React.ReactNode }) {
 }
 
 describe("useSessionLease", () => {
+  it("does not close an editor while document history still owns a lease", async () => {
+    const editor = renderHook(() => useSessionLease("retained-editor"));
+    const history = renderHook(() => useSessionLease("retained-editor", null));
+    editor.unmount();
+    await act(async () => { await vi.advanceTimersByTimeAsync(30_000); });
+    expect(closeSessionMock).not.toHaveBeenCalled();
+    history.unmount();
+    await act(async () => { await vi.advanceTimersByTimeAsync(30_000); });
+    expect(closeSessionMock).toHaveBeenCalledWith("retained-editor", []);
+  });
   beforeEach(() => {
     vi.useFakeTimers();
     vi.clearAllMocks();

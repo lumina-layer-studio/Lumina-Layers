@@ -15,7 +15,7 @@ async function setup(t, managed = false) {
   const handlers = new Map();
   const sent = [];
   const mainFrame = { url: 'file:///app/index.html' };
-  const window = { isDestroyed: () => false, webContents: { mainFrame, send: (...args) => sent.push(args) } };
+  const window = { isDestroyed: () => false, webContents: Object.assign(new EventEmitter(), { mainFrame, send: (...args) => sent.push(args) }) };
   const event = { sender: window.webContents, senderFrame: mainFrame };
   const dialog = { showSaveDialog: async () => ({ canceled: true }), showOpenDialog: async () => ({ canceled: true }) };
   const host = createProjectsHost({ app, ipcMain: { handle: (name, handler) => handlers.set(name, handler) }, dialog, shell: { showItemInFolder() {} }, getWindow: () => window, getTrustedUrl: () => mainFrame.url, env: managed ? { LUMINA_MANAGED_USER_DATA: path.join(root, 'shared'), LUMINA_MANAGED_RUNTIME_KEY: 'test-runtime' } : {} });
@@ -108,4 +108,59 @@ test('an interrupted atomic replacement keeps the previous project and removes o
   let removed = false;
   await assert.rejects(atomicWrite(target, bytes, { ...fs, open: async () => { throw new Error('collision'); }, rm: async () => { removed = true; } }), /collision/);
   assert.equal(removed, false);
+});
+
+test('a failed recent catalog write does not hide a successful project save', async t => {
+  const s = await setup(t);
+  await s.call('projects-catalog');
+  await fs.mkdir(path.join(s.root, 'projects/catalog.json'), { recursive: true });
+  s.dialog.showSaveDialog = async () => ({ filePath: path.join(s.root, 'saved.lum') });
+  const result = await s.call('projects-save', { bytes, metadata: { name: 'Saved' } });
+  assert.equal(result.state, 'saved');
+  assert.ok(result.entry.catalogWarning);
+  assert.deepEqual(new Uint8Array(await fs.readFile(result.entry.path)), bytes);
+  s.dialog.showSaveDialog = () => assert.fail('the saved path must remain writable');
+  await s.call('projects-save', { bytes, fileEntryId: result.entry.fileEntryId });
+});
+
+test('a crashed renderer releases close confirmation to the native fallback', async t => {
+  const s = await setup(t);
+  await s.call('projects-ready');
+  await s.call('projects-dirty', true);
+  const pending = s.host.confirmProjectClose();
+  s.event.sender.emit('render-process-gone', {}, { reason: 'crashed' });
+  const result = await Promise.race([pending, new Promise(resolve => setTimeout(() => resolve('hung'), 50))]);
+  assert.equal(result, null);
+  assert.equal(await s.host.confirmProjectClose(), null);
+});
+
+test('an interrupted open is delivered to the replacement renderer exactly once', async t => {
+  const s = await setup(t);
+  const target = path.join(s.root, 'reload.lum');
+  await fs.writeFile(target, bytes);
+  await s.call('projects-ready');
+  s.host.enqueueArgv(['app', '--open-project', target, '--project-request-id', 'reload-open']);
+  await s.host.broker.entries.get('reload-open').promise;
+  assert.equal(s.sent.filter(item => item[0] === 'project-open').length, 1);
+  s.event.sender.emit('did-navigate', {}, 'file:///app/index.html');
+  await s.call('projects-ready');
+  await s.call('projects-ready');
+  assert.equal(s.sent.filter(item => item[0] === 'project-open').length, 2);
+  await s.call('projects-complete', 'reload-open', 'opened', { name: 'Restored' });
+  s.event.sender.emit('did-navigate', {}, 'file:///app/index.html');
+  await s.call('projects-ready');
+  assert.equal(s.sent.filter(item => item[0] === 'project-open').length, 2);
+});
+
+test('opens queued during a transient renderer stall resume when it responds', async t => {
+  const s = await setup(t);
+  const target = path.join(s.root, 'resumed.lum');
+  await fs.writeFile(target, bytes);
+  await s.call('projects-ready');
+  s.event.sender.emit('unresponsive');
+  s.host.enqueueArgv(['app', '--open-project', target, '--project-request-id', 'resume-open']);
+  assert.equal(s.host.broker.get('resume-open').state, 'awaiting-user');
+  s.event.sender.emit('responsive');
+  await s.host.broker.entries.get('resume-open').promise;
+  assert.equal(s.sent.at(-1)[0], 'project-open');
 });

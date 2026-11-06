@@ -17,7 +17,7 @@ import zipfile
 import msgpack
 import numpy as np
 
-from config import LUTMetadata
+from config import LUTMetadata, get_source_kind
 from utils.lut_manager import LUTManager
 
 MAX_DEPENDENCY_BYTES = 512 * 1024 * 1024
@@ -48,6 +48,22 @@ def _validate_npy_header(source, byte_size: int) -> None:
 
 
 def _save_snapshot_npz(path: Path, rgb, stacks, metadata: LUTMetadata) -> None:
+    if (
+        stacks is None
+        and get_source_kind(metadata) == "legacy_lookup"
+        and np.asarray(rgb).reshape(-1, 3).shape[0] in {32, 1024, 1296, 2468, 2738}
+    ):
+        # Freeze the existing preview loader's recipes, channel remapping and
+        # outlier filtering before converting an implicit NPY lookup to NPZ.
+        # This also repairs earlier project snapshots with missing recipes.
+        from core.pipeline.processing_ops.lut_loader import load_lut
+
+        with tempfile.TemporaryDirectory(prefix="classic_lut_", dir=path.parent) as directory:
+            source = Path(directory) / "classic.npy"
+            np.save(source, rgb, allow_pickle=False)
+            runtime = load_lut(str(source), metadata.color_mode)
+            rgb, stacks = runtime["lut_rgb"], runtime["ref_stacks"]
+            metadata.layer_order = runtime["layer_order"]
     if stacks is not None:
         LUTManager.save_npz_with_metadata(str(path), rgb, stacks, metadata)
     else:

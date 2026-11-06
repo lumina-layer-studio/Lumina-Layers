@@ -30,6 +30,26 @@ function createProjectsHost({ app, ipcMain, dialog, shell, getWindow, getTrusted
   const pickerRequests = new Set();
   let dirty = false;
   let pendingClose = null;
+  let rendererAvailable = true;
+  let trackedContents = null;
+  function watchRenderer() {
+    const contents = getWindow()?.webContents;
+    if (!contents || trackedContents === contents) return;
+    trackedContents = contents;
+    const unavailable = () => {
+      rendererAvailable = false;
+      broker.appReady = false;
+      delivered.clear();
+      const pending = pendingClose;
+      pendingClose = null;
+      pending?.resolve(null);
+    };
+    contents.on?.('render-process-gone', unavailable);
+    contents.on?.('unresponsive', unavailable);
+    contents.on?.('responsive', () => { rendererAvailable = true; broker.markAppReady(); });
+    contents.on?.('destroyed', unavailable);
+    contents.on?.('did-navigate', unavailable);
+  }
   const managed = path.isAbsolute(env.LUMINA_MANAGED_USER_DATA || '') && /^[a-zA-Z0-9_-]{1,128}$/.test(env.LUMINA_MANAGED_RUNTIME_KEY || '');
   const projectRoot = () => path.join(managed ? env.LUMINA_MANAGED_USER_DATA : app.getPath('userData'), 'projects');
   const catalogPath = () => path.join(projectRoot(), 'catalog.json');
@@ -71,7 +91,8 @@ function createProjectsHost({ app, ipcMain, dialog, shell, getWindow, getTrusted
     entry.lastOpenedAt = new Date().toISOString();
     const older = rows.filter(item => item !== entry).sort((a, b) => Number(b.pinned) - Number(a.pinned) || String(b.lastOpenedAt).localeCompare(String(a.lastOpenedAt)));
     entries = [entry, ...older.slice(0, 127)];
-    await persist();
+    try { await persist(); }
+    catch (error) { return { ...entry, catalogWarning: `Project catalog update failed: ${error.message}` }; }
     return { ...entry };
   };
   function trusted(event) {
@@ -118,7 +139,19 @@ function createProjectsHost({ app, ipcMain, dialog, shell, getWindow, getTrusted
       void request(filePath).catch(error => getWindow()?.webContents.send('project-open', { state: 'failed', error: error.message }));
     }
   });
-  handle('projects-ready', () => { broker.markAppReady(); return true; });
+  handle('projects-ready', () => {
+    watchRenderer(); rendererAvailable = true;
+    broker.markAppReady();
+    // Navigation can interrupt the renderer between receipt and commit.
+    for (const entry of broker.entries.values()) {
+      if (entry.result?.bytes && !delivered.has(entry.requestId) && !pickerRequests.has(entry.requestId)
+        && ['opening', 'awaiting-user'].includes(entry.state)) {
+        getWindow()?.webContents.send('project-open', { ...broker.get(entry.requestId), state: 'opening' });
+        delivered.add(entry.requestId);
+      }
+    }
+    return true;
+  });
   handle('projects-progress', (id, state) => broker.progress(id, state));
   handle('projects-dirty', value => { dirty = value === true; return true; });
   handle('projects-close-answer', (id, accepted) => {
@@ -164,7 +197,10 @@ function createProjectsHost({ app, ipcMain, dialog, shell, getWindow, getTrusted
   });
   handle('projects-save', async ({ bytes, fileEntryId, suggestedName, metadata, bundle = false }) => {
     if (!(bytes instanceof Uint8Array) || bytes.byteLength > MAX_PROJECT_BYTES || bytes.byteLength < 4 || bytes[0] !== 0x50 || bytes[1] !== 0x4b) throw new Error('Invalid project bytes');
-    const entry = fileEntryId ? (await catalog()).find(item => item.fileEntryId === fileEntryId) : null;
+    // Read the catalog before touching the destination, so a corrupt index
+    // cannot turn an already-written project into an unacknowledged save.
+    const rows = bundle ? [] : await catalog();
+    const entry = fileEntryId ? rows.find(item => item.fileEntryId === fileEntryId) : null;
     if (fileEntryId && !entry) throw new Error('Unknown project file');
     let target = entry?.path;
     if (!target) {
@@ -194,7 +230,8 @@ function createProjectsHost({ app, ipcMain, dialog, shell, getWindow, getTrusted
     entry.resolveInitial = null;
   }
   function confirmProjectClose() {
-    if (!dirty) return Promise.resolve(null);
+    watchRenderer();
+    if (!dirty || !rendererAvailable || getWindow()?.webContents.isCrashed?.()) return Promise.resolve(null);
     if (pendingClose) return pendingClose.promise;
     const id = randomUUID();
     let resolve;

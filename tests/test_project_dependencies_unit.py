@@ -23,6 +23,52 @@ from core.single_stage import export_saved_stage_a_material_archives
 from utils.lut_manager import LUTManager
 
 
+@pytest.mark.parametrize("count", [32, 1024, 1296, 2468, 2738])
+def test_classic_lut_project_preserves_runtime_recipes_without_original_file(tmp_path, count):
+    from core.pipeline.processing_ops.lut_loader import load_lut
+
+    source = tmp_path / "classic.npy"
+    rgb = np.random.default_rng(9).integers(0, 256, (count, 3), dtype=np.uint8)
+    np.save(source, rgb, allow_pickle=False)
+    _, _, metadata = LUTManager.load_lut_with_metadata(str(source))
+    expected = load_lut(str(source), metadata.color_mode)
+    data = pack_lut_source(str(source))
+    source.unlink()
+
+    restored = unpack_lut_source(data, tmp_path / "private")
+    actual = load_lut(restored, metadata.color_mode)
+    np.testing.assert_array_equal(actual["lut_rgb"], expected["lut_rgb"])
+    np.testing.assert_array_equal(actual["ref_stacks"], expected["ref_stacks"])
+    assert actual["layer_order"] == expected["layer_order"]
+
+
+@pytest.mark.parametrize("direct_npz", [False, True])
+def test_older_project_lut_without_recipes_reuses_classic_loader(tmp_path, direct_npz):
+    from core.pipeline.processing_ops.lut_loader import load_lut
+
+    source = tmp_path / "classic.npy"
+    rgb = np.random.default_rng(9).integers(0, 256, (1024, 3), dtype=np.uint8)
+    np.save(source, rgb, allow_pickle=False)
+    _, _, metadata = LUTManager.load_lut_with_metadata(str(source))
+    expected = load_lut(str(source), metadata.color_mode)
+    npz = io.BytesIO()
+    np.savez_compressed(npz, rgb=rgb, metadata_json=np.array(json.dumps(metadata.to_dict())))
+    if direct_npz:
+        data = npz.getvalue()
+    else:
+        archive = io.BytesIO()
+        with zipfile.ZipFile(archive, "w") as z:
+            z.writestr("source.json", '{"format":"lumina-lut-source","version":1}')
+            z.writestr("lut.npz", npz.getvalue())
+        data = archive.getvalue()
+    source.unlink()
+
+    restored = unpack_lut_source(data, tmp_path / "private")
+    actual = load_lut(restored, metadata.color_mode)
+    np.testing.assert_array_equal(actual["lut_rgb"], expected["lut_rgb"])
+    np.testing.assert_array_equal(actual["ref_stacks"], expected["ref_stacks"])
+
+
 def test_legacy_direct_npz_migrates_without_global_library(tmp_path):
     source = tmp_path / "old.npz"
     LUTManager.save_npz_with_metadata(str(source), np.array([[1, 2, 3]], dtype=np.uint8), np.array([[0, 1, 0, 1, 0]]), LUTMetadata())

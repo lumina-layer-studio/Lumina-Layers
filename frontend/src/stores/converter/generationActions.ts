@@ -225,7 +225,8 @@ export function createGenerationActions(
     return true;
   }
 
-  registerGeneratedArtifactInvalidator(({ preservePreviews }) => {
+  registerGeneratedArtifactInvalidator(({ preservePreviews, source }) => {
+    if (source === "defaults" && _get().projectSettings) return;
     pendingMaterialSelection = null;
     invalidateGenerationRequests();
     set({
@@ -259,6 +260,7 @@ export function createGenerationActions(
     });
   });
   registerSingleItemDownloadInvalidator(() => {
+    if (_get().projectSettings) return;
     if (
       _activeFilenameEligibleGenerateSequence !== null &&
       _activeFilenameEligibleGenerateSequence === _generateRequestSequence
@@ -290,7 +292,7 @@ export function createGenerationActions(
         state.batchLoading || state.nativeMaterialSelectionLoading ||
         state.contentCommitStatus === "unknown") return;
       const settings = resolveConverterSettings(state, useSettingsStore.getState());
-      const identity = captureGeneratedArtifactIdentity(settings.deviceProfileId, settings.buildPlateId);
+      const identity = captureGeneratedArtifactIdentity(settings.deviceProfileId, settings.buildPlateId, !state.projectSettings);
       const sourceIdentity = JSON.stringify(buildConversionSourceParams(state));
       const sequence = ++_generateRequestSequence;
       pendingMaterialSelection = null;
@@ -525,6 +527,7 @@ export function createGenerationActions(
       const generateIdentity = captureGeneratedArtifactIdentity(
         generateSettings.deviceProfileId,
         generateSettings.buildPlateId,
+        !state.projectSettings,
       );
       const generateReplacementEpoch = editor.getReplacementEpoch();
       const sourceIdentity = JSON.stringify(buildConversionSourceParams(state));
@@ -896,6 +899,7 @@ export function createGenerationActions(
       const batchIdentity = captureGeneratedArtifactIdentity(
         settings.deviceProfileId,
         settings.buildPlateId,
+        !state.projectSettings,
       );
       const batchSequence = ++_batchRequestSequence;
       const batchSourceIdentity = JSON.stringify(buildConversionSourceParams(state));

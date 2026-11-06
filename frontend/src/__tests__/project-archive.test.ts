@@ -82,6 +82,58 @@ describe("lumina-project archive", () => {
     expect(fork.project.sourceRevisionId).toBe(snapshot.manifest.revisionId);
   });
 
+  it("round-trips a Save As copy with its captured thumbnail", async () => {
+    const snapshot = createProjectSnapshot({
+      name: "Original with cover",
+      workflowKinds: ["converter"],
+      documents: [{ ...converterDocument, resourceRefs: [] }],
+    });
+    const png = Uint8Array.from(
+      atob("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGMwCq34DwADuwH/hxaC9AAAAABJRU5ErkJggg=="),
+      (character) => character.charCodeAt(0),
+    );
+    const asset = await createProjectAsset("thumbnail", png, "image/png", "thumbnail.png", "resource");
+    snapshot.thumbnail = { ...asset, path: "preview/thumbnail.png" };
+    snapshot.manifest.thumbnail = {
+      path: "preview/thumbnail.png",
+      sha256: asset.sha256,
+      byteSize: asset.byteSize,
+      mediaType: asset.mediaType,
+    };
+    const originalBytes = await serializeProject(snapshot);
+
+    const fork = forkProjectSnapshot(snapshot, "Saved copy");
+    const restored = await parseProject(await serializeProject(fork));
+
+    expect(restored.manifest.name).toBe("Saved copy");
+    expect(restored.manifest.projectId).not.toBe(snapshot.manifest.projectId);
+    expect(restored.project.sourceProjectId).toBe(snapshot.manifest.projectId);
+    expect(restored.manifest.thumbnail).toEqual(snapshot.manifest.thumbnail);
+    expect(restored.thumbnail?.data).toEqual(png);
+    expect(fork.manifest.thumbnail).not.toBe(snapshot.manifest.thumbnail);
+    fork.thumbnail!.data[0] ^= 0xff;
+    expect(snapshot.thumbnail.data).toEqual(png);
+    expect(await serializeProject(snapshot)).toEqual(originalBytes);
+  });
+
+  it("keeps the active workspace when saving a multi-workspace project as a copy", async () => {
+    const snapshot = createProjectSnapshot({
+      name: "Multiple workspaces",
+      workflowKinds: ["calibration", "converter"],
+      documents: [
+        { ...converterDocument, documentId: "calibration.main", kind: "calibration", resourceRefs: [] },
+        { ...converterDocument, resourceRefs: [] },
+      ],
+    });
+    snapshot.manifest.entryDocumentId = converterDocument.documentId;
+    snapshot.project.entryDocumentId = converterDocument.documentId;
+
+    const restored = await parseProject(await serializeProject(forkProjectSnapshot(snapshot, "Copy")));
+
+    expect(restored.manifest.entryDocumentId).toBe(converterDocument.documentId);
+    expect(restored.project.entryDocumentId).toBe(converterDocument.documentId);
+  });
+
   it("rejects unsafe member paths before returning project data", async () => {
     const unsafe = zipSync({ "../evil.json": new Uint8Array([1]) });
 

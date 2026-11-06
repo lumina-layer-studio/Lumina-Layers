@@ -39,6 +39,8 @@ export interface WorkflowSpec<S extends object> {
   fields: Array<keyof S & string>;
   busy: Array<keyof S & string>;
   catalogFields?: Array<keyof S & string>;
+  ignoredChanges?: Array<keyof S & string>;
+  refreshCatalog?: () => Promise<void>;
   session?: { field: keyof S & string; kind: "extractor" | "single-stage"; urls: Record<string, keyof S & string>; workspaceField?: keyof S & string };
   colorchecker?: Array<keyof S & string>;
   lutNames?: (state: S) => string[];
@@ -210,13 +212,15 @@ export function createWorkflowAdapter<S extends object>(spec: WorkflowSpec<S>): 
       if (spec.busy.some((key) => state[key]) || ["calibrating", "confirming"].includes(String((state as State).colorchecker_phase))) throw new Error(`Wait for the ${spec.kind} operation before opening another project`);
     },
     subscribe: (listener) => store.subscribe((next, previous) => {
-      if (spec.fields.some((key) => !spec.catalogFields?.includes(key) && next[key] !== previous[key]) || (spec.session && next[spec.session.field] !== previous[spec.session.field])) listener();
+      if (spec.fields.some((key) => !spec.catalogFields?.includes(key) && !spec.ignoredChanges?.includes(key) && next[key] !== previous[key]) || (spec.session && next[spec.session.field] !== previous[spec.session.field])) listener();
     }),
     reset: () => {
       const runtime = workflowRuntime(spec.kind);
+      const catalogs = Object.fromEntries((spec.catalogFields ?? []).map(key => [key, store.getState()[key]]));
       runtime?.urls?.forEach((url) => URL.revokeObjectURL(url));
       runtime?.colorcheckerIds?.forEach((id) => { void colorcheckerRelease(id); });
-      store.setState(store.getInitialState()); setWorkflowRuntime(spec.kind, undefined);
+      store.setState({ ...store.getInitialState(), ...catalogs }); setWorkflowRuntime(spec.kind, undefined);
+      if (runtime?.contextId) void spec.refreshCatalog?.();
     },
     enumerateDependencies: (document) => [...document.resourceRefs],
     commitRestore(value, context) {
@@ -235,6 +239,7 @@ export function createWorkflowAdapter<S extends object>(spec: WorkflowSpec<S>): 
       const runtime = (value as PreparedWorkflow).previousRuntime;
       runtime?.urls?.forEach((url) => URL.revokeObjectURL(url));
       runtime?.colorcheckerIds?.forEach((id) => { void colorcheckerRelease(id); });
+      void spec.refreshCatalog?.();
     },
     migration: (document) => document,
     normalizeForCompare: (document) => document.payload,

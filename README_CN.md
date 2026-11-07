@@ -217,7 +217,7 @@ python start_all.py
 
 源码运行默认不连接在线耗材库，本地耗材档案可离线使用。连接自建或已获授权的云库时，需要另外配置服务地址，见 [Registry 连接说明](docs/material-registry-connection.md)。
 
-原生 3MF 依赖为 `fatcat-metadata==0.1.5` 和官方 `neroued-3mf==0.4.2`，审核版 SDK 可按下方指南从固定提交构建；无需定制 writer。支持的平台见[原生依赖指南](docs/desktop-electron.md)。SVG 依赖仍为 `lumina-svg-core==0.3.4`。
+安装 `requirements.txt` 时会从 PyPI 下载 `fatcat-metadata==0.1.5`、`neroued-3mf==0.4.2` 和 `lumina-svg-core==0.3.4` 的预编译包。支持的平台见[原生依赖指南](docs/desktop-electron.md)。
 
 ### 可选：桌面窗口
 

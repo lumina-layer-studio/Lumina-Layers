@@ -80,6 +80,75 @@ export interface WorkshopRpcEventEnvelope {
   payload: WorkshopUiState;
 }
 
+/**
+ * Workshop API implemented by this host. 1.1.0 adds module backends; the
+ * pinned SDK package still exports 1.0.0, which frontend-only modules keep
+ * negotiating. 宿主实现的 Workshop API 版本；纯前端模块仍协商 1.0.0。
+ */
+export const HOST_WORKSHOP_API_VERSION = "1.1.0";
+
+/** Ready-handshake feature a module lists to use backend task RPC. */
+export const WORKSHOP_BACKEND_FEATURE = "backend.tasks";
+
+/**
+ * Host-owned backend task methods (Workshop API 1.1.0, public SDK 1.1.0).
+ * Eligibility comes from the version's backend declaration and consent,
+ * not from a v1 permission. 资格来自后端声明与授权，而不是 v1 权限。
+ */
+export const WORKSHOP_BACKEND_RPC_METHODS = [
+  "backend.status",
+  "backend.submit",
+  "backend.get",
+  "backend.list",
+  "backend.cancel",
+  "backend.readOutput",
+  "backend.remove",
+] as const;
+
+export type WorkshopBackendRpcMethod =
+  (typeof WORKSHOP_BACKEND_RPC_METHODS)[number];
+
+export type HostWorkshopRpcMethod =
+  | WorkshopRpcMethod
+  | WorkshopBackendRpcMethod;
+
+export type WorkshopBackendTaskStatus =
+  | "queued"
+  | "running"
+  | "succeeded"
+  | "failed"
+  | "cancelled"
+  | "interrupted";
+
+/** RPC shape of one host-owned backend task. */
+export interface WorkshopBackendTask {
+  taskId: string;
+  moduleVersion: string;
+  operation: string;
+  status: WorkshopBackendTaskStatus;
+  progress: { completed: number; total: number; phase: string } | null;
+  error: { code: string; message: string } | null;
+  outputs: Array<{ name: string; fileName: string; mimeType: string; bytes: number }>;
+  variant: string | null;
+  createdAt: string;
+  updatedAt: string;
+  finishedAt: string | null;
+}
+
+export interface WorkshopBackendInput {
+  name: string;
+  fileName: string;
+  mimeType: string;
+  bytes: ArrayBuffer;
+}
+
+export interface WorkshopBackendSubmitRequest {
+  operation: string;
+  params: Record<string, unknown>;
+  inputs: WorkshopBackendInput[];
+  idempotencyKey?: string;
+}
+
 export const WORKSHOP_RPC_METHODS = [
   "image.pick",
   "project.save",
@@ -93,15 +162,23 @@ export const WORKSHOP_RPC_METHODS = [
   "status.error",
   "status.diagnostics",
   "lifecycle.ready",
-] as const satisfies readonly WorkshopRpcMethod[];
+  ...WORKSHOP_BACKEND_RPC_METHODS,
+] as const satisfies readonly HostWorkshopRpcMethod[];
 
 const RPC_METHOD_SET = new Set<string>(WORKSHOP_RPC_METHODS);
+const BACKEND_METHOD_SET = new Set<string>(WORKSHOP_BACKEND_RPC_METHODS);
 const PERMISSION_SET = new Set<string>(WORKSHOP_PERMISSION_NAMES);
 
 export function isWorkshopRpcMethod(
   value: unknown,
-): value is WorkshopRpcMethod {
+): value is HostWorkshopRpcMethod {
   return typeof value === "string" && RPC_METHOD_SET.has(value);
+}
+
+export function isWorkshopBackendRpcMethod(
+  value: unknown,
+): value is WorkshopBackendRpcMethod {
+  return typeof value === "string" && BACKEND_METHOD_SET.has(value);
 }
 
 export function isWorkshopPermissionName(

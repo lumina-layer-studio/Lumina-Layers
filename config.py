@@ -803,7 +803,7 @@ SUPPORTED_SLICERS: list[dict[str, str]] = [
     {"id": "AnycubicSlicerNext", "display_name": "Anycubic Slicer Next"},
     {"id": "FlashStudio", "display_name": "Flash Studio Desktop"},
     {"id": "QIDIStudio", "display_name": "QIDI Studio"},
-    {"id": "PrusaSlicer", "display_name": "PrusaSlicer 3.0.0-alpha12"},
+    {"id": "PrusaSlicer", "display_name": "PrusaSlicer 3.0.0-alpha13"},
 ]
 
 DEFAULT_SLICER_ID: str = "BambuStudio"

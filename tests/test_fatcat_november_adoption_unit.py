@@ -15,7 +15,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 @pytest.mark.parametrize("nozzle", ["0.2", "0.4", "0.6", "0.8"])
-def test_h3c_picker_selection_resolves_native_target(nozzle):
+def test_h3c_native_profile_resolves_export_target(nozzle):
     writer = BambuStudio3MFWriter(
         "h3c.3mf", settings={}, slicer="BambuStudio", printer_id="bambu-h3c",
         nozzle_size=nozzle, device_profile_id=f"BambuStudio:bbl:bambu-lab-h3c:{nozzle}",
@@ -73,3 +73,15 @@ def test_current_prusa_picker_has_artwork_for_every_native_machine():
         assert device.source_version == "3.0.0-alpha13"
         assert device.thumbnail
         assert (ROOT / "machine_registry" / device.thumbnail).is_file()
+
+
+def test_prusa_slicer_label_matches_exported_profile_version():
+    from api.routers.system import get_slicers
+
+    registry = load_machine_registry(ROOT / "machine_registry" / "registry.json")
+    versions = {
+        device.source_version for device in registry.devices_by_id.values()
+        if device.slicer_id == "PrusaSlicer"
+    }
+    label = next(s.display_name for s in get_slicers().slicers if s.id == "PrusaSlicer")
+    assert {label} == {f"PrusaSlicer {version}" for version in versions}

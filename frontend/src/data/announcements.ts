@@ -23,8 +23,8 @@ export const ANNOUNCEMENTS: ReadonlyArray<AnnouncementEntry> = [
         category: { zh: "新功能", en: "New" },
         items: [
           {
-            zh: "新增 Bambu H3C 及四种喷嘴选择，更新 Bambu、QIDI、Anycubic、Flash、Snapmaker 和 Prusa 的切片配置，并同步 Prusa 机型图片。Prusa 使用 3.0.0-alpha13 预览版。",
-            en: "Added Bambu H3C with four nozzle options, refreshed Bambu, QIDI, Anycubic, Flash, Snapmaker and Prusa slicer profiles, and updated Prusa printer images. Prusa uses the 3.0.0-alpha13 preview.",
+            zh: "新增 Bambu H3C，可在设置中选择 0.2 或 0.4 mm 喷嘴。更新了 Bambu、QIDI、Anycubic、Flash、Snapmaker 和 Prusa 的切片配置及 Prusa 机型图片。Prusa 使用 3.0.0-alpha13 预览版。",
+            en: "Added Bambu H3C with 0.2 and 0.4 mm nozzles in Settings. Updated Bambu, QIDI, Anycubic, Flash, Snapmaker and Prusa slicer profiles and Prusa printer images. Prusa uses the 3.0.0-alpha13 preview.",
           },
         ],
       },

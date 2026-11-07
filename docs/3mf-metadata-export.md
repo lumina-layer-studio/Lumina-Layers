@@ -64,24 +64,24 @@ validation stays at the existing SDK, source parser and writer boundaries.
 - **neroued-3mf** owns the one final 3MF package write.
 
 FatCat is distributed as `fatcat-metadata`, imported as `fatcat_metadata`.
-This branch requires `fatcat-metadata==0.1.3` for Windows long paths and the
-exact `native_project_source` query. Install the released wheel from PyPI
+Lumina uses `fatcat-metadata==0.1.4` for H3C and the slicer profiles listed below.
+It retains Windows long-path support and the exact `native_project_source` query. Install the released wheel from PyPI
 through `requirements.txt`.
 Lumina resolves only the selected machine's native dependencies during export.
 Maintainer builds use the public
 [`MOVIBALE/fatcat-metadata`](https://github.com/MOVIBALE/fatcat-metadata) root
-project at source revision `5023982e03680e0cd89fb9175dd0ca401d41f6f4` and pins
+project at source revision `c2f39b9dedfeb8b6c015784e2aae1d82e56e7ffd` and pins
 the writer contract in
 `scripts/fatcat_packaging_contract.py`; build and installation steps are in
 [the desktop setup guide](desktop-electron.md).
 
 FatCat 发行包名为 `fatcat-metadata`，导入名为 `fatcat_metadata`。
-本分支需要 `fatcat-metadata==0.1.3`，修复 Windows 长路径读取，并用
+本体使用 `fatcat-metadata==0.1.4`，新增 H3C 并更新下列切片配置，保留 Windows 长路径支持，并用
 `native_project_source` 只解析所选机型依赖。通过 `requirements.txt`
 从 PyPI 安装正式 wheel。
 维护者从公开仓库
 [`MOVIBALE/fatcat-metadata`](https://github.com/MOVIBALE/fatcat-metadata) 的根项目构建，
-源码提交固定为 `5023982e03680e0cd89fb9175dd0ca401d41f6f4`，并在
+源码提交固定为 `c2f39b9dedfeb8b6c015784e2aae1d82e56e7ffd`，并在
 `scripts/fatcat_packaging_contract.py` 维护 writer 合同；构建与安装步骤见
 [桌面环境指南](desktop-electron.md)。
 
@@ -96,10 +96,10 @@ no downstream writer patch, version suffix, or fork download channel is required
 Production 接口及 Windows 中文/长路径修复。源码构建固定同一发行提交，
 无需下游补丁、定制版本后缀或 fork 下载渠道。
 
-The current source pin includes Bambu Studio 02.08.02.61, OrcaSlicer 2.4.2,
-QIDI Studio 02.07.02.60, ElegooSlicer 1.5.3.5, Anycubic Slicer Next macOS
-2.0.0.3, Flash Studio 1.7.18, Snapmaker Orca 2.4.0, and PrusaSlicer
-3.0.0-alpha12 metadata.
+The current source pin includes Bambu Studio 02.09.01.70, OrcaSlicer 2.4.2,
+QIDI Studio 02.07.02.73, ElegooSlicer 1.5.3.5, Anycubic Slicer Next
+2.0.0.6, Flash Studio 1.7.19, Snapmaker Orca 2.4.1, and PrusaSlicer
+3.0.0-alpha13 metadata.
 Native process defaults supply specific printing speeds. Lumina no longer sends
 the historical overall `print_speed` placeholder. Specific speed overrides follow
 each target's declared FatCat contract; Bambu-family overall-speed requests are rejected.
@@ -218,7 +218,7 @@ Worker 接收两项参数，共用合并路径保留源 Z 区间并映射对象�
 
 ### PrusaSlicer 3 preview / Prusa 3 预览版
 
-Select **PrusaSlicer 3.0.0-alpha12** in Settings, then the exact Prusa machine.
+Select **PrusaSlicer 3.0.0-alpha13** in Settings, then the exact Prusa machine.
 The 32 built-in device entries come from FatCat's public native catalogue, with
 the native default 0.4 mm nozzle and sheet. They are not separate Lumina preset
 copies. Ordinary single-material devices cannot print the four-material palette;

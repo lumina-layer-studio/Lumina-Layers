@@ -3535,8 +3535,8 @@ export const translations: Record<string, Record<"zh" | "en", string>> = {
     en: "Manual slicer app path",
   },
   "settings.prusa_preview_help": {
-    zh: "Prusa 工程使用 3.0.0-alpha12 预览版格式。多色导出需要 MMU 或足够的打印头；当前内置配置提供原生默认 0.4 mm 喷嘴。",
-    en: "Prusa projects use the 3.0.0-alpha12 preview format. Multicolor exports need an MMU or enough print heads. Bundled profiles use the native default 0.4 mm nozzle.",
+    zh: "Prusa 工程使用上方所示版本的预览格式。多色导出需要 MMU 或足够的打印头；内置配置使用原生默认的 0.4 mm 喷嘴。",
+    en: "Prusa projects use the preview format of the version shown above. Multicolor exports need an MMU or enough print heads. Bundled profiles use the native default 0.4 mm nozzle.",
   },
   "settings.custom_slicer_path_help": {
     zh: "macOS 可粘贴 .app 路径，例如 /Applications/Bambu Studio.app；保存后会优先用于打开 3MF。",

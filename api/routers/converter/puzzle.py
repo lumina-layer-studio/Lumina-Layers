@@ -17,7 +17,7 @@ import tempfile
 import uuid
 from collections.abc import AsyncIterator
 from copy import deepcopy
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
 import numpy as np
@@ -61,7 +61,6 @@ from core.puzzle import (
     PuzzlePiece,
     build_puzzle_layout,
     export_piece_boundary_geometry,
-    inset_boundary_geometry_payload,
     rasterize_piece_mask,
     render_assembly_overview,
     render_puzzle_overlay,
@@ -141,6 +140,7 @@ class PuzzlePieceWorkerAssets:
     mask_solid: np.ndarray | None = None
     quantized_image: np.ndarray | None = None
     material_matrix: np.ndarray | None = None
+    backing_mask: np.ndarray | None = None
 
 
 class _PuzzleLayoutPreviewBody(BaseModel):
@@ -265,26 +265,6 @@ def _require_material_puzzle_analysis(
     return matched_rgb, mask_solid, quantized_image, material_matrix
 
 
-def _piece_boundary_geometry_payload(piece: PuzzlePiece, bbox_px: tuple[int, int, int, int]) -> dict[str, Any]:
-    """Build a crop-local boundary payload for one puzzle piece.
-    为单个拼图块构建相对裁切区域的边界载荷。
-
-    Args:
-        piece: Piece metadata with absolute preview-space coordinates.
-            (带有预览绝对坐标的拼图块元数据)
-        bbox_px: Inclusive-exclusive crop bbox in preview pixels.
-            (预览像素空间中的裁切包围盒)
-
-    Returns:
-        dict[str, Any]: JSON-serializable boundary payload.
-            (可序列化为 JSON 的边界数据)
-    """
-
-    if tuple(int(value) for value in bbox_px) != piece.bbox_px:
-        raise ValueError("Puzzle piece crop bbox does not match piece.bbox_px.")
-    return export_piece_boundary_geometry(piece)
-
-
 def _get_source_rgba(cache: dict[str, Any]) -> np.ndarray:
     """Return the canonical raster source for puzzle cropping.
     返回用于拼图裁切的标准栅格源图。
@@ -350,33 +330,36 @@ def _get_mask_identity(mask_solid: np.ndarray | None) -> str | bytes:
     return packed.tobytes()
 
 
+def _puzzle_footprint(cache: dict[str, Any]) -> np.ndarray | None:
+    """The structural footprint can include backing where no color was deposited."""
+    footprint = cache.get("backing_mask")
+    if footprint is None:
+        footprint = cache.get("mask_solid")
+    return footprint
+
+
 def _build_layout_cache_key(
-    cache: dict[str, Any],
-    request: PuzzleLayoutPreviewRequest,
+    config: PuzzleLayoutConfig,
+    boundary_key: tuple[Any, ...],
 ) -> tuple[Any, ...]:
     """Build a stable cache key for puzzle layout geometry.
     为拼图布局几何生成稳定缓存键。
     """
 
-    width_px, height_px, total_width_mm, total_height_mm = _get_layout_dimensions(cache, request)
-    mask_solid = cache.get("mask_solid")
-    return (
-        width_px,
-        height_px,
-        round(total_width_mm, 6),
-        round(total_height_mm, 6),
-        request.puzzle_style.value,
-        request.sizing_mode.value,
-        round(float(request.piece_width_mm), 6),
-        round(float(request.piece_height_mm), 6),
-        int(request.rows),
-        int(request.cols),
-        int(request.target_piece_count),
-        int(request.seed),
-        request.connector_style.value,
-        round(float(request.irregularity_strength), 6),
-        round(float(request.min_neck_width_mm), 6),
-        _get_mask_identity(mask_solid if isinstance(mask_solid, np.ndarray) else None),
+    return boundary_key + (
+        round(config.total_width_mm, 6),
+        round(config.total_height_mm, 6),
+        config.style,
+        config.sizing_mode,
+        round(config.piece_width_mm, 6),
+        round(config.piece_height_mm, 6),
+        config.rows,
+        config.cols,
+        config.target_piece_count,
+        config.seed,
+        config.connector_style,
+        round(config.irregularity_strength, 6),
+        round(config.min_neck_width_mm, 6),
     )
 
 
@@ -391,37 +374,20 @@ def _build_overlay_cache_key(
     return layout_cache_key + (bool(request.labels_enabled),)
 
 
-def _build_boundary_cache_key(
-    cache: dict[str, Any],
-) -> tuple[Any, ...]:
-    """Build a stable cache key for transparent-boundary geometry.
-    为透明边界几何生成稳定缓存键。
-    """
-
-    matched_rgb = cache.get("matched_rgb")
-    if matched_rgb is None or matched_rgb.ndim != 3:
-        raise ValueError("Preview cache missing matched_rgb for puzzle layout.")
-    height_px, width_px = matched_rgb.shape[:2]
-    mask_solid = cache.get("mask_solid")
-    return (
-        width_px,
-        height_px,
-        _get_mask_identity(mask_solid if isinstance(mask_solid, np.ndarray) else None),
-    )
-
-
 def _build_layout_config(
     cache: dict[str, Any],
     request: PuzzleLayoutPreviewRequest,
-    *,
-    mask_geometry: Any = None,
 ) -> PuzzleLayoutConfig:
     """Build the authoritative core layout configuration.
     构建唯一权威的核心拼图布局配置。
     """
 
     width_px, height_px, total_width_mm, total_height_mm = _get_layout_dimensions(cache, request)
-    mask_solid = cache.get("mask_solid")
+    footprint = _puzzle_footprint(cache)
+    if footprint is not None and (
+        not isinstance(footprint, np.ndarray) or footprint.shape != (height_px, width_px)
+    ):
+        raise ValueError("Puzzle footprint must match the preview dimensions.")
 
     return PuzzleLayoutConfig(
         width_px=width_px,
@@ -439,33 +405,8 @@ def _build_layout_config(
         connector_style=request.connector_style.value,
         irregularity_strength=request.irregularity_strength,
         min_neck_width_mm=request.min_neck_width_mm,
-        solid_mask=mask_solid if isinstance(mask_solid, np.ndarray) else None,
-        mask_geometry=mask_geometry,
+        solid_mask=footprint,
     )
-
-
-def _resolve_mask_geometry(
-    *,
-    session_data: dict[str, Any],
-    cache: dict[str, Any],
-    request: PuzzleLayoutPreviewRequest,
-    store: SessionStore,
-    session_id: str,
-) -> Any:
-    """Resolve and cache transparent-boundary geometry for puzzle layouts.
-    解析并缓存拼图布局使用的透明边界几何。
-    """
-
-    boundary_key = _build_boundary_cache_key(cache)
-    cached_key = session_data.get("puzzle_boundary_geometry_key")
-    cached_geometry = session_data.get("puzzle_boundary_geometry")
-    if cached_key == boundary_key:
-        return cached_geometry
-
-    geometry = resolve_puzzle_mask_geometry(_build_layout_config(cache, request))
-    store.put(session_id, "puzzle_boundary_geometry_key", boundary_key)
-    store.put(session_id, "puzzle_boundary_geometry", geometry)
-    return geometry
 
 
 def _resolve_layout(
@@ -480,26 +421,21 @@ def _resolve_layout(
     解析并缓存权威拼图布局。
     """
 
-    layout_cache_key = _build_layout_cache_key(cache, request)
+    config = _build_layout_config(cache, request)
+    boundary_key = (config.width_px, config.height_px, _get_mask_identity(config.solid_mask))
+    layout_cache_key = _build_layout_cache_key(config, boundary_key)
     cached_key = session_data.get("puzzle_layout_cache_key")
     cached_layout = session_data.get("puzzle_layout_cache")
     if cached_key == layout_cache_key and isinstance(cached_layout, PuzzleLayout):
         return cached_layout, layout_cache_key
 
-    mask_geometry = _resolve_mask_geometry(
-        session_data=session_data,
-        cache=cache,
-        request=request,
-        store=store,
-        session_id=session_id,
-    )
-    layout = build_puzzle_layout(
-        _build_layout_config(
-            cache,
-            request,
-            mask_geometry=mask_geometry,
-        )
-    )
+    if session_data.get("puzzle_boundary_geometry_key") == boundary_key:
+        geometry = session_data.get("puzzle_boundary_geometry")
+    else:
+        geometry = resolve_puzzle_mask_geometry(config)
+        store.put(session_id, "puzzle_boundary_geometry_key", boundary_key)
+        store.put(session_id, "puzzle_boundary_geometry", geometry)
+    layout = build_puzzle_layout(replace(config, mask_geometry=geometry))
     store.put(session_id, "puzzle_layout_cache_key", layout_cache_key)
     store.put(session_id, "puzzle_layout_cache", layout)
     return layout, layout_cache_key
@@ -508,54 +444,17 @@ def _resolve_layout(
 def _crop_piece_arrays(
     source_rgba: np.ndarray,
     matched_rgb: np.ndarray,
-    piece: PuzzlePiece,
-) -> tuple[tuple[int, int, int, int], np.ndarray, np.ndarray]:
-    """Crop puzzle piece raster inputs from full-size arrays.
-    从整图数组中裁切单个拼图块所需的栅格输入。
-
-    Args:
-        source_rgba: Full RGBA source image. (整图 RGBA 源图)
-        matched_rgb: Full matched RGB image. (整图 matched RGB)
-        piece: Target puzzle piece metadata. (目标拼图块元数据)
-
-    Returns:
-        tuple[tuple[int, int, int, int], np.ndarray, np.ndarray]:
-            Bounding box, cropped RGBA, and cropped matched RGB.
-            (包围盒、裁切后的 RGBA 与 matched RGB)
-    """
-
-    bbox_px, local_mask = rasterize_piece_mask(piece)
+    bbox_px: tuple[int, int, int, int],
+    local_mask: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Preserve the source alpha and clear artwork outside the piece."""
     x0, y0, x1, y1 = bbox_px
-
-    rgba_crop = np.array(source_rgba[y0:y1, x0:x1], copy=True)
-    matched_crop = np.array(matched_rgb[y0:y1, x0:x1], copy=True)
-    alpha_mask = local_mask.astype(np.uint8, copy=False)
-
-    rgba_crop[..., 3] = np.minimum(rgba_crop[..., 3], alpha_mask)
-    rgba_crop[alpha_mask == 0] = 0
-    matched_crop[alpha_mask == 0] = 0
-    return bbox_px, rgba_crop, matched_crop
-
-
-def _crop_piece_analysis(
-    mask_solid: np.ndarray,
-    quantized_image: np.ndarray,
-    material_matrix: np.ndarray,
-    piece: PuzzlePiece,
-) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """Crop confirmed preview arrays and clear pixels outside the piece.
-    裁切已确认的预览数组，并清空拼图块之外的像素。
-    """
-
-    bbox_px, local_mask = rasterize_piece_mask(piece)
-    x0, y0, x1, y1 = bbox_px
-    piece_mask = np.array(mask_solid[y0:y1, x0:x1], copy=True)
-    piece_mask &= local_mask.astype(bool, copy=False)
-    piece_quantized = np.array(quantized_image[y0:y1, x0:x1], copy=True)
-    piece_matrix = np.array(material_matrix[y0:y1, x0:x1], copy=True)
-    piece_quantized[~piece_mask] = 0
-    piece_matrix[~piece_mask] = -1
-    return piece_mask, piece_quantized, piece_matrix
+    rgba = source_rgba[y0:y1, x0:x1].copy()
+    colors = matched_rgb[y0:y1, x0:x1].copy()
+    outside = local_mask == 0
+    rgba[outside] = 0
+    colors[outside] = 0
+    return rgba, colors
 
 
 def _resolve_piece_worker_raster_size(piece: PuzzlePiece) -> tuple[int, int]:
@@ -600,46 +499,12 @@ def _resize_piece_array_nearest(array: np.ndarray, target_size: tuple[int, int])
     return array[y_indices[:, None], x_indices[None, :]]
 
 
-def _rescale_piece_boundary_payload(
-    payload: dict[str, Any],
-    *,
-    source_size_px: tuple[int, int],
-    target_size_px: tuple[int, int],
-) -> dict[str, Any]:
-    """Rescale crop-local boundary geometry onto the worker raster grid.
-    将局部裁切坐标系中的边界几何缩放到 worker 使用的光栅网格。
-    """
-
-    source_w, source_h = (max(1, int(source_size_px[0])), max(1, int(source_size_px[1])))
-    target_w, target_h = (max(1, int(target_size_px[0])), max(1, int(target_size_px[1])))
-    if (source_w, source_h) == (target_w, target_h):
-        return {
-            "bbox_px": list(payload.get("bbox_px") or []),
-            "polygon_px": [[float(x), float(y)] for x, y in payload.get("polygon_px") or []],
-            "holes_px": [
-                [[float(x), float(y)] for x, y in hole]
-                for hole in payload.get("holes_px") or []
-            ],
-        }
-
-    scale_x = target_w / float(source_w)
-    scale_y = target_h / float(source_h)
-
-    def _scale_ring(points: list[list[float]] | list[tuple[float, float]]) -> list[list[float]]:
-        return [[float(x) * scale_x, float(y) * scale_y] for x, y in points]
-
-    return {
-        "bbox_px": list(payload.get("bbox_px") or []),
-        "polygon_px": _scale_ring(payload.get("polygon_px") or []),
-        "holes_px": [_scale_ring(hole) for hole in payload.get("holes_px") or []],
-    }
-
-
 def _prepare_piece_worker_assets(
     source_rgba: np.ndarray,
     matched_rgb: np.ndarray,
     piece: PuzzlePiece,
     *,
+    backing_mask: np.ndarray | None = None,
     mask_solid: np.ndarray | None = None,
     quantized_image: np.ndarray | None = None,
     material_matrix: np.ndarray | None = None,
@@ -648,16 +513,15 @@ def _prepare_piece_worker_assets(
     准备与 worker 栅格严格对齐的拼图块图像与边界资产。
     """
 
-    bbox_px, piece_rgba, piece_matched = _crop_piece_arrays(source_rgba, matched_rgb, piece)
-    source_size = (piece_rgba.shape[1], piece_rgba.shape[0])
+    bbox_px, local_mask = rasterize_piece_mask(piece)
+    piece_rgba, piece_matched = _crop_piece_arrays(source_rgba, matched_rgb, bbox_px, local_mask)
+    x0, y0, x1, y1 = bbox_px
+    crop = np.s_[y0:y1, x0:x1]
+    inside = local_mask.astype(bool, copy=False)
     target_size = _resolve_piece_worker_raster_size(piece)
-    boundary_payload = _rescale_piece_boundary_payload(
-        _piece_boundary_geometry_payload(piece, bbox_px),
-        source_size_px=source_size,
-        target_size_px=target_size,
-    )
-    boundary_payload = inset_boundary_geometry_payload(
-        boundary_payload,
+    boundary_payload = export_piece_boundary_geometry(
+        piece,
+        raster_size=target_size,
         inset_px=_PUZZLE_BOUNDARY_INSET_MM * _PUZZLE_WORKER_PIXELS_PER_MM,
     )
     analysis_assets = (mask_solid, quantized_image, material_matrix)
@@ -670,13 +534,11 @@ def _prepare_piece_worker_assets(
     piece_quantized: np.ndarray | None = None
     piece_matrix: np.ndarray | None = None
     if all(asset is not None for asset in analysis_assets):
-        piece_mask, piece_quantized, piece_matrix = _crop_piece_analysis(
-            mask_solid,
-            quantized_image,
-            material_matrix,
-            piece,
-        )
-        piece_matched = np.array(piece_matched, copy=True)
+        piece_mask = mask_solid[crop] & inside
+        piece_quantized = quantized_image[crop].copy()
+        piece_matrix = material_matrix[crop].copy()
+        piece_quantized[~piece_mask] = 0
+        piece_matrix[~piece_mask] = -1
         piece_matched[~piece_mask] = 0
 
     return PuzzlePieceWorkerAssets(
@@ -684,6 +546,10 @@ def _prepare_piece_worker_assets(
         rgba=_resize_piece_array_nearest(piece_rgba, target_size),
         matched_rgb=_resize_piece_array_nearest(piece_matched, target_size),
         boundary_payload=boundary_payload,
+        backing_mask=(
+            _resize_piece_array_nearest(backing_mask[crop].astype(bool, copy=False) & inside, target_size)
+            if backing_mask is not None else None
+        ),
         mask_solid=(
             _resize_piece_array_nearest(piece_mask, target_size)
             if piece_mask is not None
@@ -953,7 +819,7 @@ async def puzzle_layout_preview(
     session_data = _require_session(store, body.session_id)
     cache = _require_puzzle_cache(
         session_data,
-        fields={"matched_rgb", "mask_solid"},
+        fields={"matched_rgb", "mask_solid", "backing_mask"},
     )
 
     try:
@@ -978,7 +844,7 @@ async def puzzle_layout_preview(
             overlay = render_puzzle_overlay(
                 layout,
                 labels_enabled=body.params.labels_enabled,
-                visibility_mask=cache.get("mask_solid"),
+                visibility_mask=_puzzle_footprint(cache),
             )
             overlay_buffer = io.BytesIO()
             overlay.save(overlay_buffer, format="PNG")
@@ -1099,7 +965,7 @@ async def generate_puzzle(
             session_data.get("selected_materials") or []
         )
 
-    cache_fields = {"matched_rgb", "mask_solid", "preview_rgba"}
+    cache_fields = {"matched_rgb", "mask_solid", "backing_mask", "preview_rgba"}
     if session_material_source == "material_archive":
         cache_fields.update({"quantized_image", "material_matrix"})
     cache = _require_puzzle_cache(session_data, fields=cache_fields)
@@ -1252,9 +1118,11 @@ async def generate_puzzle(
             source_rgba,
             matched_rgb,
             piece,
+            backing_mask=cache.get("backing_mask"),
             **analysis_asset_kwargs,
         )
-        if not np.any(assets.rgba[..., 3] >= 10):
+        has_backing = assets.backing_mask is not None and assets.backing_mask.any()
+        if not has_backing and not np.any(assets.rgba[..., 3] >= 10):
             skipped_transparent_labels.append(piece.label)
             continue
         piece_prefix = f"puzzle_{piece.label}_"
@@ -1294,6 +1162,8 @@ async def generate_puzzle(
             "material_max_layer_count": dynamic_material_settings[2],
             "material_delta_e00_tolerance": dynamic_material_settings[3],
         }
+        if assets.backing_mask is not None:
+            worker_params["backing_mask_path"] = _save_npy_array(sid, store, assets.backing_mask, piece_prefix)
         if material_puzzle_analysis is not None:
             if (
                 assets.mask_solid is None
@@ -1586,6 +1456,7 @@ async def generate_puzzle(
         source_rgba,
         layout,
         labels_enabled=request.labels_enabled,
+        visibility_mask=cache.get("backing_mask"),
     ).save(overview_buffer, format="PNG")
     overview_png_bytes = overview_buffer.getvalue()
 

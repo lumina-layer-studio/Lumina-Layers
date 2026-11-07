@@ -5,7 +5,8 @@ from __future__ import annotations
 import json
 import numpy as np
 import pytest
-from shapely.geometry import Polygon
+from shapely.affinity import translate
+from shapely.geometry import Polygon, box
 from shapely.ops import unary_union
 
 from core.puzzle import (
@@ -494,6 +495,47 @@ def test_mask_aware_layout_keeps_outer_boundary_inside_solid_mask() -> None:
 
     assert mask_geometry is not None
     assert piece_union.difference(mask_geometry).area <= 1e-6
+
+
+def test_cut_clearance_preserves_outline_and_holes_even_where_a_joint_crosses_one() -> None:
+    mask = np.ones((24, 40), dtype=bool)
+    mask[8:16, 16:24] = False  # The vertical cut crosses this opening.
+    mask[3:6, 5:8] = False  # This one belongs entirely to the left piece.
+    layout = build_puzzle_layout(PuzzleLayoutConfig(
+        width_px=40, height_px=24, total_width_mm=4, total_height_mm=2.4,
+        sizing_mode="grid", rows=1, cols=2, solid_mask=mask,
+    ))
+    printed = []
+    for piece in layout.pieces:
+        boundary = export_piece_boundary_geometry(piece, inset_px=0.5)
+        printed.append(translate(
+            Polygon(boundary["polygon_px"], boundary["holes_px"]),
+            xoff=piece.bbox_px[0], yoff=piece.bbox_px[1],
+        ))
+
+    # At 10 pixels/mm the only missing material is the 0.10 mm joint.
+    source = box(0, 0, 40, 24).difference(box(16, 8, 24, 16)).difference(box(5, 3, 8, 6))
+    expected = source.difference(box(19.5, 0, 20.5, 24))
+    assert len(printed) == 2
+    assert printed[0].distance(printed[1]) == pytest.approx(1.0)
+    assert unary_union(printed).symmetric_difference(expected).area == pytest.approx(0.0)
+
+
+def test_pixel_ownership_round_trips_holes_and_disconnected_islands() -> None:
+    mask = np.zeros((40, 40), dtype=bool)
+    mask[2:32, 3:31] = True
+    mask[9:17, 10:20] = False
+    mask[12:15, 13:17] = True  # An independent island surrounded by the hole.
+    mask[32:35, 31:34] = True  # This island touches the first at one corner.
+    layout = build_puzzle_layout(PuzzleLayoutConfig(
+        width_px=40, height_px=40, total_width_mm=4, total_height_mm=4,
+        sizing_mode="grid", rows=1, cols=1, solid_mask=mask,
+    ))
+    owners = np.zeros(mask.shape, dtype=np.uint8)
+    for piece in layout.pieces:
+        (x0, y0, x1, y1), owned = rasterize_piece_mask(piece)
+        owners[y0:y1, x0:x1] += owned != 0
+    np.testing.assert_array_equal(owners, mask)
 
 
 def test_regular_layout_stabilizes_invalid_connector_combinations() -> None:

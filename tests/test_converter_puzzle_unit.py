@@ -705,8 +705,9 @@ def test_generate_puzzle_assembles_single_3mf_and_passes_piece_matched_rgb(compe
 
     boundary_x_values = [point[0] for point in boundary["polygon_px"]]
     boundary_y_values = [point[1] for point in boundary["polygon_px"]]
-    assert min(boundary_x_values) >= 0.5 - 1e-6
-    assert min(boundary_y_values) >= 0.5 - 1e-6
+    # This corner of the sheet has two outer edges and two shared cuts.
+    assert min(boundary_x_values) == pytest.approx(0.0)
+    assert min(boundary_y_values) == pytest.approx(0.0)
     assert max(boundary_x_values) <= expected_worker_w - 0.5 + 1e-6
     assert max(boundary_y_values) <= expected_worker_h - 0.5 + 1e-6
 
@@ -1429,7 +1430,7 @@ def test_crop_piece_arrays_preserves_source_transparency_inside_piece_mask() -> 
         candidate_source_transparent_inside = inside_piece & (source_alpha_crop == 0)
         candidate_source_opaque_inside = inside_piece & (source_alpha_crop > 0)
         if np.any(candidate_source_transparent_inside) and np.any(candidate_source_opaque_inside):
-            _bbox_px, candidate_rgba, candidate_matched = _crop_piece_arrays(source_rgba, matched_rgb, candidate)
+            candidate_rgba, candidate_matched = _crop_piece_arrays(source_rgba, matched_rgb, bbox_px, local_mask)
             piece_rgba = candidate_rgba
             piece_matched = candidate_matched
             source_transparent_inside_piece = candidate_source_transparent_inside
@@ -1697,7 +1698,7 @@ def test_worker_generate_model_preserves_svg_puzzle_piece_dimensions_for_matched
             PuzzleLayoutConfig(
                 width_px=cache["matched_rgb"].shape[1],
                 height_px=cache["matched_rgb"].shape[0],
-                total_width_mm=120.0,
+                total_width_mm=119.99,  # rounds to the preview grid; truncation loses a column
                 total_height_mm=80.0,
                 style="regular",
                 sizing_mode="grid",
@@ -1717,7 +1718,9 @@ def test_worker_generate_model_preserves_svg_puzzle_piece_dimensions_for_matched
             for candidate in layout.pieces
             if int((candidate.bbox_mm[2] - candidate.bbox_mm[0]) * 10) != (candidate.bbox_px[2] - candidate.bbox_px[0])
         )
-        _bbox_px, piece_rgba, piece_matched = _crop_piece_arrays(cache["preview_rgba"], cache["matched_rgb"], piece)
+        piece_rgba, piece_matched = _crop_piece_arrays(
+            cache["preview_rgba"], cache["matched_rgb"], *rasterize_piece_mask(piece)
+        )
         assert piece_matched.shape[1] > 0
 
         piece_image_path = tmp_path / f"{piece.label}.png"

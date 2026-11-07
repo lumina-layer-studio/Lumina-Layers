@@ -1,3 +1,4 @@
+import { useEditorHistory } from "../../hooks/useEditorHistory";
 import { useState, type ReactNode } from "react";
 import { useConverterStore } from "../../stores/converter";
 import type { DynamicMaterialRecipe, PaletteEntry } from "../../api/types";
@@ -282,15 +283,6 @@ export default function PalettePanel({
   const updateColorHeight = useConverterStore((s) => s.updateColorHeight);
   const colorRemapMap = useConverterStore((s) => s.colorRemapMap);
   const recipeOverrides = useConverterStore((s) => s.recipe_overrides);
-  const remapHistory = useConverterStore((s) => s.remapHistory);
-  const remapRedoHistory = useConverterStore((s) => s.remapRedoHistory);
-  const adjustmentHistory = useConverterStore((s) => s.adjustmentHistory);
-  const adjustmentRedoHistory = useConverterStore((s) => s.adjustmentRedoHistory);
-  const historyCanUndo = useConverterStore((s) => s.historyCanUndo);
-  const historyCanRedo = useConverterStore((s) => s.historyCanRedo);
-  const historyBusy = useConverterStore((s) => s.historyBusy);
-  const undoColorRemap = useConverterStore((s) => s.undoColorRemap);
-  const redoColorRemap = useConverterStore((s) => s.redoColorRemap);
   const clearAllRemaps = useConverterStore((s) => s.clearAllRemaps);
   const clearSelection = useConverterStore((s) => s.clearSelection);
   const replacePreviewLoading = useConverterStore((s) => s.replacePreviewLoading);
@@ -342,16 +334,7 @@ export default function PalettePanel({
     Object.keys(colorRemapMap).length > 0 ||
     regionReplacementCount > 0 ||
     recipeOverrides.length > 0;
-  const hasLocalHistory =
-    remapHistory.length > 0 || adjustmentHistory.length > 0 || hasRemaps;
-  const hasLocalRedoHistory =
-    remapRedoHistory.length > 0 || adjustmentRedoHistory.length > 0;
-  const canUndoHistory = sessionId
-    ? historyCanUndo && !historyBusy
-    : hasLocalHistory;
-  const canRedoHistory = sessionId
-    ? historyCanRedo && !historyBusy
-    : hasLocalRedoHistory;
+  const { canUndo: canUndoHistory, canRedo: canRedoHistory, undo: undoColorRemap, redo: redoColorRemap } = useEditorHistory();
   const dynamicRecipesByTarget = new Map<string, DynamicMaterialRecipe>();
   for (const recipe of materialDynamicRecipes) {
     const targetHex = dynamicTargetHex(recipe);

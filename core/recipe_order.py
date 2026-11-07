@@ -6,6 +6,8 @@ from __future__ import annotations
 
 from typing import Sequence
 
+import numpy as np
+
 
 def normalize_layer_order(value: str | None, default: str = "Top2Bottom") -> str:
     """Normalize layer order string.
@@ -117,3 +119,26 @@ def pad_recipe_to_layer_count(
     if normalize_layer_order(layer_order) == "Top2Bottom":
         return recipe_list + filler
     return filler + recipe_list
+
+
+def pad_material_matrix_layers(
+    material_matrix: np.ndarray,
+    target_layers: int,
+    base_channel_idx: int,
+    layer_order: str,
+    mask_solid: np.ndarray | None = None,
+) -> np.ndarray:
+    """Extend backing-side layers with base inside the silhouette and Air outside."""
+    if material_matrix.shape[2] >= target_layers:
+        return material_matrix
+    if np.issubdtype(material_matrix.dtype, np.unsignedinteger):
+        material_matrix = material_matrix.astype(np.int32)
+    pad_shape = (*material_matrix.shape[:2], target_layers - material_matrix.shape[2])
+    pad = np.full(pad_shape, int(base_channel_idx), dtype=material_matrix.dtype)
+    if mask_solid is not None:
+        solid = np.asarray(mask_solid, dtype=bool)
+        if solid.shape != material_matrix.shape[:2]:
+            raise ValueError("mask_solid shape does not match material_matrix spatial shape")
+        pad[~solid] = -1
+    parts = (pad, material_matrix) if layer_order == "Bottom2Top" else (material_matrix, pad)
+    return np.concatenate(parts, axis=2)

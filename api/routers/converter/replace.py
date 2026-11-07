@@ -517,7 +517,7 @@ def _recalc_matched_rgb_for_padded_pixels(
     import numpy as np
     selected_materials = session_data.get('selected_materials') or []
     try:
-        materials = load_multiple_materials(selected_materials)
+        materials = load_multiple_materials(selected_materials, **({"materials_dir": session_data["project_materials_dir"]} if session_data.get("project_materials_dir") else {}))
     except Exception:
         return
     recipes = material_matrix[non_override_mask, :]
@@ -1132,7 +1132,7 @@ def _sync_material_archive_matrix_for_diff(
         return
 
     try:
-        materials = load_multiple_materials(selected_materials)
+        materials = load_multiple_materials(selected_materials, **({"materials_dir": session_data["project_materials_dir"]} if session_data.get("project_materials_dir") else {}))
     except (FileNotFoundError, OSError, TypeError, ValueError) as exc:
         if dynamic_enabled:
             from core.material_dynamic_solver import DynamicMaterialCandidateError
@@ -2878,7 +2878,7 @@ def restore_editor_project(
         if get_editor_content_revision(session) != 0 or get_selection_revision(session) != 0:
             raise HTTPException(status_code=409, detail="Project edits can only initialize a fresh preview session.")
         try:
-            checkpoint = decode_editor_project(payload, session)
+            checkpoint = decode_editor_project(payload, session, allow_resize=True)
         except (ValueError, OSError) as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
         begin_editor_commit(session_id, store, session, operation_id=operation_id, operation="project_restore")
@@ -2886,6 +2886,8 @@ def restore_editor_project(
         restore_replacement_checkpoint(session_id, store, session, checkpoint)
         persisted = persist_preview_cache(session_id, store, cache)
         session["preview_cache"] = persisted
+        if session.get("gradient_region_id_map") is None:
+            recompute_gradient_groups_into_session(cache, session_id, store)
         _invalidate_and_prewarm_visible_region_cache(session_id, store, session, cache)
         mask = session.get("editor_selection_mask")
         if isinstance(mask, np.ndarray):
@@ -3572,7 +3574,7 @@ def region_requantize(
                 detail="Session has no selected materials for material-archive mode.",
             )
         try:
-            materials = load_multiple_materials(list(selected_materials))
+            materials = load_multiple_materials(list(selected_materials), **({"materials_dir": session_data["project_materials_dir"]} if session_data.get("project_materials_dir") else {}))
         except (FileNotFoundError, OSError, TypeError, ValueError) as exc:
             _raise_region_requantize_error(
                 exc,
@@ -4730,7 +4732,7 @@ def predict_recipe(
             # 替代之前仅返回最顶层颜色的简单兜底。
             selected_materials = session_data.get("selected_materials") or []
             try:
-                materials = load_multiple_materials(selected_materials)
+                materials = load_multiple_materials(selected_materials, **({"materials_dir": session_data["project_materials_dir"]} if session_data.get("project_materials_dir") else {}))
                 prediction_recipe = list(request.recipe)
                 prediction_recipe_order = request.layer_order
                 if bool(
@@ -5504,7 +5506,7 @@ def apply_recipe_override(
                 if is_material_archive:
                     selected_materials = session_data.get("selected_materials") or []
                     try:
-                        materials = load_multiple_materials(selected_materials)
+                        materials = load_multiple_materials(selected_materials, **({"materials_dir": session_data["project_materials_dir"]} if session_data.get("project_materials_dir") else {}))
                         prediction_recipe = (
                             dynamic_manual_recipe["print_recipe_top_to_bottom"]
                             if dynamic_manual_recipe is not None

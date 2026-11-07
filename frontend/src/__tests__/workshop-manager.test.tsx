@@ -371,7 +371,7 @@ describe("Workshop installable module manager", () => {
       screen.getByRole("region", { name: "普通模块上传与校准页" }),
     ).toBeInTheDocument();
 
-    act(() => vi.advanceTimersByTime(1));
+    await act(async () => { vi.advanceTimersByTime(1); });
     expect(useWorkshopStore.getState().activeModule).toBeNull();
     expect(
       screen.getByRole("heading", { name: "创意工坊" }),

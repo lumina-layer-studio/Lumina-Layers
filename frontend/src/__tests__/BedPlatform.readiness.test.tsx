@@ -3,6 +3,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as THREE from "three";
 import BedPlatform from "../components/BedPlatform";
 import { useConverterStore } from "../stores/converter";
+import { DEFAULT_SETTINGS, useSettingsStore } from "../stores/settingsStore";
+import { captureProjectSettings } from "../stores/converter/project";
 
 const bed = vi.hoisted(() => ({
   state: {} as Record<string, unknown>,
@@ -43,7 +45,9 @@ class BedImage extends EventTarget {
 }
 
 beforeEach(() => {
+  useSettingsStore.setState({ ...DEFAULT_SETTINGS });
   useConverterStore.setState({
+    projectSettings: null,
     bed_label: "A1",
     bedSizes: [{ label: "A1", width_mm: 256, height_mm: 256, is_default: true }],
     modelUrl: null,
@@ -69,6 +73,19 @@ async function finishTexture(): Promise<void> {
 }
 
 describe("bed first-frame readiness", () => {
+  it("loads the project's native plate even when the daily printer profile differs", async () => {
+    useSettingsStore.setState({ deviceProfileId: "daily-profile", buildPlateId: "engineering-plate" });
+    useConverterStore.setState({ projectSettings: {
+      ...captureProjectSettings(useSettingsStore.getState()), deviceProfileId: "project-profile", buildPlateId: "textured-pei-plate",
+    } });
+    bed.loadGeometry.mockResolvedValue(null);
+    const { unmount } = render(<BedPlatform />);
+    await act(async () => {});
+    expect(bed.loadGeometry).toHaveBeenLastCalledWith(expect.objectContaining({ deviceProfileId: "project-profile" }));
+    expect(useSettingsStore.getState().deviceProfileId).toBe("daily-profile");
+    unmount();
+  });
+
   it("preserves the restored camera and texture when the same bed catalog is fetched again", async () => {
     bed.loadGeometry.mockResolvedValue(null);
     const onReadyChange = vi.fn();

@@ -41,6 +41,9 @@ importers:
       cropperjs:
         specifier: ^1.6.2
         version: 1.6.2
+      fflate:
+        specifier: 0.8.3
+        version: 0.8.3
       framer-motion:
         specifier: ^12.35.2
         version: 12.40.0(react-dom@19.2.6(react@19.2.6))(react@19.2.6)

@@ -2,6 +2,7 @@ import type { ColorMode, LutSupportedMode, NativeBrandGroup } from "../../api/ty
 import { ColorMode as ColorModeEnum, ModelingMode as ModelingModeEnum } from "../../api/types";
 import { useSettingsStore } from "../settingsStore";
 import type { ConverterState, SourceVersion } from "./types";
+import { resolveConverterSettings } from "./project";
 
 function looksLikeWhiteMaterialLabel(label: string | null | undefined): boolean {
   const text = String(label ?? "").trim().toLowerCase();
@@ -568,9 +569,9 @@ export function buildMaterialSourceParams(
     | "materialDynamicLayerCountEnabled"
     | "materialMinLayerCount"
     | "materialMaxLayerCount"
-  >,
+  > & Partial<Pick<ConverterState, "projectSettings">>,
 ) {
-  const settingsState = useSettingsStore.getState();
+  const settingsState = resolveConverterSettings(state, useSettingsStore.getState());
   const materialGridResolution = settingsState.enableSolverCacheGridSelection
     ? settingsState.solverCacheGridResolution
     : undefined;

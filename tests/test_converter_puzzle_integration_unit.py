@@ -58,9 +58,10 @@ def stub_metadata_reads_for_stub_worker_packages(monkeypatch):
         {'slot_id': 0, 'slot_name': 'White', 'preview_color': '#FFFFFF', 'material_id': 'PLA'},
     ])
     monkeypatch.setattr(puzzle_router, 'read_wipe_tower_placement_warnings', lambda path: [])
-    # Native profile selection has separate coverage; these packages contain
-    # sentinel bytes and the seeded materials are synthetic palette names.
-    monkeypatch.setattr(puzzle_router, 'require_material_selection', lambda *_args: {"materials": []})
+    # Scheduling fixtures have sentinel LUTs/material names, not native files.
+    monkeypatch.setattr(puzzle_router, 'require_material_selection', lambda *args, **kwargs: {"materials": [
+        {"name": name, "material_type": "PLA", "selected_profile_name": None} for name in ["White", "Red", "Blue"]
+    ]})
     # Canary tests attach caplog directly, so do not deliver each record again
     # through pytest's root handler.
     monkeypatch.setattr(logging.getLogger("lumina.api.routers.converter.puzzle"), "propagate", False)
@@ -69,6 +70,7 @@ def stub_metadata_reads_for_stub_worker_packages(monkeypatch):
 def _capture_puzzle_logger(caplog: pytest.LogCaptureFixture) -> logging.Logger:
     logger = logging.getLogger("lumina.api.routers.converter.puzzle")
     logger.addHandler(caplog.handler)
+    logger.propagate = False
     caplog.set_level(logging.INFO, logger=logger.name)
     return logger
 

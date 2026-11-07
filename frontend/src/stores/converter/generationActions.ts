@@ -1,4 +1,6 @@
 import { trackLuminaEvent } from "../../analytics/umami";
+import { freezeGenerationProject } from "../../project/generationExport";
+import { useProjectSessionStore } from "../projectSessionStore";
 import { apiErrorToVisibleMessage as visibleConverterError } from "../../api/client";
 import {
   convertBatch as apiConvertBatch,
@@ -28,7 +30,8 @@ import {
   registerGeneratedArtifactInvalidator,
   registerSingleItemDownloadInvalidator,
 } from "../generatedArtifactInvalidation";
-import { useSettingsStore } from "../settingsStore";
+import { useSettingsStore, withExternalSpoolSelection } from "../settingsStore";
+import { boundProjectResources, resolveConverterSettings } from "./project";
 import { isGenerateRevisionConflict } from "./editorRevision";
 import {
   materialSelectionFromExportError,
@@ -46,6 +49,7 @@ import {
   resolveConverterSourceSelection,
 } from "./sources";
 import type { ConverterActions, ConverterState, NativeMaterialSelectionAction } from "./types";
+import type { DocumentCommandWrapper } from "./documentCommands";
 
 const BATCH_PREVIEW_BROWSER_SAFE_LIMIT = 96;
 
@@ -177,6 +181,7 @@ export function createGenerationActions(
     confirmedEditorRevision: (sessionId: string) => number | undefined;
     refreshConfirmedEditorContentRevision: (sessionId: string) => Promise<boolean>;
   },
+  documentCommand: DocumentCommandWrapper,
 ): Pick<ConverterActions,
   | "submitGenerate"
   | "submitBatch"
@@ -220,7 +225,7 @@ export function createGenerationActions(
     action: NativeMaterialSelectionAction,
     isCurrent: () => boolean,
   ): Promise<boolean> {
-    const response = await fetchExportMaterialSelection(sessionId, params);
+    const response = await fetchExportMaterialSelection(sessionId, params, boundProjectResources(_get()));
     if (!isCurrent()) return false;
     const spool = params.external_spool_material;
     if (action === "edit" || !response.ready || (spool && !selectableExternalSpoolMaterials(response).includes(spool))) {
@@ -230,7 +235,8 @@ export function createGenerationActions(
     return true;
   }
 
-  registerGeneratedArtifactInvalidator(({ preservePreviews }) => {
+  registerGeneratedArtifactInvalidator(({ preservePreviews, source }) => {
+    if (source === "defaults" && _get().projectSettings) return;
     pendingMaterialSelection = null;
     invalidateGenerationRequests();
     set({
@@ -264,6 +270,7 @@ export function createGenerationActions(
     });
   });
   registerSingleItemDownloadInvalidator(() => {
+    if (_get().projectSettings) return;
     if (
       _activeFilenameEligibleGenerateSequence !== null &&
       _activeFilenameEligibleGenerateSequence === _generateRequestSequence
@@ -295,8 +302,8 @@ export function createGenerationActions(
       if ((!batchMode && !sessionId) || state.isLoading || state.isGenerating ||
         state.batchLoading || state.nativeMaterialSelectionLoading ||
         (!batchMode && state.contentCommitStatus === "unknown")) return;
-      const settings = useSettingsStore.getState();
-      const identity = captureGeneratedArtifactIdentity(settings.deviceProfileId, settings.buildPlateId);
+      const settings = resolveConverterSettings(state, useSettingsStore.getState());
+      const identity = captureGeneratedArtifactIdentity(settings.deviceProfileId, settings.buildPlateId, !state.projectSettings);
       const sourceIdentity = generationSourceIdentity(state);
       const sequence = ++_generateRequestSequence;
       const batchSequence = _batchRequestSequence;
@@ -309,7 +316,7 @@ export function createGenerationActions(
         error: null,
       });
       const isCurrentInput = (): boolean => {
-        const currentSettings = useSettingsStore.getState();
+        const currentSettings = resolveConverterSettings(_get(), useSettingsStore.getState());
         return _generateRequestSequence === sequence && (!batchMode || _batchRequestSequence === batchSequence) &&
           _get().batchMode === batchMode &&
           (batchMode || _get().sessionId === sessionId) &&
@@ -374,7 +381,7 @@ export function createGenerationActions(
       const isLatest = (): boolean => pendingMaterialSelection === pending &&
         pending.refreshSequence === sequence && _get().nativeMaterialSelection === pending.response;
       try {
-        const response = await fetchExportMaterialSelection(pending.sessionId, params);
+        const response = await fetchExportMaterialSelection(pending.sessionId, params, boundProjectResources(_get()));
         if (!isLatest()) return;
         if (!pending.isCurrent()) {
           _get().cancelNativeMaterialSelection();
@@ -405,7 +412,7 @@ export function createGenerationActions(
         batchLoading: false,
       });
     },
-    applyNativeMaterialSelection: async (profiles, buildPlateId, externalSpool) => {
+    applyNativeMaterialSelection: documentCommand(async (profiles, buildPlateId, externalSpool) => {
       const pending = pendingMaterialSelection;
       if (!pending || _get().nativeMaterialSelection !== pending.response) return;
       if (_get().nativeMaterialSelectionLoading || _get().nativeMaterialSelectionError ||
@@ -431,27 +438,34 @@ export function createGenerationActions(
         if (!selectedName || (requested && selectedName !== requested)) return;
         selectedProfiles[material.name] = selectedName;
       }
-      const settings = useSettingsStore.getState();
+      const state = _get();
+      const defaults = useSettingsStore.getState();
+      const settings = resolveConverterSettings(state, defaults);
       if (externalSpool && !selectableExternalSpoolMaterials(pending.response).includes(externalSpool)) return;
       const previousProfiles = scopedNativeFilamentProfiles(_get(), settings) ?? {};
       const profilesChanged = Object.keys(previousProfiles).length !== Object.keys(selectedProfiles).length ||
         Object.entries(selectedProfiles).some(([name, profile]) => previousProfiles[name] !== profile);
       pendingMaterialSelection = null;
-      if (supportsExternalSpool(settings)) {
-        settings.setExternalSpoolMaterial(externalSpoolPaletteKey(_get()), externalSpool);
+      const spoolKey = externalSpoolPaletteKey(state);
+      if (state.projectSettings) {
+        state.setProjectSettings({
+          buildPlateId: plate.id,
+          ...(supportsExternalSpool(settings) ? {
+            externalSpoolSelections: withExternalSpoolSelection(spoolKey, externalSpool, settings.externalSpoolSelections),
+          } : {}),
+        });
+      } else {
+        if (supportsExternalSpool(settings)) defaults.setExternalSpoolMaterial(spoolKey, externalSpool);
+        defaults.setBuildPlateForMachine(pending.response.machine_profile_id, plate.id);
+        void defaults.syncToBackend();
       }
-      settings.setBuildPlateForMachine(
-        pending.response.machine_profile_id,
-        plate.id,
-      );
       if (profilesChanged) invalidateGeneratedArtifacts({ preservePreviews: true });
-      void useSettingsStore.getState().syncToBackend();
       set({
         nativeMaterialSelection: null,
         nativeMaterialSelectionAction: null,
         nativeMaterialSelectionError: null,
         native_filament_profiles: selectedProfiles,
-        nativeFilamentProfileScope: nativeFilamentProfileScope(useSettingsStore.getState()),
+        nativeFilamentProfileScope: nativeFilamentProfileScope(resolveConverterSettings(_get(), useSettingsStore.getState())),
         error: null,
       });
       if (pending.action === "batch") {
@@ -459,7 +473,7 @@ export function createGenerationActions(
       } else if (pending.action === "generate") {
         await _get().submitGenerate();
       }
-    },
+    }, { blocked: () => Promise.resolve() }),
     submitGenerate: async () => {
       let state = _get();
       if (state.isLoading) return null;
@@ -541,10 +555,11 @@ export function createGenerationActions(
         return null;
       }
 
-      const generateSettings = useSettingsStore.getState();
+      const generateSettings = resolveConverterSettings(state, useSettingsStore.getState());
       const generateIdentity = captureGeneratedArtifactIdentity(
         generateSettings.deviceProfileId,
         generateSettings.buildPlateId,
+        !state.projectSettings,
       );
       const generateReplacementEpoch = editor.getReplacementEpoch();
       const sourceIdentity = generationSourceIdentity(state);
@@ -570,7 +585,7 @@ export function createGenerationActions(
           ? generateSequence
           : null;
       const shouldIgnoreStaleGenerateResponse = (): boolean => {
-        const latestSettings = useSettingsStore.getState();
+        const latestSettings = resolveConverterSettings(_get(), useSettingsStore.getState());
         if (
           _isCurrentGenerateRequest(
             generateSequence,
@@ -633,7 +648,8 @@ export function createGenerationActions(
           });
           return null;
         }
-        const baseParams = buildGenerateParams(state, generateSettings, sourceParams, mergedReplacements, editor.confirmedEditorRevision(sessionId));
+        const baseParams: ConvertGenerateRequest = buildGenerateParams(state, generateSettings, sourceParams, mergedReplacements, editor.confirmedEditorRevision(sessionId));
+        const projectSequence = useProjectSessionStore.getState().changeSequence;
         preparedParams = baseParams;
 
         if (!await preflightMaterials(
@@ -642,6 +658,9 @@ export function createGenerationActions(
           "generate",
           () => !shouldIgnoreStaleGenerateResponse(),
         )) return null;
+
+        const projectRevision = await freezeGenerationProject(projectSequence);
+        if (projectRevision) baseParams.project_revision_file_id = projectRevision;
 
         _clientLog("generate: request prepared", {
           source_kind: sourceParams.source_kind,
@@ -908,15 +927,16 @@ export function createGenerationActions(
         set({ error: "请先设置颜色高度映射后再批量生成" });
         return;
       }
-      const settings = useSettingsStore.getState();
+      const settings = resolveConverterSettings(state, useSettingsStore.getState());
       const batchIdentity = captureGeneratedArtifactIdentity(
         settings.deviceProfileId,
         settings.buildPlateId,
+        !state.projectSettings,
       );
       const batchSequence = ++_batchRequestSequence;
       const batchSourceIdentity = generationSourceIdentity(state);
       const isCurrentBatchRequest = (): boolean => {
-        const latestSettings = useSettingsStore.getState();
+        const latestSettings = resolveConverterSettings(_get(), useSettingsStore.getState());
         const isCurrent = (
           batchSequence === _batchRequestSequence &&
           _get().batchFiles === state.batchFiles &&
@@ -959,10 +979,16 @@ export function createGenerationActions(
           });
           return;
         }
-        const params = buildBatchParams(state, settings, sourceParams);
+        const params: BatchConvertParams = buildBatchParams(state, settings, sourceParams);
+        const projectSequence = useProjectSessionStore.getState().changeSequence;
         preparedParams = params;
         if (!await preflightMaterials(null, params, "batch", isCurrentBatchRequest)) return;
-        const result = await apiConvertBatch(state.batchFiles, params);
+        const projectRevision = await freezeGenerationProject(projectSequence);
+        if (projectRevision) params.project_revision_file_id = projectRevision;
+        const resources = boundProjectResources(state);
+        const result = resources.lut || resources.materials
+          ? await apiConvertBatch(state.batchFiles, params, resources)
+          : await apiConvertBatch(state.batchFiles, params);
         if (!isCurrentBatchRequest()) return;
         const previewItems = (result.preview_items ?? [])
           .slice(0, BATCH_PREVIEW_BROWSER_SAFE_LIMIT)

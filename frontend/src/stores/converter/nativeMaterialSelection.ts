@@ -4,7 +4,7 @@ import type { ConverterState, NativeFilamentProfileScope } from "./types";
 import { normalizeSlicerOptionId } from "../../utils/settingsOptionIds";
 import { normalizeLegacyLutNames } from "./sources";
 
-export function supportsExternalSpool(settings: SettingsState): boolean {
+export function supportsExternalSpool(settings: Pick<SettingsState, "custom3mfTemplateId" | "slicerSoftware" | "deviceProfileId" | "printerModel">): boolean {
   return !settings.custom3mfTemplateId && normalizeSlicerOptionId(settings.slicerSoftware) === "BambuStudio" &&
     (settings.deviceProfileId
       ? settings.deviceProfileId.startsWith("BambuStudio:bbl:bambu-lab-x2d:")
@@ -24,7 +24,8 @@ export function externalSpoolPaletteKey(state: ConverterState): string {
 }
 
 export function externalSpoolMaterial(state: ConverterState, settings: SettingsState): string | undefined {
-  return supportsExternalSpool(settings) ? settings.externalSpoolSelections[externalSpoolPaletteKey(state)] : undefined;
+  const owner = state.projectSettings ?? settings;
+  return supportsExternalSpool(owner) ? owner.externalSpoolSelections?.[externalSpoolPaletteKey(state)] : undefined;
 }
 
 /** An external spool must resolve to exactly one exported slot. */

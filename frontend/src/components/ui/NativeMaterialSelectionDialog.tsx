@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import type { ExportMaterialSelection } from "../../api/types";
 import { useI18n } from "../../i18n/context";
 import { useConverterStore } from "../../stores/converter";
+import { resolveConverterSettings } from "../../stores/converter/project";
 import {
   externalSpoolMaterial,
   scopedNativeFilamentProfiles,
@@ -29,7 +30,8 @@ function MaterialSelectionContent({ selection, isEditing }: {
   const cancelSelection = useConverterStore((state) => state.cancelNativeMaterialSelection);
   const isChecking = useConverterStore((state) => state.nativeMaterialSelectionLoading);
   const selectionError = useConverterStore((state) => state.nativeMaterialSelectionError);
-  const hasExternalSpool = useSettingsStore(supportsExternalSpool);
+  const projectSettings = useConverterStore((state) => state.projectSettings);
+  const hasExternalSpool = useSettingsStore((defaults) => supportsExternalSpool(projectSettings ?? defaults));
   const spoolMaterials = selectableExternalSpoolMaterials(selection);
   const [savedSpool] = useState(() => externalSpoolMaterial(useConverterStore.getState(), useSettingsStore.getState()));
   const [spool, setSpool] = useState(() =>
@@ -39,7 +41,8 @@ function MaterialSelectionContent({ selection, isEditing }: {
     selection.build_plates.find((plate) => plate.build_plate_uid === selection.build_plate_uid)?.id ?? "",
   );
   const [profiles, setProfiles] = useState<Record<string, string>>(() => {
-    const saved = scopedNativeFilamentProfiles(useConverterStore.getState(), useSettingsStore.getState());
+    const state = useConverterStore.getState();
+    const saved = scopedNativeFilamentProfiles(state, resolveConverterSettings(state, useSettingsStore.getState()));
     return Object.fromEntries(selection.materials.map((material) => [
       material.name,
       material.profiles.some((profile) => profile.available && profile.name === saved?.[material.name])

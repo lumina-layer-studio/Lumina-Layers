@@ -73,7 +73,8 @@ def _source_materials(
 ) -> list[dict[str, Any]]:
     source = source_context if source_context is not None else params
     if source.get("material_source") == "material_archive":
-        materials = load_materials(list(source.get("selected_materials") or []))
+        root = source.get("materials_dir") or source.get("project_materials_dir")
+        materials = load_materials(list(source.get("selected_materials") or []), **({"materials_dir": root} if root else {}))
         names = build_material_slot_names(materials)
         colours = build_material_preview_colors(materials)
         types = {name: material.material_type for name, material in zip(names, materials)}

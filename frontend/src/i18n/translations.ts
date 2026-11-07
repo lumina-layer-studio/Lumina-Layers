@@ -4,8 +4,10 @@
  * Contains all zh/en translation key-value pairs
  */
 import splashTranslations from '../../../electron/splash-text.json';
+import { projectTranslations } from './projects';
 export const translations: Record<string, Record<"zh" | "en", string>> = {
   ...splashTranslations,
+  ...projectTranslations,
   common_close: { zh: "关闭", en: "Close" },
   cloud_library_update: { zh: "更新", en: "Update" },
   cloud_library_results: { zh: "匹配结果", en: "Matching results" },
@@ -22,8 +24,8 @@ export const translations: Record<string, Record<"zh" | "en", string>> = {
   desktop_menu_export: { zh: "保存已生成文件…", en: "Save generated file…" },
   desktop_menu_close: { zh: "关闭窗口", en: "Close Window" },
   desktop_menu_edit: { zh: "编辑", en: "Edit" },
-  desktop_menu_undo: { zh: "撤销文本编辑", en: "Undo Text Edit" },
-  desktop_menu_redo: { zh: "重做文本编辑", en: "Redo Text Edit" },
+  desktop_menu_undo: { zh: "撤销", en: "Undo" },
+  desktop_menu_redo: { zh: "重做", en: "Redo" },
   desktop_menu_cut: { zh: "剪切", en: "Cut" },
   desktop_menu_copy: { zh: "复制", en: "Copy" },
   desktop_menu_paste: { zh: "粘贴", en: "Paste" },

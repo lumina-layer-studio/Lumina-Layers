@@ -1,0 +1,12 @@
+{
+  "accepted": [
+    {"note": "工程草稿", "settings": {"width": 31, "enabled": true}, "edits": []},
+    {"nested": [{"color": "#c58096", "recipe": [1, 0, -1], "optional": null}]}
+  ],
+  "runtimeKeys": [
+    "sessionId", "session_id", "fileId", "file_id", "previewUrl", "preview_url",
+    "modelUrl", "model_url", "downloadUrl", "download_url", "localPath", "local_path",
+    "machineIp", "machine_ip", "accessToken", "access_token", "command", "commands",
+    "commandLine", "executable", "download", "externalUrl", "script"
+  ]
+}

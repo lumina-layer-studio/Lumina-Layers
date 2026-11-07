@@ -1,9 +1,9 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { render, screen, fireEvent, act } from '@testing-library/react';
-import { useConverterStore } from '../stores/converter';
-import type { PaletteEntry, LutColorEntry } from '../api/types';
+import { render, screen, fireEvent, act, waitFor } from '@testing-library/react';
+import { DEFAULT_STATE, converterDocumentHistory, useConverterStore } from '../stores/converter';
+import type { PaletteEntry, LutColorEntry, SelectionDocumentResponse } from '../api/types';
 import { _clearClientLogBufferForTests } from '../utils/clientLog';
-import { mutateEditorSelection } from '../api/converter';
+import { getEditorSelection, mutateEditorSelection, replacementHistory } from '../api/converter';
 
 const customRecipeDialogProps = vi.hoisted(() => ({
   latest: null as null | {
@@ -21,6 +21,8 @@ vi.mock('../api/converter', async () => {
     fetchLutColors: vi.fn().mockResolvedValue({ colors: [] }),
     replaceColor: vi.fn().mockResolvedValue({ preview_url: '/api/files/mock' }),
     mutateEditorSelection: vi.fn(),
+    getEditorSelection: vi.fn(),
+    replacementHistory: vi.fn(),
   };
 });
 
@@ -73,14 +75,13 @@ const LUT_COLORS: LutColorEntry[] = [
 function resetStore() {
   _clearClientLogBufferForTests();
   useConverterStore.setState({
+    ...DEFAULT_STATE,
     source_version: 'legacy',
     palette: [],
     selectedColor: null,
     colorRemapMap: {},
     remapHistory: [],
     remapRedoHistory: [],
-    adjustmentHistory: [],
-    adjustmentRedoHistory: [],
     replacement_regions: [],
     recipe_overrides: [],
     regionReplacementCount: 0,
@@ -98,7 +99,20 @@ function resetStore() {
     previewImageUrl: null,
     sessionId: null,
   });
+  converterDocumentHistory.reset();
   customRecipeDialogProps.latest = null;
+}
+
+const historySelection = (revision: number, canUndo: boolean, canRedo: boolean): SelectionDocumentResponse => ({
+  selection_revision: revision, content_revision: 1, editor_content_revision: 1,
+  selected_pixel_count: 0, selected_component_count: 0, selected_color_hexes: [],
+  region_ids: [], components: [], contours: [], can_undo: canUndo, can_redo: canRedo,
+});
+
+async function hydrateFirstHistoryEntry() {
+  useConverterStore.setState({ palette: PALETTE, sessionId: 'selection-session' });
+  vi.mocked(getEditorSelection).mockResolvedValueOnce(historySelection(1, true, false));
+  await useConverterStore.getState().hydrateSelectionDocument();
 }
 
 // ========== Lazy component imports ==========
@@ -541,23 +555,16 @@ describe('PalettePanel 双色显示', () => {
       selectedRegions: [],
       regionData: null,
       selectionMode: 'select-all',
-      recipe_overrides: [
-        {
-          region_id: 'region-1',
-          recipe: [0, 1, 2],
-          layer_order: 'Top2Bottom',
-        },
-      ],
+      recipe_overrides: [],
       colorRemapMap: {},
       remapHistory: [],
       remapRedoHistory: [],
-      adjustmentHistory: [],
-      adjustmentRedoHistory: [],
       regionReplacementCount: 0,
       enable_relief: false,
       color_height_map: {},
       heightmap_max_height: 5.0,
     });
+    useConverterStore.getState().upsertRecipeOverrides(['region-1'], [0, 1, 2], 'Top2Bottom');
 
     render(<PalettePanel />);
 
@@ -568,20 +575,7 @@ describe('PalettePanel 双色显示', () => {
 
   it('会话中的首次选区历史可直接撤销', async () => {
     const PalettePanel = await importPalettePanel();
-
-    useConverterStore.setState({
-      palette: PALETTE,
-      sessionId: 'selection-session',
-      colorRemapMap: {},
-      remapHistory: [],
-      remapRedoHistory: [],
-      adjustmentHistory: [],
-      adjustmentRedoHistory: [],
-      regionReplacementCount: 0,
-      historyCanUndo: true,
-      historyCanRedo: false,
-      historyBusy: false,
-    });
+    await hydrateFirstHistoryEntry();
 
     render(<PalettePanel />);
 
@@ -591,19 +585,17 @@ describe('PalettePanel 双色显示', () => {
 
   it('会话撤销后无需本地重做记录即可重做', async () => {
     const PalettePanel = await importPalettePanel();
-
-    useConverterStore.setState({
-      palette: PALETTE,
-      sessionId: 'selection-session',
-      remapRedoHistory: [],
-      adjustmentRedoHistory: [],
-      historyCanUndo: false,
-      historyCanRedo: true,
-      historyBusy: false,
+    await hydrateFirstHistoryEntry();
+    vi.mocked(replacementHistory).mockResolvedValueOnce({
+      status: 'ok', action: 'undo', message: 'ok', entry_kind: 'selection', preview_url: '/api/files/base.png',
+      can_undo: false, can_redo: true, editor_content_revision: 1,
+      selection: historySelection(2, false, true), replacement_regions: [], recipe_overrides: [], recipe_override_count: 0, region_replacement_count: 0,
     });
-
     render(<PalettePanel />);
-
+    fireEvent.click(screen.getByRole('button', { name: '撤销' }));
+    await waitFor(() => expect(screen.getByRole('button', { name: '重做' })).toBeEnabled());
+    expect(replacementHistory).toHaveBeenCalledWith('selection-session', 'undo', expect.any(String));
+    expect(useConverterStore.getState().remapRedoHistory).toEqual([]);
     expect(screen.getByRole('button', { name: '撤销' })).toBeDisabled();
     expect(screen.getByRole('button', { name: '重做' })).toBeEnabled();
   });
@@ -631,22 +623,15 @@ describe('PalettePanel 双色显示', () => {
 
   it('无会话时继续使用本地撤销和重做历史', async () => {
     const PalettePanel = await importPalettePanel();
-
-    useConverterStore.setState({
-      palette: PALETTE,
-      sessionId: null,
-      colorRemapMap: {},
-      remapHistory: [{}],
-      remapRedoHistory: [{ ee0000: '00ee00' }],
-      historyCanUndo: false,
-      historyCanRedo: false,
-      historyBusy: false,
-    });
-
+    useConverterStore.setState({ palette: PALETTE });
+    useConverterStore.getState().applyColorRemap('ee0000', '00ee00');
+    useConverterStore.getState().applyColorRemap('0000ee', 'ee0000');
+    await converterDocumentHistory.undo();
     render(<PalettePanel />);
-
     expect(screen.getByRole('button', { name: '撤销' })).toBeEnabled();
     expect(screen.getByRole('button', { name: '重做' })).toBeEnabled();
+    fireEvent.click(screen.getByRole('button', { name: '重做' }));
+    expect(useConverterStore.getState().colorRemapMap).toEqual({ ee0000: '00ee00', '0000ee': 'ee0000' });
   });
 
   it('点击统一选区里的已选色块会取消对应单块', async () => {

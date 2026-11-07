@@ -82,6 +82,7 @@ from core.lut_card_layout import (
 )
 from core.lut_details.identity import canonicalize_lut_manufacturer
 from utils.lut_manager import LUTManager
+from api.project_workflows import extractor_pages_dir
 
 router = APIRouter(prefix="/api/extractor", tags=["Extractor"])
 EPHEMERAL_PREVIEW_TTL_SECONDS = 600
@@ -1462,6 +1463,7 @@ async def extractor_extract(
     ),
     store: SessionStore = Depends(get_session_store),
     registry: FileRegistry = Depends(get_file_registry),
+    workspace_session_id: str | None = Form(None),
 ) -> ExtractResponse:
     """Extract colors from a photographed calibration board.
     从拍摄的标定板图像中提取颜色。
@@ -1554,8 +1556,21 @@ async def extractor_extract(
             detail=EXTRACTOR_EXTRACT_FAILED_DETAIL,
         )
 
+    # Keep all pages for this editor under a session-owned directory.
+    # The optional workspace ID preserves the legacy HTTP contract.
+    workspace_session_id = workspace_session_id if isinstance(workspace_session_id, str) else None
+    pages_dir = extractor_pages_dir(store, workspace_session_id) if workspace_session_id and workspace_session_id != "new" else None
+    if workspace_session_id == "new":
+        import tempfile
+        from config import TEMP_DIR
+        pages_dir = tempfile.mkdtemp(prefix="extractor_pages_", dir=TEMP_DIR)
+        workspace_session_id = store.create()
+        store.register_temp_file(workspace_session_id, pages_dir)
+        store.put(workspace_session_id, "project_extractor_pages_dir", pages_dir)
     # Create session and store state
     session_id = store.create()
+    if pages_dir:
+        store.put(session_id, "project_extractor_pages_dir", pages_dir)
     store.put(session_id, "lut_path", lut_path)
     store.put(session_id, "color_mode", requested_color_mode)
     store.put(session_id, "page", page)
@@ -1563,7 +1578,7 @@ async def extractor_extract(
 
     # For 8-Color mode: save page-specific temp file
     if "8-Color" in effective_color_mode and lut_path:
-        assets_dir = _get_assets_dir()
+        assets_dir = pages_dir or _get_assets_dir()
         os.makedirs(assets_dir, exist_ok=True)
         max_page = EIGHT_COLOR_FULL_TOTAL_PAGES if eight_color_full_export else 2
         page_idx = min(max(_parse_page_number(page), 1), max_page)
@@ -1588,12 +1603,7 @@ async def extractor_extract(
 
     # For 5-Color Extended mode: save page-specific temp file
     if "5-Color" in effective_color_mode and lut_path:
-        import sys
-
-        if getattr(sys, "frozen", False):
-            assets_dir = os.path.join(os.getcwd(), "assets")
-        else:
-            assets_dir = "assets"
+        assets_dir = pages_dir or _get_assets_dir()
         os.makedirs(assets_dir, exist_ok=True)
         page_idx: int = 1 if "1" in str(page) else 2
         temp_path = os.path.join(assets_dir, f"temp_5c_ext_page_{page_idx}.json")
@@ -1663,6 +1673,7 @@ async def extractor_extract(
 
     return ExtractResponse(
         session_id=session_id,
+        workspace_session_id=workspace_session_id,
         status="ok",
         message=status_msg or "Extraction complete",
         lut_download_url=f"/api/files/{lut_download_id}",
@@ -1812,6 +1823,7 @@ def extractor_resolve_cell(
 def extractor_merge_5color_extended(
     store: SessionStore = Depends(get_session_store),
     registry: FileRegistry = Depends(get_file_registry),
+    workspace_session_id: str | None = None,
 ) -> ExtractResponse:
     """Merge two 5-Color Extended pages into a single LUT.
     将两页 5-Color Extended 合并为单个 LUT。
@@ -1824,6 +1836,7 @@ def extractor_merge_5color_extended(
     else:
         assets_dir = "assets"
 
+    assets_dir = extractor_pages_dir(store, workspace_session_id) or assets_dir
     path1 = os.path.join(assets_dir, "temp_5c_ext_page_1.json")
     path2 = os.path.join(assets_dir, "temp_5c_ext_page_2.json")
 
@@ -1833,6 +1846,8 @@ def extractor_merge_5color_extended(
             detail="Missing temp pages. Please extract Page 1 and Page 2 first.",
         )
 
+    if workspace_session_id:
+        LUT_FILE_PATH = os.path.join(assets_dir, "merged.json")
     merge_start = time.perf_counter()
     try:
         rgb1, stacks1, meta1 = LUTManager.load_lut_with_metadata(path1)
@@ -1866,6 +1881,9 @@ def extractor_merge_5color_extended(
 
     # Create session for merged result
     session_id = store.create()
+    if workspace_session_id:
+        store.put(session_id, "project_extractor_pages_dir", assets_dir)
+        store.put(session_id, "project_extractor_merged", True)
     try:
         lut_download_id, lut_download_path = _register_final_lut_download(
             registry=registry,
@@ -1888,6 +1906,7 @@ def extractor_merge_5color_extended(
 
     return ExtractResponse(
         session_id=session_id,
+        workspace_session_id=workspace_session_id,
         status="ok",
         message=f"5-Color Extended LUT merged ({merged_rgb.shape[0]}x{merged_rgb.shape[1]})",
         lut_download_url=f"/api/files/{lut_download_id}",
@@ -1902,6 +1921,7 @@ def extractor_merge_8color(
     request: ExtractorMergeEightColorRequest | None = None,
     store: SessionStore = Depends(get_session_store),
     registry: FileRegistry = Depends(get_file_registry),
+    workspace_session_id: str | None = None,
 ) -> ExtractResponse:
     """Merge extracted 8-Color pages into a single LUT.
     将提取得到的 8 色分页结果合并为单个 LUT。
@@ -1909,7 +1929,7 @@ def extractor_merge_8color(
     from config import LUT_FILE_PATH
 
     eight_color_full_export = bool(request.eight_color_full_export) if request is not None else False
-    assets_dir = _get_assets_dir()
+    assets_dir = extractor_pages_dir(store, workspace_session_id) or _get_assets_dir()
     total_pages = EIGHT_COLOR_FULL_TOTAL_PAGES if eight_color_full_export else 2
     page_paths = [
         _get_8color_temp_path(assets_dir, page_number, eight_color_full_export)
@@ -1932,6 +1952,8 @@ def extractor_merge_8color(
             ),
         )
 
+    if workspace_session_id:
+        LUT_FILE_PATH = os.path.join(assets_dir, "merged.json")
     merge_start = time.perf_counter()
     try:
         rgb_parts = []
@@ -1975,6 +1997,9 @@ def extractor_merge_8color(
 
     # Create session for merged result
     session_id = store.create()
+    if workspace_session_id:
+        store.put(session_id, "project_extractor_pages_dir", assets_dir)
+        store.put(session_id, "project_extractor_merged", True)
     try:
         lut_download_id, lut_download_path = _register_final_lut_download(
             registry=registry,
@@ -1999,6 +2024,7 @@ def extractor_merge_8color(
 
     return ExtractResponse(
         session_id=session_id,
+        workspace_session_id=workspace_session_id,
         status="ok",
         message=(
             f"8-Color{' Full' if eight_color_full_export else ''} LUT merged "

@@ -3,15 +3,12 @@
  * 配方导入编排：协调解析、恢复和 store 更新。
  */
 
-import { isValidImageType, RAW_EXTENSIONS_CONVERTER, useConverterStore } from "../stores/converter";
+import { DEFAULT_STATE, isValidImageType, RAW_EXTENSIONS_CONVERTER, useConverterStore } from "../stores/converter";
 import { saveGeneratedFile, type SaveOutcome } from "../utils/saveGeneratedFile";
-import {
-  resolveBuildPlateSelection,
-  type NozzleSize,
-  useSettingsStore,
-} from "../stores/settingsStore";
+import { useSettingsStore, withExternalSpoolSelection, type NozzleSize } from "../stores/settingsStore";
+import { captureProjectSettings, resolveProjectDeviceSettings } from "../stores/converter/project";
 import { useWidgetStore } from "../stores/widgetStore";
-import { externalSpoolPaletteKey, supportsExternalSpool } from "../stores/converter/nativeMaterialSelection";
+import { externalSpoolPaletteKey } from "../stores/converter/nativeMaterialSelection";
 import { useWorkshopStore } from "../workshop/store";
 import { getPrinters, uploadImagePreview, validateHeightmapImage } from "../api/system";
 import { HEIGHTMAP_IMAGE_TYPES } from "../constants/heightmap";
@@ -25,12 +22,6 @@ import {
 import { hasLuminaRecipe } from "./pngMetadata";
 import type { LuminaRecipe } from "./types";
 import type { RestoreResult } from "./importRecipe";
-import {
-  normalizeSlicerOptionId,
-  resolveDeviceProfileOptionId,
-  resolveNozzleSizeOption,
-  resolvePrinterOptionId,
-} from "../utils/settingsOptionIds";
 
 const SPATIAL_EDIT_DEGRADED_FIELD =
   "converter.color_ops.spatial_region_edits";
@@ -266,104 +257,30 @@ export function applyImport(
   const store = useConverterStore.getState();
   const conv = restoreResult.recipe.recipe.converter;
 
-  const importedTolerance =
-    conv?.source?.material_delta_e00_tolerance;
-  if (typeof importedTolerance === "number") {
-    useSettingsStore
-      .getState()
-      .setMaterialDeltaE00Tolerance(importedTolerance);
-  }
-
-  // 1. Use the named importRecipeState action (handles crop suppression internally)
+  // Recipes establish their own output settings, just like .lum documents.
+  // Resolve everything before committing so old project resources and new
+  // parameters can never be observed as one mixed source.
+  const defaults = captureProjectSettings(useSettingsStore.getState());
+  const projectSettings = conv ? resolveProjectDeviceSettings(defaults, {
+    printerModel: conv.device.printer_id || defaults.printerModel,
+    slicerSoftware: conv.device.slicer || defaults.slicerSoftware,
+    nozzleSize: (conv.device.nozzle_size ?? defaults.nozzleSize) as NozzleSize,
+    deviceProfileId: conv.device.device_profile_id ?? "",
+    buildPlateId: conv.device.build_plate_id ?? "",
+    custom3mfTemplateId: conv.device.custom_3mf_template_id ?? null,
+    externalSpoolSelections: withExternalSpoolSelection(
+      externalSpoolPaletteKey({ ...DEFAULT_STATE, ...restoreResult.state }), conv.device.external_spool_material,
+    ),
+    svgPixelsPerMm: conv.base.svg_pixels_per_mm ?? defaults.svgPixelsPerMm,
+    materialDeltaE00Tolerance: conv.source?.material_delta_e00_tolerance ?? defaults.materialDeltaE00Tolerance,
+    enableBaseLayerHeightModifier: conv.device.enable_base_layer_height_modifier ?? defaults.enableBaseLayerHeightModifier,
+    enableWipeTowerAutoPlacement: conv.device.enable_wipe_tower_auto_placement ?? defaults.enableWipeTowerAutoPlacement,
+  }, printerOptions) : defaults;
   store.importRecipeState(
-    restoreResult.state,
+    { ...restoreResult.state, projectSettings },
     restoreResult.assetFile,
     restoreResult.heightmapFile,
   );
-
-  // 2. Apply settings from recipe (printer/slicer) if present
-  if (conv) {
-    const settingsState = useSettingsStore.getState();
-    const nextSlicer = conv.device.slicer
-      ? normalizeSlicerOptionId(conv.device.slicer)
-      : settingsState.slicerSoftware;
-    const nextPrinter = conv.device.printer_id
-      ? resolvePrinterOptionId(conv.device.printer_id, printerOptions, nextSlicer)
-      : settingsState.printerModel;
-    const importedNozzle = conv.device.nozzle_size ?? settingsState.nozzleSize;
-    const selectedPrinter = printerOptions.find((printer) => printer.id === nextPrinter);
-    const nextNozzle = resolveNozzleSizeOption(
-      importedNozzle,
-      selectedPrinter,
-      nextSlicer,
-    );
-
-    if (nextPrinter && nextPrinter !== settingsState.printerModel) {
-      settingsState.setPrinterModel(nextPrinter);
-    }
-    if (nextSlicer && nextSlicer !== settingsState.slicerSoftware) {
-      settingsState.setSlicerSoftware(nextSlicer);
-    }
-    if (nextNozzle && nextNozzle !== settingsState.nozzleSize) {
-      settingsState.setNozzleSize(nextNozzle as NozzleSize);
-    }
-    const nextDeviceProfileId = resolveDeviceProfileOptionId(
-      conv.device.device_profile_id ?? "",
-      selectedPrinter,
-      nextSlicer,
-      nextNozzle,
-    );
-    if (nextDeviceProfileId !== settingsState.deviceProfileId) {
-      settingsState.setDeviceProfileId(nextDeviceProfileId);
-    }
-    const selectedDeviceProfile = selectedPrinter?.device_profiles?.find(
-      (profile) => profile.device_profile_id === nextDeviceProfileId,
-    );
-    const machineProfileId = selectedDeviceProfile?.machine_profile_id ?? "";
-    const availablePlateIds =
-      selectedDeviceProfile?.build_plates?.map((plate) => plate.id) ?? [];
-    const importedPlateSelections =
-      machineProfileId && conv.device.build_plate_id
-        ? { [machineProfileId]: conv.device.build_plate_id }
-        : {};
-    const { plateId: nextBuildPlateId } = resolveBuildPlateSelection(
-      machineProfileId,
-      availablePlateIds,
-      selectedDeviceProfile?.default_build_plate_id ?? "",
-      importedPlateSelections,
-    );
-    settingsState.setBuildPlateForMachine(machineProfileId, nextBuildPlateId);
-    settingsState.setCustom3mfTemplateId(conv.device.custom_3mf_template_id ?? null);
-    if (supportsExternalSpool(useSettingsStore.getState())) {
-      settingsState.setExternalSpoolMaterial(
-        externalSpoolPaletteKey(useConverterStore.getState()), conv.device.external_spool_material,
-      );
-    }
-    if (
-      typeof conv.base.svg_pixels_per_mm === "number" &&
-      conv.base.svg_pixels_per_mm !== settingsState.svgPixelsPerMm
-    ) {
-      settingsState.setSvgPixelsPerMm(conv.base.svg_pixels_per_mm);
-    }
-    if (
-      typeof conv.device.enable_base_layer_height_modifier === "boolean" &&
-      conv.device.enable_base_layer_height_modifier !==
-        settingsState.enableBaseLayerHeightModifier
-    ) {
-      settingsState.setEnableBaseLayerHeightModifier(
-        conv.device.enable_base_layer_height_modifier,
-      );
-    }
-    if (
-      typeof conv.device.enable_wipe_tower_auto_placement === "boolean" &&
-      conv.device.enable_wipe_tower_auto_placement !==
-        settingsState.enableWipeTowerAutoPlacement
-    ) {
-      settingsState.setEnableWipeTowerAutoPlacement(
-        conv.device.enable_wipe_tower_auto_placement,
-      );
-    }
-  }
 
   // 3. The converter is always restored first. A validated workshop source
   // may then reopen its editor without losing the printable image state.

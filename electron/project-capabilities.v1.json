@@ -1,0 +1,9 @@
+{
+  "protocol": "lumina-project-open",
+  "version": 1,
+  "fileExtension": ".lum",
+  "containerVersions": [1],
+  "projectSchemaVersions": [1],
+  "workflowSchemas": {"converter": [1, 2], "calibration": [2], "extractor": [2], "single-stage": [2], "five-color": [2], "lut-manager": [2], "lut-compare": [2], "lut-details": [2], "vectorizer": [2], "workshop": [2]},
+  "openArguments": ["--open-project", "{absolutePath}", "--project-request-id", "{requestId}"]
+}

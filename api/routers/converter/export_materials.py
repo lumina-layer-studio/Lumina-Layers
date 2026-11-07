@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from typing import Any, Literal, Mapping
+from typing import Annotated, Any, Literal, Mapping
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, File, Form, UploadFile, HTTPException
 from pydantic import BaseModel, Field
 
 from api.dependencies import get_session_store
@@ -12,6 +12,7 @@ from api.errors import to_http_exception
 from api.export_device_validation import validate_export_device_selection
 from api.schemas.converter import ConvertGenerateRequest
 from api.session_store import SessionStore
+from api.project_resources import stage_project_resources, discard_project_resources
 from api.preview_cache_artifacts import get_preview_cache_metadata
 from api.recipe_override_resolution import resolve_recipe_overrides
 from core.errors import CoreValidationError, ExternalSpoolSelectionError, NativeMaterialSelectionError
@@ -34,6 +35,30 @@ class ExportMaterialsRequest(BaseModel):
     params: ExportMaterialsParams
 
 
+@router.post("/project-export-materials")
+async def resolve_project_export_materials(
+    request_json: Annotated[str, Form()],
+    project_lut: Annotated[UploadFile | None, File()] = None,
+    project_materials: Annotated[UploadFile | None, File()] = None,
+) -> dict:
+    """Use project-owned inputs for batch material preflight without a session."""
+    from pydantic import ValidationError
+
+    resources = None
+    try:
+        request = ExportMaterialsRequest.model_validate_json(request_json)
+        params = request.params.model_dump(mode="json")
+        resources = await stage_project_resources(project_lut, project_materials, request.params.selected_materials)
+        if resources:
+            params["lut_path"] = resources.lut_path
+            params["materials_dir"] = resources.materials_dir
+        return resolve_export_material_selection(params)
+    except (ValidationError, ValueError, FileNotFoundError) as exc:
+        raise HTTPException(422, str(exc)) from exc
+    finally:
+        discard_project_resources(resources)
+
+
 def _material_source_context(
     session: Mapping[str, Any] | None, request: ConvertGenerateRequest,
 ) -> dict[str, Any] | None:
@@ -43,6 +68,7 @@ def _material_source_context(
     return {
         "material_source": session.get("material_source", "lut"),
         "selected_materials": session.get("selected_materials") or [],
+        "materials_dir": session.get("project_materials_dir"),
         "lut_path": session.get("lut_path"),
         "lut_metadata": cache.get("lut_metadata"),
         "recipe_overrides": resolve_recipe_overrides(dict(session), request),

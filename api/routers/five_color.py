@@ -10,11 +10,15 @@ import os
 import threading
 import uuid
 from dataclasses import asdict
+from typing import Annotated
 
 import numpy as np
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Header, HTTPException, Query
 
 from api.dependencies import get_file_registry
+from api.project_workflows import resolve_project_lut
+
+ProjectContext = Annotated[str | None, Header(alias="X-Lumina-Project-Context")]
 from api.export_device_validation import validate_export_device_selection
 from api.file_registry import FileRegistry
 from api.schemas.five_color import (
@@ -142,7 +146,7 @@ def _extract_sources_from_keyed_json(json_path: str) -> list[str]:
         return []
 
 
-def _load_engine(lut_name: str) -> tuple[ColorQueryEngine, str]:
+def _load_engine(lut_name: str, project_context: str | None = None) -> tuple[ColorQueryEngine, str]:
     """Load a LUT and create a ColorQueryEngine (with in-memory cache).
     加载 LUT 并创建 ColorQueryEngine（带内存缓存）。
 
@@ -157,11 +161,11 @@ def _load_engine(lut_name: str) -> tuple[ColorQueryEngine, str]:
         HTTPException 400: LUT 格式无法识别。
         HTTPException 500: 加载失败。
     """
+    path: str | None = resolve_project_lut(lut_name, project_context)
+    cache_key = path if project_context else lut_name
     with _engine_cache_lock:
-        if lut_name in _engine_cache:
-            return _engine_cache[lut_name], lut_name
-
-    path: str | None = LUTManager.get_lut_path(lut_name)
+        if cache_key in _engine_cache:
+            return _engine_cache[cache_key], lut_name
     if path is None:
         raise HTTPException(status_code=404, detail=_LUT_NOT_FOUND_DETAIL)
 
@@ -239,7 +243,7 @@ def _load_engine(lut_name: str) -> tuple[ColorQueryEngine, str]:
             )
 
         with _engine_cache_lock:
-            _engine_cache[lut_name] = engine
+            _engine_cache[cache_key] = engine
 
         return engine, lut_name
 
@@ -295,11 +299,11 @@ def _validate_recipe_width(
 
 
 @router.get("/base-colors")
-def get_base_colors(lut_name: str = Query(..., description="LUT 显示名称")) -> BaseColorsResponse:
+def get_base_colors(lut_name: str = Query(..., description="LUT 显示名称"), project_context: ProjectContext = None) -> BaseColorsResponse:
     """Return the base colors of a LUT.
     返回指定 LUT 的基础颜色列表。
     """
-    engine, display_name = _load_engine(lut_name)
+    engine, display_name = _load_engine(lut_name, project_context) if project_context else _load_engine(lut_name)
     base_colors = engine.get_base_colors()
     color_names = engine.get_color_names()
 
@@ -356,11 +360,11 @@ def get_base_colors(lut_name: str = Query(..., description="LUT 显示名称")) 
 
 
 @router.post("/query")
-def query_five_color(request: FiveColorQueryRequest) -> FiveColorQueryResponse:
+def query_five_color(request: FiveColorQueryRequest, project_context: ProjectContext = None) -> FiveColorQueryResponse:
     """Query a five-color combination result.
     查询五色组合结果。
     """
-    engine, _ = _load_engine(request.lut_name)
+    engine, _ = _load_engine(request.lut_name, project_context) if project_context else _load_engine(request.lut_name)
     _validate_recipe_width(
         request.selected_indices,
         engine.accepted_selection_lengths(),
@@ -402,11 +406,11 @@ def query_five_color(request: FiveColorQueryRequest) -> FiveColorQueryResponse:
 
 
 @router.post("/match-color")
-def match_color_by_hex(request: FiveColorMatchRequest) -> FiveColorMatchResponse:
+def match_color_by_hex(request: FiveColorMatchRequest, project_context: ProjectContext = None) -> FiveColorMatchResponse:
     """Match a target Hex color to the nearest LUT row and five-layer recipe.
     按目标 Hex 色值匹配最近 LUT 行，并返回五层配方与色卡位置。
     """
-    engine, _ = _load_engine(request.lut_name)
+    engine, _ = _load_engine(request.lut_name, project_context) if project_context else _load_engine(request.lut_name)
     result = engine.match_color(
         _hex_to_rgb(request.target_hex),
         neighborhood_radius=request.neighborhood_radius,
@@ -435,6 +439,7 @@ def match_color_by_hex(request: FiveColorMatchRequest) -> FiveColorMatchResponse
 def generate_swatch(
     request: RecipeSwatchRequest,
     registry: FileRegistry = Depends(get_file_registry),
+    project_context: ProjectContext = None,
 ) -> RecipeSwatchResponse:
     """Generate a 3MF swatch file from collected recipes.
     根据收集的配方列表生成 3MF 色块验证文件。
@@ -450,13 +455,13 @@ def generate_swatch(
     from api.file_bridge import pil_to_png_bytes
     from core.recipe_swatch import RecipeSwatchItem, generate_recipe_swatch
 
-    engine, _ = _load_engine(request.lut_name)
+    engine, _ = _load_engine(request.lut_name, project_context) if project_context else _load_engine(request.lut_name)
     base_color_names = engine.get_color_names()
     base_color_hexes = [rgb_to_hex(rgb) for rgb in engine.get_base_colors()]
     metadata = getattr(engine, "_lut_metadata", None)
     if metadata is None:
         _, _, metadata = LUTManager.load_lut_with_metadata(
-            LUTManager.get_lut_path(request.lut_name)
+            resolve_project_lut(request.lut_name, project_context)
         )
     palette_names = (
         [entry.color for entry in metadata.palette]

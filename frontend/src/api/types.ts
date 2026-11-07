@@ -138,6 +138,7 @@ export interface CoatingMaterialReference {
 export type BackingOutput = "same_project" | "separate_project";
 
 export type ConvertGenerateRequest = ConvertPreviewRequest & {
+  project_revision_file_id?: string;
   spacer_thick: number;
   backing_infill_density_percent?: number;
   structure_mode: StructureMode;
@@ -483,6 +484,8 @@ export interface PreviewResponse extends DynamicMaterialResultResponse {
   dimensions: {
     width: number;
     height: number;
+    width_mm?: number;
+    height_mm?: number;
     preview_raw_url?: string;
   };
   contours?: Record<string, number[][][]> | null; // hex -> list of contour polygons (world coords mm)
@@ -867,6 +870,7 @@ export interface ConfirmPaletteRequest {
 }
 
 export interface ExtractResponse {
+  workspace_session_id?: string | null;
   session_id: string;
   status: string;
   message: string;
@@ -1883,6 +1887,7 @@ export interface BatchPreviewItem {
 }
 
 export interface BatchConvertParams {
+  project_revision_file_id?: string;
   enable_outline?: boolean;
   outline_width?: number;
   backing_output?: BackingOutput;

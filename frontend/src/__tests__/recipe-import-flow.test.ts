@@ -22,6 +22,8 @@ import type {
 } from "../api/types";
 import { DEFAULT_STATE, useConverterStore } from "../stores/converter";
 import { DEFAULT_SETTINGS, useSettingsStore } from "../stores/settingsStore";
+import { resolveConverterSettings } from "../stores/converter/project";
+const effectiveSettings = () => resolveConverterSettings(useConverterStore.getState(), useSettingsStore.getState());
 import { useWidgetStore } from "../stores/widgetStore";
 import { useWorkshopStore } from "../workshop/store";
 import { createBeadRecipeSourceFixture } from "./fixtures/beadRecipeSource";
@@ -358,7 +360,7 @@ describe("recipe/importFlow", () => {
     await preparation;
   });
 
-  it("restores generated machine device profile into settings", () => {
+  it("restores the recipe device without changing daily defaults", () => {
     const restoreResult: RestoreResult = {
       state: {},
       assetFile: new File(["test"], "source.png", { type: "image/png" }),
@@ -367,15 +369,17 @@ describe("recipe/importFlow", () => {
       recipe: makeRecipe(),
     };
 
+    const dailySettings = useSettingsStore.getState();
     applyImport(restoreResult, PRINTERS);
+    expect(useSettingsStore.getState()).toEqual(dailySettings);
 
-    expect(useSettingsStore.getState().printerModel).toBe("bambu-p1s");
-    expect(useSettingsStore.getState().slicerSoftware).toBe("OrcaSlicer");
-    expect(useSettingsStore.getState().nozzleSize).toBe("0.2");
-    expect(useSettingsStore.getState().deviceProfileId).toBe(
+    expect(effectiveSettings().printerModel).toBe("bambu-p1s");
+    expect(effectiveSettings().slicerSoftware).toBe("OrcaSlicer");
+    expect(effectiveSettings().nozzleSize).toBe("0.2");
+    expect(effectiveSettings().deviceProfileId).toBe(
       "OrcaSlicer:bbl:bambu-lab-p1s:0.2",
     );
-    expect(useSettingsStore.getState().buildPlateId).toBe(
+    expect(effectiveSettings().buildPlateId).toBe(
       "smooth-high-temp-plate",
     );
   });
@@ -395,7 +399,7 @@ describe("recipe/importFlow", () => {
     applyImport(restoreResult);
 
     expect(
-      useSettingsStore.getState().enableBaseLayerHeightModifier,
+      effectiveSettings().enableBaseLayerHeightModifier,
     ).toBe(false);
   });
 
@@ -432,7 +436,7 @@ describe("recipe/importFlow", () => {
     applyImport(restoreResult);
 
     expect(
-      useSettingsStore.getState().enableWipeTowerAutoPlacement,
+      effectiveSettings().enableWipeTowerAutoPlacement,
     ).toBe(false);
   });
 
@@ -467,7 +471,7 @@ describe("recipe/importFlow", () => {
 
     applyImport(restoreResult);
 
-    expect(useSettingsStore.getState().materialDeltaE00Tolerance).toBe(0.8);
+    expect(effectiveSettings().materialDeltaE00Tolerance).toBe(0.8);
   });
 
   it("keeps imported dynamic result evidence after setImageFile invalidation", () => {
@@ -564,12 +568,14 @@ describe("recipe/importFlow", () => {
       recipe: makeRecipe(null),
     };
 
+    const dailySettings = useSettingsStore.getState();
     applyImport(restoreResult, PRINTERS);
+    expect(useSettingsStore.getState()).toEqual(dailySettings);
 
-    expect(useSettingsStore.getState().printerModel).toBe("bambu-p1s");
-    expect(useSettingsStore.getState().slicerSoftware).toBe("OrcaSlicer");
-    expect(useSettingsStore.getState().nozzleSize).toBe("0.2");
-    expect(useSettingsStore.getState().deviceProfileId).toBe(
+    expect(effectiveSettings().printerModel).toBe("bambu-p1s");
+    expect(effectiveSettings().slicerSoftware).toBe("OrcaSlicer");
+    expect(effectiveSettings().nozzleSize).toBe("0.2");
+    expect(effectiveSettings().deviceProfileId).toBe(
       "OrcaSlicer:bbl:bambu-lab-p1s:0.2",
     );
   });
@@ -605,7 +611,7 @@ describe("recipe/importFlow", () => {
       PRINTERS,
     );
 
-    expect(useSettingsStore.getState()).toMatchObject({
+    expect(effectiveSettings()).toMatchObject({
       deviceProfileId: "OrcaSlicer:bbl:bambu-lab-p1s:0.2",
       buildPlateId: "textured-pei-plate",
     });
@@ -633,7 +639,7 @@ describe("recipe/importFlow", () => {
       PRINTERS,
     );
 
-    expect(useSettingsStore.getState()).toMatchObject({
+    expect(effectiveSettings()).toMatchObject({
       deviceProfileId: "OrcaSlicer:bbl:bambu-lab-p1s:0.2",
       buildPlateId: "textured-pei-plate",
     });
@@ -668,7 +674,7 @@ describe("recipe/importFlow", () => {
       PRINTERS,
     );
 
-    expect(useSettingsStore.getState()).toMatchObject({
+    expect(effectiveSettings()).toMatchObject({
       nozzleSize: "0.4",
       deviceProfileId: "FlashStudio:flashforge:guider-3-ultra:0.4",
       buildPlateId: "",

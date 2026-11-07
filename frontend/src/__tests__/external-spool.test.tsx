@@ -6,7 +6,8 @@ import NativeMaterialSelectionDialog from "../components/ui/NativeMaterialSelect
 import { I18nProvider } from "../i18n/context";
 import { translations } from "../i18n/translations";
 import { exportConverterRecipe } from "../recipe/exportRecipe";
-import { DEFAULT_STATE, useConverterStore } from "../stores/converter";
+import { converterDocumentHistory, DEFAULT_STATE, useConverterStore } from "../stores/converter";
+import { captureProjectSettings } from "../stores/converter/project";
 import { buildGenerateParams } from "../stores/converter/requests";
 import { buildConversionSourceParams } from "../stores/converter/sources";
 import { DEFAULT_SETTINGS, useSettingsStore } from "../stores/settingsStore";
@@ -91,6 +92,31 @@ describe("X2D external spool", () => {
     useSettingsStore.getState().setCustom3mfTemplateId(null);
     useSettingsStore.getState().setPrinterModel("bambu-h2d");
     expect(singleParams()).not.toHaveProperty("external_spool_material");
+  });
+
+  it("edits the project's spool on a different default printer and undoes it without changing preferences", async () => {
+    useConverterStore.setState({ projectSettings: captureProjectSettings(useSettingsStore.getState()) });
+    useSettingsStore.setState({ ...DEFAULT_SETTINGS });
+    converterDocumentHistory.reset();
+    await useConverterStore.getState().openNativeMaterialSelection();
+    render(<I18nProvider><NativeMaterialSelectionDialog /></I18nProvider>);
+    fireEvent.click(screen.getByRole("combobox", { name: translations.native_material_external_spool.zh }));
+    fireEvent.click(screen.getByRole("option", { name: blue }));
+    fireEvent.click(screen.getByRole("button", { name: translations.native_material_edit_save.zh }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(singleParams().external_spool_material).toBe(blue);
+    await converterDocumentHistory.undo();
+    expect(singleParams()).not.toHaveProperty("external_spool_material");
+    await converterDocumentHistory.redo();
+    expect(singleParams().external_spool_material).toBe(blue);
+    await useConverterStore.getState().submitBatch();
+    expect(useConverterStore.getState().batchResult).not.toBeNull();
+    await useConverterStore.getState().openNativeMaterialSelection();
+    const state = useConverterStore.getState();
+    await state.applyNativeMaterialSelection(state.native_filament_profiles, "pei", undefined);
+    expect(singleParams()).not.toHaveProperty("external_spool_material");
+    expect(useConverterStore.getState().batchResult).toBeNull();
+    expect(useSettingsStore.getState().externalSpoolSelections).toEqual({});
   });
 
   it.each([{ names: [white] }, { names: [white, blue, blue] }])("corrects a removed or ambiguous spool before exporting $names", async ({ names }) => {

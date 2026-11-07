@@ -1,7 +1,8 @@
 const { stepInterfaceScalePreference } = require('./interface-scale.cjs');
 
-const COMMANDS = ['about', 'settings', 'import', 'export', 'report'];
+const COMMANDS = ['about', 'settings', 'import', 'export', 'report', 'projectNew', 'projectOpen', 'projectSave', 'projectSaveAs'];
 const DEFAULT_LABELS = {
+  projectNew: 'New Project…', projectOpen: 'Open Project…', projectSave: 'Save Project', projectSaveAs: 'Save Project As…',
   about: 'About Lumina Studio', settings: 'Settings…', services: 'Services',
   hide: 'Hide Lumina Studio', hideOthers: 'Hide Others', unhide: 'Show All', quit: 'Quit Lumina Studio',
   file: 'File', import: 'Import image / SVG / share card…', export: 'Save generated file…', close: 'Close Window',
@@ -14,9 +15,28 @@ const DEFAULT_LABELS = {
 function createApplicationMenu({ Menu, app, getWindow, getScale, openDocs, onError = () => {} }) {
   let labels = { ...DEFAULT_LABELS };
   let enabled = {};
+  let nativeSheetDepth = 0;
   function rebuild() {
     const role = (name, accelerator) => ({ role: name, label: labels[name], ...(accelerator ? { accelerator } : {}) });
     const separator = { type: 'separator' };
+    const history = (action, accelerator) => ({
+      id: action, label: labels[action], accelerator,
+      click: async () => {
+        const window = getWindow();
+        if (!window || window.isDestroyed()) return;
+        try {
+          // Native dialogs keep their own responder chain; only the focused
+          // renderer may consume the command as an artwork edit.
+          const useNative = await window.webContents.executeJavaScript(
+            `!document.hasFocus() || window.dispatchEvent(new CustomEvent('lumina-editor-history', { detail: '${action}', cancelable: true }))`, true,
+          );
+          if (useNative && !window.isDestroyed()) {
+            if (process.platform === 'darwin') Menu.sendActionToFirstResponder(`${action}:`);
+            else window.webContents[action]();
+          }
+        } catch (error) { onError(error); }
+      },
+    });
     const command = (id, accelerator) => ({
       id, label: labels[id], enabled: enabled[id] === true, accelerator,
       click: () => {
@@ -49,8 +69,12 @@ function createApplicationMenu({ Menu, app, getWindow, getScale, openDocs, onErr
         } }, command('settings', 'Command+,'), separator,
         role('services'), separator, role('hide'), role('hideOthers'), role('unhide'), separator, role('quit'),
       ] },
-      { label: labels.file, submenu: [command('import', 'Command+O'), command('export', 'Command+Shift+S'), separator, role('close')] },
-      { label: labels.edit, submenu: [role('undo'), role('redo'), separator, role('cut'), role('copy'), role('paste'), role('selectAll')] },
+      { label: labels.file, submenu: [command('projectNew', 'CommandOrControl+N'), command('projectOpen', 'CommandOrControl+O'), command('projectSave', 'CommandOrControl+S'), command('projectSaveAs', 'CommandOrControl+Shift+S'), separator, command('import', 'CommandOrControl+I'), command('export', 'CommandOrControl+Alt+S'), separator, role('close')] },
+      { label: labels.edit, submenu: [
+        nativeSheetDepth ? role('undo') : history('undo', 'CommandOrControl+Z'),
+        nativeSheetDepth ? role('redo') : history('redo', 'CommandOrControl+Shift+Z'),
+        separator, role('cut'), role('copy'), role('paste'), role('selectAll'),
+      ] },
       { label: labels.view, submenu: [scale('zoomIn', 'in', 'Command+Plus'), scale('zoomOut', 'out', 'Command+-'), scale('resetZoom', 'reset', 'Command+0'), separator, role('togglefullscreen')] },
       { label: labels.window, submenu: [role('minimize'), role('zoom'), separator, role('front')] },
       { role: 'help', label: labels.help, submenu: [{ label: labels.docs, click: openDocs }, command('report')] },
@@ -58,6 +82,14 @@ function createApplicationMenu({ Menu, app, getWindow, getScale, openDocs, onErr
   }
   return {
     rebuild,
+    attach(window) {
+      nativeSheetDepth = 0;
+      // Cocoa save/open panels can leave document.hasFocus() true underneath.
+      // Restore native menu roles for the lifetime of a native sheet.
+      window.on('sheet-begin', () => { nativeSheetDepth++; rebuild(); });
+      window.on('sheet-end', () => { nativeSheetDepth = Math.max(0, nativeSheetDepth - 1); rebuild(); });
+      rebuild();
+    },
     reset() { enabled = {}; rebuild(); },
     update(payload) {
       if (!payload || typeof payload !== 'object') return;

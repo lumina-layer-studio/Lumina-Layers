@@ -51,7 +51,7 @@ from api.workers.converter_workers import (
 )
 from config import ModelingMode as CoreModelingMode
 from config import TEMP_DIR
-from core.errors import NativeMaterialSelectionError, WipeTowerLayoutError
+from core.errors import ExternalSpoolSelectionError, NativeMaterialSelectionError, WipeTowerLayoutError
 from core.preview_analysis_cache import REQUIRED_PREVIEW_ANALYSIS_REUSE
 from .export_materials import require_material_selection
 from core.puzzle import (
@@ -1267,6 +1267,8 @@ async def generate_puzzle(
 
         worker_params: dict[str, Any] = {
             **build_common_generation_params(generate_params),
+            # Each piece is temporary. Assign printheads once against the combined palette.
+            "external_spool_material": None,
             "target_width_mm": piece.bbox_mm[2] - piece.bbox_mm[0],
             "add_loop": False,
             "loop_pos": None,
@@ -1514,7 +1516,7 @@ async def generate_puzzle(
             errors.append(f"{piece.label}: generation failed")
         except (DynamicMaterialCandidateError, DynamicMaterialSolverError) as exc:
             _handle_core_error(exc, "puzzle piece generation")
-        except (WipeTowerLayoutError, NativeMaterialSelectionError) as exc:
+        except (WipeTowerLayoutError, NativeMaterialSelectionError, ExternalSpoolSelectionError) as exc:
             raise to_http_exception(exc, "puzzle piece layout") from exc
         except ROUTER_HANDLED_ERRORS as exc:
             errors.append(f"{piece.label}: {exc}")
@@ -1610,6 +1612,7 @@ async def generate_puzzle(
             metadata_target=metadata_target,
             material_types={material["name"]: material["material_type"]
                             for material in material_selection["materials"]},
+            external_spool_material=generate_params.external_spool_material,
             native_filament_profiles={material["name"]: material["selected_profile_name"]
                                       for material in material_selection["materials"]
                                       if material["selected_profile_name"]},
@@ -1636,7 +1639,7 @@ async def generate_puzzle(
             ttl_seconds=BATCH_DOWNLOAD_TTL_SECONDS,
         )
         combined_registered = True
-    except (WipeTowerLayoutError, NativeMaterialSelectionError) as exc:
+    except (WipeTowerLayoutError, NativeMaterialSelectionError, ExternalSpoolSelectionError) as exc:
         raise to_http_exception(exc, "puzzle 3MF layout") from exc
     except ROUTER_HANDLED_ERRORS as exc:
         log.error(

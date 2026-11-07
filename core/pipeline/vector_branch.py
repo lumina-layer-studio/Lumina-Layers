@@ -2597,6 +2597,7 @@ def _run_vector_branch(ctx: dict) -> dict:
             project_slot_names=vec_slot_list,
             material_types=ctx.get("material_types"),
             backing_output=ctx.get("backing_output", "same_project"),
+            external_spool_material=ctx.get("external_spool_material"),
             native_filament_profiles=ctx.get("native_filament_profiles"),
             enable_base_layer_height_modifier=(
                 bool(ctx.get("enable_base_layer_height_modifier", True))

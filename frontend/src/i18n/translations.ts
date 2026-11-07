@@ -107,6 +107,19 @@ export const translations: Record<string, Record<"zh" | "en", string>> = {
   native_material_choose_profile: { zh: "请选择耗材预设", en: "Choose a filament preset" },
   native_material_automatic: { zh: "自动匹配：{profile}", en: "Automatic: {profile}" },
   native_material_automatic_option: { zh: "自动匹配", en: "Automatic" },
+  native_material_external_spool: { zh: "外置料盘耗材", en: "External spool filament" },
+  native_material_external_spool_missing: {
+    zh: "此前选定的外置耗材「{material}」在此项目中不可用。请选择当前耗材或确认使用自动分配。",
+    en: "The saved external filament “{material}” is unavailable in this project. Choose a current filament or confirm Automatic.",
+  },
+  native_material_external_spool_duplicate: {
+    zh: "部分耗材同名。要单独指定其中一种，请先给它设置唯一名称。",
+    en: "Some filaments share a name. Give the filament a unique name to select it for the external spool.",
+  },
+  native_material_external_spool_help: {
+    zh: "选择 X2D 外置料盘上实际安装的耗材，其余耗材由 AMS 供料。",
+    en: "Choose the filament loaded on the X2D external spool. The AMS supplies the other filaments.",
+  },
   native_material_selected: { zh: "已选择：{profile}", en: "Selected: {profile}" },
   native_material_cancel: { zh: "取消生成", en: "Cancel generation" },
   native_material_apply: { zh: "确认并继续生成", en: "Confirm and continue" },
@@ -3535,8 +3548,8 @@ export const translations: Record<string, Record<"zh" | "en", string>> = {
     en: "Manual slicer app path",
   },
   "settings.prusa_preview_help": {
-    zh: "Prusa 工程使用 3.0.0-alpha12 预览版格式。多色导出需要 MMU 或足够的打印头；当前内置配置提供原生默认 0.4 mm 喷嘴。",
-    en: "Prusa projects use the 3.0.0-alpha12 preview format. Multicolor exports need an MMU or enough print heads. Bundled profiles use the native default 0.4 mm nozzle.",
+    zh: "Prusa 工程使用上方所示版本的预览格式。多色导出需要 MMU 或足够的打印头；内置配置使用原生默认的 0.4 mm 喷嘴。",
+    en: "Prusa projects use the preview format of the version shown above. Multicolor exports need an MMU or enough print heads. Bundled profiles use the native default 0.4 mm nozzle.",
   },
   "settings.custom_slicer_path_help": {
     zh: "macOS 可粘贴 .app 路径，例如 /Applications/Bambu Studio.app；保存后会优先用于打开 3MF。",

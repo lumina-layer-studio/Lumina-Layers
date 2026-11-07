@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "checked_on": "2026-10-16",
+  "checked_on": "2026-11-07",
   "license_sources": "../third_party/interface-assets/sources.json",
   "images": [
     {
@@ -1460,6 +1460,80 @@
       "sha256": "afac1c225e09f5b67937c7d500eacc63801a9068517a257e41804e152b217568",
       "upstream_exact_matches": [],
       "acquisition": "Official icon source recorded in frontend/src/assets/slicer-logos/SOURCES.md"
+    },
+    {
+      "path": "machine_registry/slicers/BambuStudio/02.09.01.70/assets/bambu-lab-h3c_cover.png",
+      "blob": "436304ceb9cf39f703eb47a409cfe4b81c88f128",
+      "sha256": "8e49fac1b0754396007f9203b8cd233f7c7922e66d7440d90dd9a47334731a1a",
+      "upstream_exact_matches": [
+        {
+          "repository": "bambulab/BambuStudio",
+          "source_path": "resources/profiles/BBL/Bambu Lab H3C_cover.png"
+        }
+      ],
+      "application_version": "02.09.01.70",
+      "slicer_id": "BambuStudio",
+      "acquisition": "Official Bambu Studio 02.09.01.70 macOS application profile asset; unchanged 180px transparent PNG"
+    },
+    {
+      "path": "machine_registry/slicers/PrusaSlicer/3.0.0-alpha13/assets/COREONEL_thumbnail.png",
+      "blob": "1367f29b39b4add36f257487c475a2205d3b1c53",
+      "sha256": "10c44dd60136e0d9a09dd0ba1e6f60148a7579f4306c72840a8b555c2f3a3aad",
+      "upstream_exact_matches": [],
+      "application_version": "3.0.0-alpha13",
+      "slicer_id": "PrusaSlicer",
+      "transformation": "512-pixel rendering of official PrusaResearch SVG using tools/machine_adapter/sync_prusa_assets.py",
+      "acquisition": "PrusaSlicer version_3.0.0-alpha13 official macOS release, Resources/presets/prusa-research-fff/PrusaResearch/assets/COREONEL_thumbnail.svg"
+    },
+    {
+      "path": "machine_registry/slicers/PrusaSlicer/3.0.0-alpha13/assets/COREONE_thumbnail.png",
+      "blob": "642728e6986a72c4c9c4791c9c32a72501012d90",
+      "sha256": "8c9062e10c002e28ac1878952fea59dd5becfe3a2f7c8562346f51a3926e2079",
+      "upstream_exact_matches": [],
+      "application_version": "3.0.0-alpha13",
+      "slicer_id": "PrusaSlicer",
+      "transformation": "512-pixel rendering of official PrusaResearch SVG using tools/machine_adapter/sync_prusa_assets.py",
+      "acquisition": "PrusaSlicer version_3.0.0-alpha13 official macOS release, Resources/presets/prusa-research-fff/PrusaResearch/assets/COREONE_thumbnail.svg"
+    },
+    {
+      "path": "machine_registry/slicers/PrusaSlicer/3.0.0-alpha13/assets/MK3.5S_thumbnail.png",
+      "blob": "19f7a0e2e70749a5fbd83e040163f28079d6e0a6",
+      "sha256": "c72f7e7ccebc88ddfc328bd591c7e3826e799db4bef8065c8e07ed73b8dfbbeb",
+      "upstream_exact_matches": [],
+      "application_version": "3.0.0-alpha13",
+      "slicer_id": "PrusaSlicer",
+      "transformation": "512-pixel rendering of official PrusaResearch SVG using tools/machine_adapter/sync_prusa_assets.py",
+      "acquisition": "PrusaSlicer version_3.0.0-alpha13 official macOS release, Resources/presets/prusa-research-fff/PrusaResearch/assets/MK3.5S_thumbnail.svg"
+    },
+    {
+      "path": "machine_registry/slicers/PrusaSlicer/3.0.0-alpha13/assets/MK3_thumbnail.png",
+      "blob": "71476c4f9762ad150a28115e241f77435bf171d4",
+      "sha256": "77ba7c40d7a9ef619d42b8d7d79c92848ba440120b3740a57bd48103889a334b",
+      "upstream_exact_matches": [],
+      "application_version": "3.0.0-alpha13",
+      "slicer_id": "PrusaSlicer",
+      "transformation": "512-pixel rendering of official PrusaResearch SVG using tools/machine_adapter/sync_prusa_assets.py",
+      "acquisition": "PrusaSlicer version_3.0.0-alpha13 official macOS release, Resources/presets/prusa-research-fff/PrusaResearch/assets/MK3_thumbnail.svg"
+    },
+    {
+      "path": "machine_registry/slicers/PrusaSlicer/3.0.0-alpha13/assets/MK4S_thumbnail.png",
+      "blob": "784d607382c833e1c16c14c0ad7d02e9262003cb",
+      "sha256": "76381fa709a698396a7b4aa91263bd723b73e2b633787bcfa00b397219555412",
+      "upstream_exact_matches": [],
+      "application_version": "3.0.0-alpha13",
+      "slicer_id": "PrusaSlicer",
+      "transformation": "512-pixel rendering of official PrusaResearch SVG using tools/machine_adapter/sync_prusa_assets.py",
+      "acquisition": "PrusaSlicer version_3.0.0-alpha13 official macOS release, Resources/presets/prusa-research-fff/PrusaResearch/assets/MK4S_thumbnail.svg"
+    },
+    {
+      "path": "machine_registry/slicers/PrusaSlicer/3.0.0-alpha13/assets/MK4_thumbnail.png",
+      "blob": "8e6286ec1c8a10a68ccd04bf69f9b74409f3476f",
+      "sha256": "06678ed2db034918a2bfd67bae09b0ff133a472462079c463098f62a09473c06",
+      "upstream_exact_matches": [],
+      "application_version": "3.0.0-alpha13",
+      "slicer_id": "PrusaSlicer",
+      "transformation": "512-pixel rendering of official PrusaResearch SVG using tools/machine_adapter/sync_prusa_assets.py",
+      "acquisition": "PrusaSlicer version_3.0.0-alpha13 official macOS release, Resources/presets/prusa-research-fff/PrusaResearch/assets/MK4_thumbnail.svg"
     }
   ]
 }

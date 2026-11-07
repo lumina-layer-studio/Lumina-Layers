@@ -21,6 +21,7 @@ import inspect
 import json
 import os
 import tempfile
+from zipfile import ZipFile
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
@@ -1404,9 +1405,16 @@ def _make_worker_result(
     filename: str,
     width_mm: float = 30.0,
     depth_mm: float = 20.0,
+    *, bed_size: tuple[int, int] = (350, 320),
 ) -> dict:
     """Create a full 5-key worker result with real temp files."""
     threemf_path = _make_fake_3mf(".3mf")
+    width, depth = bed_size
+    with ZipFile(threemf_path, "w") as package:
+        package.writestr("Metadata/project_settings.config", json.dumps({
+            "printable_area": ["0x0", f"{width}x0", f"{width}x{depth}", f"0x{depth}"],
+        }))
+        package.writestr("Metadata/model_settings.config", "<config/>")
     glb_fd, glb_path = tempfile.mkstemp(suffix=".glb")
     os.write(glb_fd, b"fake-glb-content")
     os.close(glb_fd)
@@ -1447,7 +1455,7 @@ class TestBatchMergeFlow:
     def test_selected_printer_bed_drives_batch_layout(self) -> None:
         """Batch layout uses the selected printer bed dimensions."""
         _mock_pool.submit = AsyncMock(
-            return_value=_make_worker_result("img.png", 30.0, 20.0),
+            return_value=_make_worker_result("img.png", 30.0, 20.0, bed_size=(270, 270)),
         )
         writer_plate_dims: list[tuple[float, float]] = []
 

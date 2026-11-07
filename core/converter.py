@@ -364,6 +364,7 @@ def convert_image_to_3d(
     svg_hole_max_area_mm2: float = 0.5,
     svg_hole_max_width_mm: float = 0.1,
     batch_preview: bool = False,
+    external_spool_material: str | None = None,
 ):
     """Main conversion function: Convert image to 3D model.
     主要转换函数：将图像转换为 3D 模型。
@@ -516,6 +517,7 @@ def convert_image_to_3d(
         "nozzle_size": nozzle_size,
         "device_profile_id": device_profile_id,
         "build_plate_id": build_plate_id,
+        "external_spool_material": external_spool_material,
         "native_filament_profiles": dict(native_filament_profiles or {}),
         "custom_3mf_template_id": custom_3mf_template_id,
         "enable_base_layer_height_modifier": enable_base_layer_height_modifier,
@@ -808,6 +810,7 @@ def generate_final_model(
     svg_hole_compensation_enabled: bool = False,
     svg_hole_max_area_mm2: float = 0.5,
     svg_hole_max_width_mm: float = 0.1,
+    external_spool_material: str | None = None,
 ):
     """Wrapper function for generating final model.
     包装函数，用于生成最终模型。
@@ -949,6 +952,7 @@ def generate_final_model(
         svg_hole_compensation_enabled=svg_hole_compensation_enabled,
         svg_hole_max_area_mm2=svg_hole_max_area_mm2,
         svg_hole_max_width_mm=svg_hole_max_width_mm,
+        external_spool_material=external_spool_material,
         native_filament_profiles=native_filament_profiles,
         backing_infill_density_percent=backing_infill_density_percent,
         blur_kernel=0,

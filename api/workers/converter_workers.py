@@ -924,6 +924,7 @@ def worker_batch_convert_item(
     coating_material: dict[str, str] | None = None,
     enable_outline: bool = False,
     outline_width: float = 2.0,
+    external_spool_material: str | None = None,
 ) -> dict:
     """Execute a single batch conversion item in a worker process.
     在工作进程中执行单个批量转换项。
@@ -1112,6 +1113,7 @@ def worker_batch_convert_item(
         )
         (width_mm, depth_mm), slots = read_merge_source_info(
             threemf_path, metadata_target=slot_target,
+            use_base_material_names=external_spool_material is not None,
         )
     except Exception as exc:
         # Artifact inspection is a worker boundary: an unknown footprint
@@ -1484,6 +1486,7 @@ def worker_generate_model_surface_overlay(
             preview_colors=overlay.preview_colors,
             project_slot_names=overlay.project_slot_names,
             material_types=overlay.scene.metadata.get("material_types"),
+            external_spool_material=normalized_params.get("external_spool_material"),
             native_filament_profiles=normalized_params.get("native_filament_profiles"),
             preserve_template_filament_slots=(
                 False if converter_params.get("material_source") == "material_archive" else None
@@ -2194,6 +2197,7 @@ def worker_generate_large_format_svg_native(
                 nozzle_size=params.get("nozzle_size", "0.4"),
                 project_slot_names=slot_names,
                 material_types=worker_ctx.get("material_types"),
+                external_spool_material=params.get("external_spool_material"),
                 native_filament_profiles=params.get("native_filament_profiles"),
                 enable_base_layer_height_modifier=bool(
                     worker_ctx.get("enable_base_layer_height_modifier", True)

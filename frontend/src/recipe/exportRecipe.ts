@@ -18,7 +18,7 @@ import type { SettingsState } from "../stores/settingsStore";
 import type { ColorReplacementItem } from "../api/types";
 import type { WorkshopRecipeSource } from "../workshop/types";
 import { svgHoleCompensationOptions } from "../constants/svgHoleCompensation";
-import { scopedNativeFilamentProfiles } from "../stores/converter/nativeMaterialSelection";
+import { externalSpoolMaterial, scopedNativeFilamentProfiles } from "../stores/converter/nativeMaterialSelection";
 import {
   cloneDynamicMaterialRecipe,
   cloneMaterialLayerBenefitCurve,
@@ -145,6 +145,7 @@ export function exportConverterRecipe(
   const selectedLegacyLutNames = normalizeLegacyLutNames(state);
   const isMaterialSource = state.source_version === "material";
   const nativeFilamentProfiles = scopedNativeFilamentProfiles(state, settings);
+  const spool = externalSpoolMaterial(state, settings);
   const hasDynamicResult =
     state.materialDynamicRecipes.length > 0 ||
     state.materialLayerBenefitCurve.length > 0;
@@ -315,6 +316,7 @@ export function exportConverterRecipe(
       device_profile_id: settings.deviceProfileId,
       custom_3mf_template_id: settings.custom3mfTemplateId,
       ...(nativeFilamentProfiles ? { native_filament_profiles: nativeFilamentProfiles } : {}),
+      ...(spool ? { external_spool_material: spool } : {}),
       ...(settings.buildPlateId
         ? { build_plate_id: settings.buildPlateId }
         : {}),

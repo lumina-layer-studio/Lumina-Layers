@@ -324,10 +324,10 @@ def _resolve_generation_backing_color_id(
     return int(backing_color_id)
 
 
-def _resolve_flat_backing_mask(
+def _resolve_backing_mask(
     backing_mask: np.ndarray | None, mask_solid: np.ndarray,
 ) -> np.ndarray:
-    """Use the explicit flat backing footprint, falling back to the color mask."""
+    """Use the physical backing footprint, falling back to the color mask."""
     if backing_mask is None:
         return mask_solid
     backing_arr = np.asarray(backing_mask, dtype=bool)
@@ -373,7 +373,7 @@ def _build_voxel_matrix(
     if material_matrix.ndim != 3:
         raise ValueError(f"material_matrix must be 3D (H, W, N), got shape={material_matrix.shape}")
     target_h, target_w, optical_layers = material_matrix.shape
-    backing_mask_arr = _resolve_flat_backing_mask(backing_mask, mask_solid)
+    backing_mask_arr = _resolve_backing_mask(backing_mask, mask_solid)
 
     bottom_voxels = np.transpose(material_matrix, (2, 0, 1))
 
@@ -509,7 +509,7 @@ def _build_voxel_matrix_faceup(
         tuple: (full_matrix, backing_metadata)
     """
     target_h, target_w, optical_layers = material_matrix.shape
-    footprint = _resolve_flat_backing_mask(backing_mask, mask_solid)
+    footprint = _resolve_backing_mask(backing_mask, mask_solid)
     spacer_layers = max(1, int(round(spacer_thick / PrinterConfig.LAYER_HEIGHT)))
     stored_spacer_layers = 1 if compact_backing else spacer_layers
     label_dtype = (
@@ -559,6 +559,8 @@ def _build_relief_voxel_matrix(
     height_matrix=None,
     global_max_height=None,
     height_identity_rgb=None,
+    *,
+    backing_mask: np.ndarray | None = None,
 ):
     """Build 2.5D relief voxel matrix with per-color or per-pixel variable heights.
     构建 2.5D 浮雕体素矩阵，支持按颜色或按像素的可变高度。
@@ -580,7 +582,9 @@ def _build_relief_voxel_matrix(
             this identity plane. When omitted, ``matched_rgb`` preserves the
             legacy behaviour.
         material_matrix (np.ndarray): (H, W, N) material matrix for optical layers
-        mask_solid (np.ndarray): (H, W) boolean mask of solid pixels
+        mask_solid (np.ndarray): (H, W) boolean mask of the optical artwork
+        backing_mask (np.ndarray | None): Physical backing footprint. Where there
+            is no artwork, only backing fills the configured thickness or heightmap.
         color_height_map (dict): dict mapping hex colors to heights in mm
         default_height (float): default height in mm for colors not in map
         structure_mode (str): "Double-sided" or "Single-sided"
@@ -596,6 +600,7 @@ def _build_relief_voxel_matrix(
     color_height_map = _normalize_color_height_map(color_height_map)
 
     target_h, target_w = material_matrix.shape[:2]
+    footprint = _resolve_backing_mask(backing_mask, mask_solid)
     height_lookup_rgb = (
         np.asarray(height_identity_rgb, dtype=np.uint8)
         if height_identity_rgb is not None
@@ -611,7 +616,8 @@ def _build_relief_voxel_matrix(
     OPTICAL_LAYERS = int(material_matrix.shape[2])
     if OPTICAL_LAYERS <= 0:
         raise ValueError("material_matrix must contain at least one optical layer")
-    OPTICAL_THICKNESS_MM = OPTICAL_LAYERS * PrinterConfig.LAYER_HEIGHT
+    layer_height = PrinterConfig.LAYER_HEIGHT
+    OPTICAL_THICKNESS_MM = OPTICAL_LAYERS * layer_height
 
     _log.debug(f"Building 2.5D relief voxel matrix...")
     _log.debug(f"Optical layer thickness: {OPTICAL_THICKNESS_MM}mm ({OPTICAL_LAYERS} layers)")
@@ -640,32 +646,28 @@ def _build_relief_voxel_matrix(
     if global_max_height is not None:
         max_height_mm = global_max_height
     else:
-        max_height_mm = np.max(pixel_heights[mask_solid]) if np.any(mask_solid) else default_height
-    max_z_layers = max(OPTICAL_LAYERS + 1, int(np.ceil(max_height_mm / PrinterConfig.LAYER_HEIGHT)))
+        occupied = mask_solid | footprint if backing_mask is not None else mask_solid
+        max_height_mm = np.max(pixel_heights[occupied]) if np.any(occupied) else default_height
+    max_z_layers = max(OPTICAL_LAYERS + 1, int(np.ceil(max_height_mm / layer_height)))
 
-    _log.debug(f"Max height: {max_height_mm:.2f}mm ({max_z_layers} layers)")
-    if np.any(mask_solid):
-        _log.debug(f"Height range: {np.min(pixel_heights[mask_solid]):.2f}mm - {max_height_mm:.2f}mm")
-
-    # Step 3: Initialize voxel matrix
+    # Painted columns reserve space for the optical recipe above their backing.
+    # A backing-only column has no recipe to subtract from its physical height.
+    requested_layers = np.ceil(np.maximum(layer_height, pixel_heights) / layer_height).astype(int)
+    optical_start_z = np.clip(requested_layers, OPTICAL_LAYERS, max_z_layers) - OPTICAL_LAYERS
+    backing_z_max_map = np.where(footprint, optical_start_z - 1, -1)
+    if backing_mask is not None:
+        bare = footprint & ~mask_solid
+        if height_matrix is None:
+            backing_z_max_map[bare] = max(1, round(default_height / layer_height)) - 1
+        else:
+            backing_z_max_map[bare] = np.minimum(requested_layers[bare], max_z_layers) - 1
+    backing_z_min_map = np.where(backing_z_max_map >= 0, 0, -1)
+    last_backing_z = int(backing_z_max_map.max(initial=-1))
+    max_z_layers = max(max_z_layers, last_backing_z + 1)
     full_matrix = np.full((max_z_layers, target_h, target_w), -1, dtype=int)
 
-    # Step 4: Fill voxel matrix (vectorized for both modes)
-    target_z_layers = np.clip(
-        np.ceil(np.maximum(0.08, pixel_heights) / PrinterConfig.LAYER_HEIGHT).astype(int),
-        OPTICAL_LAYERS,
-        max_z_layers,
-    )
-    optical_start_z = target_z_layers - OPTICAL_LAYERS
-    backing_z_min_map = np.full((target_h, target_w), -1, dtype=int)
-    backing_z_max_map = np.full((target_h, target_w), -1, dtype=int)
-    backing_z_min_map[mask_solid] = 0
-    backing_z_max_map[mask_solid] = optical_start_z[mask_solid] - 1
-
-    # Fill backing layers
-    for z in range(max_z_layers):
-        backing_mask = mask_solid & (z < optical_start_z)
-        full_matrix[z][backing_mask] = backing_color_id
+    for z in range(last_backing_z + 1):
+        full_matrix[z, backing_z_max_map >= z] = backing_color_id
 
     # Fill optical layers (vectorized advanced indexing)
     solid_ys, solid_xs = np.where(mask_solid)
@@ -676,8 +678,8 @@ def _build_relief_voxel_matrix(
         mat_ids = material_matrix[ys_v, xs_v, OPTICAL_LAYERS - 1 - layer_idx]
         full_matrix[zs_v, ys_v, xs_v] = mat_ids
 
-    # Step 5: Relief mode is always single-sided
-    backing_z_range = (0, max_z_layers - OPTICAL_LAYERS - 1)
+    # Relief stacks start on the bed and face up.
+    backing_z_range = (0, last_backing_z)
 
     backing_metadata = {
         "backing_color_id": backing_color_id,
@@ -685,7 +687,7 @@ def _build_relief_voxel_matrix(
         "backing_z_min_map": backing_z_min_map,
         "backing_z_max_map": backing_z_max_map,
         "is_relief": True,
-        "max_height_mm": max_height_mm,
+        "max_height_mm": max(max_height_mm, (last_backing_z + 1) * layer_height),
     }
 
     _log.debug(f"Relief voxel matrix built: {full_matrix.shape}")
@@ -731,7 +733,7 @@ def _build_cloisonne_voxel_matrix(
             backing_metadata: dict with 'backing_color_id', 'backing_z_range', 'is_cloisonne'.
     """
     target_h, target_w = material_matrix.shape[:2]
-    footprint = _resolve_flat_backing_mask(backing_mask, mask_solid)
+    footprint = _resolve_backing_mask(backing_mask, mask_solid)
     OPTICAL = PrinterConfig.COLOR_LAYERS  # 5
 
     spacer_layers = max(1, int(round(spacer_thick / PrinterConfig.LAYER_HEIGHT)))
@@ -927,35 +929,18 @@ def run(ctx: dict) -> dict:
             elif enable_relief and height_mode == "heightmap" and heightmap_path is None:
                 raise RuntimeError("Heightmap mode selected but no heightmap provided")
 
-            if heightmap_height_matrix is not None:
-                # Heightmap mode
-                _log.debug(f"2.5D Heightmap Relief Mode ENABLED")
+            if heightmap_height_matrix is not None or (enable_relief and height_mode == "color" and color_height_map):
                 full_matrix, backing_metadata = _build_relief_voxel_matrix(
                     matched_rgb=matched_rgb,
                     material_matrix=material_matrix,
                     mask_solid=mask_solid,
-                    color_height_map=color_height_map if color_height_map else {},
+                    backing_mask=ctx.get("backing_mask"),
+                    color_height_map=color_height_map or {},
                     default_height=spacer_thick,
                     structure_mode=structure_mode,
                     backing_color_id=effective_backing_color_id,
                     pixel_scale=pixel_scale,
                     height_matrix=heightmap_height_matrix,
-                    global_max_height=relief_global_max_height,
-                    height_identity_rgb=height_identity_rgb,
-                )
-            elif enable_relief and height_mode == "color" and color_height_map:
-                _log.debug(f"2.5D Relief Mode ENABLED")
-                _log.debug(f"Color height map: {color_height_map}")
-
-                full_matrix, backing_metadata = _build_relief_voxel_matrix(
-                    matched_rgb=matched_rgb,
-                    material_matrix=material_matrix,
-                    mask_solid=mask_solid,
-                    color_height_map=color_height_map,
-                    default_height=spacer_thick,
-                    structure_mode=structure_mode,
-                    backing_color_id=effective_backing_color_id,
-                    pixel_scale=pixel_scale,
                     global_max_height=relief_global_max_height,
                     height_identity_rgb=height_identity_rgb,
                 )

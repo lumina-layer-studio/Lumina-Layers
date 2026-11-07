@@ -8,6 +8,8 @@ import logging
 import pickle
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
+from xml.etree import ElementTree
+from zipfile import ZipFile
 
 import numpy as np
 from fastapi import FastAPI
@@ -379,7 +381,9 @@ def _seed_backed_puzzle(
     return session_id, layers, color_mode
 
 
-@pytest.mark.parametrize("case", ["lut", "five_color", "cloisonne", "fixed_material", "dynamic_material"])
+@pytest.mark.parametrize("case", [
+    "lut", "five_color", "cloisonne", "fixed_material", "dynamic_material", "color_relief", "heightmap_relief",
+])
 def test_puzzle_3mf_preserves_backing_only_regions_and_through_holes(
     puzzle_harness, tmp_path, monkeypatch, case: str,
 ) -> None:
@@ -403,6 +407,18 @@ def test_puzzle_3mf_preserves_backing_only_regions_and_through_holes(
         target_width_mm=9.6, color_mode=color_mode, enable_cloisonne=case == "cloisonne",
         enable_wipe_tower_auto_placement=False,
     )
+    if case == "color_relief":
+        body["params"]["params"].update(
+            enable_relief=True, structure_mode="Single-sided", height_mode="color", color_height_map={"#ff0000": 2.0},
+        )
+    elif case == "heightmap_relief":
+        heights = np.zeros((80, 120), dtype=np.uint8)
+        heights[:, :37] = 255
+        puzzle_harness["store"].put(session_id, "heightmap_grayscale", heights)
+        body["params"]["params"].update(
+            enable_relief=True, structure_mode="Single-sided", height_mode="heightmap",
+            spacer_thick=0.8, heightmap_max_height=2.0,
+        )
     response = puzzle_harness["client"].post("/api/convert/generate-puzzle", json=body)
 
     assert response.status_code == 200, response.text
@@ -418,14 +434,27 @@ def test_puzzle_3mf_preserves_backing_only_regions_and_through_holes(
     # The same 120 x 80 preview is exported at 0.08 mm per source pixel.
     assert surface_heights(1.31, 4.65).size == 0, "the design hole must remain open"
     optical_depth = 0.08 * layers
-    if case in {"five_color", "cloisonne"}:
-        backing_limits = [0, 1.2]
+    if case in {"color_relief", "heightmap_relief"}:
+        painted_limits = [0, 2.0 - optical_depth, 2.0]
+        unpainted_limits = [0, 1.2 if case == "color_relief" else 2.0]
+        bare_piece_limits = [0, 1.2 if case == "color_relief" else 0.8]
+        with ZipFile(path) as model:
+            assembly = ElementTree.fromstring(model.read("3D/3dmodel.model"))
+            settings = ElementTree.fromstring(model.read("Metadata/model_settings.config"))
+        labels = {obj.attrib["id"]: obj.attrib["name"] for obj in assembly.findall("{*}resources/{*}object")}
+        piece_slots = {
+            labels[piece.attrib["id"]]: {int(slot.attrib["value"]) for slot in piece.findall("part/metadata[@key='extruder']")}
+            for piece in settings.findall("object")
+        }
+        assert piece_slots == {"A1": {1, 2}, "A2": {1}}, "only the painted piece may use red filament"
+    elif case in {"five_color", "cloisonne"}:
+        unpainted_limits = bare_piece_limits = [0, 1.2]
         painted_limits = [0, 1.2, 1.2 + optical_depth]
     else:
-        backing_limits = [optical_depth, optical_depth + 1.2]
-        painted_limits = [0, *backing_limits, 2 * optical_depth + 1.2]
-    assert surface_heights(1.31, 2.03) == pytest.approx(backing_limits), "unpainted patch"
-    assert surface_heights(7.71, 3.23) == pytest.approx(backing_limits), "backing-only piece"
+        unpainted_limits = bare_piece_limits = [optical_depth, optical_depth + 1.2]
+        painted_limits = [0, *unpainted_limits, 2 * optical_depth + 1.2]
+    assert surface_heights(1.31, 2.03) == pytest.approx(unpainted_limits), "unpainted patch"
+    assert surface_heights(7.71, 3.23) == pytest.approx(bare_piece_limits), "backing-only piece"
     assert surface_heights(2.51, 4.65) == pytest.approx(painted_limits), "red optical layers over white backing"
     assert response.json()["piece_count"] == 2
 

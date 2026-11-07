@@ -506,6 +506,7 @@ export interface ConverterState {
 // ========== Actions Interface ==========
 
 export interface ConverterActions {
+  expireSession: (sessionId: string) => void;
   restoreConversionDefaults: () => void;
   applyConversionPreset: (id: string | null) => boolean;
   saveConversionPreset: (name: string, options?: PresetOptions) => SavePresetResult;

@@ -473,3 +473,34 @@ def test_archive_failure_preserves_other_data_and_marks_collection_incomplete(
     bundle = feedback_hosted.build_ticket_bundle(ticket, report)
     assert report["attachments"][other]["filename"] in {item.name for item in bundle.files}
     assert (ticket / "source_0000.stl").read_bytes() == b"complete model"
+
+
+def test_log_archive_survives_disconnected_console(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import logging
+    import zipfile
+    from api import feedback_sources
+
+    class DisconnectedConsole(io.StringIO):
+        def flush(self) -> None:
+            raise BrokenPipeError("console reader has exited")
+
+    log_path = tmp_path / "diagnostics.jsonl"
+    handler = logging.FileHandler(log_path, encoding="utf-8")
+    # Leave actual bytes buffered so the archive must flush the file handler.
+    handler.stream.write("original preview failure\n")
+    console = logging.StreamHandler(DisconnectedConsole())
+    monkeypatch.setattr(logging.getLogger("lumina"), "handlers", [console, handler])
+    monkeypatch.setattr(logging.getLogger(), "handlers", [console, handler])
+    monkeypatch.setattr(feedback_sources, "REPO_ROOT", tmp_path)
+    monkeypatch.setenv("LUMINA_LOG_PATH", str(log_path))
+    archive_path = tmp_path / "backend-logs.zip"
+    try:
+        result = feedback_sources._collect_log_archive(archive_path)
+        assert result["status"] == "attached"
+        with zipfile.ZipFile(archive_path) as archive:
+            assert len(archive.namelist()) == 1
+            assert archive.read(archive.namelist()[0]) == b"original preview failure\n"
+    finally:
+        handler.close()

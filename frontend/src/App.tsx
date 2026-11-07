@@ -233,7 +233,8 @@ function AppContent({ connected }: { connected: boolean | null }) {
     useShallow((s) => collectConverterKeepFileIds(s)),
   );
   const singleStageSessionId = useSingleStageStore((s) => s.sessionId);
-  useSessionLease(converterSessionId, "converter", converterKeepFileIds);
+  const expireConverterSession = useConverterStore((s) => s.expireSession);
+  useSessionLease(converterSessionId, "converter", converterKeepFileIds, expireConverterSession);
   useSessionLease(singleStageSessionId, "single_stage");
   useActionHistoryBootstrap();
   useAutoPreview();

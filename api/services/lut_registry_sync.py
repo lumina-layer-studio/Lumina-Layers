@@ -27,6 +27,7 @@ import numpy as np
 
 from core.native_reference import build_model_package_runtime_payload
 from core.registry_transport import (
+    RegistryCatalogNotFoundError,
     fallback_base,
     fetch_catalog,
     map_package_url,
@@ -402,6 +403,12 @@ def fetch_remote_catalog(
             params=params,
             headers=_headers(config),
         )
+    except RegistryCatalogNotFoundError as exc:
+        raise LutRegistryRemoteError(
+            "LUT Registry catalog endpoint was not found (HTTP 404). "
+            "Check LUMINA_LUT_REGISTRY_URL, or LUMINA_MATERIAL_REGISTRY_URL "
+            "when inherited, and use a Registry service that provides /luts/catalog."
+        ) from exc
     except httpx.HTTPError as exc:
         raise LutRegistryRemoteError(f"Failed to fetch LUT catalog: {exc}") from exc
     except ValueError as exc:

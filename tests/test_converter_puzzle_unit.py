@@ -29,6 +29,7 @@ from api.workers.converter_workers import worker_generate_model
 from api.dependencies import get_file_registry, get_session_store, get_worker_pool
 from api.file_registry import FileRegistry
 from api.preview_cache_artifacts import externalize_preview_cache
+from api.schemas.converter import ConvertGenerateRequest
 from api.routers.converter import puzzle as puzzle_router
 from api.routers.converter.puzzle import _crop_piece_arrays, _submit_puzzle_worker
 from api.routers.converter.common import BATCH_DOWNLOAD_TTL_SECONDS
@@ -473,6 +474,9 @@ def test_generate_puzzle_inherits_dynamic_settings_and_maps_typed_error(monkeypa
     body["params"]["cols"] = 1
     body["params"]["target_piece_count"] = 1
     body["params"]["params"]["lut_name"] = "__material_archive__"
+
+    preview_cache.update(ConvertGenerateRequest.model_validate(body["params"]["params"]).model_dump())
+    preview_cache.update(material_source="material_archive", color_layers=8, layer_height_mm=0.08)
 
     try:
         response = client.post("/api/convert/generate-puzzle", json=body)

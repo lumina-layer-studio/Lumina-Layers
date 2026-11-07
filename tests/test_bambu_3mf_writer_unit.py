@@ -1815,73 +1815,49 @@ def test_flash_studio_creator_5_pro_uses_exact_native_profile_with_lumina_proces
     assert project["travel_speed"] == "150"
 
 
-@pytest.mark.parametrize(
-    (
-        "printer_id",
-        "nozzle_size",
-        "device_profile_id",
-        "printer_model",
-        "printer_settings_id",
-        "printer_variant",
-        "nozzle_diameter",
-        "default_print_profile",
-    ),
-    [
-        (
-            "flashforge-guider-3-ultra",
-            "0.4",
-            "FlashStudio:flashforge:flashforge-guider-3-ultra:0.4",
-            "Flashforge Guider 3 Ultra",
-            "Flashforge Guider 3 Ultra 0.4 Nozzle",
-            "0.4",
-            ["0.4", "0.4"],
-            "0.20mm Standard @Flashforge G3U 0.4 Nozzle",
-        ),
-    ],
-)
-def test_bundled_flash_studio_guider_rejects_unprintable_native_material(
-    tmp_path,
-    printer_id,
-    nozzle_size,
-    device_profile_id,
-    printer_model,
-    printer_settings_id,
-    printer_variant,
-    nozzle_diameter,
-    default_print_profile,
-) -> None:
-    output_path = tmp_path / f"flash-studio-{printer_id}-{nozzle_size}.3mf"
-    writer = BambuStudio3MFWriter(
+def _guider_writer(output_path: Path, *, build_plate_id: str | None = None) -> BambuStudio3MFWriter:
+    return BambuStudio3MFWriter(
         str(output_path),
-        settings={},
         color_mode="4-Color",
-        printer_id=printer_id,
+        printer_id="flashforge-guider-3-ultra",
         slicer="FlashStudio",
-        nozzle_size=nozzle_size,
-        device_profile_id=device_profile_id,
+        nozzle_size="0.4",
+        device_profile_id="FlashStudio:flashforge:flashforge-guider-3-ultra:0.4",
+        build_plate_id=build_plate_id,
     )
+
+
+def test_guider_exports_four_pla_slots_on_its_fixed_high_temp_plate(tmp_path: Path) -> None:
+    output = tmp_path / "guider.3mf"
+    writer = _guider_writer(output)
     _add_rybw_meshes(writer)
-    from utils.fatcat_metadata import native_source_for_target
+    writer.export()
 
-    source = native_source_for_target(writer._select_metadata_target())
-    assert source["source_machine_profile_name"] == printer_settings_id
-    assert source["hardware_settings"]["printer_model"] == printer_model
-    assert source["hardware_settings"]["nozzle_diameter"] == nozzle_diameter
-    assert source["nozzle_uid"] == f"nozzle:{printer_variant}mm"
-    assert source["default_print_profile_name"] == default_print_profile
+    with zipfile.ZipFile(output) as archive:
+        project = json.loads(archive.read("Metadata/project_settings.config"))
+        plate = ET.fromstring(archive.read("Metadata/model_settings.config")).find("plate")
 
-    # The native G3U PLA profiles declare no compatible plate. Hardware being
-    # available must not allow writing an unprintable project or changing PLA.
-    with pytest.raises(NativeMaterialSelectionError) as error:
+    assert project["printer_model"] == "Flashforge Guider 3 Ultra"
+    assert project["printer_settings_id"] == "Flashforge Guider 3 Ultra 0.4 Nozzle"
+    assert project["printer_variant"] == "0.4"
+    assert project["nozzle_diameter"] == ["0.4", "0.4"]
+    assert project["default_print_profile"] == "0.20mm Standard @Flashforge G3U 0.4 Nozzle"
+    assert project["curr_bed_type"] == "High Temp Plate"
+    assert plate is not None
+    assert _metadata_values(plate)["bed_type"] == "High Temp Plate"
+    assert project["filament_settings_id"] == ["Flashforge Generic PLA @G3U"] * 4
+    assert project["filament_type"] == ["PLA"] * 4
+    assert project["hot_plate_temp_initial_layer"] == ["55"] * 4
+    assert project["hot_plate_temp"] == ["50"] * 4
+
+
+def test_guider_rejects_an_explicit_unsupported_plate(tmp_path: Path) -> None:
+    output = tmp_path / "guider.3mf"
+    with pytest.raises(ValueError, match="Unsupported build plate 'textured-pei-plate'"):
+        writer = _guider_writer(output, build_plate_id="textured-pei-plate")
+        _add_rybw_meshes(writer)
         writer.export()
-    selection = error.value.material_selection
-    assert selection["machine_uid"] == "flashforge:guider-3-ultra"
-    assert selection["nozzle_uid"] == "nozzle:0.4mm"
-    assert selection["ready"] is False
-    assert selection["build_plates"] == []
-    assert selection["issues"][0]["code"] == "native_material_plate_incompatible"
-    assert selection["issues"][0]["material_type"] == "PLA"
-    assert not output_path.exists()
+    assert not output.exists()
 
 
 def test_writer_base_template_uses_native_device_profile(tmp_path, monkeypatch) -> None:

@@ -9,7 +9,7 @@ import math
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Sequence
+from typing import TYPE_CHECKING, Any, Callable, Sequence
 
 import numpy as np
 
@@ -45,6 +45,10 @@ from core.task_parallelism import (
     task_parallelism_worker_scope,
 )
 from core.task_parallelism_runtime import current_demand_snapshot_path
+
+
+if TYPE_CHECKING:
+    from core.material_dynamic_catalog_cache import DynamicCatalogCacheResult
 
 
 MIN_DYNAMIC_LAYER_COUNT = 5
@@ -1314,6 +1318,90 @@ def _build_dynamic_color_matches(
     return tuple(matches)
 
 
+def prepare_dynamic_material_catalog(
+    materials: list[MaterialParams],
+    backing_material_index: int,
+    layer_height_mm: float,
+    substrate: str,
+    config: DynamicMaterialSolveConfig,
+    *,
+    material_candidate_budget: int = PREVIEW_SAFE_CANDIDATE_BUDGET,
+    catalog_cache_root: str | Path | None = None,
+) -> DynamicCatalogCacheResult:
+    """Load or build the palette's candidate recipes without matching an image."""
+    from core.material_dynamic_catalog_cache import (
+        build_dynamic_catalog_cache_key,
+        dynamic_material_canonical_order,
+        load_or_build_dynamic_candidate_catalog,
+    )
+
+    cache_key = build_dynamic_catalog_cache_key(
+        materials,
+        backing_material_index=backing_material_index,
+        layer_height_mm=layer_height_mm,
+        substrate=substrate,
+        min_layer_count=config.min_layer_count,
+        max_layer_count=config.max_layer_count,
+        candidate_budget=material_candidate_budget,
+    )
+
+    canonical_to_user = np.asarray(
+        dynamic_material_canonical_order(materials),
+        dtype=np.int32,
+    )
+    user_to_canonical = np.empty(len(materials), dtype=np.int32)
+    user_to_canonical[canonical_to_user] = np.arange(
+        len(materials), dtype=np.int32
+    )
+    canonical_materials = [materials[int(index)] for index in canonical_to_user]
+    canonical_backing_index = int(user_to_canonical[backing_material_index])
+
+    def production_runtime_loader(
+        loader_materials: list[MaterialParams],
+        layer_count: int,
+        loader_height: float,
+        loader_substrate: str,
+    ) -> tuple[MaterialCandidateRuntime | None, int | None]:
+        return load_dynamic_candidate_runtime(
+            loader_materials,
+            layer_count,
+            loader_height,
+            loader_substrate,
+            candidate_budget=material_candidate_budget,
+            cache_root=catalog_cache_root,
+        )
+
+    def build_catalog() -> tuple[DynamicCandidateCatalog, int]:
+        canonical_catalog, before_count, _built_layer_counts = (
+            _build_dynamic_candidate_catalog_from_runtimes(
+                canonical_materials,
+                canonical_backing_index,
+                layer_height_mm,
+                cache_key.substrate,
+                config,
+                production_runtime_loader,
+            )
+        )
+        built_catalog = DynamicCandidateCatalog(
+            score_srgb=canonical_catalog.score_srgb,
+            score_lab=canonical_catalog.score_lab,
+            print_recipes=canonical_to_user[canonical_catalog.print_recipes],
+            minimum_actual_layer_counts=(
+                canonical_catalog.minimum_actual_layer_counts
+            ),
+            max_layer_reachable=canonical_catalog.max_layer_reachable,
+            source_indices=canonical_catalog.source_indices,
+        )
+        return built_catalog, before_count
+
+    return load_or_build_dynamic_candidate_catalog(
+        materials=materials,
+        key=cache_key,
+        builder=build_catalog,
+        cache_root=catalog_cache_root,
+    )
+
+
 def solve_dynamic_material_colors(
     target_srgb: np.ndarray,
     materials: list[MaterialParams],
@@ -1428,76 +1516,10 @@ def solve_dynamic_material_colors(
             )
         )
     else:
-        from core.material_dynamic_catalog_cache import (
-            build_dynamic_catalog_cache_key,
-            dynamic_material_canonical_order,
-            load_or_build_dynamic_candidate_catalog,
-        )
-
-        canonical_to_user = np.asarray(
-            dynamic_material_canonical_order(materials),
-            dtype=np.int32,
-        )
-        user_to_canonical = np.empty(len(materials), dtype=np.int32)
-        user_to_canonical[canonical_to_user] = np.arange(
-            len(materials), dtype=np.int32
-        )
-        canonical_materials = [materials[int(index)] for index in canonical_to_user]
-        canonical_backing_index = int(user_to_canonical[backing_index])
-
-        def production_runtime_loader(
-            loader_materials: list[MaterialParams],
-            layer_count: int,
-            loader_height: float,
-            loader_substrate: str,
-        ) -> tuple[MaterialCandidateRuntime | None, int | None]:
-            return load_dynamic_candidate_runtime(
-                loader_materials,
-                layer_count,
-                loader_height,
-                loader_substrate,
-                candidate_budget=candidate_budget,
-                cache_root=catalog_cache_root,
-            )
-
-        cache_key = build_dynamic_catalog_cache_key(
-            materials,
-            backing_material_index=backing_index,
-            layer_height_mm=normalized_height,
-            substrate=normalized_substrate,
-            min_layer_count=config.min_layer_count,
-            max_layer_count=config.max_layer_count,
-            candidate_budget=candidate_budget,
-        )
-
-        def build_catalog() -> tuple[DynamicCandidateCatalog, int]:
-            canonical_catalog, before_count, _built_layer_counts = (
-                _build_dynamic_candidate_catalog_from_runtimes(
-                    canonical_materials,
-                    canonical_backing_index,
-                    normalized_height,
-                    normalized_substrate,
-                    config,
-                    production_runtime_loader,
-                )
-            )
-            built_catalog = DynamicCandidateCatalog(
-                score_srgb=canonical_catalog.score_srgb,
-                score_lab=canonical_catalog.score_lab,
-                print_recipes=canonical_to_user[canonical_catalog.print_recipes],
-                minimum_actual_layer_counts=(
-                    canonical_catalog.minimum_actual_layer_counts
-                ),
-                max_layer_reachable=canonical_catalog.max_layer_reachable,
-                source_indices=canonical_catalog.source_indices,
-            )
-            return built_catalog, before_count
-
-        cached_catalog = load_or_build_dynamic_candidate_catalog(
-            materials=materials,
-            key=cache_key,
-            builder=build_catalog,
-            cache_root=catalog_cache_root,
+        cached_catalog = prepare_dynamic_material_catalog(
+            materials, backing_index, normalized_height, normalized_substrate, config,
+            material_candidate_budget=candidate_budget,
+            catalog_cache_root=catalog_cache_root,
         )
         catalog = cached_catalog.catalog
         candidate_count_before_dedup = (

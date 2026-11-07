@@ -29,6 +29,7 @@ Job-token guard / 任务令牌保护:
 
 from __future__ import annotations
 
+import atexit
 import math
 import os
 import time
@@ -37,6 +38,7 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import Optional, TypedDict
 
 from api.file_registry import FileRegistry
+from api.preview_mesh_cache import RecentPreviewMesh, mesh_input_digest
 from api.preview_cache_artifacts import (
     PREVIEW_CACHE_REVISION_KEY,
     hydrate_preview_cache_for_worker,
@@ -45,11 +47,11 @@ from api.preview_cache_artifacts import (
 )
 from api.session_store import SessionStore
 from api.structured_logging import get_logger
-from config import OUTPUT_DIR
+from config import OUTPUT_DIR, PrinterConfig
 from core.converter import generate_segmented_glb
 from core.errors import CoreError
 from core.naming import generate_segmented_glb_filename
-from core.pipeline.s11_glb_preview import extract_color_contours
+from core.pipeline.s11_glb_preview import extract_color_contours, _resolve_kernel_choice
 from core.pipeline.vector_glb_preview import (
     build_vector_quick_preview_parts,
     coerce_preview_rgba,
@@ -60,6 +62,8 @@ from core.pipeline.vector_glb_preview import (
 from .common import NON_FATAL_GLB_ERRORS
 
 log = get_logger(__name__)
+_RECENT_MESH = RecentPreviewMesh()
+atexit.register(_RECENT_MESH.clear)
 _GLB_BUILD_ERRORS = NON_FATAL_GLB_ERRORS + (CoreError,)
 _GLB_CACHE_UNAVAILABLE_MESSAGE = (
     "3D preview cache is unavailable. Re-run preview before updating the 3D preview."
@@ -227,17 +231,37 @@ def _try_build_analytic_vector_glb(
     )
     if source is None:
         return None
-    parts = build_vector_quick_preview_parts(
-        source=source,
+    # Both file ownership and provenance were checked above. Compare geometry
+    # instead of upload paths so a new session can reuse an identical mesh.
+    render_inputs = dict(
         matched_rgb=cache.get("matched_rgb"),
         height_identity_rgb=cache.get("height_identity_rgb"),
         mask_solid=cache.get("mask_solid"),
         backing_rgba=_vector_backing_rgba(cache),
         backing_thickness_mm=cache.get("spacer_thick", 1.6),
     )
-    if not parts:
-        return None
-    return export_vector_quick_preview_glb(parts, output_path=output_path)
+    key = mesh_input_digest(
+        "vector_analytic",
+        tuple(item["geometry"] for item in source.clipped_shapes),
+        source.silhouette, source.image_vectorizer_bounds, source.bbox, source.scale_factor,
+        getattr(source.svg_coordinate_domain, "source_units_per_unit", 1.0),
+        render_inputs, cache.get("target_width_mm"),
+        PrinterConfig.NOZZLE_WIDTH, PrinterConfig.LAYER_HEIGHT,
+    )
+
+    def build() -> str | None:
+        parts = build_vector_quick_preview_parts(source=source, **render_inputs)
+        if not parts:
+            return None
+        path = export_vector_quick_preview_glb(parts, output_path=output_path)
+        if path:
+            cache["color_contours"] = extract_color_contours(
+                render_inputs["matched_rgb"], render_inputs["mask_solid"],
+                cache.get("target_width_mm"),
+            )
+        return path
+
+    return _RECENT_MESH.render(key, cache, output_path, build)
 
 
 def _build_preview_glb(
@@ -249,6 +273,8 @@ def _build_preview_glb(
 ) -> tuple[str | None, str]:
     """Build the selected browser GLB, with safe analytic fallback."""
 
+    cache.pop("_segmented_glb_timings", None)
+    cache["_glb_reused"] = False
     modeling_mode = cache.get("modeling_mode")
     modeling_mode_value = getattr(modeling_mode, "value", modeling_mode)
     use_analytic = (
@@ -275,21 +301,31 @@ def _build_preview_glb(
             )
             analytic_path = None
         if analytic_path:
-            # The analytic renderer skips generate_segmented_glb, so publish
-            # the same canvas-space contours for highlights and loop placement.
-            # 解析式渲染器不经过分段 GLB，这里补充同一画布坐标的轮廓，
-            # 供颜色高亮与挂环定位使用。
-            cache["color_contours"] = extract_color_contours(
-                cache.get("matched_rgb"),
-                cache.get("mask_solid"),
-                cache.get("target_width_mm"),
-            )
             return analytic_path, "vector_analytic"
 
-    return (
-        generate_segmented_glb(cache, output_path=output_path),
-        "segmented",
+    height_identity = cache.get("height_identity_rgb")
+    if height_identity is None:
+        height_identity = cache.get("original_matched_rgb")
+    material_inputs = None
+    if cache.get("material_source") == "material_archive":
+        color_conf = cache.get("color_conf")
+        if not isinstance(color_conf, dict):
+            color_conf = {}
+        material_inputs = (
+            cache.get("material_matrix"), cache.get("layer_height_mm"),
+            cache.get("preview_colors"), cache.get("slot_names"),
+            color_conf.get("slots"), color_conf.get("preview"),
+        )
+    key = mesh_input_digest(
+        "segmented", cache.get("matched_rgb"), height_identity, cache.get("mask_solid"),
+        cache.get("backing_mask"), cache.get("target_width_mm"), cache.get("glb_max_meshes"),
+        material_inputs, PrinterConfig.NOZZLE_WIDTH, PrinterConfig.LAYER_HEIGHT,
+        _resolve_kernel_choice(),
     )
+    path = _RECENT_MESH.render(
+        key, cache, output_path, lambda: generate_segmented_glb(cache, output_path=output_path),
+    )
+    return path, "segmented"
 
 
 # Module-level executor shared by every session. ``max_workers=2`` keeps the
@@ -684,6 +720,7 @@ def _run_glb_build_job(
                 "execution_ms": round(execution_ms, 3),
                 "segmented_glb_timings": segmented_glb_timings,
                 "renderer": selected_renderer,
+                "mesh_reused": build_cache.get("_glb_reused", False),
                 "glb_url_set": cache_updates.get("glb_url") is not None,
             },
         )

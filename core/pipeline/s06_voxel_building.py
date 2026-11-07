@@ -324,25 +324,18 @@ def _resolve_generation_backing_color_id(
     return int(backing_color_id)
 
 
-def _normalize_backing_mask(backing_mask, mask_solid: np.ndarray) -> np.ndarray | None:
-    """Return a validated backing footprint mask, or None when unavailable."""
+def _resolve_flat_backing_mask(
+    backing_mask: np.ndarray | None, mask_solid: np.ndarray,
+) -> np.ndarray:
+    """Use the explicit flat backing footprint, falling back to the color mask."""
     if backing_mask is None:
-        return None
+        return mask_solid
     backing_arr = np.asarray(backing_mask, dtype=bool)
     if backing_arr.shape != mask_solid.shape:
         raise ValueError(
             f"backing_mask shape {backing_arr.shape} does not match mask_solid shape {mask_solid.shape}"
         )
     return backing_arr
-
-
-def _resolve_flat_backing_mask(ctx: dict, mask_solid: np.ndarray) -> np.ndarray:
-    """Resolve the 2D backing footprint for flat raster voxel builds."""
-    explicit_backing_mask = _normalize_backing_mask(ctx.get("backing_mask"), mask_solid)
-    if explicit_backing_mask is not None:
-        return explicit_backing_mask
-
-    return mask_solid
 
 
 def _build_voxel_matrix(
@@ -380,9 +373,7 @@ def _build_voxel_matrix(
     if material_matrix.ndim != 3:
         raise ValueError(f"material_matrix must be 3D (H, W, N), got shape={material_matrix.shape}")
     target_h, target_w, optical_layers = material_matrix.shape
-    backing_mask_arr = _normalize_backing_mask(backing_mask, mask_solid)
-    if backing_mask_arr is None:
-        backing_mask_arr = mask_solid
+    backing_mask_arr = _resolve_flat_backing_mask(backing_mask, mask_solid)
 
     bottom_voxels = np.transpose(material_matrix, (2, 0, 1))
 
@@ -477,8 +468,14 @@ def _build_voxel_matrix_6layer(
 
 
 def _build_voxel_matrix_faceup(
-    material_matrix, mask_solid, spacer_thick, backing_color_id=0, *, compact_backing: bool = False,
-):
+    material_matrix: np.ndarray,
+    mask_solid: np.ndarray,
+    spacer_thick: float,
+    backing_color_id: int = 0,
+    *,
+    backing_mask: np.ndarray | None = None,
+    compact_backing: bool = False,
+) -> tuple[np.ndarray, dict]:
     """Face-up voxel matrix for 5-Color Extended mode.
     面朝上体素矩阵（5-Color Extended 模式）。
 
@@ -504,6 +501,7 @@ def _build_voxel_matrix_faceup(
         mask_solid (np.ndarray): (H, W) bool 实体掩码
         spacer_thick (float): 底板厚度 (mm)
         backing_color_id (int): 底板材料 ID
+        backing_mask (np.ndarray | None): Optional footprint of the backing layers.
         compact_backing (bool): Store the backing as one representative plane
             and report its original layer boundaries in voxel_z_edges.
 
@@ -511,6 +509,7 @@ def _build_voxel_matrix_faceup(
         tuple: (full_matrix, backing_metadata)
     """
     target_h, target_w, optical_layers = material_matrix.shape
+    footprint = _resolve_flat_backing_mask(backing_mask, mask_solid)
     spacer_layers = max(1, int(round(spacer_thick / PrinterConfig.LAYER_HEIGHT)))
     stored_spacer_layers = 1 if compact_backing else spacer_layers
     label_dtype = (
@@ -520,7 +519,7 @@ def _build_voxel_matrix_faceup(
     full_matrix = np.full((stored_spacer_layers + optical_layers, target_h, target_w), -1, dtype=label_dtype)
 
     # Backing: solid block at the bottom
-    spacer = np.where(mask_solid, backing_color_id, -1).astype(int)
+    spacer = np.where(footprint, backing_color_id, -1).astype(int)
     full_matrix[:stored_spacer_layers] = spacer[np.newaxis, :, :]
 
     # Optical: reversed order so index 0 (viewing surface) -> highest Z
@@ -531,7 +530,7 @@ def _build_voxel_matrix_faceup(
 
     backing_z_range = (0, spacer_layers - 1)
     backing_z_min_map, backing_z_max_map = _build_uniform_backing_z_maps(
-        mask_solid,
+        footprint,
         backing_z_range[0],
         backing_z_range[1],
     )
@@ -697,8 +696,15 @@ def _build_relief_voxel_matrix(
 
 
 def _build_cloisonne_voxel_matrix(
-    material_matrix, mask_solid, mask_wireframe, spacer_thick, wire_height_mm, backing_color_id=0
-):
+    material_matrix: np.ndarray,
+    mask_solid: np.ndarray,
+    mask_wireframe: np.ndarray,
+    spacer_thick: float,
+    wire_height_mm: float,
+    backing_color_id: int = 0,
+    *,
+    backing_mask: np.ndarray | None = None,
+) -> tuple[np.ndarray, dict]:
     """Build voxel matrix for cloisonne mode.
     构建掐丝珐琅模式的体素矩阵。
 
@@ -717,6 +723,7 @@ def _build_cloisonne_voxel_matrix(
         spacer_thick (float): backing thickness in mm.
         wire_height_mm (float): extra wire protrusion above colour surface in mm.
         backing_color_id (int): material slot ID for the backing (default 0 = white).
+        backing_mask (np.ndarray | None): Optional footprint of the backing layers.
 
     Returns:
         tuple: (full_matrix, backing_metadata)
@@ -724,6 +731,7 @@ def _build_cloisonne_voxel_matrix(
             backing_metadata: dict with 'backing_color_id', 'backing_z_range', 'is_cloisonne'.
     """
     target_h, target_w = material_matrix.shape[:2]
+    footprint = _resolve_flat_backing_mask(backing_mask, mask_solid)
     OPTICAL = PrinterConfig.COLOR_LAYERS  # 5
 
     spacer_layers = max(1, int(round(spacer_thick / PrinterConfig.LAYER_HEIGHT)))
@@ -733,7 +741,7 @@ def _build_cloisonne_voxel_matrix(
     full_matrix = np.full((total_z, target_h, target_w), -1, dtype=int)
 
     # --- Base / backing ---
-    spacer_slice = np.where(mask_solid, backing_color_id, -1).astype(int)
+    spacer_slice = np.where(footprint, backing_color_id, -1).astype(int)
     full_matrix[:spacer_layers] = spacer_slice[np.newaxis, :, :]
 
     # --- Colour layers (face-up: reverse material order) ---
@@ -751,7 +759,7 @@ def _build_cloisonne_voxel_matrix(
 
     backing_z_range = (0, spacer_layers - 1)
     backing_z_min_map, backing_z_max_map = _build_uniform_backing_z_maps(
-        mask_solid,
+        footprint,
         backing_z_range[0],
         backing_z_range[1],
     )
@@ -847,6 +855,7 @@ def run(ctx: dict) -> dict:
                 enable_relief = False
             full_matrix, backing_metadata = _build_voxel_matrix_faceup(
                 material_matrix, mask_solid, spacer_thick, effective_backing_color_id,
+                backing_mask=ctx.get("backing_mask"),
                 compact_backing=not enable_fridge_magnet,
             )
 
@@ -882,6 +891,7 @@ def run(ctx: dict) -> dict:
                 spacer_thick,
                 wire_height_mm,
                 effective_backing_color_id,
+                backing_mask=ctx.get("backing_mask"),
             )
 
         # ========== 2.5D Relief Mode ==========
@@ -951,14 +961,13 @@ def run(ctx: dict) -> dict:
                 )
             else:
                 # Original flat voxel matrix
-                flat_backing_mask = _resolve_flat_backing_mask(ctx, mask_solid)
                 full_matrix, backing_metadata = _build_voxel_matrix(
                     material_matrix,
                     mask_solid,
                     spacer_thick,
                     structure_mode,
                     effective_backing_color_id,
-                    backing_mask=flat_backing_mask,
+                    backing_mask=ctx.get("backing_mask"),
                     compact_backing=not enable_fridge_magnet,
                 )
 

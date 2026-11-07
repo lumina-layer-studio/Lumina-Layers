@@ -342,6 +342,7 @@ def convert_image_to_3d(
     high_precision_3d_preview: bool = False,
     svg_pixels_per_mm: float = SVG_PIXELS_PER_MM_DEFAULT,
     *,
+    backing_mask_path: Optional[str] = None,
     backing_infill_density_percent: int = 100,
     enable_wipe_tower_auto_placement: bool = True,
     custom_3mf_template_id: Optional[str] = None,
@@ -501,6 +502,10 @@ def convert_image_to_3d(
         "chroma_gate": chroma_gate,
         "matched_rgb_path": matched_rgb_path,
         "mask_solid_path": mask_solid_path,
+        "backing_mask": (
+            np.load(backing_mask_path, mmap_mode="r", allow_pickle=False)
+            if backing_mask_path is not None else None
+        ),
         "quantized_image_path": quantized_image_path,
         "material_matrix_path": material_matrix_path,
         "reuse_preview_analysis": reuse_preview_analysis,
@@ -789,6 +794,7 @@ def generate_final_model(
     material_backing_material_index: Optional[int] = None,
     svg_pixels_per_mm: float = SVG_PIXELS_PER_MM_DEFAULT,
     *,
+    backing_mask_path: Optional[str] = None,
     backing_infill_density_percent: int = 100,
     enable_wipe_tower_auto_placement: bool = True,
     custom_3mf_template_id: Optional[str] = None,
@@ -988,6 +994,7 @@ def generate_final_model(
         original_material_matrix_path=original_material_matrix_path,
         edit_projection=edit_projection,
         mask_solid_path=mask_solid_path,
+        backing_mask_path=backing_mask_path,
         quantized_image_path=quantized_image_path,
         material_matrix_path=material_matrix_path,
         reuse_preview_analysis=reuse_preview_analysis,

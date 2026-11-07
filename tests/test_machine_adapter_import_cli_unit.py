@@ -407,8 +407,8 @@ def test_run_import_respects_native_multi_bed_disable_flag(tmp_path):
 
     registry = json.loads((output_root / "registry.json").read_text(encoding="utf-8"))
     machine = registry["slicers"][0]["machines"][0]
-    assert machine["supported_build_plate_ids"] == []
-    assert machine["default_build_plate_id"] == ""
+    assert machine["supported_build_plate_ids"] == ["smooth-high-temp-plate"]
+    assert machine["default_build_plate_id"] == "smooth-high-temp-plate"
 
 
 def test_neutral_asset_catalogs_cover_snapmaker_and_anycubic():
@@ -425,7 +425,7 @@ def test_flash_studio_catalog_uses_neutral_app_owned_assets():
     assert specs[3].display_name_zh == "纹理PEI热床"
 
 
-def test_machine_without_native_multi_bed_support_has_no_selector():
+def test_flash_fixed_bed_machine_exposes_only_its_configured_plate():
     specs = native_build_plate_specs("FlashStudio")
 
     supported, default = resolve_machine_build_plates(
@@ -434,8 +434,8 @@ def test_machine_without_native_multi_bed_support_has_no_selector():
         available_plate_ids={spec.id for spec in specs},
     )
 
-    assert supported == []
-    assert default == ""
+    assert supported == ["textured-pei-plate"]
+    assert default == "textured-pei-plate"
 
 
 def test_snapmaker_single_bed_profile_keeps_only_its_native_default():

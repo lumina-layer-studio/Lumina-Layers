@@ -15,11 +15,12 @@ import {
   type ProjectConverterSettings,
 } from "../../stores/converter/project";
 import { previewResultState } from "../../stores/converter/previewResult";
+import { externalSpoolPaletteKey } from "../../stores/converter/nativeMaterialSelection";
 import { editorMutationPending } from "../../stores/converter/editorRuntime";
 import { buildPreviewParams } from "../../stores/converter/requests";
 import { buildConversionSourceParams } from "../../stores/converter/sources";
 import type { ConverterState } from "../../stores/converter/types";
-import { DEFAULT_SETTINGS, useSettingsStore } from "../../stores/settingsStore";
+import { DEFAULT_SETTINGS, useSettingsStore, withExternalSpoolSelection } from "../../stores/settingsStore";
 import { rememberDerivedImageSource, resolveSourceFile } from "../../utils/sourceFileOrigins";
 import { fileAsset, projectFile } from "../assets";
 import { newProjectIdentity } from "../identity";
@@ -155,7 +156,12 @@ async function prepareRestore(snapshot: ProjectSnapshot, context: ProjectRestore
   state = {
     ...state, ...restored.state,
     imageFile: image, heightmapFile: heightmap,
-    projectSettings: captureProjectSettings({ ...DEFAULT_SETTINGS, ...payload.settings }),
+    projectSettings: {
+      ...captureProjectSettings({ ...DEFAULT_SETTINGS, ...payload.settings }),
+      externalSpoolSelections: withExternalSpoolSelection(
+        externalSpoolPaletteKey({ ...state, ...restored.state }), recipe.recipe.converter?.device.external_spool_material,
+      ),
+    },
     projectLutFile: lut, projectMaterialArchiveFile: materials,
     batchFiles: files.batch.map((id) => projectFile(snapshot, id)!),
     batchMode: payload.editor.batchMode,

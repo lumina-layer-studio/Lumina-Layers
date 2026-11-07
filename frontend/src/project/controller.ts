@@ -4,6 +4,7 @@ import { useProjectSessionStore, type ProjectSavePoint } from "../stores/project
 import { useWidgetStore } from "../stores/widgetStore";
 import { useSettingsStore } from "../stores/settingsStore";
 import { captureProjectSettings } from "../stores/converter/project";
+import { externalSpoolMaterial } from "../stores/converter/nativeMaterialSelection";
 import { useWorkflowRuntime } from "./workflowRuntime";
 import type { TabId } from "../types/widget";
 import { projectAdapterRegistry } from "./adapters/registry";
@@ -76,7 +77,10 @@ export function startProjectTracking(): () => void {
     const usesDefaults = [...kinds].some((kind) => kind === "converter"
       ? !useConverterStore.getState().projectSettings
       : !useWorkflowRuntime.getState().workflows[kind]?.settings);
-    if (usesDefaults && JSON.stringify(captureProjectSettings(next)) !== JSON.stringify(captureProjectSettings(previous))) markProjectChanged();
+    const converter = useConverterStore.getState();
+    const spoolChanged = kinds.has("converter") && !converter.projectSettings && next.externalSpoolSelections !== previous.externalSpoolSelections
+      && externalSpoolMaterial(converter, next) !== externalSpoolMaterial(converter, previous);
+    if (spoolChanged || (usesDefaults && JSON.stringify(captureProjectSettings(next)) !== JSON.stringify(captureProjectSettings(previous)))) markProjectChanged();
   }));
   stops.push(useWorkflowRuntime.subscribe((next, previous) => {
     if (next.workflows !== previous.workflows) markProjectChanged();

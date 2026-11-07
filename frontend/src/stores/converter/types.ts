@@ -900,6 +900,7 @@ export interface ConverterActions {
   applyNativeMaterialSelection: (
     profiles: Record<string, string>,
     buildPlateId: string,
+    externalSpoolMaterial?: string,
   ) => Promise<void>;
   cancelNativeMaterialSelection: () => void;
   reconcileUnknownContentCommit: () => Promise<void>;

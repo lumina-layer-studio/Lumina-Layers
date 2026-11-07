@@ -217,7 +217,7 @@ python start_all.py
 
 源码运行默认不连接在线耗材库，本地耗材档案可离线使用。连接自建或已获授权的云库时，需要另外配置服务地址，见 [Registry 连接说明](docs/material-registry-connection.md)。
 
-原生 3MF 依赖为 `fatcat-metadata==0.1.3` 和官方 `neroued-3mf==0.4.2`，均通过 `requirements.txt` 从 PyPI 安装，无需定制 writer wheelhouse。支持的平台见[原生依赖指南](docs/desktop-electron.md)。SVG 依赖仍为 `lumina-svg-core==0.3.4`。
+安装 `requirements.txt` 时会从 PyPI 下载 `fatcat-metadata==0.1.5`、`neroued-3mf==0.4.2` 和 `lumina-svg-core==0.3.4` 的预编译包。支持的平台见[原生依赖指南](docs/desktop-electron.md)。
 
 ### 可选：桌面窗口
 
@@ -235,7 +235,7 @@ pnpm --dir electron start
 - 确认耗材和层高与档案、预设一致。透明涂层会跟随模型的材料类型；混合材质或类型不明时默认使用 PLA。打印前在切片软件中核对实际透明耗材、温度和兼容性提示。
 - 模型覆面目前不能与大画幅分块一起导出；需要先选择其中一种方式。
 - 大模型的擦料塔或 brim 如果放不下，软件会保留警告，允许你先下载工程。拿到文件后还要在切片软件里调好位置，不能直接当作已经切片成功。
-- Prusa 导出目前对应 **PrusaSlicer 3.0.0-alpha12** 的预览格式，其他版本请先确认兼容性。细节见 [3MF 导出说明](docs/3mf-metadata-export.md)。
+- Prusa 导出目前对应 **PrusaSlicer 3.0.0-alpha13** 的预览格式，其他版本请先确认兼容性。细节见 [3MF 导出说明](docs/3mf-metadata-export.md)。
 - 保存 JSON 工程或 PNG 分享卡后可以继续编辑，重要工程也记得留好原图、预设和材料档案。
 
 ## 文档、社区与支持

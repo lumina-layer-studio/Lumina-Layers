@@ -11,6 +11,10 @@ import httpx
 _Result = TypeVar("_Result")
 
 
+class RegistryCatalogNotFoundError(RuntimeError):
+    """The configured service does not expose the requested catalog endpoint."""
+
+
 def _origin(url: str) -> tuple[str, str | None, int | None]:
     parsed = urlsplit(url)
     return parsed.scheme, parsed.hostname, parsed.port or (443 if parsed.scheme == "https" else 80)
@@ -168,7 +172,14 @@ def fetch_catalog(*, client: Any, primary: str, family: str, suffix: str,
         response = client.get(base + suffix, headers=request_headers, params=params,
                               follow_redirects=False)
         if not 300 <= response.status_code < 400:
-            response.raise_for_status()
+            try:
+                response.raise_for_status()
+            except httpx.HTTPStatusError as exc:
+                if response.status_code == 404:
+                    raise RegistryCatalogNotFoundError(
+                        "Registry catalog endpoint was not found (HTTP 404)."
+                    ) from exc
+                raise
         if base != primary:
             if 300 <= response.status_code < 400:
                 raise ValueError("Backup registry redirects and unsolicited 304 are not allowed")

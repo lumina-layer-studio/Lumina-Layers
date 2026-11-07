@@ -19,6 +19,9 @@ import { createProjectSnapshot } from "../project/identity";
 import { captureConverterResources } from "../project/resources";
 import { DEFAULT_STATE, useConverterStore } from "../stores/converter";
 import { captureProjectSettings } from "../stores/converter/project";
+import { externalSpoolPaletteKey } from "../stores/converter/nativeMaterialSelection";
+import { buildGenerateParams } from "../stores/converter/requests";
+import { buildConversionSourceParams } from "../stores/converter/sources";
 import { DEFAULT_SETTINGS, useSettingsStore } from "../stores/settingsStore";
 
 const selection: SelectionDocumentResponse = {
@@ -58,6 +61,23 @@ beforeEach(() => {
 });
 
 describe("Layers converter project adapter", () => {
+  it("retains the active X2D spool on a different default printer without exporting other palettes", async () => {
+    const deviceProfileId = "BambuStudio:bbl:bambu-lab-x2d:0.4";
+    const palette = externalSpoolPaletteKey(useConverterStore.getState());
+    useConverterStore.setState({ projectSettings: null });
+    useSettingsStore.setState({ printerModel: "bambu-lab-x2d", deviceProfileId,
+      externalSpoolSelections: { [palette]: "Ocean PLA", another: "Private material" } });
+    const project = await snapshot();
+    expect(JSON.stringify(project.documents)).not.toContain("Private material");
+    useSettingsStore.setState({ ...DEFAULT_SETTINGS, externalSpoolSelections: { [palette]: "Home PLA" } });
+    await registry.restore(project, { projectId: "p", revisionId: "r", runtimeEpoch: 1 });
+    const state = useConverterStore.getState();
+    const params = buildGenerateParams(state, useSettingsStore.getState(), buildConversionSourceParams(state)!, undefined, undefined);
+    expect(params).toMatchObject({ device_profile_id: deviceProfileId, external_spool_material: "Ocean PLA" });
+    expect(useSettingsStore.getState()).toMatchObject({ deviceProfileId: DEFAULT_SETTINGS.deviceProfileId,
+      externalSpoolSelections: { [palette]: "Home PLA" } });
+  });
+
   it("migrates an old ordered edit once and resaves the authoritative current checkpoint", async () => {
     const project = await snapshot();
     const doc = project.documents["converter.main"];

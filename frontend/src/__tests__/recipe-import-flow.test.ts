@@ -403,6 +403,24 @@ describe("recipe/importFlow", () => {
     ).toBe(false);
   });
 
+  it("round-trips the X2D external filament and restores automatic for older cards", () => {
+    const recipe = makeRecipe();
+    const conv = recipe.recipe.converter!;
+    conv.device = { printer_id: "bambu-lab-x2d", slicer: "BambuStudio", nozzle_size: "0.4", external_spool_material: "Blue PLA" };
+    const restored: RestoreResult = {
+      recipe, state: { source_version: "legacy", lut_name: "Ocean LUT" },
+      assetFile: new File(["img"], "image.png"), heightmapFile: null, warnings: [],
+    };
+    applyImport(restored);
+    const exportDevice = () => exportRecipeModule.exportConverterRecipe(
+      useConverterStore.getState(), useSettingsStore.getState(),
+    ).device;
+    expect(exportDevice().external_spool_material).toBe("Blue PLA");
+    delete conv.device.external_spool_material;
+    applyImport(restored);
+    expect(exportDevice()).not.toHaveProperty("external_spool_material");
+  });
+
   it("restores the wipe-tower auto-placement project setting", () => {
     const recipe = makeRecipe();
     recipe.recipe.converter!.device.enable_wipe_tower_auto_placement = false;

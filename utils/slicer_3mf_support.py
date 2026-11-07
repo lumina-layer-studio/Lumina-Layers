@@ -233,6 +233,11 @@ def build_wipe_tower_placement_request(
         min(8.0, max(0.0, model_height) / 100.0 * 8.0)
         if layout["tower_brim_auto"] else layout["tower_brim_width"]
     )
+    layer_height = process["layer_height"]
+    first_layer = process.get("initial_layer_height")
+    if slicer == "BambuStudio" and first_layer and first_layer > 0:
+        # The tower footprint must also hold the purge on its first layer.
+        layer_height = min(layer_height, first_layer)
     return WipeTowerPlacementRequest(
         printable_area=printable_area,
         bed_exclusions=tuple(
@@ -247,7 +252,7 @@ def build_wipe_tower_placement_request(
         model_height=max(0.0, float(model_height)),
         model_brim=process["model_brim"],
         material_count=max(1, int(material_count)),
-        layer_height=process["layer_height"],
+        layer_height=layer_height,
         nozzle_diameter=max(0.1, float(nozzle_size)),
         purge_volume=layout["purge_volume"],
         tower_x=layout["tower_x"],
@@ -278,6 +283,8 @@ def build_wipe_tower_placement_request(
             0.0, float(layout.get("tower_preview_x_guard_margin") or 0.0)
         ),
         extruder_count=layout["extruder_count"],
+        nozzle_change_volume=layout.get("nozzle_change_volume", 0.0),
+        separate_material_bands=slicer == "BambuStudio",
         filament_change_volume=layout["filament_change_volume"],
         model_tower_clearance=(
             _CREATOR_5_MODEL_TOWER_CLEARANCE_MM

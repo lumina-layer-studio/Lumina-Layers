@@ -7,6 +7,7 @@ from zipfile import ZipFile
 import pytest
 import trimesh
 
+from core.errors import NativeMaterialSelectionError
 from utils.bambu_3mf_writer import BambuStudio3MFWriter
 from utils.fatcat_metadata import (
     build_project_settings_request,
@@ -90,8 +91,12 @@ def test_special_petg_is_not_silently_relabelled_as_basic(
     writer = _writer(tmp_path)
     source, request = _request(writer, [(name, (10, 10, 10))])
     if error_pattern is not None:
-        with pytest.raises(ValueError, match=error_pattern):
+        with pytest.raises(NativeMaterialSelectionError, match=error_pattern) as error:
             _compose(source, request)
+        assert error.value.material_selection["ready"] is False
+        assert error.value.material_selection["issues"][0]["code"] == (
+            "native_material_ambiguous" if profile_name else "native_material_unavailable"
+        )
         if profile_name is None:
             return
         request["native_filament_profile_names"] = [profile_name]

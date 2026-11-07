@@ -11,17 +11,23 @@ export const PROJECT_SETTING_KEYS = [
   "solverCacheGridResolution", "preserveUploadFilenameFor3mf",
 ] as const satisfies readonly (keyof SettingsState)[];
 
-export type ProjectConverterSettings = Pick<SettingsState, typeof PROJECT_SETTING_KEYS[number]>;
+type StoredProjectSettings = Pick<SettingsState, typeof PROJECT_SETTING_KEYS[number]>;
+export type ProjectConverterSettings = StoredProjectSettings & {
+  /** Session-local choices. Only the active palette's material travels, in the recipe. */
+  externalSpoolSelections?: SettingsState["externalSpoolSelections"];
+};
 
-export function captureProjectSettings(settings: SettingsState): ProjectConverterSettings {
-  return Object.fromEntries(PROJECT_SETTING_KEYS.map((key) => [key, settings[key]])) as ProjectConverterSettings;
+export function captureProjectSettings(settings: SettingsState): StoredProjectSettings {
+  return Object.fromEntries(PROJECT_SETTING_KEYS.map((key) => [key, settings[key]])) as StoredProjectSettings;
 }
 
 export function resolveConverterSettings(
   state: { projectSettings?: ProjectConverterSettings | null },
   settings: SettingsState,
 ): SettingsState {
-  return state.projectSettings ? { ...settings, ...state.projectSettings } : settings;
+  return state.projectSettings
+    ? { ...settings, ...state.projectSettings, externalSpoolSelections: state.projectSettings.externalSpoolSelections ?? {} }
+    : settings;
 }
 
 /** Resolve the coupled machine/profile/plate fields as one settings change. */

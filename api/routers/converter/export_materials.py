@@ -15,7 +15,7 @@ from api.session_store import SessionStore
 from api.project_resources import stage_project_resources, discard_project_resources
 from api.preview_cache_artifacts import get_preview_cache_metadata
 from api.recipe_override_resolution import resolve_recipe_overrides
-from core.errors import CoreValidationError, NativeMaterialSelectionError
+from core.errors import CoreValidationError, ExternalSpoolSelectionError, NativeMaterialSelectionError
 from core.export_material_selection import (
     require_export_material_selection,
     resolve_export_material_selection,
@@ -94,7 +94,7 @@ def require_material_selection(
         )
         source_context = _material_source_context(session_data, selection_request)
         return require_export_material_selection(params, source_context=source_context)
-    except NativeMaterialSelectionError as exc:
+    except (ExternalSpoolSelectionError, NativeMaterialSelectionError) as exc:
         raise to_http_exception(exc, "Native material selection") from exc
     except (ValueError, FileNotFoundError) as exc:
         raise to_http_exception(

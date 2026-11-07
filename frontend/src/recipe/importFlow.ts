@@ -3,11 +3,12 @@
  * 配方导入编排：协调解析、恢复和 store 更新。
  */
 
-import { isValidImageType, RAW_EXTENSIONS_CONVERTER, useConverterStore } from "../stores/converter";
+import { DEFAULT_STATE, isValidImageType, RAW_EXTENSIONS_CONVERTER, useConverterStore } from "../stores/converter";
 import { saveGeneratedFile, type SaveOutcome } from "../utils/saveGeneratedFile";
-import { useSettingsStore, type NozzleSize } from "../stores/settingsStore";
+import { useSettingsStore, withExternalSpoolSelection, type NozzleSize } from "../stores/settingsStore";
 import { captureProjectSettings, resolveProjectDeviceSettings } from "../stores/converter/project";
 import { useWidgetStore } from "../stores/widgetStore";
+import { externalSpoolPaletteKey } from "../stores/converter/nativeMaterialSelection";
 import { useWorkshopStore } from "../workshop/store";
 import { getPrinters, uploadImagePreview, validateHeightmapImage } from "../api/system";
 import { HEIGHTMAP_IMAGE_TYPES } from "../constants/heightmap";
@@ -267,6 +268,9 @@ export function applyImport(
     deviceProfileId: conv.device.device_profile_id ?? "",
     buildPlateId: conv.device.build_plate_id ?? "",
     custom3mfTemplateId: conv.device.custom_3mf_template_id ?? null,
+    externalSpoolSelections: withExternalSpoolSelection(
+      externalSpoolPaletteKey({ ...DEFAULT_STATE, ...restoreResult.state }), conv.device.external_spool_material,
+    ),
     svgPixelsPerMm: conv.base.svg_pixels_per_mm ?? defaults.svgPixelsPerMm,
     materialDeltaE00Tolerance: conv.source?.material_delta_e00_tolerance ?? defaults.materialDeltaE00Tolerance,
     enableBaseLayerHeightModifier: conv.device.enable_base_layer_height_modifier ?? defaults.enableBaseLayerHeightModifier,

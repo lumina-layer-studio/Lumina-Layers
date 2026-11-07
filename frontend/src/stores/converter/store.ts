@@ -4,6 +4,7 @@ import { boundProjectResources, captureProjectSettings, resolveConverterSettings
 import { previewResultState } from "./previewResult";
 import { installConverterDocumentHistory } from "./documentHistory";
 import { createDocumentCommandWrapper } from "./documentCommands";
+import { externalSpoolPaletteKey } from "./nativeMaterialSelection";
 import { subscribeWithSelector } from "zustand/middleware";
 import { trackLuminaEvent } from "../../analytics/umami";
 import {
@@ -118,7 +119,7 @@ import {
 } from "../generatedArtifactInvalidation";
 import { lutErrorToVisibleMessage } from "../lutErrorMessages";
 import { registerPrinterBedLabelSynchronizer } from "../printerBedLabelSync";
-import { useSettingsStore } from "../settingsStore";
+import { useSettingsStore, withExternalSpoolSelection } from "../settingsStore";
 import { fitTargetDimensions, getTargetDimensionLimits } from "./dimensions";
 import { createConversionPresetActions } from "./conversionPresetActions";
 import {
@@ -2373,17 +2374,22 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
 
     setProjectSettings: documentCommand((changes) => {
       const current = _get();
-      const previous = captureProjectSettings(resolveConverterSettings(current, useSettingsStore.getState()));
+      const defaults = useSettingsStore.getState();
+      const palette = externalSpoolPaletteKey(current);
+      const previous = current.projectSettings ?? {
+        ...captureProjectSettings(defaults),
+        externalSpoolSelections: withExternalSpoolSelection(palette, defaults.externalSpoolSelections[palette]),
+      };
       const settings = { ...previous, ...changes };
       if (JSON.stringify(previous) === JSON.stringify(settings)) {
         if (!current.projectSettings) set({ projectSettings: settings });
         return;
       }
-      invalidateGenerationRequests();
+      invalidateGeneratedArtifacts({ preservePreviews: true });
       const dimensions = buildPrinterDimensionState({ ...current, projectSettings: settings });
       const previewChanged = ["svgPixelsPerMm", "materialDeltaE00Tolerance", "enableSolverCacheGridSelection", "solverCacheGridResolution"]
         .some((key) => previous[key as keyof typeof previous] !== settings[key as keyof typeof settings]);
-      set({ projectSettings: settings, ...dimensions, downloadUrl: null, threemfDiskPath: null, nativeMaterialSelection: null });
+      set({ projectSettings: settings, ...dimensions });
       _get().clearMaterialSuggestions();
       if (previewChanged && (current.sessionId || current.isLoading || current.hasManualPreview)) _get().invalidatePreviewForAutoRefresh();
     }),

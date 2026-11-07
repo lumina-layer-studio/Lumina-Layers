@@ -3,6 +3,7 @@ import { buildLayerImagesSourceKey, CONVERTER_ERROR_KEYS, resolveConverterSource
 import Button from "../ui/Button"
 import Checkbox from "../ui/Checkbox"
 import { useSettingsStore } from "../../stores/settingsStore"
+import { supportsExternalSpool } from "../../stores/converter/nativeMaterialSelection"
 import { cardDividerClass } from "../ui/panelPrimitives"
 import BatchResultSummary from "../ui/BatchResultSummary"
 import LayerMaskViewerDialog from "../ui/LayerMaskViewerDialog"
@@ -49,6 +50,8 @@ export default function ActionBar() {
   const puzzleOverlayUrl = useConverterStore((s) => s.puzzleOverlayUrl)
   const submitPreview = useConverterStore((s) => s.submitPreview)
   const openNativeMaterialSelection = useConverterStore((s) => s.openNativeMaterialSelection)
+  const projectSettings = useConverterStore((s) => s.projectSettings)
+  const hasExternalSpool = useSettingsStore((defaults) => supportsExternalSpool(projectSettings ?? defaults))
   const nativeMaterialSelectionLoading = useConverterStore((s) => s.nativeMaterialSelectionLoading)
   const submitFullPipeline = useConverterStore((s) => s.submitFullPipeline)
   const threemfDiskPath = useConverterStore((s) => s.threemfDiskPath)
@@ -202,9 +205,18 @@ export default function ActionBar() {
               label={t("action_batch_generate")}
               variant="primary"
               onClick={() => void submitBatch()}
-              disabled={!canBatchSubmit || batchLoading}
+              disabled={!canBatchSubmit || batchLoading || nativeMaterialSelectionLoading}
               loading={batchLoading}
             />
+            {hasExternalSpool && (
+              <Button
+                label={t("native_material_edit_button")}
+                variant="secondary"
+                onClick={() => void openNativeMaterialSelection()}
+                disabled={!sourceSelection.isReady || isGenerating || batchLoading}
+                loading={nativeMaterialSelectionLoading}
+              />
+            )}
           </div>
 
           {batchResult && <BatchResultSummary result={batchResult} />}

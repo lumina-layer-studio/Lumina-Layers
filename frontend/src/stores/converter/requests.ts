@@ -3,7 +3,7 @@ import { svgHoleCompensationOptions } from "../../constants/svgHoleCompensation"
 import { computeAutoHeightMap, toAbsoluteReliefHeightMap } from "../../utils/colorUtils";
 import type { SettingsState } from "../settingsStore";
 import { newestEditorContentRevision } from "./editorRevision";
-import { scopedNativeFilamentProfiles } from "./nativeMaterialSelection";
+import { externalSpoolMaterial, scopedNativeFilamentProfiles } from "./nativeMaterialSelection";
 import {
   buildConversionSourceParams,
   clampAbsoluteReliefHeightMap,
@@ -57,7 +57,7 @@ function buildOutputParams(
   state: ConverterState,
   settings: SettingsState,
 ) {
-
+  const spool = externalSpoolMaterial(state, settings);
   return {
     spacer_thick: state.spacer_thick,
     backing_infill_density_percent:
@@ -75,6 +75,7 @@ function buildOutputParams(
     build_plate_id: settings.buildPlateId,
     custom_3mf_template_id: settings.custom3mfTemplateId,
     native_filament_profiles: scopedNativeFilamentProfiles(state, settings),
+    ...(spool ? { external_spool_material: spool } : {}),
     enable_base_layer_height_modifier:
       settings.enableBaseLayerHeightModifier,
     enable_wipe_tower_auto_placement:

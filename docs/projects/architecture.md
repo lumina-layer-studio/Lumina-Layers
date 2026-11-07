@@ -1,6 +1,6 @@
 # Portable projects on Layers
 
-The project system targets Layers `1308c06fc69915e11ead7dbefa0c1e7da11504d0`. A `.lum` file carries editable workflow documents and their actual input resources. Opening it prepares new resources and sessions before replacing the current workspace.
+A `.lum` file carries editable Layers workflow documents and their actual input resources. Opening it prepares new resources and sessions before replacing the current workspace.
 
 ## Existing owners
 
@@ -14,7 +14,7 @@ Other workflow adapters capture explicit fields from their existing Zustand stor
 
 Project resources are private: selected LUT files, native database/model dependencies, material archives, confirmed ColorChecker pixels and custom 3MF templates. They are staged under owned temporary directories and consumed by preview, generation, replacement and workflow queries. Neither opening nor saving installs resources into the user's library. Same-named global LUTs cannot replace a bound project resource. Library refresh keeps bound entries visible.
 
-Only output-affecting settings travel: device, slicer, nozzle, plate, custom template, base-layer/wipe-tower choices, SVG sampling and material solver settings. Theme, layout, account details, paths and network preferences remain local. Request builders consume the project settings projection while global preferences retain their values.
+Only output-affecting settings travel: device, slicer, nozzle, plate, custom template, base-layer/wipe-tower choices, SVG sampling and material solver settings. For X2D the recipe stores the active palette's external spool material; opening a project or share card leaves the installation's palette choices alone. Theme, layout, account details, paths and network preferences remain local. Request builders consume the project settings projection while global preferences retain their values.
 
 ## File and session lifecycle
 

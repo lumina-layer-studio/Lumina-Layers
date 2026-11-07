@@ -59,6 +59,7 @@ def assemble_puzzle_3mf(
     enable_wipe_tower_auto_placement: bool = True,
     material_types: Mapping[str, str | None] | None = None,
     native_filament_profiles: Mapping[str, str] | None = None,
+    external_spool_material: str | None = None,
 ) -> str:
     """Write puzzle metadata through Fat Cat while retaining Lumina placement.
 
@@ -142,6 +143,7 @@ def assemble_puzzle_3mf(
         device_profile_id=device_profile_id,
         build_plate_id=build_plate_id,
         enable_wipe_tower_auto_placement=enable_wipe_tower_auto_placement,
+        external_spool_material=external_spool_material,
         source_materials=[
             {"name": name, "colour": _rgb_to_hex(_resolve_preview_rgb_for_material_name(
                 name, index, preview_colors, "#C8C8C8")),

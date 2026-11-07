@@ -53,7 +53,7 @@ def test_shared_dynamic_material_validator_normalizes_and_rejects_conflicts() ->
     [
         ("min_layer_count", 4),
         ("min_layer_count", True),
-        ("max_layer_count", 11),
+        ("max_layer_count", 31),
         ("delta_e00_tolerance", -0.1),
         ("delta_e00_tolerance", 5.1),
         ("delta_e00_tolerance", math.nan),

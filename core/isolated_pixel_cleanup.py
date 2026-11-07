@@ -28,8 +28,17 @@ def _encode_stacks(material_matrix, base):
     if material_matrix.ndim != 3:
         raise ValueError(f"material_matrix must be 3D, got shape={material_matrix.shape}")
     n = material_matrix.shape[2]
-    weights = np.array([base ** i for i in range(n - 1, -1, -1)], dtype=np.int64)
-    return np.sum(material_matrix.astype(np.int64) * weights, axis=2)
+    if n == 0 or base ** n <= np.iinfo(np.int64).max:
+        weights = np.array([base ** i for i in range(n - 1, -1, -1)], dtype=np.int64)
+        return np.sum(material_matrix.astype(np.int64) * weights, axis=2)
+    # Deep stacks (e.g. 8 materials x 30 layers) overflow a base-M int64 key.
+    # Codes are only compared for equality, so per-image row IDs are exact.
+    # 深叠层时 base-M 编码会溢出 int64；编码只做相等比较，改用逐行唯一 ID 等价替代。
+    h, w = material_matrix.shape[:2]
+    _, inverse = np.unique(
+        material_matrix.reshape(h * w, n), axis=0, return_inverse=True
+    )
+    return inverse.reshape(h, w).astype(np.int64)
 
 
 def _detect_isolated(encoded):

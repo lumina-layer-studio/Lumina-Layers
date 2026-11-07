@@ -48,7 +48,9 @@ from core.task_parallelism_runtime import current_demand_snapshot_path
 
 
 MIN_DYNAMIC_LAYER_COUNT = 5
-MAX_DYNAMIC_LAYER_COUNT = 10
+MAX_DYNAMIC_LAYER_COUNT = 30
+_DYNAMIC_REFERENCE_LAYER_SPAN = 6  # 5..10
+_DYNAMIC_MIN_PER_LAYER_BUDGET = 131_072
 _NUMPY_CANDIDATE_CHUNK_SIZE = 65_536
 _MIN_PARALLEL_SEARCH_COMPARISONS = 10_000
 
@@ -765,7 +767,7 @@ def build_dynamic_candidate_catalog(
         actual_layer_counts: Actual recipe length for every source row.
             每个源行对应的实际配方层数。
         max_layer_count: Catalog maximum layer count in the inclusive range
-            ``5..10``. 目录最大层数，取值范围为 ``5..10``（含边界）。
+            ``5..30``. 目录最大层数，取值范围为 ``5..30``（含边界）。
 
     Returns:
         DynamicCandidateCatalog: Immutable catalog containing exact-RGB unique
@@ -1444,6 +1446,19 @@ def solve_dynamic_material_colors(
         )
         canonical_materials = [materials[int(index)] for index in canonical_to_user]
         canonical_backing_index = int(user_to_canonical[backing_index])
+        # Every layer count in the range gets its own runtime and all of them
+        # are concatenated into one catalog. Keep the total row count at the
+        # level of the original 5..10 range (6 runtimes) so 5..30 does not
+        # need ~4x the memory. Ranges of <= 6 layer counts are unchanged.
+        # 区间内每个层数各建一个运行时再合并；把总行数控制在原 5..10（6 个）水平，
+        # 避免 5..30 内存翻数倍。≤6 个层数的区间行为不变。
+        per_layer_budget = int(candidate_budget)
+        if len(layer_counts) > _DYNAMIC_REFERENCE_LAYER_SPAN:
+            per_layer_budget = max(
+                _DYNAMIC_MIN_PER_LAYER_BUDGET,
+                int(candidate_budget) * _DYNAMIC_REFERENCE_LAYER_SPAN
+                // len(layer_counts),
+            )
 
         def production_runtime_loader(
             loader_materials: list[MaterialParams],
@@ -1456,7 +1471,7 @@ def solve_dynamic_material_colors(
                 layer_count,
                 loader_height,
                 loader_substrate,
-                candidate_budget=candidate_budget,
+                candidate_budget=per_layer_budget,
                 cache_root=catalog_cache_root,
             )
 

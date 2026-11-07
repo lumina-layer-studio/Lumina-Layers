@@ -10,7 +10,13 @@ from typing import Any
 
 
 MIN_DYNAMIC_MATERIAL_LAYER_COUNT = 5
-MAX_DYNAMIC_MATERIAL_LAYER_COUNT = 10
+# Must match core.material_dynamic_solver.MAX_DYNAMIC_LAYER_COUNT (kept as a
+# literal so this lightweight wire-contract module does not import the solver;
+# a unit test keeps the two in sync). The UI limits users to 10 unless the
+# advanced "unlock 30 layers" switch is on.
+# 必须与 core.material_dynamic_solver.MAX_DYNAMIC_LAYER_COUNT 一致（用字面量避免
+# 引入求解器，由单测保证同步）。界面在未打开“解锁 30 层”时仍限制为 10。
+MAX_DYNAMIC_MATERIAL_LAYER_COUNT = 30
 DEFAULT_DYNAMIC_MATERIAL_DELTA_E00_TOLERANCE = 0.5
 _HUE_WEIGHT_EPSILON = 1e-12
 

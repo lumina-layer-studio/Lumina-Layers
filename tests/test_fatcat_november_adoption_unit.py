@@ -31,11 +31,12 @@ def test_h3c_native_profile_resolves_export_target(nozzle):
     )
 
 
-def test_h3c_mixed_material_export_preserves_native_groups_and_process(tmp_path):
+@pytest.mark.parametrize(("layer_height", "native_x_reach"), [("0.2", 49.0), ("0.08", 60.7)])
+def test_h3c_mixed_material_export_preserves_native_groups_and_process(tmp_path, layer_height, native_x_reach):
     path = tmp_path / "h3c-mixed.3mf"
     names = ["PLA left", "TPU", "PLA right"]
     writer = BambuStudio3MFWriter(
-        str(path), settings={"layer_height": "0.2", "wall_loops": "3"},
+        str(path), settings={"layer_height": layer_height, "wall_loops": "3"},
         slicer="BambuStudio", printer_id="bambu-h3c", nozzle_size="0.4",
         device_profile_id="BambuStudio:bbl:bambu-lab-h3c:0.4",
         build_plate_id="textured-pei-plate",
@@ -54,14 +55,21 @@ def test_h3c_mixed_material_export_preserves_native_groups_and_process(tmp_path)
     writer.export()
     with zipfile.ZipFile(path) as archive:
         project = json.loads(archive.read("Metadata/project_settings.config"))
+        placement = json.loads(archive.read("Metadata/lumina_wipe_tower_placement.json"))
     assert project["printer_settings_id"] == "Bambu Lab H3C 0.4 nozzle"
     assert project["filament_settings_id"] == [
         "Bambu PLA Basic @BBL H3C", "Bambu TPU for AMS @BBL H3C",
         "Bambu PLA Basic @BBL H3C",
     ]
     assert project["nozzle_temperature"] == ["220", "220", "230", "230", "220", "220"]
-    assert project["layer_height"] == "0.2"
+    assert project["layer_height"] == layer_height
+    assert project["initial_layer_print_height"] == "0.08"
     assert project["wall_loops"] == "3"
+    # Bambu Studio 02.09.01.70: measured positive-X reach of the tower's
+    # extrusion paths for these three materials, not its smaller UI estimate.
+    tower = placement["tower"]
+    assert not placement["requires_manual_adjustment"]
+    assert float(project["wipe_tower_x"][0]) + native_x_reach <= tower["outer_bounds_mm"][2] <= 330.0
 
 
 def test_current_prusa_picker_has_artwork_for_every_native_machine():

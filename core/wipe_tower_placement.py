@@ -126,6 +126,8 @@ class WipeTowerPlacementRequest:
     cyclic_toolchanges: bool = False
     tower_wall_types: tuple[str, ...] = ()
     reserve_model_brim_at_bed_edge: bool = True
+    nozzle_change_volume: float = 0.0
+    separate_material_bands: bool = False
 
 
 @dataclass(frozen=True)
@@ -288,11 +290,18 @@ def _estimate_request_tower_depth(
             material_count=request.material_count,
             layer_height=request.layer_height,
             nozzle_diameter=request.nozzle_diameter,
-            purge_volume=request.purge_volume,
+            # A same-head nozzle exchange can ram the old filament and prime
+            # the new one during the same visit.
+            purge_volume=request.purge_volume + request.nozzle_change_volume,
             tower_infill_spacing_ratio=request.tower_infill_spacing_ratio,
             extruder_count=request.extruder_count,
             filament_change_volume=request.filament_change_volume,
-            cyclic_toolchanges=request.cyclic_toolchanges,
+            # Rib towers reserve a separate band for each material family.
+            # The bands can reach their peak on different layers: a per-layer
+            # count of N-1 switches need not cover their combined depth.
+            cyclic_toolchanges=request.cyclic_toolchanges or (
+                request.tower_square_rib_body and request.separate_material_bands
+            ),
         ),
     )
 

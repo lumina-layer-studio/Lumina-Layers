@@ -2836,8 +2836,8 @@
               "supported": true
             }
           ],
-          "supported_build_plate_ids": [],
-          "default_build_plate_id": "",
+          "supported_build_plate_ids": ["smooth-high-temp-plate"],
+          "default_build_plate_id": "smooth-high-temp-plate",
           "bed_model": "flashforge_g3u_buildplate_model.stl"
         },
         {

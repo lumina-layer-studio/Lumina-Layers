@@ -102,6 +102,7 @@ class UserSettings(BaseModel):
     custom_3mf_template_id: str | None = None
     device_profile_id: str = "BambuStudio:bbl:bambu-lab-h2d:0.4"
     build_plate_id: str = ""
+    external_spool_selections: dict[str, str] = Field(default_factory=dict)
     build_plate_selections: dict[str, str] = Field(default_factory=dict)
     custom_slicer_path: str = ""
     custom_slicer_id: str = ""

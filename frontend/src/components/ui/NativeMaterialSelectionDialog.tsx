@@ -4,7 +4,10 @@ import type { ExportMaterialSelection } from "../../api/types";
 import { useI18n } from "../../i18n/context";
 import { useConverterStore } from "../../stores/converter";
 import {
+  externalSpoolMaterial,
   scopedNativeFilamentProfiles,
+  selectableExternalSpoolMaterials,
+  supportsExternalSpool,
 } from "../../stores/converter/nativeMaterialSelection";
 import { useSettingsStore } from "../../stores/settingsStore";
 import Button from "./Button";
@@ -26,6 +29,12 @@ function MaterialSelectionContent({ selection, isEditing }: {
   const cancelSelection = useConverterStore((state) => state.cancelNativeMaterialSelection);
   const isChecking = useConverterStore((state) => state.nativeMaterialSelectionLoading);
   const selectionError = useConverterStore((state) => state.nativeMaterialSelectionError);
+  const hasExternalSpool = useSettingsStore(supportsExternalSpool);
+  const spoolMaterials = selectableExternalSpoolMaterials(selection);
+  const [savedSpool] = useState(() => externalSpoolMaterial(useConverterStore.getState(), useSettingsStore.getState()));
+  const [spool, setSpool] = useState(() =>
+    savedSpool && spoolMaterials.includes(savedSpool) ? savedSpool : "",
+  );
   const [plateId, setPlateId] = useState(() =>
     selection.build_plates.find((plate) => plate.build_plate_uid === selection.build_plate_uid)?.id ?? "",
   );
@@ -158,6 +167,30 @@ function MaterialSelectionContent({ selection, isEditing }: {
               {t("native_material_no_compatible_plate")}
             </p>
           )}
+          {hasExternalSpool && !templateManaged && (
+            <div className="space-y-2">
+              <Dropdown
+                label={t("native_material_external_spool")}
+                tooltip={t("native_material_external_spool_help")}
+                value={spool}
+                onChange={setSpool}
+                options={[
+                  { value: "", label: t("native_material_automatic_option") },
+                  ...spoolMaterials.map((name) => ({ value: name, label: name })),
+                ]}
+              />
+              {savedSpool && !spoolMaterials.includes(savedSpool) && (
+                <p className="status-banner text-sm" data-tone="warning" role="status">
+                  {t("native_material_external_spool_missing").replace("{material}", savedSpool)}
+                </p>
+              )}
+              {spoolMaterials.length < selection.materials.length && (
+                <p className="status-banner text-sm" data-tone="warning" role="status">
+                  {t("native_material_external_spool_duplicate")}
+                </p>
+              )}
+            </div>
+          )}
           {selection.materials.map((material, index) => {
             const candidates = material.profiles.filter((profile) => profile.available);
             const chosen = profiles[material.name] ?? "";
@@ -202,7 +235,7 @@ function MaterialSelectionContent({ selection, isEditing }: {
             <Button
               label={t(isEditing ? "native_material_edit_save" : "native_material_apply")}
               disabled={!canApply}
-              onClick={() => void applySelection(profiles, plateId)}
+              onClick={() => void applySelection(profiles, plateId, spool || undefined)}
               variant="primary"
             />
           )}

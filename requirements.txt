@@ -35,6 +35,6 @@ neroued-vectorizer>=0.1.1
 # Official PyPI release includes Production layout and Windows native paths.
 neroued-3mf==0.4.2
 # Public SDK: https://github.com/MOVIBALE/fatcat-metadata
-# Required SDK source: c2f39b9dedfeb8b6c015784e2aae1d82e56e7ffd.
-# November slicer snapshots, H3C and native material groups; matching wheels on PyPI.
-fatcat-metadata==0.1.4
+# Required SDK source: 6491c6b570bea86395ded65e4054afca878066c1.
+# November slicer profiles, explicit plate head maps and nozzle-change layout facts.
+fatcat-metadata==0.1.5

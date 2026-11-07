@@ -18,6 +18,7 @@ from core.recipe_virtual_materials import build_virtual_material_registry
 from core.pipeline.preview_color_utils import build_lut_material_types, build_palette_preview_colors
 from utils.fatcat_metadata import (
     build_builtin_project_settings_request,
+    external_spool_filament_map,
     native_build_plate_uid,
     MetadataTarget,
     native_source_for_target,
@@ -178,6 +179,11 @@ def require_export_material_selection(
     在计算几何之前拒绝尚未解决的耗材预设或板型选择。
     """
     selection = resolve_export_material_selection(params, source_context=source_context)
+    if (material := params.get("external_spool_material")) is not None:
+        external_spool_filament_map(
+            material, [slot["name"] for slot in selection["materials"]],
+            slicer_id=selection["slicer_id"], machine_uid=selection["machine_uid"],
+        )
     if not selection["ready"]:
         raise NativeMaterialSelectionError(selection)
     return selection

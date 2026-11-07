@@ -545,6 +545,7 @@ def test_generate_puzzle_assembles_single_3mf_and_passes_piece_matched_rgb(compe
         build_plate_id: str | None = None,
         overview_png_bytes: bytes | None = None,
         material_types: dict[str, str | None],
+        external_spool_material: str | None,
         native_filament_profiles: dict[str, str],
         enable_wipe_tower_auto_placement: bool = True,
     ) -> str:
@@ -1136,6 +1137,7 @@ def test_generate_puzzle_resizes_heightmap_crop_to_worker_grid() -> None:
         build_plate_id: str | None = None,
         overview_png_bytes: bytes | None = None,
         material_types: dict[str, str | None],
+        external_spool_material: str | None,
         native_filament_profiles: dict[str, str],
         enable_wipe_tower_auto_placement: bool = True,
     ) -> str:
@@ -1229,6 +1231,7 @@ def test_generate_puzzle_emits_hybrid_boundary_log_for_each_piece() -> None:
         build_plate_id: str | None = None,
         overview_png_bytes: bytes | None = None,
         material_types: dict[str, str | None],
+        external_spool_material: str | None,
         native_filament_profiles: dict[str, str],
         enable_wipe_tower_auto_placement: bool = True,
     ) -> str:
@@ -1328,6 +1331,7 @@ def test_generate_puzzle_reuses_cached_layout_after_preview() -> None:
         build_plate_id: str | None = None,
         overview_png_bytes: bytes | None = None,
         material_types: dict[str, str | None],
+        external_spool_material: str | None,
         native_filament_profiles: dict[str, str],
         enable_wipe_tower_auto_placement: bool = True,
     ) -> str:
@@ -1490,6 +1494,7 @@ def test_generate_puzzle_filters_fully_transparent_pieces_during_layout() -> Non
         build_plate_id: str | None = None,
         overview_png_bytes: bytes | None = None,
         material_types: dict[str, str | None],
+        external_spool_material: str | None,
         native_filament_profiles: dict[str, str],
         enable_wipe_tower_auto_placement: bool = True,
     ) -> str:

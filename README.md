@@ -217,7 +217,7 @@ Open the frontend address printed by the launcher, normally `http://localhost:41
 
 Source installs do not connect to an online material library by default. Local material profiles work offline. To connect a Registry you host or are authorized to use, configure its service URL separately; see the [Registry connection guide](docs/material-registry-connection.md).
 
-The native 3MF dependencies are `fatcat-metadata==0.1.4` and the official `neroued-3mf==0.4.2` release. Both install from PyPI through `requirements.txt`; no custom writer wheelhouse is needed. See [the native dependency guide](docs/desktop-electron.md) for supported platforms. The SVG dependency remains `lumina-svg-core==0.3.4`.
+The native 3MF dependencies are `fatcat-metadata==0.1.5` and the official `neroued-3mf==0.4.2` release. Use the pinned SDK wheel; the setup guide includes a source build for pre-release review. No custom writer is needed. See [the native dependency guide](docs/desktop-electron.md) for supported platforms. The SVG dependency remains `lumina-svg-core==0.3.4`.
 
 ### Optional: desktop window
 

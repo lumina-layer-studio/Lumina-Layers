@@ -107,6 +107,19 @@ export const translations: Record<string, Record<"zh" | "en", string>> = {
   native_material_choose_profile: { zh: "请选择耗材预设", en: "Choose a filament preset" },
   native_material_automatic: { zh: "自动匹配：{profile}", en: "Automatic: {profile}" },
   native_material_automatic_option: { zh: "自动匹配", en: "Automatic" },
+  native_material_external_spool: { zh: "外置料盘耗材", en: "External spool filament" },
+  native_material_external_spool_missing: {
+    zh: "此前选定的外置耗材「{material}」在此项目中不可用。请选择当前耗材或确认使用自动分配。",
+    en: "The saved external filament “{material}” is unavailable in this project. Choose a current filament or confirm Automatic.",
+  },
+  native_material_external_spool_duplicate: {
+    zh: "部分耗材同名。要单独指定其中一种，请先给它设置唯一名称。",
+    en: "Some filaments share a name. Give the filament a unique name to select it for the external spool.",
+  },
+  native_material_external_spool_help: {
+    zh: "选择 X2D 外置料盘上实际安装的耗材，其余耗材由 AMS 供料。",
+    en: "Choose the filament loaded on the X2D external spool. The AMS supplies the other filaments.",
+  },
   native_material_selected: { zh: "已选择：{profile}", en: "Selected: {profile}" },
   native_material_cancel: { zh: "取消生成", en: "Cancel generation" },
   native_material_apply: { zh: "确认并继续生成", en: "Confirm and continue" },

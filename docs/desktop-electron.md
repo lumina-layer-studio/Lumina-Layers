@@ -22,7 +22,7 @@ Windows ARM、32 位或 free-threaded Python 尚无完整应用所需的 wheel �
 
 3MF 导出链路使用两个独立依赖：
 
-- 元数据 SDK：`fatcat-metadata==0.1.4`，Python 导入名为 `fatcat_metadata`。
+- 元数据 SDK：`fatcat-metadata==0.1.5`，Python 导入名为 `fatcat_metadata`。
   包含 11 月原生切片配置、Bambu H3C 和不同长度的耗材参数组支持，
   并保留 Windows 长路径和精确机型查询修复。Prusa 使用 3.0.0-alpha13 预览版。
 - 写包库：`neroued-3mf==0.4.2`，使用原作者正式发布的 PyPI wheel。
@@ -32,6 +32,8 @@ Windows ARM、32 位或 free-threaded Python 尚无完整应用所需的 wheel �
   无需安装 fork 版本或应用补丁；写包库与 FatCat SDK 的版本独立。
 
 ### 使用预编译包
+
+若所需 SDK 版本尚未在 PyPI 发布，审核者先按「维护者从源码构建」安装固定提交的 wheel，再安装本体依赖。正式发版须等该版本的平台 wheel 就绪。
 
 在下一节创建并激活干净的虚拟环境后，从 Lumina 仓库根目录执行：
 
@@ -51,8 +53,8 @@ python -m pip install -r requirements.txt
 来源提交、仓库和版本由 `scripts/fatcat_packaging_contract.py`
 统一维护。FatCat 来自公开仓库
 [`MOVIBALE/fatcat-metadata`](https://github.com/MOVIBALE/fatcat-metadata)，固定
-完整提交 `c2f39b9dedfeb8b6c015784e2aae1d82e56e7ffd`。构建脚本从其根目录
-的 `pyproject.toml` 构建 `0.1.4` wheel，无需进入 `cpp/`，不会修改 SDK 源码。
+完整提交 `6491c6b570bea86395ded65e4054afca878066c1`。构建脚本从其根目录
+的 `pyproject.toml` 构建 `0.1.5` wheel，无需进入 `cpp/`，不会修改 SDK 源码。
 以下供维护者复现源码构建；普通用户使用上方 PyPI 安装即可。
 它需要 Git、CMake 和 C++20 编译器（FatCat 本身使用 C++17）。
 源码提交和版本必须与下方固定值一致。
@@ -64,7 +66,7 @@ writer 固定在上游 v0.4.2 提交 `656f87c55caf742cef2e958a7fc5199cdba2c6f0`�
 
 ```powershell
 git clone https://github.com/MOVIBALE/fatcat-metadata.git ..\fatcat-metadata
-git -C ..\fatcat-metadata checkout c2f39b9dedfeb8b6c015784e2aae1d82e56e7ffd
+git -C ..\fatcat-metadata checkout 6491c6b570bea86395ded65e4054afca878066c1
 git clone https://github.com/Neroued/neroued_3mf.git ..\neroued-3mf
 git -C ..\neroued-3mf checkout 656f87c55caf742cef2e958a7fc5199cdba2c6f0
 

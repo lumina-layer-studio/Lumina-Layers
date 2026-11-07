@@ -107,6 +107,7 @@ export interface SettingsState {
   buildPlateId: string;
   custom3mfTemplateId: string | null;
   buildPlateSelections: Record<string, string>;
+  externalSpoolSelections: Record<string, string>;
   customSlicerPath: string;
   customSlicerId: string;
   nozzleSize: NozzleSize;
@@ -182,6 +183,7 @@ export interface SettingsActions {
   setSlicerSoftware: (id: string) => void;
   setDeviceProfileId: (id: string) => void;
   setCustom3mfTemplateId: (id: string | null) => void;
+  setExternalSpoolMaterial: (paletteKey: string, material: string | undefined) => void;
   importCustom3mfTemplate: (file: File, name: string) => Promise<Custom3mfTemplate>;
   deleteCustom3mfTemplate: (id: string) => Promise<void>;
   setBuildPlateForMachine: (machineProfileId: string, plateId: string) => void;
@@ -227,6 +229,7 @@ export const DEFAULT_SETTINGS: SettingsState = {
   buildPlateId: "",
   custom3mfTemplateId: null,
   buildPlateSelections: {},
+  externalSpoolSelections: {},
   customSlicerPath: "",
   customSlicerId: "",
   nozzleSize: "0.4",
@@ -371,6 +374,10 @@ export function deriveBackendDeviceSettingsPatch(
       ? settings.language
       : undefined,
   );
+  if (settings.external_spool_selections && !hasOwnSetting(persistedSnapshot, "externalSpoolSelections") &&
+      Object.keys(current.externalSpoolSelections).length === 0) {
+    patch.externalSpoolSelections = { ...settings.external_spool_selections };
+  }
   setScalarIfFresh(
     "custom3mfTemplateId",
     typeof settings.custom_3mf_template_id === "string"
@@ -670,6 +677,15 @@ export const useSettingsStore = create<SettingsState & SettingsActions>()(
 
       setPaletteMode: (mode: "swatch" | "card") => set({ paletteMode: mode }),
 
+      setExternalSpoolMaterial: (paletteKey, material) => {
+        if (get().externalSpoolSelections[paletteKey] === material) return;
+        const selections = { ...get().externalSpoolSelections };
+        if (material) selections[paletteKey] = material;
+        else delete selections[paletteKey];
+        set({ externalSpoolSelections: selections });
+        invalidateGeneratedArtifacts({ preservePreviews: true });
+      },
+
       setPrinterModel: (id: string) => {
         set((state) => ({
           printerModel: id,
@@ -918,6 +934,7 @@ export const useSettingsStore = create<SettingsState & SettingsActions>()(
             build_plate_id: state.buildPlateId,
             custom_3mf_template_id: state.custom3mfTemplateId,
             build_plate_selections: state.buildPlateSelections,
+            external_spool_selections: state.externalSpoolSelections,
             custom_slicer_path: state.customSlicerPath,
             custom_slicer_id: state.customSlicerId,
             nozzle_size: state.nozzleSize,

@@ -49,7 +49,9 @@ def test_s09_passes_full_slot_names_to_exporter(
         custom_3mf_template_id: str | None = None,
         backing_output: str = "same_project",
         native_filament_profiles: dict[str, str] | None = None,
+        external_spool_material: str | None = None,
     ) -> str:
+        captured["external_spool_material"] = external_spool_material
         captured["scene"] = scene
         captured["output_path"] = output_path
         captured["slot_names"] = list(slot_names)
@@ -104,6 +106,7 @@ def test_s09_passes_full_slot_names_to_exporter(
         "build_plate_id": "smooth-pei-plate",
         "custom_3mf_template_id": "selected-native-template",
         "backing_output": backing_output,
+        "external_spool_material": "black",
         "native_filament_profiles": {"yellow": "Generic PETG @BBL H2D"},
     }
 
@@ -126,6 +129,7 @@ def test_s09_passes_full_slot_names_to_exporter(
     assert captured["custom_3mf_template_id"] == "selected-native-template"
     assert captured["backing_output"] == backing_output
     assert captured["native_filament_profiles"] == ctx["native_filament_profiles"]
+    assert captured["external_spool_material"] == "black"
 
 
 def _make_minimal_s09_ctx(tmp_path, **extra_ctx) -> dict:

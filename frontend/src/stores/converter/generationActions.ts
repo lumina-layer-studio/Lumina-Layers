@@ -32,6 +32,9 @@ import { useSettingsStore } from "../settingsStore";
 import { isGenerateRevisionConflict } from "./editorRevision";
 import {
   materialSelectionFromExportError,
+  externalSpoolPaletteKey,
+  selectableExternalSpoolMaterials,
+  supportsExternalSpool,
   nativeFilamentProfileScope,
   scopedNativeFilamentProfiles,
 } from "./nativeMaterialSelection";
@@ -160,6 +163,10 @@ function generationReplacements(state: ConverterState): ColorReplacementItem[] |
   return replacements.length > 0 ? replacements : undefined;
 }
 
+function generationSourceIdentity(state: ConverterState): string {
+  return JSON.stringify([buildConversionSourceParams(state), state.color_mode, state.enable_coating]);
+}
+
 export function createGenerationActions(
   set: (partial: Partial<ConverterState>) => void,
   _get: () => ConverterState & ConverterActions,
@@ -215,7 +222,8 @@ export function createGenerationActions(
   ): Promise<boolean> {
     const response = await fetchExportMaterialSelection(sessionId, params);
     if (!isCurrent()) return false;
-    if (action === "edit" || !response.ready) {
+    const spool = params.external_spool_material;
+    if (action === "edit" || !response.ready || (spool && !selectableExternalSpoolMaterials(response).includes(spool))) {
       showMaterialSelection(response, sessionId, params, action, isCurrent);
       return false;
     }
@@ -282,14 +290,16 @@ export function createGenerationActions(
   return {
     openNativeMaterialSelection: async () => {
       let state = _get();
-      const sessionId = state.sessionId;
-      if (!sessionId || state.batchMode || state.isLoading || state.isGenerating ||
+      const batchMode = state.batchMode;
+      const sessionId = batchMode ? null : state.sessionId;
+      if ((!batchMode && !sessionId) || state.isLoading || state.isGenerating ||
         state.batchLoading || state.nativeMaterialSelectionLoading ||
-        state.contentCommitStatus === "unknown") return;
+        (!batchMode && state.contentCommitStatus === "unknown")) return;
       const settings = useSettingsStore.getState();
       const identity = captureGeneratedArtifactIdentity(settings.deviceProfileId, settings.buildPlateId);
-      const sourceIdentity = JSON.stringify(buildConversionSourceParams(state));
+      const sourceIdentity = generationSourceIdentity(state);
       const sequence = ++_generateRequestSequence;
+      const batchSequence = _batchRequestSequence;
       pendingMaterialSelection = null;
       set({
         nativeMaterialSelection: null,
@@ -300,13 +310,21 @@ export function createGenerationActions(
       });
       const isCurrentInput = (): boolean => {
         const currentSettings = useSettingsStore.getState();
-        return _isCurrentGenerateRequest(sequence, sessionId, () => _get().sessionId) &&
-          !_get().batchMode &&
-          JSON.stringify(buildConversionSourceParams(_get())) === sourceIdentity &&
+        return _generateRequestSequence === sequence && (!batchMode || _batchRequestSequence === batchSequence) &&
+          _get().batchMode === batchMode &&
+          (batchMode || _get().sessionId === sessionId) &&
+          generationSourceIdentity(_get()) === sourceIdentity &&
           isGeneratedArtifactIdentityCurrent(identity, currentSettings.deviceProfileId, currentSettings.buildPlateId);
       };
       let isCurrent = isCurrentInput;
       try {
+        if (sessionId === null) {
+          const sourceParams = buildConversionSourceParams(state);
+          if (sourceParams && resolveConverterSourceSelection(state).isReady) {
+            await preflightMaterials(null, buildBatchParams(state, settings, sourceParams), "edit", isCurrent);
+          }
+          return;
+        }
         const pendingSelection = waitForSelectionMutation(sessionId);
         if (pendingSelection && !await pendingSelection) return;
         if (!isCurrentInput()) return;
@@ -331,7 +349,9 @@ export function createGenerationActions(
           set({ error: visibleConverterError(error, "native_material_load_failed") });
         }
       } finally {
-        if (_generateRequestSequence === sequence) set({ nativeMaterialSelectionLoading: false });
+        if (_generateRequestSequence === sequence && (!batchMode || _batchRequestSequence === batchSequence)) {
+          set({ nativeMaterialSelectionLoading: false });
+        }
       }
     },
     refreshNativeMaterialSelection: async (profiles, buildPlateId) => {
@@ -385,7 +405,7 @@ export function createGenerationActions(
         batchLoading: false,
       });
     },
-    applyNativeMaterialSelection: async (profiles, buildPlateId) => {
+    applyNativeMaterialSelection: async (profiles, buildPlateId, externalSpool) => {
       const pending = pendingMaterialSelection;
       if (!pending || _get().nativeMaterialSelection !== pending.response) return;
       if (_get().nativeMaterialSelectionLoading || _get().nativeMaterialSelectionError ||
@@ -412,10 +432,14 @@ export function createGenerationActions(
         selectedProfiles[material.name] = selectedName;
       }
       const settings = useSettingsStore.getState();
+      if (externalSpool && !selectableExternalSpoolMaterials(pending.response).includes(externalSpool)) return;
       const previousProfiles = scopedNativeFilamentProfiles(_get(), settings) ?? {};
       const profilesChanged = Object.keys(previousProfiles).length !== Object.keys(selectedProfiles).length ||
         Object.entries(selectedProfiles).some(([name, profile]) => previousProfiles[name] !== profile);
       pendingMaterialSelection = null;
+      if (supportsExternalSpool(settings)) {
+        settings.setExternalSpoolMaterial(externalSpoolPaletteKey(_get()), externalSpool);
+      }
       settings.setBuildPlateForMachine(
         pending.response.machine_profile_id,
         plate.id,
@@ -523,7 +547,7 @@ export function createGenerationActions(
         generateSettings.buildPlateId,
       );
       const generateReplacementEpoch = editor.getReplacementEpoch();
-      const sourceIdentity = JSON.stringify(buildConversionSourceParams(state));
+      const sourceIdentity = generationSourceIdentity(state);
       const generateSelectionRevision = state.selectionDocument?.selection_revision;
       pendingMaterialSelection = null;
       set({
@@ -555,7 +579,7 @@ export function createGenerationActions(
           ) &&
           editor.getReplacementEpoch() === generateReplacementEpoch &&
           _get().selectionDocument?.selection_revision === generateSelectionRevision &&
-          JSON.stringify(buildConversionSourceParams(_get())) === sourceIdentity &&
+          generationSourceIdentity(_get()) === sourceIdentity &&
           isGeneratedArtifactIdentityCurrent(
             generateIdentity,
             latestSettings.deviceProfileId,
@@ -890,13 +914,13 @@ export function createGenerationActions(
         settings.buildPlateId,
       );
       const batchSequence = ++_batchRequestSequence;
-      const batchSourceIdentity = JSON.stringify(buildConversionSourceParams(state));
+      const batchSourceIdentity = generationSourceIdentity(state);
       const isCurrentBatchRequest = (): boolean => {
         const latestSettings = useSettingsStore.getState();
         const isCurrent = (
           batchSequence === _batchRequestSequence &&
           _get().batchFiles === state.batchFiles &&
-          JSON.stringify(buildConversionSourceParams(_get())) === batchSourceIdentity &&
+          generationSourceIdentity(_get()) === batchSourceIdentity &&
           isGeneratedArtifactIdentityCurrent(
             batchIdentity,
             latestSettings.deviceProfileId,

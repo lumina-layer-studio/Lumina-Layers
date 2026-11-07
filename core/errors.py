@@ -41,6 +41,10 @@ class NativeMaterialSelectionError(CoreValidationError):
         self.error_type = "native_material_selection_required"
 
 
+class ExternalSpoolSelectionError(CoreValidationError):
+    """The requested material cannot be assigned to the X2D external spool."""
+
+
 class WipeTowerLayoutError(CoreValidationError):
     """Report a model-and-tower layout that cannot be safely exported.
 

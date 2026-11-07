@@ -26,6 +26,7 @@ from utils.fatcat_metadata import (
     build_merged_model_metadata_request,
     build_merged_project_settings_request,
     compose_model_metadata,
+    external_spool_filament_map,
     compose_project_settings,
     metadata_resource_specs,
     patch_wipe_tower,
@@ -600,6 +601,7 @@ def _parse_source_assembly(
 
 def read_merge_source_info(
     source_3mf_path: str | Path, *, metadata_target: MetadataTarget | None = None,
+    use_base_material_names: bool = False,
 ) -> tuple[tuple[float, float], list[dict[str, Any]]]:
     """Read batch footprint and material identities from the merge source.
 
@@ -611,10 +613,18 @@ def read_merge_source_info(
     assembly = _parse_source_assembly(
         0, MergedItem(path.name, path, (), 0.0, 0.0), metadata_target=metadata_target,
     )
-    return (
-        (assembly.max_x - assembly.min_x, assembly.max_y - assembly.min_y),
-        assembly.source_metadata["slots"],
-    )
+    slots = assembly.source_metadata["slots"]
+    if use_base_material_names:
+        # Lumina single exports register one full palette, even when some slots
+        # have no mesh. Native part names can instead identify backing or outlines.
+        groups = assembly.base_material_groups
+        if len(groups) != 1:
+            raise MergedWriteError("The generated 3MF must have one material palette for external spool assignment.")
+        palette = groups[0].findall(_qname_core("base"))
+        if len(palette) != len(slots) or any(not row.get("name") for row in palette):
+            raise MergedWriteError("The generated material palette does not match the filament slots.")
+        slots = [{**slot, "slot_name": palette[slot["slot_id"]].get("name")} for slot in slots]
+    return (assembly.max_x - assembly.min_x, assembly.max_y - assembly.min_y), slots
 
 
 def _parse_xml_bytes(payload: bytes) -> ET.Element:
@@ -918,6 +928,7 @@ class MergedSlicer3MFWriter:
         nozzle_size: str | None = None,
         device_profile_id: str | None = None,
         build_plate_id: str | None = None,
+        external_spool_material: str | None = None,
     ) -> None:
         """Write merged 3MF to ``output_path``.
 
@@ -986,6 +997,7 @@ class MergedSlicer3MFWriter:
             self._write_fatcat_opc(
                 items, assemblies, output_path,
                 enable_wipe_tower_auto_placement, metadata_target=metadata_target,
+                external_spool_material=external_spool_material,
                 printer_id=printer_id, nozzle_size=nozzle_size,
                 device_profile_id=device_profile_id, build_plate_id=build_plate_id,
             )
@@ -1010,6 +1022,7 @@ class MergedSlicer3MFWriter:
         build_plate_id: str | None,
         enable_wipe_tower_auto_placement: bool,
         source_materials: Sequence[Mapping[str, object]] | None = None,
+        external_spool_material: str | None = None,
     ) -> None:
         """Write puzzle pieces through Fat Cat and one neroued package build.
 
@@ -1062,6 +1075,7 @@ class MergedSlicer3MFWriter:
             device_profile_id=device_profile_id,
             build_plate_id=build_plate_id,
             build_transforms=build_transforms,
+            external_spool_material=external_spool_material,
             source_materials=source_materials,
             resource_overrides={
                 "plate_main": overview_png_bytes,
@@ -1086,6 +1100,7 @@ class MergedSlicer3MFWriter:
         build_transforms: Sequence[Sequence[float]] | None = None,
         resource_overrides: Mapping[str, bytes] | None = None,
         source_materials: Sequence[Mapping[str, object]] | None = None,
+        external_spool_material: str | None = None,
     ) -> None:
         from fatcat_metadata_neroued import apply_metadata_components, apply_root_model_metadata
 
@@ -1102,6 +1117,12 @@ class MergedSlicer3MFWriter:
             metadata_target, assemblies, output_path, project, geometry,
             enable_wipe_tower_auto_placement=enable_wipe_tower_auto_placement,
         )
+        if external_spool_material is not None:
+            slots = project.composition["merged_slots"]
+            metadata_request["plate"]["filament_maps"] = external_spool_filament_map(
+                external_spool_material, [slot["slot_name"] for slot in slots],
+                slicer_id=metadata_target.slicer_id, machine_uid=metadata_target.machine_uid,
+            )
         resource_bytes = self._build_resource_bytes(metadata_target, resource_overrides)
         metadata_request["resource_roles"] = list(resource_bytes)
         metadata_result = compose_model_metadata(project.settings, metadata_request)

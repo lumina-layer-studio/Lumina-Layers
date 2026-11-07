@@ -11,6 +11,7 @@ import {
   useSettingsStore,
 } from "../stores/settingsStore";
 import { useWidgetStore } from "../stores/widgetStore";
+import { externalSpoolPaletteKey, supportsExternalSpool } from "../stores/converter/nativeMaterialSelection";
 import { useWorkshopStore } from "../workshop/store";
 import { getPrinters, uploadImagePreview, validateHeightmapImage } from "../api/system";
 import { HEIGHTMAP_IMAGE_TYPES } from "../constants/heightmap";
@@ -333,6 +334,11 @@ export function applyImport(
     );
     settingsState.setBuildPlateForMachine(machineProfileId, nextBuildPlateId);
     settingsState.setCustom3mfTemplateId(conv.device.custom_3mf_template_id ?? null);
+    if (supportsExternalSpool(useSettingsStore.getState())) {
+      settingsState.setExternalSpoolMaterial(
+        externalSpoolPaletteKey(useConverterStore.getState()), conv.device.external_spool_material,
+      );
+    }
     if (
       typeof conv.base.svg_pixels_per_mm === "number" &&
       conv.base.svg_pixels_per_mm !== settingsState.svgPixelsPerMm

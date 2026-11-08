@@ -4,6 +4,17 @@ const { randomUUID } = require('crypto');
 const { ProjectOpenBroker, MAX_PROJECT_BYTES, validateProjectPath } = require('./project-protocol.cjs');
 const { isTrustedMainFrameSender } = require('./generated-file-directory.cjs');
 
+function projectOpenFromArgv(argv) {
+  const index = argv.indexOf('--open-project');
+  const projectPath = index >= 0
+    ? argv[index + 1]
+    : argv.find(arg => typeof arg === 'string' && path.isAbsolute(arg) && /\.lum$/i.test(arg));
+  if (!projectPath) return null;
+  const idIndex = argv.indexOf('--project-request-id');
+  const requestId = idIndex >= 0 ? argv[idIndex + 1] : undefined;
+  return requestId === undefined ? { projectPath } : { projectPath, requestId };
+}
+
 async function atomicWrite(target, bytes, fileSystem = fs.promises) {
   const temporary = path.join(path.dirname(target), `.${path.basename(target)}.${randomUUID()}.tmp`);
   let handle;
@@ -124,19 +135,17 @@ function createProjectsHost({ app, ipcMain, dialog, shell, getWindow, getTrusted
     const result = await broker.request({ projectPath: filePath, requestId });
     return result;
   }
-  function enqueueArgv(argv) {
-    const index = argv.indexOf('--open-project');
-    const filePath = index >= 0 ? argv[index + 1] : argv.find(arg => typeof arg === 'string' && path.isAbsolute(arg) && /\.lum$/i.test(arg));
-    if (!filePath) return;
-    const idIndex = argv.indexOf('--project-request-id');
-    void request(filePath, idIndex >= 0 ? argv[idIndex + 1] : randomUUID()).catch(error => {
+  function enqueueProject(open) {
+    if (!open) return;
+    void request(open.projectPath, open.requestId).catch(error => {
       getWindow()?.webContents.send('project-open', { state: 'failed', error: error.message });
     });
   }
+  function enqueueArgv(argv) { enqueueProject(projectOpenFromArgv(argv)); }
   app.on('open-file', (event, filePath) => {
     if (/\.lum$/i.test(filePath)) {
       event.preventDefault();
-      void request(filePath).catch(error => getWindow()?.webContents.send('project-open', { state: 'failed', error: error.message }));
+      enqueueProject({ projectPath: filePath });
     }
   });
   handle('projects-ready', () => {
@@ -247,7 +256,7 @@ function createProjectsHost({ app, ipcMain, dialog, shell, getWindow, getTrusted
     }
     return promise;
   }
-  return { enqueueArgv, broker, confirmProjectClose, flushReceipts: () => receiptQueue };
+  return { enqueueArgv, enqueueProject, broker, confirmProjectClose, flushReceipts: () => receiptQueue };
 }
 
-module.exports = { createProjectsHost, atomicWrite };
+module.exports = { createProjectsHost, projectOpenFromArgv, atomicWrite };

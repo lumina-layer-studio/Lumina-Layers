@@ -25,7 +25,7 @@ if (launcherStartup.enabled) {
 }
 const { saveGeneratedFile } = require("./generated-file-save.cjs");
 const { createApplicationMenu } = require("./application-menu.cjs");
-const { createProjectsHost } = require("./projects.cjs");
+const { createProjectsHost, projectOpenFromArgv } = require("./projects.cjs");
 const {
   createGeneratedFileDirectoryState,
   pickGeneratedFileDirectory,
@@ -387,12 +387,15 @@ function backendRuntimeEnv() {
 //  Single instance lock
 // ═══════════════════════════════════════════════════════════
 
-const gotLock = app.requestSingleInstanceLock();
+// Chromium can move switches ahead of their values in the second-instance argv.
+const launchProject = projectOpenFromArgv(process.argv);
+const gotLock = app.requestSingleInstanceLock({ projectOpen: launchProject });
 if (!gotLock) {
   app.quit();
 } else {
-  app.on("second-instance", (_event, argv) => {
-    projectsHost.enqueueArgv(argv);
+  app.on("second-instance", (_event, argv, _cwd, data) => {
+    if (data?.projectOpen === undefined) projectsHost.enqueueArgv(argv);
+    else projectsHost.enqueueProject(data.projectOpen);
     if (win) {
       if (win.isMinimized()) win.restore();
       win.focus();
@@ -415,7 +418,7 @@ let isQuitting = false;
 let quitConfirmationPending = false;
 let trustedMainFrameUrl = null;
 const projectsHost = createProjectsHost({ app, ipcMain, dialog, shell, getWindow: () => win, getTrustedUrl: () => trustedMainFrameUrl });
-if (gotLock) projectsHost.enqueueArgv(process.argv);
+if (gotLock) projectsHost.enqueueProject(launchProject);
 
 async function confirmQuit() {
   if (isQuitting || quitConfirmationPending) return;

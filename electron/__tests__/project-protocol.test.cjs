@@ -9,6 +9,7 @@ const {
 } = require("../project-protocol.cjs");
 
 test("app-ready is distinct from project-opened and request ids are idempotent", async () => {
+  const projectPath = path.join(os.tmpdir(), "example.lum");
   const calls = [];
   const broker = new ProjectOpenBroker({
     openProject: async ({ projectPath }) => {
@@ -21,13 +22,13 @@ test("app-ready is distinct from project-opened and request ids are idempotent",
 
   const first = broker.request({
     requestId: "request-1",
-    projectPath: "/tmp/example.lum",
+    projectPath,
   });
   assert.equal(broker.get("request-1").state, "awaiting-user");
   broker.markAppReady();
   const duplicate = broker.request({
     requestId: "request-1",
-    projectPath: "/tmp/example.lum",
+    projectPath,
   });
   assert.strictEqual(first, duplicate);
 
@@ -46,7 +47,7 @@ test("limited and failed outcomes remain explicit", async () => {
   });
   const limitedOpening = await limited.request({
     requestId: "limited-1",
-    projectPath: "/tmp/limited.lum",
+    projectPath: path.join(os.tmpdir(), "limited.lum"),
   });
   assert.equal(limitedOpening.state, "opening");
   limited.complete("limited-1", { state: "limited", result: { reason: "unsupported-capability" } });
@@ -60,7 +61,7 @@ test("limited and failed outcomes remain explicit", async () => {
   });
   const failedResult = await failed.request({
     requestId: "failed-1",
-    projectPath: "/tmp/failed.lum",
+    projectPath: path.join(os.tmpdir(), "failed.lum"),
   });
   assert.equal(failedResult.state, "failed");
   assert.match(failedResult.error, /corrupt/);
@@ -79,7 +80,7 @@ test("a cancelled opener cannot publish opened after its promise resolves", asyn
 
   const resultPromise = broker.request({
     requestId: "cancel-race",
-    projectPath: "/tmp/cancel-race.lum",
+    projectPath: path.join(os.tmpdir(), "cancel-race.lum"),
   });
   await new Promise((resolve) => setImmediate(resolve));
   assert.equal(broker.cancel("cancel-race"), true);
@@ -111,8 +112,9 @@ test("the native opener rejects a non-ZIP project before reporting opened", asyn
 });
 
 test("project paths are absolute .lum paths without NUL bytes", () => {
-  assert.equal(validateProjectPath("/tmp/a.lum"), "/tmp/a.lum");
+  const projectPath = path.join(os.tmpdir(), "a.lum");
+  assert.equal(validateProjectPath(projectPath), projectPath);
   assert.throws(() => validateProjectPath("relative.lum"), /absolute/);
-  assert.throws(() => validateProjectPath("/tmp/a.zip"), /\.lum/);
-  assert.throws(() => validateProjectPath("/tmp/a\0.lum"), /absolute|path/);
+  assert.throws(() => validateProjectPath(path.join(os.tmpdir(), "a.zip")), /\.lum/);
+  assert.throws(() => validateProjectPath(path.join(os.tmpdir(), "a\0.lum")), /absolute|path/);
 });

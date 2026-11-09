@@ -76,7 +76,7 @@ from api.workers.converter_workers import (
 )
 from core.batch_layout import LayoutResult, XYBBox, layout_shelf_by_row
 from core.errors import (
-    CachedPreviewAnalysisError, ExternalSpoolSelectionError, NativeMaterialSelectionError, WipeTowerLayoutError,
+    CachedPreviewAnalysisError, ExternalSpoolSelectionError, NativeMaterialSelectionError, TemplateSlotCapacityError, WipeTowerLayoutError,
 )
 from .export_materials import require_material_selection
 from core.model_surface.types import ModelSurfaceError
@@ -2631,7 +2631,7 @@ async def convert_generate(
             lut_path,
             worker_params,
         )
-    except (WipeTowerLayoutError, NativeMaterialSelectionError, ExternalSpoolSelectionError) as exc:
+    except (WipeTowerLayoutError, NativeMaterialSelectionError, ExternalSpoolSelectionError, TemplateSlotCapacityError) as exc:
         raise to_http_exception(exc, "3MF layout") from exc
     except ModelSurfaceError as exc:
         detail = public_model_surface_error_detail(exc)
@@ -3151,7 +3151,7 @@ async def _generate_large_format_svg_native(
             )
         finally:
             _remove_temp_path(native_heightmap_path)
-    except (WipeTowerLayoutError, NativeMaterialSelectionError, ExternalSpoolSelectionError) as exc:
+    except (WipeTowerLayoutError, NativeMaterialSelectionError, ExternalSpoolSelectionError, TemplateSlotCapacityError) as exc:
         raise to_http_exception(exc, "large-format 3MF layout") from exc
     except LargeFormatCachedAnalysisError as e:
         _log_large_format_failure(
@@ -3852,7 +3852,7 @@ async def _generate_large_format_raster(
             except (DynamicMaterialCandidateError, DynamicMaterialSolverError) as e:
                 _discard_pending_awaitables(futures, future_index + 1)
                 _handle_core_error(e, "large-format tile generation")
-            except (WipeTowerLayoutError, NativeMaterialSelectionError, ExternalSpoolSelectionError) as exc:
+            except (WipeTowerLayoutError, NativeMaterialSelectionError, ExternalSpoolSelectionError, TemplateSlotCapacityError) as exc:
                 _discard_pending_awaitables(futures, future_index + 1)
                 raise to_http_exception(exc, "large-format tile layout") from exc
             except ROUTER_HANDLED_ERRORS as e:
@@ -5051,7 +5051,7 @@ async def convert_batch(
                 except (
                     BrokenProcessPool, DynamicMaterialCandidateError,
                     DynamicMaterialSolverError, WipeTowerLayoutError, NativeMaterialSelectionError,
-                    ExternalSpoolSelectionError,
+                    ExternalSpoolSelectionError, TemplateSlotCapacityError,
                 ):
                     raise
                 except ROUTER_HANDLED_ERRORS as exc:
@@ -5070,7 +5070,7 @@ async def convert_batch(
         raise HTTPException(status_code=503, detail=BATCH_GENERATION_FAILED_DETAIL) from exc
     except (DynamicMaterialCandidateError, DynamicMaterialSolverError) as exc:
         _handle_core_error(exc, "batch material generation")
-    except (WipeTowerLayoutError, NativeMaterialSelectionError, ExternalSpoolSelectionError) as exc:
+    except (WipeTowerLayoutError, NativeMaterialSelectionError, ExternalSpoolSelectionError, TemplateSlotCapacityError) as exc:
         raise to_http_exception(exc, "batch 3MF layout") from exc
     finally:
         # Release returned artifacts on cancellation or any fatal failure.
@@ -5225,7 +5225,7 @@ async def convert_batch(
             error_message=str(exc),
             stage=stage,
         )
-        if isinstance(exc, (WipeTowerLayoutError, NativeMaterialSelectionError, ExternalSpoolSelectionError)):
+        if isinstance(exc, (WipeTowerLayoutError, NativeMaterialSelectionError, ExternalSpoolSelectionError, TemplateSlotCapacityError)):
             _cleanup_intermediates(intermediates + merged_outputs, batch_run_id)
             _remove_temp_path(temp_native_bundle_path)
             raise to_http_exception(exc, "batch 3MF layout") from exc

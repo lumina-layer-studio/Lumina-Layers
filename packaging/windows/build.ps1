@@ -153,6 +153,11 @@ if ($StageOnly) { Step "Stage ready at $Stage"; exit 0 }
 
 # ── 5. Package ────────────────────────────────────────────────────
 Step "Packaging with electron-builder"
+# electron-builder pulls @electron/node-gyp from GitHub over SSH; use HTTPS so
+# machines without a GitHub SSH key can build. Scoped to this process only.
+$env:GIT_CONFIG_COUNT = "1"
+$env:GIT_CONFIG_KEY_0 = "url.https://github.com/.insteadOf"
+$env:GIT_CONFIG_VALUE_0 = "git@github.com:"
 Invoke-Checked "pnpm" @("--dir", "electron", "install", "--frozen-lockfile")
 $env:CSC_IDENTITY_AUTO_DISCOVERY = "false"
 Invoke-Checked "pnpm" @("--dir", "electron", "run", "dist:win")

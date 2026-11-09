@@ -831,7 +831,7 @@ def test_worker_generate_large_format_svg_native_uses_sanitized_tile_prefix_in_z
             self.color_mode = color_mode
 
         def analyze_svg(self, **_kwargs):
-            return SimpleNamespace(num_layers=5, slot_names=["Slot1"])
+            return SimpleNamespace(num_layers=5, slot_names=["Slot1"], preview_colors={0: [255, 0, 0, 255]})
 
         def build_mesh(self, **_kwargs):
             fake_geom = SimpleNamespace(vertices=[(0, 0, 0)], faces=[(0, 0, 0)])
@@ -901,7 +901,7 @@ def test_worker_generate_large_format_svg_native_applies_coating_to_tile() -> No
             self.color_mode = color_mode
 
         def analyze_svg(self, **_kwargs):
-            return SimpleNamespace(num_layers=5, slot_names=["Slot1"])
+            return SimpleNamespace(num_layers=5, slot_names=["Slot1"], preview_colors={0: [255, 0, 0, 255]})
 
         def build_mesh(self, **kwargs):
             build_calls.append(
@@ -984,7 +984,7 @@ def test_worker_generate_large_format_svg_native_preserves_relief_semantics_per_
             self.color_mode = color_mode
 
         def analyze_svg(self, **_kwargs):
-            return SimpleNamespace(num_layers=5, slot_names=["Slot1"])
+            return SimpleNamespace(num_layers=5, slot_names=["Slot1"], preview_colors={0: [255, 0, 0, 255]})
 
         def build_mesh(self, **kwargs):
             build_calls.append(dict(kwargs))
@@ -1097,7 +1097,7 @@ def test_worker_generate_large_format_svg_native_cleans_heightmap_when_save_fail
             self.color_mode = color_mode
 
         def analyze_svg(self, **_kwargs):
-            return SimpleNamespace(num_layers=5, slot_names=["Slot1"])
+            return SimpleNamespace(num_layers=5, slot_names=["Slot1"], preview_colors={0: [255, 0, 0, 255]})
 
     heightmap_path = tmp_path / "heightmap.png"
     Image.fromarray(np.zeros((4, 4), dtype=np.uint8)).save(heightmap_path)
@@ -1167,7 +1167,7 @@ def test_worker_generate_large_format_svg_native_raises_when_all_tiles_are_empty
             self.color_mode = color_mode
 
         def analyze_svg(self, **_kwargs):
-            return SimpleNamespace(num_layers=5, slot_names=["Slot1"])
+            return SimpleNamespace(num_layers=5, slot_names=["Slot1"], preview_colors={0: [255, 0, 0, 255]})
 
     params = {
         "tile_name_prefix": "poster-art",
@@ -1200,7 +1200,7 @@ def test_worker_generate_large_format_svg_native_cleans_current_tile_file_on_exp
             self.color_mode = color_mode
 
         def analyze_svg(self, **_kwargs):
-            return SimpleNamespace(num_layers=5, slot_names=["Slot1"])
+            return SimpleNamespace(num_layers=5, slot_names=["Slot1"], preview_colors={0: [255, 0, 0, 255]})
 
         def build_mesh(self, **_kwargs):
             fake_geom = SimpleNamespace(vertices=[(0, 0, 0)], faces=[(0, 0, 0)])

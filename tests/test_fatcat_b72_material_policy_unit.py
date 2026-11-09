@@ -142,7 +142,7 @@ def imported_template(tmp_path, monkeypatch):
 def test_successfully_loaded_user_template_enters_preserve_mode(tmp_path, imported_template, policy):
     template_id, original = imported_template
     writer = _writer(tmp_path, policy=policy, custom_3mf_template_id=template_id)
-    source, request = _request(writer, [("White", (240, 240, 240)), ("Black", (10, 10, 10))])
+    source, request = _request(writer, [("White", (240, 240, 240))])
     assert source["nozzle_temperature"] == original["nozzle_temperature"]
     assert request["material_mode"] == "preserve_template"
     assert request["preserve_source_material_settings"] is True

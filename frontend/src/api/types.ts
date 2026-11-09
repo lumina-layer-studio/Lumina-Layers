@@ -1842,6 +1842,7 @@ export interface BatchItemResult {
   filename: string;
   status: string;
   error?: string;
+  download_url?: string | null;
 }
 
 /**

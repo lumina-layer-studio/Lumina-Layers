@@ -2134,13 +2134,12 @@ class TestBatchMergeFlow:
         assert all(r["status"] == "failed" for r in body["results"])
 
     # ------------------------------------------------------------------
-    # 5. writer-fail-5xx: MergedBambu3MFWriter.write raises MergedWriteError
+    # 5. A failed merge retains independently downloadable completed exports.
     # ------------------------------------------------------------------
-    def test_writer_fail_5xx(self) -> None:
+    def test_writer_failure_keeps_completed_items(self) -> None:
         """MergedBambu3MFWriter.write raises MergedWriteError.
 
-        Asserts: HTTP 500, log contains batch_merge_3mf_failed with
-        stage=='merge_3mf', no residual temp files (P12).
+        The response preserves completed items and logs the private failure.
         """
         worker_results = [
             _make_worker_result("img1.png", 30.0, 20.0),
@@ -2209,11 +2208,12 @@ class TestBatchMergeFlow:
                 data={"lut_name": "test_lut"},
             )
 
-        # HTTP 500
-        assert response.status_code == 500
-        assert response.json()["detail"] == (
-            "Batch 3MF merge failed. Try again or check the server log for details."
-        )
+        assert response.status_code == 200
+        body = response.json()
+        assert body["status"] == "partial"
+        assert body["download_url"] is None
+        assert body["warnings"][0]["code"] == "merge-unavailable"
+        assert all(item["download_url"] for item in body["results"])
         assert private_path not in response.text
         assert "Permission denied" not in response.text
         assert "Batch merge failed at stage=" not in response.text
@@ -2236,6 +2236,7 @@ class TestBatchMergeFlow:
         assert private_path in fields["error_message"]
         assert "Permission denied" in fields["error_message"]
 
-        # No residual intermediate temp files (P12)
+        # Only the completed single-model downloads survive.
+        retained = {wr["threemf_path"] for wr in worker_results}
         for p in intermediate_paths:
-            assert not os.path.exists(p), f"Residual temp file found: {p}"
+            assert os.path.exists(p) == (p in retained)

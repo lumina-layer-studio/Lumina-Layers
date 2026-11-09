@@ -1420,8 +1420,9 @@ async def convert_preview(
                     cache_data = pickle.load(f)
             _t_pickle_load = time.perf_counter() - _t
 
-            # Load preview image from disk (worker saved as .png). Copy it so the
-            # file handle is closed before rollback cleanup can run on Windows.
+            # The worker saves a bounded screen image, separate from the full
+            # cache grid. Keep Pillow's normal image-read protection enabled.
+            # Copy it so rollback cleanup can close the file on Windows.
             with Image.open(worker_preview_png_path) as worker_preview_img:
                 preview_img = worker_preview_img.copy()
 
@@ -1765,7 +1766,7 @@ async def convert_preview(
             if worker_gradient_region_id_map_path is not None:
                 store.register_temp_file(session_id, worker_gradient_region_id_map_path)
 
-            # Register preview image (bed-rendered, for general display)
+            # Register the bounded preview image for general display.
             preview_bytes = _image_to_png_bytes(preview_img)
             preview_id = registry.register_bytes(session_id, preview_bytes, "preview.png")
 
@@ -1816,6 +1817,8 @@ async def convert_preview(
 
             dimensions: dict = {}
             if cache_data:
+                # Printable dimensions come from the model grid, never the
+                # bounded screen image loaded above.
                 dimensions = {
                     "width": cache_data.get("target_w", 0),
                     "height": cache_data.get("target_h", 0),

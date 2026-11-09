@@ -27,6 +27,20 @@ class CoreValidationError(CoreError):
         super().__init__(detail=detail, error_type="core_validation_error")
 
 
+class TemplateSlotCapacityError(CoreValidationError):
+    """The imported template cannot hold every material used by the model."""
+
+    def __init__(self, required_slots: int, available_slots: int):
+        self.required_slots = required_slots
+        self.available_slots = available_slots
+        super().__init__(
+            f"This model needs {required_slots} material slots, but the selected "
+            f"3MF template has {available_slots}. Choose a template with at least "
+            f"{required_slots} slots or use fewer materials."
+        )
+        self.error_type = "template_slot_capacity"
+
+
 class NativeMaterialSelectionError(CoreValidationError):
     """Report a native preset or plate choice the user must resolve.
 

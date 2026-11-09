@@ -191,12 +191,15 @@ class TestWriterPathFieldClampedTo1024:
         )
 
         target_logger = logging.getLogger(_WRITER_LOGGER_NAME)
+        original_propagate = target_logger.propagate
+        target_logger.propagate = False
         target_logger.addHandler(caplog.handler)
         caplog.set_level(logging.WARNING, logger=_WRITER_LOGGER_NAME)
         try:
             writer._ensure_cover_bundle()
         finally:
             target_logger.removeHandler(caplog.handler)
+            target_logger.propagate = original_propagate
 
         records = [
             record

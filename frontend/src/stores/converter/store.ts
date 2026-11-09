@@ -3662,9 +3662,23 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
     setLoopAngle: documentCommand((angle: number) =>
       set({ loop_angle: clampValue(angle, -180, 180) })),
     setLoopOffsetX: documentCommand((x: number) =>
-      set({ loop_offset_x: clampValue(x, -200, 200) })),
+      set((state) => {
+        const offset = clampValue(x, -200, 200);
+        return Object.is(state.loop_offset_x, offset) ? state : { loop_offset_x: offset };
+      })),
     setLoopOffsetY: documentCommand((y: number) =>
-      set({ loop_offset_y: clampValue(y, -200, 200) })),
+      set((state) => {
+        const offset = clampValue(y, -200, 200);
+        return Object.is(state.loop_offset_y, offset) ? state : { loop_offset_y: offset };
+      })),
+    setLoopOffsets: documentCommand((x: number, y: number) =>
+      set((state) => {
+        const offsetX = clampValue(x, -200, 200);
+        const offsetY = clampValue(y, -200, 200);
+        return Object.is(state.loop_offset_x, offsetX) && Object.is(state.loop_offset_y, offsetY)
+          ? state
+          : { loop_offset_x: offsetX, loop_offset_y: offsetY };
+      })),
     setLoopPositionPreset: documentCommand((preset: string) => {
       set({ loop_position_preset: preset });
     }),

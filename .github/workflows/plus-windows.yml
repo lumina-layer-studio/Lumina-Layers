@@ -43,7 +43,7 @@ jobs:
       - name: Cache Python runtime download
         uses: actions/cache@v4
         with:
-          path: packaging/windows/work/*.tar.gz
+          path: packaging/windows/work/*.nupkg
           key: pbs-${{ hashFiles('packaging/windows/build.ps1') }}
 
       - name: Build desktop package

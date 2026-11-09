@@ -3,8 +3,8 @@
   Build the Lumina Studio Plus Windows desktop package (NSIS installer + portable zip).
 
 .DESCRIPTION
-  1. Downloads a standalone CPython 3.12 x64 runtime (python-build-standalone)
-     and verifies it against the release checksum list.
+  1. Downloads the official CPython 3.12 x64 runtime (python.org NuGet package)
+     and verifies it against NuGet's published SHA-512.
   2. Installs requirements.txt into that runtime (no venv: it must stay relocatable).
   3. Builds the frontend (pnpm) and stages the backend tree.
   4. Runs the backend self-tests with the bundled runtime.
@@ -21,11 +21,10 @@
 #>
 [CmdletBinding()]
 param(
-  # python-build-standalone release tag and Python minor version.
-  [string]$PbsTag = "20251120",
-  [string]$PythonMinor = "3.12",
-  # Optional pinned SHA-256 of the runtime archive; the release checksum list is used otherwise.
-  [string]$PythonSha256 = "",
+  # CPython version from the official python.org NuGet package.
+  [string]$PythonVersion = "3.12.10",
+  # Optional pinned base64 SHA-512 of the .nupkg; NuGet's registration hash is used otherwise.
+  [string]$PythonSha512 = "",
   # Skip electron-builder (stage + self-test only).
   [switch]$StageOnly
 )
@@ -54,28 +53,37 @@ if (Test-Path $Stage) { Remove-Item -Recurse -Force $Stage }
 New-Item -ItemType Directory -Force -Path $StageApp, $StagePython | Out-Null
 
 # ── 1. Python runtime ─────────────────────────────────────────────
-Step "Downloading CPython $PythonMinor (python-build-standalone $PbsTag)"
-$ReleaseBase = "https://github.com/astral-sh/python-build-standalone/releases/download/$PbsTag"
-$SumsPath = Join-Path $Work "SHA256SUMS-$PbsTag"
-if (-not (Test-Path $SumsPath)) { Invoke-WebRequest -Uri "$ReleaseBase/SHA256SUMS" -OutFile $SumsPath }
-$Pattern = "^([0-9a-f]{64})\s+(cpython-$([regex]::Escape($PythonMinor))\.\d+\+$PbsTag-x86_64-pc-windows-msvc-install_only\.tar\.gz)$"
-$Match = Get-Content $SumsPath | ForEach-Object { [regex]::Match($_.Trim(), $Pattern) } | Where-Object { $_.Success } | Select-Object -First 1
-if (-not $Match) { throw "No CPython $PythonMinor Windows x64 install_only build found in release $PbsTag" }
-$ArchiveName = $Match.Groups[2].Value
-$ExpectedSha = if ($PythonSha256) { $PythonSha256.ToLower() } else { $Match.Groups[1].Value }
-$ArchivePath = Join-Path $Work $ArchiveName
-if (-not (Test-Path $ArchivePath)) { Invoke-WebRequest -Uri "$ReleaseBase/$([uri]::EscapeDataString($ArchiveName))" -OutFile $ArchivePath }
-$ActualSha = (Get-FileHash -Algorithm SHA256 $ArchivePath).Hash.ToLower()
-if ($ActualSha -ne $ExpectedSha) { Remove-Item $ArchivePath; throw "Checksum mismatch for $ArchiveName ($ActualSha != $ExpectedSha)" }
-Write-Host "Verified $ArchiveName"
+# Official python.org build published on NuGet (package "python"): a complete,
+# relocatable CPython with its own VC++ runtime DLLs. 3.12.10 is the final
+# 3.12 release with Windows binaries.
+Step "Downloading CPython $PythonVersion (python.org NuGet package)"
+$PackageId = "python"
+$NupkgUrl = "https://api.nuget.org/v3-flatcontainer/$PackageId/$PythonVersion/$PackageId.$PythonVersion.nupkg"
+$NupkgPath = Join-Path $Work "$PackageId.$PythonVersion.nupkg"
+if (-not (Test-Path $NupkgPath)) { Invoke-WebRequest -Uri $NupkgUrl -OutFile $NupkgPath }
+if ($PythonSha512) {
+  $ExpectedHash = $PythonSha512
+} else {
+  # The registration entry records the SHA-512 NuGet computed at publish time.
+  $Registration = Invoke-RestMethod -Uri "https://api.nuget.org/v3/registration5-semver1/$PackageId/$PythonVersion.json"
+  $Catalog = Invoke-RestMethod -Uri $Registration.catalogEntry
+  if ($Catalog.packageHashAlgorithm -ne "SHA512") { throw "Unexpected NuGet hash algorithm $($Catalog.packageHashAlgorithm)" }
+  $ExpectedHash = $Catalog.packageHash
+}
+$Sha512 = [System.Security.Cryptography.SHA512]::Create()
+$Stream = [System.IO.File]::OpenRead($NupkgPath)
+try { $ActualHash = [Convert]::ToBase64String($Sha512.ComputeHash($Stream)) } finally { $Stream.Dispose() }
+if ($ActualHash -ne $ExpectedHash) { Remove-Item $NupkgPath; throw "Checksum mismatch for $PackageId $PythonVersion" }
+Write-Host "Verified $PackageId $PythonVersion (SHA-512 $ActualHash)"
 
 $Extract = Join-Path $Work "python-extract"
 if (Test-Path $Extract) { Remove-Item -Recurse -Force $Extract }
-New-Item -ItemType Directory -Force -Path $Extract | Out-Null
-tar -xzf $ArchivePath -C $Extract
-if ($LASTEXITCODE -ne 0) { throw "Extracting $ArchiveName failed" }
-Copy-Item -Recurse -Force (Join-Path $Extract "python\*") $StagePython
+Add-Type -AssemblyName System.IO.Compression.FileSystem
+[System.IO.Compression.ZipFile]::ExtractToDirectory($NupkgPath, $Extract)
+Copy-Item -Recurse -Force (Join-Path $Extract "tools\*") $StagePython
 $Python = Join-Path $StagePython "python.exe"
+if (-not (Test-Path $Python)) { throw "python.exe missing from the NuGet package" }
+& $Python --version
 
 # ── 2. Python dependencies ────────────────────────────────────────
 Step "Installing Python dependencies into the bundled runtime"

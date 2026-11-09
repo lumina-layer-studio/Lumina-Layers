@@ -11,7 +11,24 @@ from enum import Enum
 
 _BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
-OUTPUT_DIR = os.path.join(_BASE_DIR, "output")
+def _resolve_output_dir() -> str:
+    """Return the writable output root.
+
+    ``LUMINA_OUTPUT_DIR`` (absolute) moves generated files, temp files and
+    model exports out of the application directory, e.g. for an installed
+    desktop build. Source checkouts keep ``<repo>/output``.
+    返回可写输出根目录；``LUMINA_OUTPUT_DIR``（绝对路径）用于安装版把输出移出程序目录。
+    """
+    override = os.environ.get("LUMINA_OUTPUT_DIR", "").strip()
+    if not override:
+        return os.path.join(_BASE_DIR, "output")
+    expanded = os.path.expanduser(override)
+    if not os.path.isabs(expanded):
+        raise ValueError("LUMINA_OUTPUT_DIR must be an absolute directory path")
+    return expanded
+
+
+OUTPUT_DIR = _resolve_output_dir()
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 TEMP_DIR = os.path.join(OUTPUT_DIR, "temp")

@@ -1,0 +1,111 @@
+name: Lumina Studio Plus (Windows desktop)
+
+# Builds the personal Windows desktop package: NSIS installer + portable zip.
+# - Every push to plus/main produces downloadable workflow artifacts.
+# - Pushing a tag like plus-v2.0.1-1 also publishes a GitHub Release.
+# 个人版 Windows 桌面包：push 到 plus/main 生成构建产物；推送 plus-v* 标签同时发布 Release。
+
+on:
+  push:
+    branches: [plus/main]
+    tags: ["plus-v*"]
+  workflow_dispatch:
+
+concurrency:
+  group: plus-windows-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-2022
+    timeout-minutes: 90
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.2
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: pnpm
+          cache-dependency-path: |
+            frontend/pnpm-lock.yaml
+            electron/pnpm-lock.yaml
+
+      - name: Cache Python runtime download
+        uses: actions/cache@v4
+        with:
+          path: packaging/windows/work/*.tar.gz
+          key: pbs-${{ hashFiles('packaging/windows/build.ps1') }}
+
+      - name: Build desktop package
+        shell: pwsh
+        run: ./packaging/windows/build.ps1
+
+      - name: Smoke test the portable build
+        shell: pwsh
+        run: |
+          $zip = Get-ChildItem dist-desktop -Filter "*-win-x64.zip" | Select-Object -First 1
+          if (-not $zip) { throw "Portable zip not found" }
+          $dir = Join-Path $env:RUNNER_TEMP "lumina-portable"
+          Expand-Archive -Path $zip.FullName -DestinationPath $dir -Force
+          $exe = Get-ChildItem $dir -Recurse -Filter "Lumina Studio Plus.exe" | Select-Object -First 1
+          if (-not $exe) { throw "Desktop executable not found in the zip" }
+          $result = Join-Path $env:RUNNER_TEMP "smoke-test.json"
+          $env:LUMINA_SMOKE_TEST = "1"
+          $env:LUMINA_SMOKE_TEST_RESULT = $result
+          $proc = Start-Process -FilePath $exe.FullName -PassThru
+          if (-not $proc.WaitForExit(300000)) { Stop-Process -Id $proc.Id -Force; throw "Desktop app did not finish the smoke test in 5 minutes" }
+          if (-not (Test-Path $result)) { throw "Smoke test wrote no result" }
+          $data = Get-Content $result -Raw | ConvertFrom-Json
+          Get-Content $result
+          if (-not $data.ok) { throw "Smoke test failed: $($data.reason)" }
+
+      - name: Upload smoke-test logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-test-logs
+          path: |
+            ${{ env.APPDATA }}/Lumina Studio Plus/logs/**
+            ${{ env.APPDATA }}/Lumina Studio Plus/backend-logs/**
+            ${{ env.APPDATA }}/Lumina Studio Plus/*.log
+          if-no-files-found: ignore
+
+      - name: Upload installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: LuminaStudioPlus-installer
+          path: dist-desktop/*.exe
+          if-no-files-found: error
+          compression-level: 0
+
+      - name: Upload portable zip
+        uses: actions/upload-artifact@v4
+        with:
+          name: LuminaStudioPlus-portable
+          path: dist-desktop/*-win-x64.zip
+          if-no-files-found: error
+          compression-level: 0
+
+      - name: Publish release
+        if: startsWith(github.ref, 'refs/tags/plus-v')
+        uses: softprops/action-gh-release@v2
+        with:
+          name: Lumina Studio Plus ${{ github.ref_name }}
+          prerelease: false
+          files: |
+            dist-desktop/*.exe
+            dist-desktop/*-win-x64.zip
+          body: |
+            Personal Windows build of Lumina-Layers (Lumina Studio), AGPL-3.0-only.
+            Source: https://github.com/${{ github.repository }}/tree/${{ github.sha }}
+            Upstream: https://github.com/lumina-layer-studio/Lumina-Layers

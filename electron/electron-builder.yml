@@ -1,0 +1,57 @@
+# Lumina Studio Plus — personal Windows desktop build.
+# Run through packaging/windows/build.ps1, which stages the backend and the
+# bundled Python runtime into packaging/windows/stage/ first.
+# 个人版 Windows 桌面打包配置；请通过 packaging/windows/build.ps1 调用。
+appId: io.github.czx2244.lumina-studio-plus
+productName: Lumina Studio Plus
+extraMetadata:
+  productName: Lumina Studio Plus
+copyright: "Lumina-Layers (Lumina Studio) contributors · AGPL-3.0-only"
+directories:
+  output: ../dist-desktop
+asar: true
+files:
+  - "*.cjs"
+  - "*.mjs"
+  - "*.html"
+  - "*.css"
+  - "splash-text.json"
+  - "project-capabilities.v1.json"
+  - "package.json"
+  - "assets/**"
+  - "splash-art/**"
+  - "!__tests__/**"
+extraResources:
+  - from: ../packaging/windows/stage/app
+    to: app
+  - from: ../packaging/windows/stage/python
+    to: python
+  # The official launcher protocol reads this marker from Resources/.
+  - from: project-capabilities.v1.json
+    to: project-capabilities.v1.json
+win:
+  icon: ../icon.ico
+  target:
+    - target: nsis
+      arch: [x64]
+    - target: zip
+      arch: [x64]
+  artifactName: "LuminaStudioPlus-${version}-win-x64.${ext}"
+  # Unsigned personal build.
+  signAndEditExecutable: true
+nsis:
+  oneClick: false
+  perMachine: false
+  allowElevation: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: always
+  createStartMenuShortcut: true
+  shortcutName: Lumina Studio Plus
+  deleteAppDataOnUninstall: false
+  installerIcon: ../icon.ico
+  uninstallerIcon: ../icon.ico
+fileAssociations:
+  - ext: lum
+    name: LuminaProject
+    description: Lumina Studio Project
+    role: Editor

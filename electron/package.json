@@ -7,10 +7,12 @@
   "packageManager": "pnpm@10.33.2",
   "scripts": {
     "start": "electron .",
-    "test": "node --test __tests__/*.test.cjs"
+    "test": "node --test __tests__/*.test.cjs",
+    "dist:win": "electron-builder --win --config electron-builder.yml"
   },
   "devDependencies": {
-    "electron": "^44.9.3"
+    "electron": "^44.9.3",
+    "electron-builder": "26.0.12"
   },
   "pnpm": {
     "onlyBuiltDependencies": [

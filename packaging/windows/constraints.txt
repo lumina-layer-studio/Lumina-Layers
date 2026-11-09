@@ -1,0 +1,3 @@
+# Reproducible pins for the Windows desktop build (applied with pip -c).
+# requirements.txt leaves this one unpinned.
+neroued-vectorizer==0.2.0

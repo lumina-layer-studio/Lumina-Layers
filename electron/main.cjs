@@ -85,7 +85,18 @@ const WORKSHOP_RUNTIME_HEADER_NAMES = [
   "x-content-type-options",
 ];
 
-const ROOT_DIR = path.join(__dirname, "..");
+const { resolveRuntimeLayout, distDataEnv } = require("./runtime-layout.cjs");
+const RUNTIME_LAYOUT = resolveRuntimeLayout({
+  isPackaged: app.isPackaged,
+  resourcesPath: process.resourcesPath,
+  electronDir: __dirname,
+  env: process.env,
+  platform: process.platform,
+});
+// "dist": the backend serves the built frontend; no Node or Vite at runtime.
+const DIST_MODE = RUNTIME_LAYOUT.mode === "dist";
+const ROOT_DIR = RUNTIME_LAYOUT.rootDir;
+const SMOKE_TEST = process.env.LUMINA_SMOKE_TEST === "1";
 const IS_WIN = process.platform === "win32";
 const IS_MAC = process.platform === "darwin";
 const workshopSessionToken = createWorkshopSessionToken();
@@ -331,6 +342,10 @@ function waitForPort(port, timeoutMs) {
 // ═══════════════════════════════════════════════════════════
 
 function findPython() {
+  if (RUNTIME_LAYOUT.pythonOverride) return RUNTIME_LAYOUT.pythonOverride;
+  if (RUNTIME_LAYOUT.bundledPython && fs.existsSync(RUNTIME_LAYOUT.bundledPython)) {
+    return RUNTIME_LAYOUT.bundledPython;
+  }
   // Windows: venv 下的可执行文件叫 python.exe;mac/linux 在 bin/python。
   const candidates = IS_WIN
     ? [
@@ -380,6 +395,11 @@ function backendRuntimeEnv() {
     LUMINA_CLEAR_CACHE_ALLOWED_LOCAL_PORTS: [process.env.LUMINA_CLEAR_CACHE_ALLOWED_LOCAL_PORTS, backendEndpoint.port].filter(Boolean).join(","),
     LUMINA_MATERIAL_LIBRARY_ALLOWED_LOCAL_PORTS: [process.env.LUMINA_MATERIAL_LIBRARY_ALLOWED_LOCAL_PORTS, backendEndpoint.port].filter(Boolean).join(","),
   };
+  if (DIST_MODE) {
+    Object.assign(env, distDataEnv({ userData: app.getPath("userData"), env: process.env }), {
+      LUMINA_FRONTEND_DIST_DIR: RUNTIME_LAYOUT.frontendDistDir,
+    });
+  }
   return env;
 }
 
@@ -417,6 +437,46 @@ let splashController = null;
 let isQuitting = false;
 let quitConfirmationPending = false;
 let trustedMainFrameUrl = null;
+
+/**
+ * CI smoke test (LUMINA_SMOKE_TEST=1): wait until the renderer shows the app
+ * shell, write the result as JSON and quit without the confirmation dialog.
+ * 冒烟测试：等待界面渲染出主框架，写出结果后直接退出。
+ */
+async function runSmokeTest(mainWindow) {
+  const resultPath = process.env.LUMINA_SMOKE_TEST_RESULT
+    || path.join(app.getPath("userData"), "smoke-test.json");
+  const deadline = Date.now() + 120000;
+  let result = { ok: false, reason: "timeout" };
+  while (Date.now() < deadline && !mainWindow.isDestroyed()) {
+    try {
+      const shellVisible = await mainWindow.webContents.executeJavaScript(
+        "Boolean(document.querySelector('#root header, #root nav'))",
+      );
+      if (shellVisible) {
+        result = { ok: true, url: mainWindow.webContents.getURL(), mode: RUNTIME_LAYOUT.mode };
+        break;
+      }
+    } catch (error) {
+      result = { ok: false, reason: error.message };
+    }
+    await new Promise(resolve => setTimeout(resolve, 1000));
+  }
+  try {
+    fs.mkdirSync(path.dirname(resultPath), { recursive: true });
+    fs.writeFileSync(resultPath, JSON.stringify(result, null, 2));
+  } catch (error) {
+    logErr(`Smoke test result could not be written: ${error.message}`);
+  }
+  logSys(`Smoke test ${result.ok ? "passed" : "failed"}: ${JSON.stringify(result)}`);
+  isQuitting = true;
+  app.quit();
+}
+
+/** Page origin the main window loads: Vite in dev, the backend in dist mode. */
+function frontendUrl() {
+  return DIST_MODE ? `${backendEndpoint.origin}/` : FRONTEND_URL;
+}
 const projectsHost = createProjectsHost({ app, ipcMain, dialog, shell, getWindow: () => win, getTrustedUrl: () => trustedMainFrameUrl });
 if (gotLock) projectsHost.enqueueProject(launchProject);
 
@@ -628,6 +688,7 @@ function createWindow() {
       if (placement.maximize) mainWindow.maximize();
       await launcherStartup.present(mainWindow);
       closeSplash();
+      if (SMOKE_TEST) void runSmokeTest(mainWindow);
     })().catch(error => {
       logErr(`Window presentation failed: ${error.message}`);
       closeSplash();
@@ -761,8 +822,8 @@ function createWindow() {
     void confirmQuit();
   });
 
-  trustedMainFrameUrl = new URL(FRONTEND_URL).href;
-  const initialLoad = win.loadURL(FRONTEND_URL);
+  trustedMainFrameUrl = new URL(frontendUrl()).href;
+  const initialLoad = win.loadURL(frontendUrl());
   void initialLoad.catch(error => {
     logErr(`Main window load failed: ${error.code || error.name}`);
   });
@@ -788,7 +849,7 @@ function createWindow() {
       logErr("Frontend failed to load, retrying in 2s...");
       setTimeout(() => {
         if (win && !win.isDestroyed()) {
-          win.loadURL(FRONTEND_URL);
+          win.loadURL(frontendUrl());
         }
       }, 2000);
     },
@@ -800,7 +861,7 @@ function createWindow() {
 // ═══════════════════════════════════════════════════════════
 
 ipcMain.on("application-menu-state", (event, payload) => {
-  if (isTrustedMainFrameSender(event, win, `${FRONTEND_URL}/`)) applicationMenu?.update(payload);
+  if (isTrustedMainFrameSender(event, win, trustedMainFrameUrl)) applicationMenu?.update(payload);
 });
 
 // Window buttons per theme. "scrimmed" is the title bar color under the page's
@@ -812,7 +873,7 @@ const TITLE_BAR_OVERLAYS = {
 };
 
 ipcMain.on("set-titlebar-theme", (event, theme, scrimmed) => {
-  if (process.platform !== "win32" || !isTrustedMainFrameSender(event, win, `${FRONTEND_URL}/`)) return;
+  if (process.platform !== "win32" || !isTrustedMainFrameSender(event, win, trustedMainFrameUrl)) return;
   if (theme !== "light" && theme !== "dark") return;
   const overlay = TITLE_BAR_OVERLAYS[theme];
   win.setTitleBarOverlay(scrimmed === true
@@ -821,7 +882,7 @@ ipcMain.on("set-titlebar-theme", (event, theme, scrimmed) => {
 });
 
 ipcMain.handle("align-traffic-lights", (event, centerY, controlsHeight) => {
-  if (process.platform !== "darwin" || !isTrustedMainFrameSender(event, win, `${FRONTEND_URL}/`)) return null;
+  if (process.platform !== "darwin" || !isTrustedMainFrameSender(event, win, trustedMainFrameUrl)) return null;
   if (typeof centerY !== "number" || !Number.isFinite(centerY) || centerY < 0 || centerY > 200) return null;
   const zoom = win.webContents.getZoomFactor();
   if (trafficLightButtonHeight === null) {
@@ -1043,7 +1104,7 @@ app.whenReady().then(async () => {
       allowEphemeralFallback: true,
     });
     enableManagedDesktopHost(backendEndpoint.port);
-    await assertPortsAvailable([FRONTEND_PORT]);
+    if (!DIST_MODE) await assertPortsAvailable([FRONTEND_PORT]);
   } catch (error) {
     closeSplash();
     dialog.showErrorBox("Lumina Studio", currentLang === "zh"
@@ -1098,7 +1159,24 @@ app.whenReady().then(async () => {
     return;
   }
 
-  // ── Start Vite dev server ──
+  // ── Start Vite dev server (source workflow only) ──
+  if (!DIST_MODE) await startViteDevServer();
+
+  installWorkshopSessionSecurity();
+
+  // ── Create main window ──
+  splashController?.checkpoint(7);
+  createWindow();
+}).catch(error => {
+  logErr(`Desktop startup failed: ${error.code || error.message}`);
+  closeSplash();
+  dialog.showErrorBox("Lumina Studio", currentLang === "zh"
+    ? "软件未能完成启动。请打开此版本日志查看详情，再联系支持。"
+    : "Startup could not finish. Open this version's logs for details and contact support.");
+  app.quit();
+});
+
+async function startViteDevServer() {
   const node = findNode();
   const viteJs = path.join(
     ROOT_DIR,
@@ -1123,17 +1201,4 @@ app.whenReady().then(async () => {
   } catch (err) {
     logErr(`Vite port check failed: ${err.message}`);
   }
-
-  installWorkshopSessionSecurity();
-
-  // ── Create main window ──
-  splashController?.checkpoint(7);
-  createWindow();
-}).catch(error => {
-  logErr(`Desktop startup failed: ${error.code || error.message}`);
-  closeSplash();
-  dialog.showErrorBox("Lumina Studio", currentLang === "zh"
-    ? "软件未能完成启动。请打开此版本日志查看详情，再联系支持。"
-    : "Startup could not finish. Open this version's logs for details and contact support.");
-  app.quit();
-});
+}

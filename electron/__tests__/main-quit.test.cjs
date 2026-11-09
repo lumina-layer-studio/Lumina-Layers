@@ -18,10 +18,10 @@ async function until(check) {
   }
 }
 
-async function fixture(t, platform, mode = "healthy", prepareUserData = () => {}, { pythonPaths, argv = ["electron"] } = {}) {
+async function fixture(t, platform, mode = "healthy", prepareUserData = () => {}, { pythonPaths, argv = ["electron"], env = {}, isPackaged, resourcesPath } = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "lumina-source-desktop-"));
   prepareUserData(root);
-  const windows = [], children = [], dialogs = [], errors = [], commands = [], signals = [];
+  const windows = [], children = [], dialogs = [], errors = [], commands = [], signals = [], portChecks = [];
   const externalUrls = [];
   const timers = new Set();
   const ipcMain = new EventEmitter();
@@ -32,7 +32,7 @@ async function fixture(t, platform, mode = "healthy", prepareUserData = () => {}
   const event = () => ({ defaultPrevented: false, preventDefault() { this.defaultPrevented = true; } });
   const app = new EventEmitter();
   Object.assign(app, {
-    getPath: () => root, requestSingleInstanceLock(data) { this.lockData = data; return true; },
+    isPackaged, getPath: () => root, requestSingleInstanceLock(data) { this.lockData = data; return true; },
     whenReady: () => Promise.resolve(), getVersion: () => "2.0.0", setName() {}, setAboutPanelOptions() {},
     quit() {
       const before = event();
@@ -106,7 +106,7 @@ async function fixture(t, platform, mode = "healthy", prepareUserData = () => {}
     },
     "./backend-endpoint.cjs": {
       ...nativeRequire("./backend-endpoint.cjs"),
-      assertPortsAvailable: async () => {},
+      assertPortsAvailable: async ports => { portChecks.push(ports); },
       selectBackendEndpoint: async () => {
         if (mode === "port-busy") throw new Error("port_in_use");
         return { port: 8001, origin: "http://127.0.0.1:8001", healthUrl: "http://127.0.0.1:8001/api/health", instanceId: "source-test", previousPort: null, previousOrigin: null };
@@ -156,12 +156,12 @@ async function fixture(t, platform, mode = "healthy", prepareUserData = () => {}
     __dirname: path.dirname(mainPath), console: { log() {} }, URL, Response, Headers,
     setTimeout(callback, delay) { const timer = setTimeout(callback, delay); timers.add(timer); return timer; },
     clearTimeout,
-    process: { platform, argv, env: { LUMINA_MATERIAL_REGISTRY_URL: "https://custom.example/materials" },
+    process: { platform, argv, resourcesPath, env: { LUMINA_MATERIAL_REGISTRY_URL: "https://custom.example/materials", ...env },
       kill(pid, signal) { signals.push({ pid, signal }); } },
   }, { filename: mainPath });
   await until(() => healthCallback || app.quitted);
   const mainWindow = () => windows.find(w => w.options.title === "Lumina Studio 2");
-  return { app, children, dialogs, errors, commands, signals, ipcMain, ipcHandlers, mainWindow, externalUrls,
+  return { app, children, dialogs, errors, commands, signals, portChecks, ipcMain, ipcHandlers, mainWindow, externalUrls, root,
     menu: () => applicationMenu,
     portStatePath: path.join(root, "backend-port.json"),
     interfaceScalePath: path.join(root, "interface-scale.json"),
@@ -413,4 +413,46 @@ test("source desktop reopens at the interface scale saved last time", async t =>
   await assert.rejects(open(sender, "https://example.com"), /denied/);
   await assert.rejects(open({ sender: contents, senderFrame: { url: contents.mainFrame.url } }, urls[0]), /denied/);
   assert.equal(f.externalUrls.length, 2);
+});
+
+test("dist desktop serves the built frontend from the backend without Node or Vite", async t => {
+  const f = await fixture(t, "win32", "healthy", undefined, { env: { LUMINA_ELECTRON_FRONTEND: "dist" } });
+  const backendEnv = f.children[0].options.env;
+  assert.equal(path.basename(f.children[0].args[0]), "api_server.py");
+  assert.equal(backendEnv.LUMINA_SERVE_FRONTEND_DIST, "1");
+  assert.equal(backendEnv.LUMINA_FRONTEND_DIST_DIR, path.join(path.dirname(mainPath), "..", "frontend", "dist"));
+  assert.equal(backendEnv.LUMINA_SETTINGS_PATH, path.join(f.root, "user_settings.json"));
+  assert.equal(backendEnv.LUMINA_OUTPUT_DIR, path.join(f.root, "output"));
+  assert.equal(backendEnv.LUMINA_FEEDBACK_SERVER_URL, "off");
+  assert.deepEqual(f.portChecks, [], "the Vite port is not required in dist mode");
+  await f.healthy();
+  assert.equal(f.children.length, 1, "only the backend is started");
+  assert.equal(f.mainWindow().loadedUrl, "http://127.0.0.1:8001/");
+  assert.equal(f.errors.length, 0);
+});
+
+test("dist desktop keeps data locations the user already configured", async t => {
+  const f = await fixture(t, "win32", "healthy", undefined, {
+    env: { LUMINA_ELECTRON_FRONTEND: "dist", LUMINA_FEEDBACK_SERVER_URL: "https://feedback.example", LUMINA_OUTPUT_DIR: "D:\\Lumina\\out" },
+  });
+  const backendEnv = f.children[0].options.env;
+  assert.equal(backendEnv.LUMINA_FEEDBACK_SERVER_URL, "https://feedback.example");
+  assert.equal(backendEnv.LUMINA_OUTPUT_DIR, "D:\\Lumina\\out");
+});
+
+test("packaged desktop runs the bundled Python from the app resources", async t => {
+  const resourcesPath = path.join(os.tmpdir(), "lumina-packaged-resources");
+  const python = path.join(resourcesPath, "python", "python.exe");
+  const f = await fixture(t, "win32", "healthy", undefined, { isPackaged: true, resourcesPath, pythonPaths: [python] });
+  assert.equal(f.children[0].command, python);
+  assert.equal(f.children[0].args[0], path.join(resourcesPath, "app", "api_server.py"));
+  assert.equal(f.children[0].options.cwd, path.join(resourcesPath, "app"));
+  assert.equal(f.children[0].options.env.LUMINA_FRONTEND_DIST_DIR, path.join(resourcesPath, "app", "frontend", "dist"));
+  await f.healthy();
+  assert.equal(f.children.length, 1);
+});
+
+test("source desktop still checks the Vite port before spawning children", async t => {
+  const f = await fixture(t, "linux");
+  assert.deepEqual(JSON.parse(JSON.stringify(f.portChecks)), [[4174]]);
 });

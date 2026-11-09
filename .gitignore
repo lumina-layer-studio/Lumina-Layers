@@ -369,3 +369,8 @@ reference-projects/
 # ``MLS_WRITE_PASSWORD`` or by editing the file directly.
 # MLS — 写入密码配置入库（默认值）。把默认值视作部署期占位，正式环境通过环境变量
 # ``MLS_WRITE_PASSWORD`` 或直接修改文件来轮换。
+
+# Lumina Studio Plus desktop packaging
+/packaging/windows/work/
+/packaging/windows/stage/
+/dist-desktop/

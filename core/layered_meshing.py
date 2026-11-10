@@ -51,6 +51,7 @@ _CUBOID_FACE_TEMPLATE = np.asarray(
     dtype=np.uint32,
 )
 _COMPONENT_SIGNATURE_MAX_WORKING_BYTES = 8 * 1024 * 1024
+_COMPONENT_COUNT_BLOCK_VOXELS = 1_048_576
 
 
 @dataclass(frozen=True)
@@ -938,7 +939,7 @@ def _segment_pairs_have_material(
         token_coordinates[second_tokens],
     )
     sample = np.floor_divide(
-        low + high - first_normals - second_normals,
+        low + (high - first_normals) - second_normals,
         4,
     )
     x, y, z = sample.T
@@ -1199,7 +1200,14 @@ def _mesh_arrays_from_patches(
     if token_count > np.iinfo(np.uint32).max:
         raise ValueError("Layered surface component exceeds uint32 lattice indices")
 
-    token_coordinates = np.empty((token_count, 3), dtype=np.int64)
+    # Coordinates are doubled exact integers. Most raster grids fit int32;
+    # retain int64 for the larger domain, including the final Y-axis flip.
+    coordinate_dtype = (
+        np.int32
+        if 2 * max(int(patches.corners.max()), int(height_px)) <= np.iinfo(np.int32).max
+        else np.int64
+    )
+    token_coordinates = np.empty((token_count, 3), dtype=coordinate_dtype)
     faces_by_token = np.empty((face_count, 3), dtype=np.uint32)
     segment_start = np.empty(boundary_token_count, dtype=np.uint32)
     segment_end = np.empty(boundary_token_count, dtype=np.uint32)
@@ -1212,7 +1220,7 @@ def _mesh_arrays_from_patches(
     np.cumsum(ring_lengths - 2, out=patch_face_offsets[1:])
 
     if not bool(np.any(base_nonmanifold)):
-        token_coordinates[:] = base_start.astype(np.int64) * 2
+        np.multiply(base_start, 2, out=token_coordinates, dtype=coordinate_dtype)
         segment_start[:] = np.arange(boundary_token_count, dtype=np.uint32)
         segment_end[:] = segment_start + np.uint32(1)
         segment_end[patch_token_offsets[1:] - 1] = patch_token_offsets[
@@ -1257,13 +1265,19 @@ def _mesh_arrays_from_patches(
             ring_begin = token_cursor
             ring_position = 0
             for base_index in range(base_begin, base_finish):
-                token_coordinates[ring_begin + ring_position] = (
-                    base_start[base_index] * 2
+                np.multiply(
+                    base_start[base_index],
+                    2,
+                    out=token_coordinates[ring_begin + ring_position],
+                    dtype=coordinate_dtype,
                 )
                 ring_position += 1
                 if base_nonmanifold[base_index]:
-                    token_coordinates[ring_begin + ring_position] = (
-                        base_start[base_index] + base_end[base_index]
+                    np.add(
+                        base_start[base_index],
+                        base_end[base_index],
+                        out=token_coordinates[ring_begin + ring_position],
+                        dtype=coordinate_dtype,
                     )
                     ring_position += 1
             if ring_position != ring_length:
@@ -1823,10 +1837,23 @@ def build_labeled_surface_mesh(
     export_part_ranges: list[MeshExportPartRange] = []
     component_bounds = ndimage.find_objects(component_labels)
     component_origins, component_ends = _component_bound_arrays(component_bounds)
-    component_sizes = np.bincount(
-        component_labels.reshape(-1),
-        minlength=int(component_count) + 1,
-    )[1:].astype(np.int64, copy=False)
+    component_sizes = np.zeros(int(component_count) + 1, dtype=np.int64)
+    flat_component_labels = component_labels.reshape(-1)
+    # bincount promotes its input to native intp. Bound that hidden copy rather
+    # than duplicating the complete int32 component volume for every material.
+    for start in range(0, flat_component_labels.size, _COMPONENT_COUNT_BLOCK_VOXELS):
+        label_block = flat_component_labels[start : start + _COMPONENT_COUNT_BLOCK_VOXELS]
+        if len(component_sizes) <= _COMPONENT_COUNT_BLOCK_VOXELS:
+            component_sizes += np.bincount(label_block, minlength=len(component_sizes))
+        else:
+            # A sparse component field can have more shells than block voxels.
+            # Avoid re-allocating a global-sized histogram for every block.
+            block_labels, block_counts = np.unique(label_block, return_counts=True)
+            component_sizes[block_labels] += block_counts
+            del block_labels, block_counts
+    del label_block
+    component_sizes = component_sizes[1:]
+    del flat_component_labels
     component_dimensions = component_ends.astype(np.int64) - component_origins
     component_bbox_volumes = np.prod(component_dimensions, axis=1)
     cuboid_components = component_sizes == component_bbox_volumes

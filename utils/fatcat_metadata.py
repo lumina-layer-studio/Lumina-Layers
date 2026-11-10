@@ -1071,12 +1071,14 @@ def _read_source_metadata_parts(
     package: zipfile.ZipFile,
     *,
     target: MetadataTarget | SourceMaterialTarget | None = None,
+    source_model_xml: str | None = None,
 ) -> tuple[dict[str, Any], dict[str, bytes]]:
     """Decode source metadata once and retain its bytes for geometry assembly."""
     members = set(package.namelist())
     if target is None:
         common_paths = template_import_parts("BambuStudio")
         source = detect_template_source(
+            source_model_xml if source_model_xml is not None else
             package.read(common_paths["source_model"]).decode("utf-8")
             if common_paths["source_model"] in members else None,
             package.read(common_paths["slice_info"]).decode("utf-8")
@@ -1088,7 +1090,9 @@ def _read_source_metadata_parts(
         )
     paths = template_import_parts(target.slicer_id)
     parts = {
-        role: package.read(paths[role])
+        role: (source_model_xml.encode("utf-8")
+               if role == "source_model" and source_model_xml is not None
+               else package.read(paths[role]))
         for role in (
             "project_settings", "model_settings", "source_model",
             "slice_info", "wipe_tower_placement",

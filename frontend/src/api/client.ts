@@ -184,6 +184,18 @@ function extractReadableDetail(data: unknown): string | null {
   if (isRecord(detail)) {
     const detailCode =
       typeof detail.error === "string" ? detail.error : detail.code;
+    if (
+      detailCode === "template_slot_capacity" &&
+      typeof detail.required_slots === "number" &&
+      Number.isInteger(detail.required_slots) && detail.required_slots > 0 &&
+      typeof detail.available_slots === "number" &&
+      Number.isInteger(detail.available_slots) && detail.available_slots >= 0
+    ) {
+      return tRuntime("api_error_template_slot_capacity", {
+        requiredSlots: detail.required_slots,
+        availableSlots: detail.available_slots,
+      });
+    }
     if (typeof detailCode === "string") {
       const translationKey = STRUCTURED_DETAIL_TRANSLATION_KEYS.get(detailCode);
       if (translationKey) {

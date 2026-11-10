@@ -575,6 +575,7 @@ export interface ConverterActions {
   setLoopAngle: (angle: number) => void;
   setLoopOffsetX: (x: number) => void;
   setLoopOffsetY: (y: number) => void;
+  setLoopOffsets: (x: number, y: number) => void;
   setLoopPositionPreset: (preset: string) => void;
   setEnableFridgeMagnet: (enabled: boolean) => void;
   resetFridgeMagnetLayout: () => void;

@@ -7,9 +7,12 @@ import json
 import os
 from pathlib import Path
 import tempfile
-from typing import Any
+from typing import TYPE_CHECKING, Any, Mapping
 from uuid import UUID, uuid4
 import zipfile
+
+if TYPE_CHECKING:
+    from utils.fatcat_metadata import MetadataTarget
 
 
 def _root() -> Path:
@@ -117,6 +120,19 @@ def load_template(template_id: str) -> dict[str, Any]:
     """Load saved settings with source slicer identity. / 加载配置及来源切片软件标识。"""
     document = json.loads(_path(template_id).read_text(encoding="utf-8"))
     return {**document["settings"], "_lumina_template_slicer": document["metadata"]["slicer"]}
+
+
+def require_template_slot_capacity(
+    template: Mapping[str, Any], required_slots: int, *, target: MetadataTarget,
+) -> int:
+    """Return native capacity, rejecting material slots the template cannot supply."""
+    from core.errors import TemplateSlotCapacityError
+    from utils.fatcat_metadata import read_project_material_slots
+
+    available_slots = len(read_project_material_slots(template, target=target))
+    if required_slots > available_slots:
+        raise TemplateSlotCapacityError(required_slots, available_slots)
+    return available_slots
 
 
 def delete_template(template_id: str) -> None:

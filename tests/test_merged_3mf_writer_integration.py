@@ -15,6 +15,7 @@ from __future__ import annotations
 import json
 import os
 import tempfile
+import tracemalloc
 import xml.etree.ElementTree as ET
 import zipfile
 from pathlib import Path
@@ -36,6 +37,29 @@ from utils.merged_bambu_3mf_writer import (
 
 _NS_CORE = "http://schemas.microsoft.com/3dmanufacturing/core/2015/02"
 _NS_PROD = "http://schemas.microsoft.com/3dmanufacturing/production/2015/06"
+
+
+def test_batch_footprint_reads_geometry_with_bounded_python_memory() -> None:
+    """Layout inspection must not materialize every XML vertex and triangle."""
+    from utils.merged_bambu_3mf_writer import read_merge_source_info
+
+    source = _make_source_3mf(mesh_override=trimesh.creation.icosphere(subdivisions=5))
+    try:
+        # Initialise the metadata SDK before measuring the per-model reader.
+        from utils.fatcat_metadata import read_source_metadata
+        expected_slots = read_source_metadata(source)["slots"]
+        tracemalloc.start()
+        try:
+            footprint, slots = read_merge_source_info(source)
+            _current, peak = tracemalloc.get_traced_memory()
+        finally:
+            tracemalloc.stop()
+        assert footprint == pytest.approx((2.0, 2.0))
+        assert slots == expected_slots
+        # A normal ~20k-face input needs only a streaming XML buffer for layout.
+        assert peak < 8 * 1024 * 1024, f"footprint inspection allocated {peak:,} bytes"
+    finally:
+        source.unlink(missing_ok=True)
 
 
 def _make_source_3mf(

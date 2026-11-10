@@ -72,7 +72,8 @@ def _source_materials(
     params: Mapping[str, Any], source_context: Mapping[str, Any] | None,
 ) -> list[dict[str, Any]]:
     source = source_context if source_context is not None else params
-    if source.get("material_source") == "material_archive":
+    is_material_archive = source.get("material_source") == "material_archive"
+    if is_material_archive:
         root = source.get("materials_dir") or source.get("project_materials_dir")
         materials = load_materials(list(source.get("selected_materials") or []), **({"materials_dir": root} if root else {}))
         names = build_material_slot_names(materials)
@@ -107,6 +108,19 @@ def _source_materials(
         else:
             names = list(colour_config["slots"])
             colours = colour_config["preview"]
+    # Use a complete or expanded canonical palette from the preview, while
+    # retaining the full source palette for older caches of used slots only.
+    cached_names = source.get("slot_names") if source_context is not None else None
+    if isinstance(cached_names, (list, tuple)) and cached_names and len(cached_names) >= len(names):
+        names = list(cached_names)
+        cached_colours = source.get("preview_colors")
+        if isinstance(cached_colours, Mapping):
+            colours = dict(cached_colours)
+        if not is_material_archive:
+            # Use the same explicit metadata (or its absence) as generation,
+            # rather than a reloaded LUT's inferred, potentially smaller palette.
+            metadata = source.get("lut_metadata", metadata)
+    if not is_material_archive:
         types = build_lut_material_types(metadata, names)
     choices = params.get("native_filament_profiles") or {}
     coating = resolve_coating_material(
@@ -152,8 +166,16 @@ def resolve_export_material_selection(
     在生成前预检原生材料选择，保留工艺参数；导入调校模板继续采用自身设置。
     """
     if params.get("custom_3mf_template_id"):
-        if params.get("enable_coating"):
-            _source_materials(params, source_context)
+        from core.custom_3mf_templates import load_template, require_template_slot_capacity
+
+        template = load_template(str(params["custom_3mf_template_id"]))
+        target = select_user_template_metadata_target(
+            slicer=str(params.get("slicer") or template["_lumina_template_slicer"]),
+            build_plate_id=params.get("build_plate_id"),
+        )
+        require_template_slot_capacity(
+            template, len(_source_materials(params, source_context)), target=target,
+        )
         return {"ready": True, "materials": [], "issues": [], "build_plates": [],
                 "slicer_id": str(params.get("slicer") or ""), "machine_uid": "",
                 "nozzle_uid": "", "build_plate_uid": "",

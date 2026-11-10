@@ -523,6 +523,7 @@ def worker_generate_preview(
     import numpy as np
     from PIL import Image
 
+    from core.preview_sizing import preview_dimensions
     from config import ModelingMode
     from api.structured_logging import get_logger
     from core.converter import generate_preview_cached
@@ -696,8 +697,19 @@ def worker_generate_preview(
             os.close(fd)
             created_temp_paths.append(png_path)
             if isinstance(preview_img, np.ndarray):
+                height, width = preview_img.shape[:2]
+                display_size = preview_dimensions(width, height)
+                if display_size != (width, height):
+                    import cv2
+
+                    preview_img = cv2.resize(
+                        preview_img, display_size, interpolation=cv2.INTER_NEAREST,
+                    )
                 Image.fromarray(preview_img).save(png_path)
             else:
+                display_size = preview_dimensions(*preview_img.size)
+                if display_size != preview_img.size:
+                    preview_img = preview_img.resize(display_size, Image.Resampling.NEAREST)
                 preview_img.save(png_path)
             result["preview_png_path"] = png_path
         _t_png = _time.perf_counter() - _t

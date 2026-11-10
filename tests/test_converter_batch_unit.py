@@ -450,11 +450,12 @@ def test_batch_parallelism_preserves_upload_order_and_partial_success(
     assert download.content == b"fake-merged-3mf"
 
 
-@pytest.mark.parametrize("failure_kind", ["pool", "solver"])
+@pytest.mark.parametrize("failure_kind", ["pool", "solver", "template_capacity"])
 def test_batch_fatal_failure_drains_sibling_and_cleans_its_outputs(
     tmp_path: Path, failure_kind: str,
 ) -> None:
     from core.material_dynamic_solver import DynamicMaterialSolverError
+    from core.errors import TemplateSlotCapacityError
 
     sibling_outputs: list[str] = []
     upload_paths: list[Path] = []
@@ -469,6 +470,8 @@ def test_batch_fatal_failure_drains_sibling_and_cleans_its_outputs(
         if Path(image_path).name == "fail.png":
             if failure_kind == "pool":
                 raise BrokenProcessPool("worker was killed")
+            if failure_kind == "template_capacity":
+                raise TemplateSlotCapacityError(5, 4)
             raise DynamicMaterialSolverError("solver unavailable")
         await asyncio.sleep(0.01)
         result = _make_worker_result("sibling.png")
@@ -483,7 +486,7 @@ def test_batch_fatal_failure_drains_sibling_and_cleans_its_outputs(
         patch("api.routers.converter.generate.ensure_png_tempfile", side_effect=save_upload),
         patch("utils.merged_bambu_3mf_writer.MergedBambu3MFWriter.write") as merge,
     ):
-        response = client.post(
+        response = TestClient(app, raise_server_exceptions=False).post(
             "/api/convert/batch",
             files=[("images", _make_test_image_buf(name)) for name in (
                 "fail.png", "sibling.png", "later-1.png", "later-2.png",
@@ -491,7 +494,12 @@ def test_batch_fatal_failure_drains_sibling_and_cleans_its_outputs(
             data={"lut_name": "test_lut"},
         )
 
-    assert response.status_code == 503, response.text
+    assert response.status_code == (422 if failure_kind == "template_capacity" else 503), response.text
+    if failure_kind == "template_capacity":
+        detail = response.json()["detail"]
+        assert detail["code"] == "template_slot_capacity"
+        assert detail["required_slots"] == 5
+        assert detail["available_slots"] == 4
     assert _mock_pool.submit.await_count == 2
     assert len(sibling_outputs) == 3
     assert all(not Path(path).exists() for path in sibling_outputs)
@@ -1459,6 +1467,41 @@ class TestBatchMergeFlow:
     Properties: P11, P12
     """
 
+    def test_template_capacity_during_merge_returns_422_without_partial_downloads(self) -> None:
+        from core.errors import TemplateSlotCapacityError
+
+        worker_result = _make_worker_result("img.png", 30.0, 20.0)
+        intermediate_paths = [worker_result[key] for key in (
+            "threemf_path", "preview_glb_path", "metadata_sidecar_path",
+        )]
+        _mock_pool.submit = AsyncMock(return_value=worker_result)
+
+        with (
+            patch("api.routers.converter.generate.LUTManager.get_lut_path", return_value="/tmp/fake.npy"),
+            patch("api.routers.converter.generate.ensure_png_tempfile", new=AsyncMock(return_value="/tmp/uploaded.png")),
+            patch(
+                "utils.merged_bambu_3mf_writer.MergedBambu3MFWriter.write",
+                side_effect=TemplateSlotCapacityError(5, 4),
+            ),
+        ):
+            response = client.post(
+                "/api/convert/batch",
+                files=[("images", _make_test_image_buf("img.png"))],
+                data={"lut_name": "test_lut"},
+            )
+
+        try:
+            assert response.status_code == 422, response.text
+            detail = response.json()["detail"]
+            assert detail["code"] == "template_slot_capacity"
+            assert detail["required_slots"] == 5
+            assert detail["available_slots"] == 4
+            assert all(not Path(path).exists() for path in intermediate_paths)
+            assert "download_url" not in response.json()
+        finally:
+            for path in intermediate_paths:
+                Path(path).unlink(missing_ok=True)
+
     # ------------------------------------------------------------------
     # 1. all-success-fits: 3 images succeed, layout fits within plate
     # ------------------------------------------------------------------
@@ -2134,13 +2177,12 @@ class TestBatchMergeFlow:
         assert all(r["status"] == "failed" for r in body["results"])
 
     # ------------------------------------------------------------------
-    # 5. writer-fail-5xx: MergedBambu3MFWriter.write raises MergedWriteError
+    # 5. A failed merge retains independently downloadable completed exports.
     # ------------------------------------------------------------------
-    def test_writer_fail_5xx(self) -> None:
+    def test_writer_failure_keeps_completed_items(self) -> None:
         """MergedBambu3MFWriter.write raises MergedWriteError.
 
-        Asserts: HTTP 500, log contains batch_merge_3mf_failed with
-        stage=='merge_3mf', no residual temp files (P12).
+        The response preserves completed items and logs the private failure.
         """
         worker_results = [
             _make_worker_result("img1.png", 30.0, 20.0),
@@ -2209,11 +2251,12 @@ class TestBatchMergeFlow:
                 data={"lut_name": "test_lut"},
             )
 
-        # HTTP 500
-        assert response.status_code == 500
-        assert response.json()["detail"] == (
-            "Batch 3MF merge failed. Try again or check the server log for details."
-        )
+        assert response.status_code == 200
+        body = response.json()
+        assert body["status"] == "partial"
+        assert body["download_url"] is None
+        assert body["warnings"][0]["code"] == "merge-unavailable"
+        assert all(item["download_url"] for item in body["results"])
         assert private_path not in response.text
         assert "Permission denied" not in response.text
         assert "Batch merge failed at stage=" not in response.text
@@ -2236,6 +2279,7 @@ class TestBatchMergeFlow:
         assert private_path in fields["error_message"]
         assert "Permission denied" in fields["error_message"]
 
-        # No residual intermediate temp files (P12)
+        # Only the completed single-model downloads survive.
+        retained = {wr["threemf_path"] for wr in worker_results}
         for p in intermediate_paths:
-            assert not os.path.exists(p), f"Residual temp file found: {p}"
+            assert os.path.exists(p) == (p in retained)

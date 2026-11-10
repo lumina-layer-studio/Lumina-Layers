@@ -76,7 +76,7 @@ from api.workers.converter_workers import (
 )
 from core.batch_layout import LayoutResult, XYBBox, layout_shelf_by_row
 from core.errors import (
-    CachedPreviewAnalysisError, ExternalSpoolSelectionError, NativeMaterialSelectionError, WipeTowerLayoutError,
+    CachedPreviewAnalysisError, ExternalSpoolSelectionError, NativeMaterialSelectionError, TemplateSlotCapacityError, WipeTowerLayoutError,
 )
 from .export_materials import require_material_selection
 from core.model_surface.types import ModelSurfaceError
@@ -306,9 +306,6 @@ LARGE_FORMAT_CACHED_ANALYSIS_INVALID_DETAIL: str = (
 STANDARD_CACHED_ANALYSIS_INVALID_DETAIL: str = (
     "Cached preview data is unavailable or invalid. "
     "Re-run preview and try again."
-)
-BATCH_MERGE_FAILED_DETAIL: str = (
-    "Batch 3MF merge failed. Try again or check the server log for details."
 )
 BATCH_ITEM_FAILED_DETAIL: str = (
     "This file could not be converted. Re-upload it or check the server log for details."
@@ -2634,7 +2631,7 @@ async def convert_generate(
             lut_path,
             worker_params,
         )
-    except (WipeTowerLayoutError, NativeMaterialSelectionError, ExternalSpoolSelectionError) as exc:
+    except (WipeTowerLayoutError, NativeMaterialSelectionError, ExternalSpoolSelectionError, TemplateSlotCapacityError) as exc:
         raise to_http_exception(exc, "3MF layout") from exc
     except ModelSurfaceError as exc:
         detail = public_model_surface_error_detail(exc)
@@ -3154,7 +3151,7 @@ async def _generate_large_format_svg_native(
             )
         finally:
             _remove_temp_path(native_heightmap_path)
-    except (WipeTowerLayoutError, NativeMaterialSelectionError, ExternalSpoolSelectionError) as exc:
+    except (WipeTowerLayoutError, NativeMaterialSelectionError, ExternalSpoolSelectionError, TemplateSlotCapacityError) as exc:
         raise to_http_exception(exc, "large-format 3MF layout") from exc
     except LargeFormatCachedAnalysisError as e:
         _log_large_format_failure(
@@ -3855,7 +3852,7 @@ async def _generate_large_format_raster(
             except (DynamicMaterialCandidateError, DynamicMaterialSolverError) as e:
                 _discard_pending_awaitables(futures, future_index + 1)
                 _handle_core_error(e, "large-format tile generation")
-            except (WipeTowerLayoutError, NativeMaterialSelectionError, ExternalSpoolSelectionError) as exc:
+            except (WipeTowerLayoutError, NativeMaterialSelectionError, ExternalSpoolSelectionError, TemplateSlotCapacityError) as exc:
                 _discard_pending_awaitables(futures, future_index + 1)
                 raise to_http_exception(exc, "large-format tile layout") from exc
             except ROUTER_HANDLED_ERRORS as e:
@@ -5054,7 +5051,7 @@ async def convert_batch(
                 except (
                     BrokenProcessPool, DynamicMaterialCandidateError,
                     DynamicMaterialSolverError, WipeTowerLayoutError, NativeMaterialSelectionError,
-                    ExternalSpoolSelectionError,
+                    ExternalSpoolSelectionError, TemplateSlotCapacityError,
                 ):
                     raise
                 except ROUTER_HANDLED_ERRORS as exc:
@@ -5073,7 +5070,7 @@ async def convert_batch(
         raise HTTPException(status_code=503, detail=BATCH_GENERATION_FAILED_DETAIL) from exc
     except (DynamicMaterialCandidateError, DynamicMaterialSolverError) as exc:
         _handle_core_error(exc, "batch material generation")
-    except (WipeTowerLayoutError, NativeMaterialSelectionError, ExternalSpoolSelectionError) as exc:
+    except (WipeTowerLayoutError, NativeMaterialSelectionError, ExternalSpoolSelectionError, TemplateSlotCapacityError) as exc:
         raise to_http_exception(exc, "batch 3MF layout") from exc
     finally:
         # Release returned artifacts on cancellation or any fatal failure.
@@ -5228,19 +5225,37 @@ async def convert_batch(
             error_message=str(exc),
             stage=stage,
         )
-        # Best-effort cleanup of all intermediate + merged temp files
-        for p in intermediates + merged_outputs:
-            try:
-                if p.exists():
-                    p.unlink(missing_ok=True)
-            except Exception:
-                pass
-        _remove_temp_path(temp_native_bundle_path)
-        if isinstance(exc, (WipeTowerLayoutError, NativeMaterialSelectionError, ExternalSpoolSelectionError)):
+        if isinstance(exc, (WipeTowerLayoutError, NativeMaterialSelectionError, ExternalSpoolSelectionError, TemplateSlotCapacityError)):
+            _cleanup_intermediates(intermediates + merged_outputs, batch_run_id)
+            _remove_temp_path(temp_native_bundle_path)
             raise to_http_exception(exc, "batch 3MF layout") from exc
-        raise HTTPException(
-            status_code=500,
-            detail=BATCH_MERGE_FAILED_DETAIL,
+        # Completed single exports already exist. Register them without copying
+        # or repacking so a failed write cannot consume their remaining space.
+        retained_paths: set[Path] = set()
+        completed_results = [result for result in results if result.status == "success"]
+        for index, (result, worker_result) in enumerate(zip(completed_results, successes), start=1):
+            path = Path(worker_result["threemf_path"])
+            filename = generate_preserved_upload_3mf_filename(Path(result.filename).stem) or "model.3mf"
+            file_id = registry.register_path(
+                session_id=f"batch-item:{batch_run_id}", path=str(path),
+                filename=f"{index}_{filename}",
+                ttl_seconds=BATCH_DOWNLOAD_TTL_SECONDS,
+            )
+            result.download_url = f"/api/files/{file_id}"
+            retained_paths.add(path)
+        _cleanup_intermediates(
+            [path for path in intermediates + merged_outputs if path not in retained_paths],
+            batch_run_id,
+        )
+        _remove_temp_path(temp_native_bundle_path)
+        return BatchResponse(
+            status="partial",
+            message=f"Generated {len(successes)}/{len(results)} models; download completed items separately.",
+            results=results,
+            warnings=[WarningEntry(
+                code="merge-unavailable",
+                message="The merged project could not be written. Completed models are available individually.",
+            )],
         )
 
     preview_items: list[BatchPreviewItem] = []

@@ -385,12 +385,15 @@ class TestSilentPlaceholderExport:
         out = tmp_path / "silent.3mf"
         writer = _make_writer(out, cover_source=None)
         target_logger = logging.getLogger("lumina.utils.bambu_3mf_writer")
+        original_propagate = target_logger.propagate
+        target_logger.propagate = False
         target_logger.addHandler(caplog.handler)
         caplog.set_level(logging.WARNING, logger="lumina.utils.bambu_3mf_writer")
         try:
             writer.export()
         finally:
             target_logger.removeHandler(caplog.handler)
+            target_logger.propagate = original_propagate
         cover_failed = [
             record
             for record in caplog.records
@@ -414,12 +417,15 @@ class TestFallbackEmitsOneWarning:
         bogus = str(tmp_path / "does_not_exist.png")
         writer = _make_writer(out, cover_source=bogus)
         target_logger = logging.getLogger("lumina.utils.bambu_3mf_writer")
+        original_propagate = target_logger.propagate
+        target_logger.propagate = False
         target_logger.addHandler(caplog.handler)
         caplog.set_level(logging.WARNING, logger="lumina.utils.bambu_3mf_writer")
         try:
             writer.export()
         finally:
             target_logger.removeHandler(caplog.handler)
+            target_logger.propagate = original_propagate
 
         cover_failed = [
             record

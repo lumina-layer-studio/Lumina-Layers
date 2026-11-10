@@ -349,6 +349,10 @@ export const translations: Record<string, Record<"zh" | "en", string>> = {
     zh: "矢量建模模式仅支持 SVG 文件。请上传 SVG，或切换到“高保真”或“像素艺术”模式。",
     en: "Vector Native mode requires an SVG file. Upload an SVG, or switch to High-Fidelity or Pixel Art mode.",
   },
+  api_error_template_slot_capacity: {
+    zh: "当前模型需要 {requiredSlots} 个耗材槽，但所选 3MF 模板只有 {availableSlots} 个。请换用至少 {requiredSlots} 槽的模板，或减少模型使用的耗材。",
+    en: "This model needs {requiredSlots} material slots, but the selected 3MF template has {availableSlots}. Choose a template with at least {requiredSlots} slots or use fewer materials.",
+  },
   api_error_source_image_unreadable: {
     zh: "无法读取这张图片。请确认文件未损坏，并重新导出为 PNG、JPEG 或 WebP 后再上传。",
     en: "The image could not be read. Check that the file is not damaged, then re-export it as PNG, JPEG, or WebP and upload it again.",
@@ -7231,6 +7235,10 @@ export const translations: Record<string, Record<"zh" | "en", string>> = {
   "batch.download.mergedThreemf": {
     zh: "下载批量 3MF",
     en: "Download batch 3MF",
+  },
+  "batch.warnings.mergeUnavailable.body": {
+    zh: "合并未完成，已生成的单件仍可下载。请分别导入切片软件。",
+    en: "The merge could not finish. Download the completed models below and import them into your slicer individually.",
   },
   "batch.warnings.plateOverflow.title": {
     zh: "部分模型超出热床范围",

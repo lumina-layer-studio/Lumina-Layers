@@ -1038,6 +1038,7 @@ class BatchItemResult(BaseModel):
     filename: str
     status: str
     error: Optional[str] = None
+    download_url: str | None = None
 
 
 class WarningEntry(BaseModel):

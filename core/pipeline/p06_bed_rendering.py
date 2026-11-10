@@ -9,10 +9,12 @@ P06 — 热床网格渲染与最终预览输出。
 """
 
 import time
+import cv2
 import numpy as np
 import trimesh
 from PIL import Image, ImageDraw
 
+from core.preview_sizing import preview_dimensions
 from api.structured_logging import get_logger
 from config import PrinterConfig, BedManager, PREVIEW_SCALE
 
@@ -79,17 +81,17 @@ def compute_bed_model_rect(
 def render_preview(preview_rgba, loop_pos, loop_width, loop_length,
                    loop_hole, loop_angle, loop_enabled, color_conf,
                    bed_label=None, target_width_mm=None, is_dark=True):
-    """Return the raw preview image with optional keychain loop overlay.
-    返回原始预览图像，可选叠加挂件环标记。
+    """Return a bounded display image with optional keychain loop overlay.
+    返回有尺寸上限的显示图像，可选叠加挂件环标记。
 
     The bed canvas / grid / rulers were intentionally dropped per UX
     request — the 2D preview now contains only the model image itself.
-    Image dimensions therefore match ``preview_rgba`` exactly, which lets
-    the frontend hover/click mapping take the direct (raw-pixel) fast path.
+    Screen dimensions use the shared preview budget; the caller retains
+    the full ``preview_rgba`` grid for model generation and pixel editing.
 
     按 UX 要求移除了热床底板 / 网格 / 标尺，2D 预览仅输出模型本身；
-    输出图像的尺寸与 ``preview_rgba`` 一致，前端悬停/点击坐标映射会走
-    raw-pixel 直通路径。
+    显示图像使用统一尺寸上限，调用方保留完整 ``preview_rgba`` 网格用于
+    建模与像素编辑。
 
     Args:
         preview_rgba (np.ndarray | None): RGBA 预览图像 (H, W, 4)
@@ -112,22 +114,34 @@ def render_preview(preview_rgba, loop_pos, loop_width, loop_length,
     if preview_rgba is None:
         return np.zeros((1, 1, 4), dtype=np.uint8)
 
-    w = preview_rgba.shape[1] if preview_rgba.ndim >= 2 else 0
+    h, w = preview_rgba.shape[:2]
 
     if target_width_mm is not None and target_width_mm > 0 and w > 0:
         model_w_mm = float(target_width_mm)
     else:
         model_w_mm = w * PrinterConfig.NOZZLE_WIDTH
 
-    pil_img = Image.fromarray(preview_rgba, mode='RGBA').copy()
+    display_w, display_h = preview_dimensions(w, h)
+    display_rgba = preview_rgba
+    if (display_w, display_h) != (w, h):
+        # Resize before creating a display copy of the modeling grid. Nearest
+        # keeps palette colors and alpha exact, including pixel-art previews.
+        display_rgba = cv2.resize(
+            preview_rgba, (display_w, display_h), interpolation=cv2.INTER_NEAREST,
+        )
+    pil_img = Image.fromarray(display_rgba, mode='RGBA').copy()
 
     if loop_enabled and loop_pos is not None and w > 0 and model_w_mm > 0:
-        mm_per_px = model_w_mm / w
-        ppm_raw = 1.0 / mm_per_px  # pixels-per-mm in raw preview image
+        mm_per_px = model_w_mm / display_w
+        ppm_display = 1.0 / mm_per_px
+        display_loop_pos = (
+            loop_pos[0] * display_w / w,
+            loop_pos[1] * display_h / h,
+        )
         pil_img = _draw_loop_on_canvas(
-            pil_img, loop_pos, loop_width, loop_length,
+            pil_img, display_loop_pos, loop_width, loop_length,
             loop_hole, loop_angle, None, 0,
-            ppm=ppm_raw, img_offset=(0, 0),
+            ppm=ppm_display, img_offset=(0, 0),
             mm_per_px=mm_per_px,
         )
 

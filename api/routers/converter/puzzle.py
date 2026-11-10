@@ -52,7 +52,7 @@ from api.workers.converter_workers import (
 )
 from config import ModelingMode as CoreModelingMode
 from config import TEMP_DIR
-from core.errors import ExternalSpoolSelectionError, NativeMaterialSelectionError, WipeTowerLayoutError
+from core.errors import ExternalSpoolSelectionError, NativeMaterialSelectionError, TemplateSlotCapacityError, WipeTowerLayoutError
 from core.preview_analysis_cache import REQUIRED_PREVIEW_ANALYSIS_REUSE
 from .export_materials import require_material_selection
 from core.puzzle import (
@@ -1389,7 +1389,7 @@ async def generate_puzzle(
             errors.append(f"{piece.label}: generation failed")
         except (DynamicMaterialCandidateError, DynamicMaterialSolverError) as exc:
             _handle_core_error(exc, "puzzle piece generation")
-        except (WipeTowerLayoutError, NativeMaterialSelectionError, ExternalSpoolSelectionError) as exc:
+        except (WipeTowerLayoutError, NativeMaterialSelectionError, ExternalSpoolSelectionError, TemplateSlotCapacityError) as exc:
             raise to_http_exception(exc, "puzzle piece layout") from exc
         except ROUTER_HANDLED_ERRORS as exc:
             errors.append(f"{piece.label}: {exc}")
@@ -1514,7 +1514,7 @@ async def generate_puzzle(
             ttl_seconds=BATCH_DOWNLOAD_TTL_SECONDS,
         )
         combined_registered = True
-    except (WipeTowerLayoutError, NativeMaterialSelectionError, ExternalSpoolSelectionError) as exc:
+    except (WipeTowerLayoutError, NativeMaterialSelectionError, ExternalSpoolSelectionError, TemplateSlotCapacityError) as exc:
         raise to_http_exception(exc, "puzzle 3MF layout") from exc
     except ROUTER_HANDLED_ERRORS as exc:
         log.error(

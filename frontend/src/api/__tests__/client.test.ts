@@ -294,6 +294,56 @@ describe("apiClient", () => {
   );
 
   it.each([
+    {
+      language: "en" as const,
+      expected:
+        "This model needs 6 material slots, but the selected 3MF template has 4. Choose a template with at least 6 slots or use fewer materials.",
+    },
+    {
+      language: "zh" as const,
+      expected:
+        "当前模型需要 6 个耗材槽，但所选 3MF 模板只有 4 个。请换用至少 6 槽的模板，或减少模型使用的耗材。",
+    },
+  ])(
+    "translates template capacity with the required and available slots in $language",
+    async ({ language, expected }) => {
+      useSettingsStore.setState({ language });
+      const detail = {
+        code: "template_slot_capacity",
+        required_slots: 6,
+        available_slots: 4,
+        message: "Server fallback for older clients.",
+      };
+      const error = Object.assign(new Error("Request failed with status code 422"), {
+        config: { method: "post", url: "/convert/export-materials" },
+        response: { status: 422, data: { detail } },
+      });
+      apiClient.defaults.adapter = vi.fn().mockRejectedValueOnce(error);
+
+      const rejected = await apiClient.post("/convert/export-materials", {}).catch((err) => err);
+
+      expect(rejected.message).toBe(expected);
+      expect(rejected.response.data.detail).toEqual(detail);
+    },
+  );
+
+  it("keeps the server capacity message when slot counts are unavailable", async () => {
+    const fallback = "Choose a template with enough material slots.";
+    const error = Object.assign(new Error("Request failed with status code 422"), {
+      config: { method: "post", url: "/convert/export-materials" },
+      response: {
+        status: 422,
+        data: { detail: { code: "template_slot_capacity", message: fallback } },
+      },
+    });
+    apiClient.defaults.adapter = vi.fn().mockRejectedValueOnce(error);
+
+    await expect(apiClient.post("/convert/export-materials", {})).rejects.toMatchObject({
+      message: fallback,
+    });
+  });
+
+  it.each([
     "future_validation_code",
     "constructor",
     "toString",

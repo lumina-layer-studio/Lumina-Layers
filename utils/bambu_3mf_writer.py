@@ -1096,8 +1096,12 @@ class Slicer3MFWriter:
         if slot_policy == "preserve_native_capacity":
             slot_mode = "preserve"
         if self._custom_template is not None:
+            from core.custom_3mf_templates import require_template_slot_capacity
+
             aliases = process_setting_aliases(self.slicer)
-            source_slot_count = len(read_project_material_slots(self._custom_template, target=target))
+            source_slot_count = require_template_slot_capacity(
+                self._custom_template, len(material_palette), target=target,
+            )
             geometry_fields = {
                 aliases.get(key, key) for key in (
                     "layer_height", "initial_layer_print_height", "initial_layer_height",
@@ -1549,7 +1553,9 @@ class Slicer3MFWriter:
                 },
             )
 
-        n3mf.write_to_file(self.output_path, doc, opts)
+        from utils.threemf_io import write_3mf_document
+
+        write_3mf_document(self.output_path, doc, opts)
 
     def _get_wipe_tower_placement(
         self,

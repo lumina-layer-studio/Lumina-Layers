@@ -320,3 +320,64 @@ def test_api_footprint_failure_keeps_successful_download_after_session_close(
     still_downloadable = client.get(download_url)
     assert still_downloadable.status_code == 200
     assert still_downloadable.content == downloaded.content
+
+
+@pytest.mark.parametrize("failure", [MemoryError("bad allocation"), OSError("Failed to write to 3MF file")])
+def test_failed_merge_preserves_completed_models_after_session_close(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, failure: Exception,
+) -> None:
+    from fastapi.testclient import TestClient
+    from api.app import app
+    from api.dependencies import get_file_registry, get_session_store, get_worker_pool
+    from api.file_registry import FileRegistry
+    from api.session_store import SessionStore
+    from core.pipeline import s09_export_3mf, s11_glb_preview
+
+    for name in ("MODELS_DIR", "OUTPUT_DIR", "TEMP_DIR"):
+        monkeypatch.setattr(f"config.{name}", str(tmp_path))
+    monkeypatch.setattr(s09_export_3mf, "MODELS_DIR", str(tmp_path))
+    monkeypatch.setattr(s11_glb_preview, "OUTPUT_DIR", str(tmp_path))
+    monkeypatch.setenv("LUMINA_RUNTIME_CACHE_DIR", str(tmp_path / "cache"))
+
+    class InlinePool:
+        max_workers = 1
+        is_alive = True
+
+        async def submit(self, function, *args):
+            return function(*args)
+
+    registry, store = FileRegistry(), SessionStore()
+    monkeypatch.setitem(app.dependency_overrides, get_worker_pool, lambda: InlinePool())
+    monkeypatch.setitem(app.dependency_overrides, get_file_registry, lambda: registry)
+    monkeypatch.setitem(app.dependency_overrides, get_session_store, lambda: store)
+    failed_outputs: list[Path] = []
+
+    def fail_merge(self, items, output_path, **kwargs):
+        output_path.write_bytes(b"incomplete merged archive")
+        failed_outputs.append(output_path)
+        raise failure
+
+    monkeypatch.setattr(MergedBambu3MFWriter, "write", fail_merge)
+    image = b'<svg xmlns="http://www.w3.org/2000/svg" width="10" height="8"><rect width="10" height="8" fill="white"/></svg>'
+    with TestClient(app, raise_server_exceptions=False) as client:
+        session_id = store.create()
+        response = client.post("/api/convert/batch", data={
+            "lut_name": "bambulab - bambulab_pla_basic_rybw", "target_width_mm": "10",
+            "enable_wipe_tower_auto_placement": "false",
+        }, files=[("images", (f"art-{i}.svg", image, "image/svg+xml")) for i in range(2)])
+        assert response.status_code == 200, response.text
+        data = response.json()
+        assert data["status"] == "partial"
+        assert data["download_url"] is None
+        assert [warning["code"] for warning in data["warnings"]] == ["merge-unavailable"]
+        urls = [item["download_url"] for item in data["results"]]
+        assert len(set(urls)) == 2
+        assert client.post("/api/session/close", json={"session_id": session_id}).status_code == 200
+        for url in urls:
+            downloaded = client.get(url)
+            assert downloaded.status_code == 200
+            import io
+            with zipfile.ZipFile(io.BytesIO(downloaded.content)) as archive:
+                assert archive.testzip() is None
+                assert "3D/3dmodel.model" in archive.namelist()
+        assert all(not path.exists() for path in failed_outputs)

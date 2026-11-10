@@ -66,8 +66,6 @@ function resetStore(): void {
     colorRemapMap: {},
     remapHistory: [],
     remapRedoHistory: [],
-    adjustmentHistory: [],
-    adjustmentRedoHistory: [],
     replacePreviewLoading: false,
     error: null,
     sessionId: null,

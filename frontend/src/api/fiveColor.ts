@@ -1,4 +1,5 @@
 import apiClient from "./client";
+import { workflowHeaders } from "../project/workflowRuntime";
 import type {
   BaseColorsResponse,
   FiveColorMatchRequest,
@@ -13,7 +14,7 @@ import type {
 export async function fetchBaseColors(lutName: string): Promise<BaseColorsResponse> {
   const response = await apiClient.get<BaseColorsResponse>(
     "/five-color/base-colors",
-    { params: { lut_name: lutName } }
+    { params: { lut_name: lutName }, headers: workflowHeaders("five-color") }
   );
   return response.data;
 }
@@ -22,7 +23,7 @@ export async function fetchBaseColors(lutName: string): Promise<BaseColorsRespon
 export async function queryFiveColor(request: FiveColorQueryRequest): Promise<FiveColorQueryResponse> {
   const response = await apiClient.post<FiveColorQueryResponse>(
     "/five-color/query",
-    request
+    request, { headers: workflowHeaders("five-color") }
   );
   return response.data;
 }
@@ -31,7 +32,7 @@ export async function queryFiveColor(request: FiveColorQueryRequest): Promise<Fi
 export async function matchFiveColorByHex(request: FiveColorMatchRequest): Promise<FiveColorMatchResponse> {
   const response = await apiClient.post<FiveColorMatchResponse>(
     "/five-color/match-color",
-    request
+    request, { headers: workflowHeaders("five-color") }
   );
   return response.data;
 }
@@ -48,7 +49,7 @@ export async function clearFiveColorCache(): Promise<{ success: boolean; message
 export async function generateRecipeSwatch(request: RecipeSwatchRequest): Promise<RecipeSwatchResponse> {
   const response = await apiClient.post<RecipeSwatchResponse>(
     "/five-color/generate-swatch",
-    request
+    request, { headers: workflowHeaders("five-color") }
   );
   return response.data;
 }

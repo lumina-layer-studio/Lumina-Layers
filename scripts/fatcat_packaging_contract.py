@@ -15,9 +15,9 @@ from typing import Any
 FATCAT_DISTRIBUTION = "fatcat-metadata"
 FATCAT_MODULE = "fatcat_metadata"
 FATCAT_ADAPTER_MODULE = "fatcat_metadata_neroued"
-FATCAT_VERSION = "0.1.3"
+FATCAT_VERSION = "0.1.5"
 FATCAT_REPOSITORY = "https://github.com/MOVIBALE/fatcat-metadata"
-FATCAT_SOURCE_COMMIT = "5023982e03680e0cd89fb9175dd0ca401d41f6f4"
+FATCAT_SOURCE_COMMIT = "c94c6344c2964c3d47229d8708e6c8f5a3b49961"
 FATCAT_LEGACY_DISTRIBUTION = "lumina-3mf-metadata-cpp"
 FATCAT_WRITER_DISTRIBUTION = "neroued-3mf"
 FATCAT_WRITER_VERSION = "0.4.2"
@@ -47,14 +47,14 @@ FATCAT_REQUIRED_ENTRY_POINTS = (
 )
 FATCAT_REQUIRED_DATA_FILES = (
     Path("translations/canonical.json"),
-    Path("translations/targets/bambu-studio-02.08.02.61.json"),
+    Path("translations/targets/bambu-studio-02.09.01.70.json"),
     Path("translations/targets/orca-slicer-2.4.2.json"),
-    Path("translations/targets/qidi-studio-02.07.02.60.json"),
+    Path("translations/targets/qidi-studio-02.07.02.73.json"),
     Path("translations/targets/elegoo-slicer-1.5.3.5.json"),
-    Path("translations/targets/anycubic-slicer-next-2.0.0.3.json"),
-    Path("translations/targets/flash-studio-1.7.18.json"),
-    Path("translations/targets/snapmaker-orca-2.4.0.json"),
-    Path("translations/targets/prusa-slicer-3.0.0-alpha12.json"),
+    Path("translations/targets/anycubic-slicer-next-2.0.0.6.json"),
+    Path("translations/targets/flash-studio-1.7.19.json"),
+    Path("translations/targets/snapmaker-orca-2.4.1.json"),
+    Path("translations/targets/prusa-slicer-3.0.0-alpha13.json"),
     Path("native_project_sources/source-index.json"),
     Path("native_project_sources/prusa-3/catalog.json"),
     Path("native_project_sources/prusa-3/schema.json"),

@@ -7,6 +7,8 @@ import {
 
 import { useI18n } from "../../i18n/context";
 import { createRandomId } from "../../utils/randomId";
+import { registerWorkshopProject, workshopProjectChanged } from "../../project/workshopRuntime";
+import { WorkshopProjectChannel } from "./projectChannel";
 import {
   type WorkshopPermissionName,
   type WorkshopUiState,
@@ -48,6 +50,8 @@ export interface WorkshopFrameModule {
   consecutiveStartFailures: number;
   /** The exact version declares a host-managed backend (manifest v2). */
   hasBackend?: boolean;
+  projectSnapshotProtocol?: number | null;
+  projectSnapshotSchemas?: readonly string[];
 }
 
 const BACKEND_PRESENCE_INTERVAL_MS = 30_000;
@@ -182,6 +186,7 @@ export function WorkshopFrame({
   > | null>(null);
   const hostRef = useRef<WorkshopRpcHost | null>(null);
   const detachPortRef = useRef<(() => void) | null>(null);
+  const detachProjectRef = useRef<(() => void) | null>(null);
   const handshakeAcceptedRef = useRef(false);
   const failureHandledRef = useRef(false);
   const mountedRef = useRef(true);
@@ -208,6 +213,8 @@ export function WorkshopFrame({
   const runtimePermissionsJson = JSON.stringify(
     module.permissions,
   );
+  const snapshotSchemasJson = JSON.stringify(module.projectSnapshotSchemas ?? []);
+  const snapshotProtocol = module.projectSnapshotProtocol;
 
   useEffect(() => {
     candidatePropRef.current = module.candidate;
@@ -232,6 +239,8 @@ export function WorkshopFrame({
 
   const closeConnection = useCallback(() => {
     clearHandshakeTimer();
+    detachProjectRef.current?.();
+    detachProjectRef.current = null;
     const detach = detachPortRef.current;
     detachPortRef.current = null;
     detach?.();
@@ -476,6 +485,9 @@ export function WorkshopFrame({
       const upstreamReady = selectedHandlers[
         "lifecycle.ready"
       ] as WorkshopRpcHandler | undefined;
+      const projectChannel = snapshotProtocol === 1 && event.data?.projectSnapshotProtocol === 1 && (JSON.parse(runtimePermissionsJson) as string[]).includes("project.storage")
+        ? new WorkshopProjectChannel({ moduleId: runtimeModuleId, moduleVersion: runtimeModuleVersion }, JSON.parse(snapshotSchemasJson) as string[], workshopProjectChanged)
+        : undefined;
       const runtimeHandlers: WorkshopRpcHandlers = {
         ...selectedHandlers,
         "status.progress": async (payload, context) => {
@@ -515,6 +527,9 @@ export function WorkshopFrame({
           if (mountedRef.current) {
             setProgress(null);
             setPhase("ready");
+            if (projectChannel && !detachProjectRef.current) {
+              detachProjectRef.current = registerWorkshopProject(projectChannel);
+            }
           }
           return undefined;
         },
@@ -538,6 +553,7 @@ export function WorkshopFrame({
           // Backend RPC needs both a declared backend and the module's
           // request in the handshake; the API re-checks consent per call.
           backendEnabled: hasBackend && handshake?.backendRequested === true,
+          projectChannel,
         });
         channel = createChannel();
         detachPortRef.current = host.attach(channel.port1);
@@ -575,6 +591,8 @@ export function WorkshopFrame({
     runtimeModuleId,
     runtimeModuleVersion,
     runtimePermissionsJson,
+    snapshotSchemasJson,
+    snapshotProtocol,
     runtimeMode,
     syntheticHandlers,
   ]);

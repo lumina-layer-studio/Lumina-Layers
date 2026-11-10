@@ -24,26 +24,6 @@ import HelpDot from "./ui/HelpDot";
 import { WIKI_DOCS } from "../utils/wikiDocs";
 
 const ACCEPT_FORMATS = "image/png,image/jpeg,image/webp,image/bmp";
-const VECTORIZER_RESET_DELAY_MS = 0;
-
-let pendingVectorizerResetTimer: number | null = null;
-
-function cancelPendingVectorizerReset(): void {
-  if (pendingVectorizerResetTimer === null) {
-    return;
-  }
-
-  window.clearTimeout(pendingVectorizerResetTimer);
-  pendingVectorizerResetTimer = null;
-}
-
-function scheduleVectorizerReset(): void {
-  cancelPendingVectorizerReset();
-  pendingVectorizerResetTimer = window.setTimeout(() => {
-    pendingVectorizerResetTimer = null;
-    useVectorizerStore.getState().reset();
-  }, VECTORIZER_RESET_DELAY_MS);
-}
 
 function toVisibleErrorMessage(error: unknown, fallback: string): string {
   return apiErrorToVisibleMessage(error, fallback);
@@ -84,13 +64,6 @@ export default function VectorizerPanel() {
   const cancel = useVectorizerStore((s) => s.cancel);
 
   const compareZoom = usePanZoom();
-
-  useEffect(() => {
-    cancelPendingVectorizerReset();
-    return () => {
-      scheduleVectorizerReset();
-    };
-  }, []);
 
   const handleFileSelect = useCallback(
     (file: File) => setImageFile(file),

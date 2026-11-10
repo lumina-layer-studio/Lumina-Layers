@@ -1,5 +1,6 @@
 export {
   useConverterStore,
+  converterDocumentHistory,
   CONVERTER_ERROR_KEYS,
   clampValue,
   isValidImageType,

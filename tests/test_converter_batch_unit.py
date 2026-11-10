@@ -21,6 +21,7 @@ import inspect
 import json
 import os
 import tempfile
+from zipfile import ZipFile
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
@@ -32,6 +33,7 @@ from PIL import Image
 from api.app import app
 from api.dependencies import get_file_registry, get_session_store, get_worker_pool
 from api.file_registry import FileRegistry
+from api.project_resources import ProjectResources
 from api.session_store import SessionStore
 from api.worker_pool import WorkerPoolManager
 from utils.merged_bambu_3mf_writer import MergedWriteError
@@ -923,13 +925,19 @@ class TestBatchWorkerPoolSubmit:
         }
         assert {key: worker_args.get(key) for key in expected_options} == expected_options
 
-    def test_batch_submits_material_archive_source_to_worker(self) -> None:
+    @pytest.mark.parametrize("portable", [False, True])
+    def test_batch_submits_material_archive_source_to_worker(self, portable: bool, tmp_path: Path) -> None:
         """Batch endpoint forwards material-archive source params to worker."""
         _mock_pool.submit = AsyncMock(
             return_value=_make_worker_result("material.png", 30.0, 20.0),
         )
+        resources = ProjectResources(str(tmp_path / "stage"), None, str(tmp_path / "stage/materials")) if portable else None
+        files = [("images", _make_test_image_buf("material.png"))]
+        if portable:
+            files.append(("project_materials", ("materials.zip", b"staged test archive", "application/zip")))
 
         with (
+            patch("api.routers.converter.generate.stage_project_resources", new_callable=AsyncMock, return_value=resources),
             patch(
                 "api.routers.converter.generate.ensure_png_tempfile",
                 new_callable=AsyncMock,
@@ -942,9 +950,10 @@ class TestBatchWorkerPoolSubmit:
         ):
             response = client.post(
                 "/api/convert/batch",
-                files=[("images", _make_test_image_buf("material.png"))],
+                files=files,
                 data={
                     "material_source": "material_archive",
+                    **({"external_spool_material": "Red", "printer_id": "bambu-lab-x2d"} if portable else {}),
                     "selected_materials": json.dumps(
                         ["brand/red", "brand/white"]
                     ),
@@ -968,6 +977,8 @@ class TestBatchWorkerPoolSubmit:
             *call_args.args[1:]
         ).arguments
         assert worker_args["lut_path"] == "__material_archive__"
+        assert worker_args["materials_dir"] == (resources.materials_dir if resources else None)
+        assert worker_args["external_spool_material"] == ("Red" if portable else None)
         assert worker_args["color_layers"] is None
         assert worker_args["layer_height_mm"] is None
         assert worker_args["material_source"] == "material_archive"
@@ -1404,9 +1415,16 @@ def _make_worker_result(
     filename: str,
     width_mm: float = 30.0,
     depth_mm: float = 20.0,
+    *, bed_size: tuple[int, int] = (350, 320),
 ) -> dict:
     """Create a full 5-key worker result with real temp files."""
     threemf_path = _make_fake_3mf(".3mf")
+    width, depth = bed_size
+    with ZipFile(threemf_path, "w") as package:
+        package.writestr("Metadata/project_settings.config", json.dumps({
+            "printable_area": ["0x0", f"{width}x0", f"{width}x{depth}", f"0x{depth}"],
+        }))
+        package.writestr("Metadata/model_settings.config", "<config/>")
     glb_fd, glb_path = tempfile.mkstemp(suffix=".glb")
     os.write(glb_fd, b"fake-glb-content")
     os.close(glb_fd)
@@ -1447,7 +1465,7 @@ class TestBatchMergeFlow:
     def test_selected_printer_bed_drives_batch_layout(self) -> None:
         """Batch layout uses the selected printer bed dimensions."""
         _mock_pool.submit = AsyncMock(
-            return_value=_make_worker_result("img.png", 30.0, 20.0),
+            return_value=_make_worker_result("img.png", 30.0, 20.0, bed_size=(270, 270)),
         )
         writer_plate_dims: list[tuple[float, float]] = []
 

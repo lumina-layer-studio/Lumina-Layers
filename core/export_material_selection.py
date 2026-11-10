@@ -18,6 +18,7 @@ from core.recipe_virtual_materials import build_virtual_material_registry
 from core.pipeline.preview_color_utils import build_lut_material_types, build_palette_preview_colors
 from utils.fatcat_metadata import (
     build_builtin_project_settings_request,
+    external_spool_filament_map,
     native_build_plate_uid,
     MetadataTarget,
     native_source_for_target,
@@ -72,7 +73,8 @@ def _source_materials(
 ) -> list[dict[str, Any]]:
     source = source_context if source_context is not None else params
     if source.get("material_source") == "material_archive":
-        materials = load_materials(list(source.get("selected_materials") or []))
+        root = source.get("materials_dir") or source.get("project_materials_dir")
+        materials = load_materials(list(source.get("selected_materials") or []), **({"materials_dir": root} if root else {}))
         names = build_material_slot_names(materials)
         colours = build_material_preview_colors(materials)
         types = {name: material.material_type for name, material in zip(names, materials)}
@@ -178,6 +180,11 @@ def require_export_material_selection(
     在计算几何之前拒绝尚未解决的耗材预设或板型选择。
     """
     selection = resolve_export_material_selection(params, source_context=source_context)
+    if (material := params.get("external_spool_material")) is not None:
+        external_spool_filament_map(
+            material, [slot["name"] for slot in selection["materials"]],
+            slicer_id=selection["slicer_id"], machine_uid=selection["machine_uid"],
+        )
     if not selection["ready"]:
         raise NativeMaterialSelectionError(selection)
     return selection

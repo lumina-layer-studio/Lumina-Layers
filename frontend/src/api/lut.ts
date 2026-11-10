@@ -1,4 +1,5 @@
 import apiClient, { type ApiRequestOptions } from "./client";
+import { workflowHeaders } from "../project/workflowRuntime";
 import { isPredictiveLutSource } from "../utils/lutVisibility";
 import type {
   CompareRequest,
@@ -22,9 +23,10 @@ import type {
 } from "./types";
 
 /** 获取指定 LUT 的颜色模式和颜色数量 */
-export async function fetchLutInfo(lutName: string): Promise<LutInfoResponse> {
+export async function fetchLutInfo(lutName: string, workflow = "lut-manager"): Promise<LutInfoResponse> {
   const response = await apiClient.get<LutInfoResponse>(
     `/lut/${encodeURIComponent(lutName)}/info`,
+    { headers: workflowHeaders(workflow) },
   );
   return response.data;
 }
@@ -47,6 +49,7 @@ export async function fetchSessionLutInfo(
 /** 执行 LUT 合并操作 */
 export async function mergeLuts(request: MergeRequest): Promise<MergeResponse> {
   const response = await apiClient.post<MergeResponse>("/lut/merge", request, {
+    headers: workflowHeaders("lut-manager"),
     timeout: 3_600_000,
   });
   return response.data;
@@ -59,7 +62,7 @@ export async function compareLuts(
   const response = await apiClient.post<CompareResponse>(
     "/lut/compare",
     request,
-    { timeout: 3_600_000 },
+    { timeout: 3_600_000, headers: workflowHeaders("lut-compare") },
   );
   return response.data;
 }
@@ -154,9 +157,9 @@ export async function fetchCloudLutRegistryStatus(): Promise<CloudLutRegistrySta
 
 /** 获取单个 LUT 的完整详情。 */
 export async function fetchLutDetails(lutName: string): Promise<LutDetailsResponse> {
-  const response = await apiClient.get<LutDetailsResponse>(
-    `/lut/${encodeURIComponent(lutName)}/details`
-  );
+  const url = `/lut/${encodeURIComponent(lutName)}/details`;
+  const headers = workflowHeaders("lut-details");
+  const response = headers ? await apiClient.get<LutDetailsResponse>(url, { headers }) : await apiClient.get<LutDetailsResponse>(url);
   return response.data;
 }
 

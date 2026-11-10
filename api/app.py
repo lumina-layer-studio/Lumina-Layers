@@ -105,6 +105,7 @@ from api.workshop_runtime_service import (
     start_existing_backend_runtime,
 )
 from core.workshop import WorkshopError
+from api.routers.projects import router as projects_router
 
 log = get_logger(__name__)
 
@@ -696,6 +697,7 @@ def create_app() -> FastAPI:
         )
 
     app.include_router(converter_router)
+    app.include_router(projects_router)
     app.include_router(extractor_router)
     app.include_router(feedback_router)
     app.include_router(calibration_router)

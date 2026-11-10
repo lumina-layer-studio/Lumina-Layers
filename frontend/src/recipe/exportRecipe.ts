@@ -15,10 +15,11 @@ import { buildAssetEntry } from "./utils";
 import { colorRemapToReplacementRegions } from "../utils/colorUtils";
 import type { ConverterState } from "../stores/converter/store";
 import type { SettingsState } from "../stores/settingsStore";
+import { resolveConverterSettings } from "../stores/converter/project";
 import type { ColorReplacementItem } from "../api/types";
 import type { WorkshopRecipeSource } from "../workshop/types";
 import { svgHoleCompensationOptions } from "../constants/svgHoleCompensation";
-import { scopedNativeFilamentProfiles } from "../stores/converter/nativeMaterialSelection";
+import { externalSpoolMaterial, scopedNativeFilamentProfiles } from "../stores/converter/nativeMaterialSelection";
 import {
   cloneDynamicMaterialRecipe,
   cloneMaterialLayerBenefitCurve,
@@ -110,9 +111,10 @@ function getAppVersion(): string {
  */
 export function exportConverterRecipe(
   state: ConverterState,
-  settings: SettingsState,
+  defaultSettings: SettingsState,
   lutPath?: string,
 ): ConverterRecipe {
+  const settings = resolveConverterSettings(state, defaultSettings);
   // Merge global-only colorRemapMap entries into global replacement_regions.
   // Local edits use the authoritative checkpoint embedded beside the source.
   // 这里只合并全局映射；局部编辑通过原图旁的权威快照保存。
@@ -145,6 +147,7 @@ export function exportConverterRecipe(
   const selectedLegacyLutNames = normalizeLegacyLutNames(state);
   const isMaterialSource = state.source_version === "material";
   const nativeFilamentProfiles = scopedNativeFilamentProfiles(state, settings);
+  const spool = externalSpoolMaterial(state, settings);
   const hasDynamicResult =
     state.materialDynamicRecipes.length > 0 ||
     state.materialLayerBenefitCurve.length > 0;
@@ -315,6 +318,7 @@ export function exportConverterRecipe(
       device_profile_id: settings.deviceProfileId,
       custom_3mf_template_id: settings.custom3mfTemplateId,
       ...(nativeFilamentProfiles ? { native_filament_profiles: nativeFilamentProfiles } : {}),
+      ...(spool ? { external_spool_material: spool } : {}),
       ...(settings.buildPlateId
         ? { build_plate_id: settings.buildPlateId }
         : {}),

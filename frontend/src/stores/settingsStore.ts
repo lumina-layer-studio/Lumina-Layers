@@ -14,7 +14,6 @@ import {
   invalidateSingleItemDownload,
 } from "./generatedArtifactInvalidation";
 import { synchronizePrinterBedLabel } from "./printerBedLabelSync";
-import { invalidatePreviewRequest } from "./previewRequestCoordinator";
 
 // ========== State Interface ==========
 
@@ -107,6 +106,7 @@ export interface SettingsState {
   buildPlateId: string;
   custom3mfTemplateId: string | null;
   buildPlateSelections: Record<string, string>;
+  externalSpoolSelections: Record<string, string>;
   customSlicerPath: string;
   customSlicerId: string;
   nozzleSize: NozzleSize;
@@ -182,6 +182,7 @@ export interface SettingsActions {
   setSlicerSoftware: (id: string) => void;
   setDeviceProfileId: (id: string) => void;
   setCustom3mfTemplateId: (id: string | null) => void;
+  setExternalSpoolMaterial: (paletteKey: string, material: string | undefined) => void;
   importCustom3mfTemplate: (file: File, name: string) => Promise<Custom3mfTemplate>;
   deleteCustom3mfTemplate: (id: string) => Promise<void>;
   setBuildPlateForMachine: (machineProfileId: string, plateId: string) => void;
@@ -227,6 +228,7 @@ export const DEFAULT_SETTINGS: SettingsState = {
   buildPlateId: "",
   custom3mfTemplateId: null,
   buildPlateSelections: {},
+  externalSpoolSelections: {},
   customSlicerPath: "",
   customSlicerId: "",
   nozzleSize: "0.4",
@@ -371,6 +373,10 @@ export function deriveBackendDeviceSettingsPatch(
       ? settings.language
       : undefined,
   );
+  if (settings.external_spool_selections && !hasOwnSetting(persistedSnapshot, "externalSpoolSelections") &&
+      Object.keys(current.externalSpoolSelections).length === 0) {
+    patch.externalSpoolSelections = { ...settings.external_spool_selections };
+  }
   setScalarIfFresh(
     "custom3mfTemplateId",
     typeof settings.custom_3mf_template_id === "string"
@@ -599,6 +605,16 @@ export interface ResolvedBuildPlateSelection {
   fellBack: boolean;
 }
 
+export function withExternalSpoolSelection(
+  paletteKey: string, material: string | undefined, previous: Record<string, string> = {},
+): Record<string, string> {
+  if (previous[paletteKey] === material) return previous;
+  const next = { ...previous };
+  if (material) next[paletteKey] = material;
+  else delete next[paletteKey];
+  return next;
+}
+
 export function resolveBuildPlateSelection(
   machineProfileId: string,
   availablePlateIds: readonly string[],
@@ -619,7 +635,8 @@ export function resolveBuildPlateSelection(
 
 function clearMaterialSuggestionsForGridChange(): void {
   void import("./converter").then(({ useConverterStore }) => {
-    useConverterStore.getState().clearMaterialSuggestions();
+    const state = useConverterStore.getState();
+    if (!state.projectSettings) state.clearMaterialSuggestions();
   });
 }
 
@@ -670,13 +687,21 @@ export const useSettingsStore = create<SettingsState & SettingsActions>()(
 
       setPaletteMode: (mode: "swatch" | "card") => set({ paletteMode: mode }),
 
+      setExternalSpoolMaterial: (paletteKey, material) => {
+        const previous = get().externalSpoolSelections;
+        const selections = withExternalSpoolSelection(paletteKey, material, previous);
+        if (previous === selections) return;
+        set({ externalSpoolSelections: selections });
+        invalidateGeneratedArtifacts({ preservePreviews: true, source: "defaults" });
+      },
+
       setPrinterModel: (id: string) => {
         set((state) => ({
           printerModel: id,
           deviceProfileId:
             state.printerModel === id ? state.deviceProfileId : "",
         }));
-        invalidateGeneratedArtifacts();
+        invalidateGeneratedArtifacts({ source: "defaults" });
         synchronizePrinterBedLabel(id);
       },
 
@@ -686,18 +711,18 @@ export const useSettingsStore = create<SettingsState & SettingsActions>()(
           deviceProfileId:
             state.slicerSoftware === id ? state.deviceProfileId : "",
         }));
-        invalidateGeneratedArtifacts();
+        invalidateGeneratedArtifacts({ source: "defaults" });
       },
 
       setDeviceProfileId: (id: string) => {
         set({ deviceProfileId: id });
-        invalidateGeneratedArtifacts();
+        invalidateGeneratedArtifacts({ source: "defaults" });
       },
 
       setCustom3mfTemplateId: (id: string | null) => {
         if (get().custom3mfTemplateId === id) return;
         set({ custom3mfTemplateId: id });
-        invalidateGeneratedArtifacts({ preservePreviews: true });
+        invalidateGeneratedArtifacts({ preservePreviews: true, source: "defaults" });
         void get().syncToBackend();
       },
 
@@ -753,7 +778,7 @@ export const useSettingsStore = create<SettingsState & SettingsActions>()(
             },
           };
         });
-        invalidateGeneratedArtifacts({ preservePreviews: true });
+        invalidateGeneratedArtifacts({ preservePreviews: true, source: "defaults" });
       },
 
       setCustomSlicerPath: (path: string) => set({ customSlicerPath: path }),
@@ -766,12 +791,12 @@ export const useSettingsStore = create<SettingsState & SettingsActions>()(
           deviceProfileId:
             state.nozzleSize === size ? state.deviceProfileId : "",
         }));
-        invalidateGeneratedArtifacts();
+        invalidateGeneratedArtifacts({ source: "defaults" });
       },
 
       setEnableBaseLayerHeightModifier: (enabled: boolean) => {
         set({ enableBaseLayerHeightModifier: enabled });
-        invalidateGeneratedArtifacts();
+        invalidateGeneratedArtifacts({ source: "defaults" });
       },
 
       setEnableWipeTowerAutoPlacement: (enabled: boolean) => {
@@ -779,7 +804,7 @@ export const useSettingsStore = create<SettingsState & SettingsActions>()(
           return;
         }
         set({ enableWipeTowerAutoPlacement: enabled });
-        invalidateGeneratedArtifacts();
+        invalidateGeneratedArtifacts({ source: "defaults" });
       },
 
       setEnableSolverCacheGridSelection: (enabled: boolean) => {
@@ -810,16 +835,15 @@ export const useSettingsStore = create<SettingsState & SettingsActions>()(
 
       setSvgPixelsPerMm: (value: number) => {
         set({ svgPixelsPerMm: normalizeSvgPixelsPerMm(value) });
-        invalidateGeneratedArtifacts();
+        invalidateGeneratedArtifacts({ source: "defaults" });
       },
 
       resetSvgPixelsPerMm: () => {
         set({ svgPixelsPerMm: SVG_PIXELS_PER_MM_DEFAULT });
-        invalidateGeneratedArtifacts();
+        invalidateGeneratedArtifacts({ source: "defaults" });
       },
 
       setMaterialDeltaE00Tolerance: (value: number) => {
-        invalidatePreviewRequest();
         set({
           materialDeltaE00Tolerance:
             normalizeMaterialDeltaE00Tolerance(value),
@@ -918,6 +942,7 @@ export const useSettingsStore = create<SettingsState & SettingsActions>()(
             build_plate_id: state.buildPlateId,
             custom_3mf_template_id: state.custom3mfTemplateId,
             build_plate_selections: state.buildPlateSelections,
+            external_spool_selections: state.externalSpoolSelections,
             custom_slicer_path: state.customSlicerPath,
             custom_slicer_id: state.customSlicerId,
             nozzle_size: state.nozzleSize,

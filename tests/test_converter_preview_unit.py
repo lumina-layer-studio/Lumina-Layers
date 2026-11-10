@@ -2230,6 +2230,64 @@ class TestTimeoutReturns504:
 class TestGeneralExceptionReturns500:
     """Verify general Exception from pool.submit returns HTTP 500."""
 
+    @pytest.mark.parametrize("source_type", ["png", "svg"])
+    def test_preview_preserves_source_and_publishes_once(
+        self, source_type: str, tmp_path: Path,
+    ) -> None:
+        """PNG and native SVG inputs reach the worker unchanged."""
+        source = tmp_path / f"original.{source_type}"
+        if source_type == "png":
+            source.write_bytes(_make_test_image_buf().getvalue())
+        else:
+            source.write_text(
+                '<svg xmlns="http://www.w3.org/2000/svg" width="120" height="80">'
+                '<rect width="120" height="80" fill="#ff0000"/></svg>',
+                encoding="utf-8",
+            )
+        original_bytes = source.read_bytes()
+        worker_result = _create_worker_result_files()
+        calls: list[tuple[object, ...]] = []
+
+        async def successful_preview(*args: object) -> dict:
+            calls.append(args)
+            assert Path(str(args[1])).read_bytes() == original_bytes
+            return worker_result
+
+        _mock_pool.submit = AsyncMock(side_effect=successful_preview)
+        with (
+            patch(
+                "api.routers.converter.preview.LUTManager.get_lut_path",
+                return_value="/tmp/fake.npy",
+            ),
+            patch(
+                "api.routers.converter.preview.ensure_png_tempfile",
+                new=AsyncMock(return_value=str(source)),
+            ),
+            patch("api.routers.converter.preview.schedule_glb_build"),
+            patch.object(_test_store, "create", wraps=_test_store.create) as create,
+        ):
+            response = client.post(
+                "/api/convert/preview",
+                files={"image": (source.name, original_bytes)},
+                data={
+                    "lut_name": "test_lut", "color_mode": "4-Color",
+                    "modeling_mode": "vector" if source_type == "svg" else "high-fidelity",
+                    "target_width_mm": 100, "quantize_colors": 48,
+                },
+            )
+
+        assert response.status_code == 200, response.text
+        assert len(calls) == 1
+        create.assert_called_once()
+        data = response.json()
+        try:
+            assert _test_store.get(data["session_id"]) is not None
+            assert client.get(data["preview_url"]).status_code == 200
+            assert source.read_bytes() == original_bytes
+        finally:
+            _test_registry.cleanup_session(data["session_id"])
+            _test_store.close(data["session_id"])
+
     def test_preview_exception_returns_500(self) -> None:
         """Simulate pool.submit raising RuntimeError, expect 500."""
         buf = _make_test_image_buf()
@@ -2263,14 +2321,19 @@ class TestGeneralExceptionReturns500:
         )
         assert private_path not in response.text
         assert "Worker crashed" not in response.text
+        assert _mock_pool.submit.await_count == 1
         log_exception.assert_called_once()
         log_extra = log_exception.call_args.kwargs["extra"]
         assert log_extra["error_type"] == "RuntimeError"
         assert log_extra["error_message"] == response.json()["detail"]
         assert private_path not in log_extra["error_message"]
 
-    def test_preview_broken_worker_pool_returns_retryable_503(self) -> None:
+    def test_preview_worker_crash_returns_503_without_replay(
+        self, tmp_path: Path,
+    ) -> None:
         buf = _make_test_image_buf()
+        source = tmp_path / "uploaded.png"
+        source.write_bytes(buf.getvalue())
         _mock_pool.submit = AsyncMock(
             side_effect=BrokenProcessPool("worker was killed")
         )
@@ -2282,7 +2345,7 @@ class TestGeneralExceptionReturns500:
             ),
             patch(
                 "api.routers.converter.preview.ensure_png_tempfile",
-                new=AsyncMock(return_value="/tmp/uploaded.png"),
+                new=AsyncMock(return_value=str(source)),
             ),
         ):
             response = client.post(
@@ -2292,6 +2355,8 @@ class TestGeneralExceptionReturns500:
             )
 
         assert response.status_code == 503
+        assert _mock_pool.submit.await_count == 1
+        assert not source.exists()
         assert response.json()["detail"] == (
             "Preview generation failed. Re-run preview and try again."
         )

@@ -25,6 +25,7 @@ if (launcherStartup.enabled) {
 }
 const { saveGeneratedFile } = require("./generated-file-save.cjs");
 const { createApplicationMenu } = require("./application-menu.cjs");
+const { createProjectsHost, projectOpenFromArgv } = require("./projects.cjs");
 const {
   createGeneratedFileDirectoryState,
   pickGeneratedFileDirectory,
@@ -386,11 +387,15 @@ function backendRuntimeEnv() {
 //  Single instance lock
 // ═══════════════════════════════════════════════════════════
 
-const gotLock = app.requestSingleInstanceLock();
+// Chromium can move switches ahead of their values in the second-instance argv.
+const launchProject = projectOpenFromArgv(process.argv);
+const gotLock = app.requestSingleInstanceLock({ projectOpen: launchProject });
 if (!gotLock) {
   app.quit();
 } else {
-  app.on("second-instance", () => {
+  app.on("second-instance", (_event, argv, _cwd, data) => {
+    if (data?.projectOpen === undefined) projectsHost.enqueueArgv(argv);
+    else projectsHost.enqueueProject(data.projectOpen);
     if (win) {
       if (win.isMinimized()) win.restore();
       win.focus();
@@ -412,12 +417,17 @@ let splashController = null;
 let isQuitting = false;
 let quitConfirmationPending = false;
 let trustedMainFrameUrl = null;
+const projectsHost = createProjectsHost({ app, ipcMain, dialog, shell, getWindow: () => win, getTrustedUrl: () => trustedMainFrameUrl });
+if (gotLock) projectsHost.enqueueProject(launchProject);
 
 async function confirmQuit() {
   if (isQuitting || quitConfirmationPending) return;
   quitConfirmationPending = true;
   const dlg = QUIT_DIALOG[currentLang] || QUIT_DIALOG.zh;
   try {
+    const projectChoice = await projectsHost.confirmProjectClose();
+    if (projectChoice === false) return;
+    if (projectChoice === true) { isQuitting = true; app.quit(); return; }
     const { response } = await dialog.showMessageBox(win, {
       type: "question",
       title: dlg.title,
@@ -625,9 +635,26 @@ function createWindow() {
     });
   });
 
-  applicationMenu?.rebuild();
-  win.webContents.on("did-start-navigation", (_event, _url, isInPlace, isMainFrame) => {
-    if (isMainFrame && !isInPlace) applicationMenu?.reset();
+  applicationMenu?.attach(win);
+  let reloadApproved = false;
+  mainWindow.webContents.on("will-prevent-unload", event => {
+    if (isQuitting || reloadApproved) {
+      reloadApproved = false;
+      event.preventDefault();
+      return;
+    }
+    // Keep the old page alive while its normal Save / Discard / Cancel guard
+    // resolves. A dev-server reload must obey the same document boundary.
+    void projectsHost.confirmProjectClose().then(accepted => {
+      if (accepted === true && !mainWindow.isDestroyed()) {
+        reloadApproved = true;
+        mainWindow.webContents.reload();
+      }
+    }).catch(error => logErr(`Reload confirmation failed: ${error.message}`));
+  });
+  win.webContents.on("did-navigate", () => {
+    reloadApproved = false;
+    applicationMenu?.reset();
   });
   win.webContents.on("render-process-gone", () => applicationMenu?.reset());
 
@@ -744,11 +771,12 @@ function createWindow() {
     "did-fail-load",
     (
       _event,
-      _errorCode,
+      errorCode,
       _errorDescription,
       validatedUrl,
       isMainFrame,
     ) => {
+      if (errorCode === -3) return; // A canceled unload is not a failed server load.
       if (
         !shouldRetryFrontendLoad({
           isMainFrame,

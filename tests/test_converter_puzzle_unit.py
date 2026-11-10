@@ -29,6 +29,7 @@ from api.workers.converter_workers import worker_generate_model
 from api.dependencies import get_file_registry, get_session_store, get_worker_pool
 from api.file_registry import FileRegistry
 from api.preview_cache_artifacts import externalize_preview_cache
+from api.schemas.converter import ConvertGenerateRequest
 from api.routers.converter import puzzle as puzzle_router
 from api.routers.converter.puzzle import _crop_piece_arrays, _submit_puzzle_worker
 from api.routers.converter.common import BATCH_DOWNLOAD_TTL_SECONDS
@@ -474,6 +475,9 @@ def test_generate_puzzle_inherits_dynamic_settings_and_maps_typed_error(monkeypa
     body["params"]["target_piece_count"] = 1
     body["params"]["params"]["lut_name"] = "__material_archive__"
 
+    preview_cache.update(ConvertGenerateRequest.model_validate(body["params"]["params"]).model_dump())
+    preview_cache.update(material_source="material_archive", color_layers=8, layer_height_mm=0.08)
+
     try:
         response = client.post("/api/convert/generate-puzzle", json=body)
     finally:
@@ -545,6 +549,7 @@ def test_generate_puzzle_assembles_single_3mf_and_passes_piece_matched_rgb(compe
         build_plate_id: str | None = None,
         overview_png_bytes: bytes | None = None,
         material_types: dict[str, str | None],
+        external_spool_material: str | None,
         native_filament_profiles: dict[str, str],
         enable_wipe_tower_auto_placement: bool = True,
     ) -> str:
@@ -700,8 +705,9 @@ def test_generate_puzzle_assembles_single_3mf_and_passes_piece_matched_rgb(compe
 
     boundary_x_values = [point[0] for point in boundary["polygon_px"]]
     boundary_y_values = [point[1] for point in boundary["polygon_px"]]
-    assert min(boundary_x_values) >= 0.5 - 1e-6
-    assert min(boundary_y_values) >= 0.5 - 1e-6
+    # This corner of the sheet has two outer edges and two shared cuts.
+    assert min(boundary_x_values) == pytest.approx(0.0)
+    assert min(boundary_y_values) == pytest.approx(0.0)
     assert max(boundary_x_values) <= expected_worker_w - 0.5 + 1e-6
     assert max(boundary_y_values) <= expected_worker_h - 0.5 + 1e-6
 
@@ -1136,6 +1142,7 @@ def test_generate_puzzle_resizes_heightmap_crop_to_worker_grid() -> None:
         build_plate_id: str | None = None,
         overview_png_bytes: bytes | None = None,
         material_types: dict[str, str | None],
+        external_spool_material: str | None,
         native_filament_profiles: dict[str, str],
         enable_wipe_tower_auto_placement: bool = True,
     ) -> str:
@@ -1229,6 +1236,7 @@ def test_generate_puzzle_emits_hybrid_boundary_log_for_each_piece() -> None:
         build_plate_id: str | None = None,
         overview_png_bytes: bytes | None = None,
         material_types: dict[str, str | None],
+        external_spool_material: str | None,
         native_filament_profiles: dict[str, str],
         enable_wipe_tower_auto_placement: bool = True,
     ) -> str:
@@ -1328,6 +1336,7 @@ def test_generate_puzzle_reuses_cached_layout_after_preview() -> None:
         build_plate_id: str | None = None,
         overview_png_bytes: bytes | None = None,
         material_types: dict[str, str | None],
+        external_spool_material: str | None,
         native_filament_profiles: dict[str, str],
         enable_wipe_tower_auto_placement: bool = True,
     ) -> str:
@@ -1421,7 +1430,7 @@ def test_crop_piece_arrays_preserves_source_transparency_inside_piece_mask() -> 
         candidate_source_transparent_inside = inside_piece & (source_alpha_crop == 0)
         candidate_source_opaque_inside = inside_piece & (source_alpha_crop > 0)
         if np.any(candidate_source_transparent_inside) and np.any(candidate_source_opaque_inside):
-            _bbox_px, candidate_rgba, candidate_matched = _crop_piece_arrays(source_rgba, matched_rgb, candidate)
+            candidate_rgba, candidate_matched = _crop_piece_arrays(source_rgba, matched_rgb, bbox_px, local_mask)
             piece_rgba = candidate_rgba
             piece_matched = candidate_matched
             source_transparent_inside_piece = candidate_source_transparent_inside
@@ -1490,6 +1499,7 @@ def test_generate_puzzle_filters_fully_transparent_pieces_during_layout() -> Non
         build_plate_id: str | None = None,
         overview_png_bytes: bytes | None = None,
         material_types: dict[str, str | None],
+        external_spool_material: str | None,
         native_filament_profiles: dict[str, str],
         enable_wipe_tower_auto_placement: bool = True,
     ) -> str:
@@ -1688,7 +1698,7 @@ def test_worker_generate_model_preserves_svg_puzzle_piece_dimensions_for_matched
             PuzzleLayoutConfig(
                 width_px=cache["matched_rgb"].shape[1],
                 height_px=cache["matched_rgb"].shape[0],
-                total_width_mm=120.0,
+                total_width_mm=119.99,  # rounds to the preview grid; truncation loses a column
                 total_height_mm=80.0,
                 style="regular",
                 sizing_mode="grid",
@@ -1708,7 +1718,9 @@ def test_worker_generate_model_preserves_svg_puzzle_piece_dimensions_for_matched
             for candidate in layout.pieces
             if int((candidate.bbox_mm[2] - candidate.bbox_mm[0]) * 10) != (candidate.bbox_px[2] - candidate.bbox_px[0])
         )
-        _bbox_px, piece_rgba, piece_matched = _crop_piece_arrays(cache["preview_rgba"], cache["matched_rgb"], piece)
+        piece_rgba, piece_matched = _crop_piece_arrays(
+            cache["preview_rgba"], cache["matched_rgb"], *rasterize_piece_mask(piece)
+        )
         assert piece_matched.shape[1] > 0
 
         piece_image_path = tmp_path / f"{piece.label}.png"

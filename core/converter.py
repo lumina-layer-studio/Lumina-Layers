@@ -342,6 +342,7 @@ def convert_image_to_3d(
     high_precision_3d_preview: bool = False,
     svg_pixels_per_mm: float = SVG_PIXELS_PER_MM_DEFAULT,
     *,
+    backing_mask_path: Optional[str] = None,
     backing_infill_density_percent: int = 100,
     enable_wipe_tower_auto_placement: bool = True,
     custom_3mf_template_id: Optional[str] = None,
@@ -364,6 +365,8 @@ def convert_image_to_3d(
     svg_hole_max_area_mm2: float = 0.5,
     svg_hole_max_width_mm: float = 0.1,
     batch_preview: bool = False,
+    external_spool_material: str | None = None,
+    materials_dir: Optional[str] = None,
 ):
     """Main conversion function: Convert image to 3D model.
     主要转换函数：将图像转换为 3D 模型。
@@ -500,6 +503,10 @@ def convert_image_to_3d(
         "chroma_gate": chroma_gate,
         "matched_rgb_path": matched_rgb_path,
         "mask_solid_path": mask_solid_path,
+        "backing_mask": (
+            np.load(backing_mask_path, mmap_mode="r", allow_pickle=False)
+            if backing_mask_path is not None else None
+        ),
         "quantized_image_path": quantized_image_path,
         "material_matrix_path": material_matrix_path,
         "reuse_preview_analysis": reuse_preview_analysis,
@@ -516,6 +523,7 @@ def convert_image_to_3d(
         "nozzle_size": nozzle_size,
         "device_profile_id": device_profile_id,
         "build_plate_id": build_plate_id,
+        "external_spool_material": external_spool_material,
         "native_filament_profiles": dict(native_filament_profiles or {}),
         "custom_3mf_template_id": custom_3mf_template_id,
         "enable_base_layer_height_modifier": enable_base_layer_height_modifier,
@@ -525,6 +533,7 @@ def convert_image_to_3d(
         "fridge_magnets": fridge_magnets,
         "material_source": material_source,
         "selected_materials": selected_materials,
+        "materials_dir": materials_dir,
         "material_layer_count": material_layer_count,
         "material_layer_height_mm": material_layer_height_mm,
         "material_grid_resolution": material_grid_resolution,
@@ -600,6 +609,7 @@ def generate_preview_cached(
     svg_hole_compensation_enabled: bool = False,
     svg_hole_max_area_mm2: float = 0.5,
     svg_hole_max_width_mm: float = 0.1,
+    materials_dir: str | None = None,
 ):
     """Generate preview and cache data. Thin wrapper, delegates to coordinator.
     生成预览图和缓存数据。薄包装函数，委托给 coordinator。
@@ -629,6 +639,7 @@ def generate_preview_cached(
         tuple: (display_image, cache_data, status_message)
     """
     ctx = {
+        "materials_dir": materials_dir,
         "image_path": image_path,
         "lut_path": lut_path,
         "target_width_mm": target_width_mm,
@@ -787,6 +798,7 @@ def generate_final_model(
     material_backing_material_index: Optional[int] = None,
     svg_pixels_per_mm: float = SVG_PIXELS_PER_MM_DEFAULT,
     *,
+    backing_mask_path: Optional[str] = None,
     backing_infill_density_percent: int = 100,
     enable_wipe_tower_auto_placement: bool = True,
     custom_3mf_template_id: Optional[str] = None,
@@ -808,6 +820,8 @@ def generate_final_model(
     svg_hole_compensation_enabled: bool = False,
     svg_hole_max_area_mm2: float = 0.5,
     svg_hole_max_width_mm: float = 0.1,
+    external_spool_material: str | None = None,
+    materials_dir: Optional[str] = None,
 ):
     """Wrapper function for generating final model.
     包装函数，用于生成最终模型。
@@ -949,6 +963,7 @@ def generate_final_model(
         svg_hole_compensation_enabled=svg_hole_compensation_enabled,
         svg_hole_max_area_mm2=svg_hole_max_area_mm2,
         svg_hole_max_width_mm=svg_hole_max_width_mm,
+        external_spool_material=external_spool_material,
         native_filament_profiles=native_filament_profiles,
         backing_infill_density_percent=backing_infill_density_percent,
         blur_kernel=0,
@@ -984,6 +999,7 @@ def generate_final_model(
         original_material_matrix_path=original_material_matrix_path,
         edit_projection=edit_projection,
         mask_solid_path=mask_solid_path,
+        backing_mask_path=backing_mask_path,
         quantized_image_path=quantized_image_path,
         material_matrix_path=material_matrix_path,
         reuse_preview_analysis=reuse_preview_analysis,
@@ -1015,6 +1031,7 @@ def generate_final_model(
         enable_fridge_magnet=enable_fridge_magnet,
         fridge_magnets=fridge_magnets,
         material_source=material_source,
+        materials_dir=materials_dir,
         selected_materials=selected_materials,
         material_layer_count=material_layer_count,
         material_layer_height_mm=material_layer_height_mm,

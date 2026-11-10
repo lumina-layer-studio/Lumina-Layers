@@ -51,6 +51,22 @@ beforeEach(() => {
 afterEach(() => vi.clearAllTimers());
 
 describe("portable editor project orchestration", () => {
+  it("keeps print dimensions separate from the saved editing grid on refresh", async () => {
+    const editor = new File(["checkpoint"], "editor.json.gz");
+    useConverterStore.setState({ target_width_mm: 31, target_height_mm: 21, pendingEditorProject: editor });
+    vi.mocked(convertPreview).mockResolvedValue({ ...preview, dimensions: {
+      width: 620, height: 420, width_mm: 62, height_mm: 42,
+    } });
+    vi.mocked(restoreEditorProject).mockResolvedValue(restored);
+    await useConverterStore.getState().submitPreview();
+    expect(convertPreview).toHaveBeenCalledWith(expect.any(File), expect.objectContaining({ target_width_mm: 31 }),
+      expect.anything(), expect.objectContaining({ editor }));
+    expect(useConverterStore.getState()).toMatchObject({
+      target_width_mm: 31, target_height_mm: 21, preview_width_mm: 62, preview_height_mm: 42,
+      previewPixelWidth: 620, previewPixelHeight: 420,
+    });
+  });
+
   it("captures the confirmed spatial revisions and refuses a later edit", async () => {
     useConverterStore.setState({ sessionId: "export-editor", regionReplacementCount: 1, selectionDocument: selection });
     const capture = deferred<File>();

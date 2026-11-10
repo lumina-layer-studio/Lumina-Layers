@@ -20,6 +20,7 @@ import cv2
 import numpy as np
 
 from core.edit_projection import EditProjectionGrid
+from core.recipe_order import pad_material_matrix_layers as _upgrade_material_matrix_layers
 from core.errors import CachedPreviewAnalysisError
 from core.pipeline.material_dynamic_layers import (
     _record_dynamic_material_error,
@@ -155,41 +156,17 @@ def _replay_projected_preview_edits(
             "Required preview edit artifacts are structurally incompatible"
         )
 
-    rgb_change_mask = grid.project_change_mask(
-        edited_rgb,
-        pristine_rgb,
-        source_solid=source_solid,
-        target_solid=target_solid,
+    replayed_rgb, rgb_change_mask = grid.replay(
+        edited_rgb, pristine_rgb, fresh_rgb,
+        source_solid=source_solid, target_solid=target_solid,
     )
-    replayed_rgb = np.asarray(fresh_rgb, dtype=np.uint8).copy()
-    replayed_rgb[rgb_change_mask] = grid.sample_target_mask(
-        edited_rgb,
-        rgb_change_mask,
-    )
-
-    common_source_layers = min(
-        int(edited_material.shape[2]),
-        int(pristine_material.shape[2]),
-    )
-    material_source_change = np.any(
-        edited_material[..., :common_source_layers]
-        != pristine_material[..., :common_source_layers],
-        axis=-1,
-    )
-    material_source_change &= source_solid
-    material_change_mask = grid.project_mask(
-        material_source_change,
-        target_solid=target_solid,
-    )
-    replayed_material = np.array(fresh_material, copy=True)
-    copied_layers = min(
-        int(edited_material.shape[2]),
-        int(replayed_material.shape[2]),
-    )
-    replayed_material_slice = replayed_material[..., :copied_layers]
-    replayed_material_slice[material_change_mask] = grid.sample_target_mask(
-        edited_material[..., :copied_layers],
-        material_change_mask,
+    metadata = ctx.get("lut_metadata")
+    replayed_material, material_change_mask = grid.replay_materials(
+        edited_material, pristine_material, fresh_material,
+        source_solid=source_solid, target_solid=target_solid,
+        base_channel_idx=int(getattr(metadata, "base_channel_idx", ctx.get("material_base_channel_idx", 0)) or 0),
+        layer_order=getattr(metadata, "layer_order", "Top2Bottom"),
+        target_layers=fresh_material.shape[2],
     )
 
     _log.debug(
@@ -1082,72 +1059,6 @@ def _pad_recipe_to_layers(
     if layer_order == "Bottom2Top":
         return [int(base_channel_idx)] * pad_count + [int(v) for v in recipe]
     return [int(v) for v in recipe] + [int(base_channel_idx)] * pad_count
-
-
-def _upgrade_material_matrix_layers(
-    material_matrix: np.ndarray,
-    target_layers: int,
-    base_channel_idx: int,
-    layer_order: str,
-    mask_solid: np.ndarray | None = None,
-) -> np.ndarray:
-    """Grow ``material_matrix`` to ``target_layers`` using ``mask_solid`` aware pads.
-
-    The new layers must satisfy two contradictory constraints:
-
-    - ``~mask_solid`` (transparent background already marked ``-1`` by
-      ``p03_core_processing``) must stay ``-1`` so ``s06_voxel_building`` /
-      ``s07_mesh_generation`` do not emit a ring-shaped mesh around the
-      silhouette at the extended Z ("整块白矩形包裹 / 透明通道失效"
-      regression).
-    - ``mask_solid`` non-override pixels must keep a real material so the
-      extended columns stay continuous with the backing slab. Padding them
-      with ``-1`` leaves the user's grown layers visually empty outside the
-      override ("第 6 层空层" regression).
-
-    The pad slab starts at ``-1`` everywhere and ``mask_solid`` interior
-    cells are written to ``base_channel_idx`` (the LUT's base material,
-    normally White on CMYW). ``mask_solid=None`` means "caller didn't provide
-    solidity info" (rare; legacy callers) — fall back to the old all-base
-    behaviour but still honour the dtype promotion so ``-1`` cells written
-    by earlier stages survive.
-
-    扩展层必须同时满足两件事：(a) ~mask_solid (p03 标成 -1 的透明背景)
-    保持 -1 空气，否则 S07 会围着模型生成白色 mesh；(b) mask_solid 内
-    非 override 像素保留 base channel，避免第 6 层塌成空层。pad slab
-    整体置 -1，只在 mask_solid 位置写 base_channel_idx。mask_solid
-    缺省时兼容老调用方：全部填 base_channel_idx。
-    """
-
-    current_layers = int(material_matrix.shape[2])
-    if current_layers >= target_layers:
-        return material_matrix
-    # uint dtypes would wrap ``-1`` into ``255`` and reintroduce the exact
-    # mesh-explosion bug under a different channel id, so promote to a
-    # signed dtype before padding.
-    # uint 类型会把 ``-1`` 绕回 255 把同一个 bug 换个编号重来，所以先升
-    # 到 signed 类型再 pad。
-    if np.issubdtype(material_matrix.dtype, np.unsignedinteger):
-        material_matrix = material_matrix.astype(np.int32)
-    pad_shape = (*material_matrix.shape[:2], target_layers - current_layers)
-    if mask_solid is None:
-        pad = np.full(pad_shape, int(base_channel_idx), dtype=material_matrix.dtype)
-    else:
-        mask_solid_arr = np.asarray(mask_solid, dtype=bool)
-        if mask_solid_arr.shape != material_matrix.shape[:2]:
-            # Shape mismatch would silently paint the whole slab with base;
-            # callers always pass a matching mask, so treat this as a
-            # programming error rather than silently degrading.
-            # 形状不匹配说明调用方传错了，直接报错避免静默污染扩展层。
-            raise ValueError(
-                f"mask_solid shape {mask_solid_arr.shape} does not match "
-                f"material_matrix spatial shape {material_matrix.shape[:2]}"
-            )
-        pad = np.full(pad_shape, -1, dtype=material_matrix.dtype)
-        pad[mask_solid_arr] = int(base_channel_idx)
-    if layer_order == "Bottom2Top":
-        return np.concatenate([pad, material_matrix], axis=2)
-    return np.concatenate([material_matrix, pad], axis=2)
 
 
 def run(ctx: dict) -> dict:

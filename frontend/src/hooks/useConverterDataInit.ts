@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { useConverterStore } from '../stores/converter';
+import { boundProjectResources } from '../stores/converter/project';
 
 /**
  * Initialize converter data on app startup.
@@ -12,15 +13,20 @@ export function useConverterDataInit() {
   const fetchLutCatalog = useConverterStore((s) => s.fetchLutCatalog);
   const fetchBedSizes = useConverterStore((s) => s.fetchBedSizes);
   const fetchLutColors = useConverterStore((s) => s.fetchLutColors);
+  const lutName = useConverterStore((s) => s.lut_name);
+  const portableLut = useConverterStore((s) => boundProjectResources(s).lut);
+  const lutSessionId = useConverterStore((s) => boundProjectResources(s).lut ? s.sessionId : null);
 
   useEffect(() => {
-    void fetchLutCatalog().then(() => {
-      // After LUT list loads, if a remembered LUT is set, also load its colors
-      const { lut_name, lutColorsLutName, lutColors } = useConverterStore.getState();
-      if (lut_name && (lutColorsLutName !== lut_name || lutColors.length === 0)) {
-        void fetchLutColors(lut_name);
-      }
-    });
+    void fetchLutCatalog();
     void fetchBedSizes();
-  }, [fetchLutCatalog, fetchBedSizes, fetchLutColors]);
+  }, [fetchLutCatalog, fetchBedSizes]);
+
+  useEffect(() => {
+    // Restore and undo bypass source pickers. Rebind the palette when the
+    // private session changes, even if its LUT has the same display name.
+    const controller = new AbortController();
+    void fetchLutColors(lutName, controller.signal);
+    return () => controller.abort();
+  }, [lutName, portableLut, lutSessionId, fetchLutColors]);
 }

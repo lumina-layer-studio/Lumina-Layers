@@ -172,6 +172,8 @@ class InstalledWorkshopVersionResponse(WorkshopHttpModel):
     asset_base_url: str
     manifest_version: int = 1
     backend: WorkshopBackendSummaryResponse | None = None
+    project_snapshot_protocol: int | None = None
+    project_snapshot_schemas: tuple[str, ...] = ()
 
 
 class InstalledWorkshopModuleResponse(WorkshopHttpModel):

@@ -340,6 +340,8 @@ def test_installed_modules_include_public_version_manifests(
             "workshop_api_min": "1.0.0",
             "workshop_api_max_exclusive": "2.0.0",
             "lumina_version_min": "1.0.0",
+            "project_snapshot_protocol": None,
+            "project_snapshot_schemas": [],
             "permissions": [
                 {
                     "name": "project.storage",

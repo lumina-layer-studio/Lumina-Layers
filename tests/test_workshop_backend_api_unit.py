@@ -61,16 +61,19 @@ def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):  # noqa: ANN201
     monkeypatch.setenv("LUMINA_WORKSHOP_OFFLINE", "1")
     monkeypatch.setattr(workshop_router, "get_workshop_registry_client", lambda: EmptyRegistry())
     monkeypatch.setattr(runtime_service, "get_review_attestation_client", lambda _data_dir: NoReviews())
+    manifest = backend_manifest(
+        MODULE,
+        "1.0.0",
+        capabilities=[{"name": "subprocess", "reason": "Runs a helper in the slow fixture."}],
+    )
+    manifest["permissions"].append({"name": "project.storage", "reason": "Save edits."})
+    manifest["projectSnapshots"] = {"protocol": 1, "schemas": ["editor/v1"]}
     package = write_backend_package(
         tmp_path / "packages",
         module_id=MODULE,
         version="1.0.0",
         lock=lock_text([wheels["shared"]]),
-        manifest=backend_manifest(
-            MODULE,
-            "1.0.0",
-            capabilities=[{"name": "subprocess", "reason": "Runs a helper in the slow fixture."}],
-        ),
+        manifest=manifest,
     )
     yield TestClient(create_app()), package
     runtime_service.shutdown_backend_runtimes()
@@ -98,6 +101,8 @@ def install_and_prepare(client: TestClient, package: Path) -> None:
     detail = response.json()["module"]["version_details"][0]
     assert detail["manifest_version"] == 2
     assert detail["backend"]["capabilities"][0]["name"] == "subprocess"
+    assert detail["project_snapshot_protocol"] == 1
+    assert detail["project_snapshot_schemas"] == ["editor/v1"]
 
     refused = client.post(f"/api/workshop/v1/modules/{MODULE}/activate", json={"version": "1.0.0"})
     assert refused.status_code == 409

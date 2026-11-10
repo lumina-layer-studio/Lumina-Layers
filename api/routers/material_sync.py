@@ -24,7 +24,7 @@ from api.schemas.responses import (
     public_material_response_item,
 )
 from api.structured_logging import get_logger
-from core.registry_transport import map_package_url
+from core.registry_transport import RegistryCatalogNotFoundError, map_package_url
 from core.single_stage import (
     get_material_sync_status,
     import_saved_stage_a_material_archives,
@@ -197,6 +197,17 @@ async def material_sync_catalog(
             exc=exc,
             status_code=422,
             detail=_catalog_value_error_detail(exc),
+        )
+    except RegistryCatalogNotFoundError as exc:
+        _raise_material_sync_error(
+            event="material_sync_catalog_failed",
+            exc=exc,
+            status_code=502,
+            detail=(
+                "Material Registry catalog endpoint was not found (HTTP 404). "
+                "Check LUMINA_MATERIAL_REGISTRY_URL and use a Registry service "
+                "that provides /materials/catalog."
+            ),
         )
     except RuntimeError as exc:
         _raise_material_sync_error(

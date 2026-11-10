@@ -3,13 +3,14 @@ import { useSettingsStore } from "../settingsStore";
 import { applyConversionParameters, captureConversionParameters, validatePresetName, selectPresetParameters, getPresetOptions, DEFAULT_PRESET_OPTIONS,
   type ConversionParameters, type ConversionPreferences } from "../conversionPreferences";
 import type { ConverterActions, ConverterState } from "./types";
+import type { DocumentCommandWrapper } from "./documentCommands";
 
 type Store = ConverterState & ConverterActions;
 type Actions = Pick<ConverterActions, "restoreConversionDefaults" | "applyConversionPreset" |
   "saveConversionPreset" | "updateConversionPreset" | "renameConversionPreset" | "deleteConversionPreset">;
 
 /** Own preset operations here; the UI only renders their results. */
-export function createConversionPresetActions(set: StoreApi<Store>["setState"], get: () => Store): Actions {
+export function createConversionPresetActions(set: StoreApi<Store>["setState"], get: () => Store, command: DocumentCommandWrapper): Actions {
   const preferences = () => useSettingsStore.getState().conversionPreferences;
   const save = (value: ConversionPreferences) => useSettingsStore.getState().setConversionPreferences(value);
 
@@ -28,18 +29,18 @@ export function createConversionPresetActions(set: StoreApi<Store>["setState"], 
   };
 
   return {
-    restoreConversionDefaults: () => {
+    restoreConversionDefaults: command(() => {
       const saved = preferences();
       if (saved.last) restore(saved.last, saved.selectedPresetId ?? null);
       else set({ conversionParameterContext: "defaults" });
-    },
-    applyConversionPreset: (id) => {
+    }),
+    applyConversionPreset: command((id) => {
       const saved = preferences();
       const parameters = id === null ? saved.last : saved.presets.find(p => p.id === id)?.parameters;
       if (!parameters) return false;
       restore(parameters, id);
       return true;
-    },
+    }, { blocked: () => false }),
     saveConversionPreset: (name, options = DEFAULT_PRESET_OPTIONS) => {
       const saved = preferences();
       const error = validatePresetName(name, saved.presets);

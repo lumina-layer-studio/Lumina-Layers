@@ -42,6 +42,8 @@ export interface InstalledWorkshopVersion {
   /** 2 when the version declares a host-managed backend. */
   manifest_version?: number;
   backend?: WorkshopBackendSummary | null;
+  project_snapshot_protocol?: number | null;
+  project_snapshot_schemas?: string[];
 }
 
 export type WorkshopInstallSource =

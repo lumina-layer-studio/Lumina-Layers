@@ -35,6 +35,7 @@
 import { useEffect } from "react";
 
 import { useConverterStore } from "../stores/converter";
+import { externalSpoolMaterial } from "../stores/converter/nativeMaterialSelection";
 import { useSettingsStore } from "../stores/settingsStore";
 import { useWidgetStore } from "../stores/widgetStore";
 import { useActionHistoryStore } from "../stores/actionHistoryStore";
@@ -89,6 +90,7 @@ function readSnapshot(): WorkflowSnapshot {
       : null,
     active_tab: widget.activeTab ?? "unknown",
     advanced_params: buildAdvancedParams(converter, widget.activeTab, {
+      externalSpoolMaterial: isConverterActive ? externalSpoolMaterial(converter, settings) : undefined,
       maxBytes: Number.POSITIVE_INFINITY,
       svgPixelsPerMm: settings.svgPixelsPerMm,
       materialDeltaE00Tolerance: settings.materialDeltaE00Tolerance,

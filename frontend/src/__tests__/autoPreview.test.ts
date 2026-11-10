@@ -56,6 +56,17 @@ function materialCacheStatus(
 describe("useAutoPreview", () => {
   const mockSubmitPreview = vi.fn<() => Promise<void>>().mockResolvedValue(undefined);
 
+  it("adopts a restored project preview without regenerating away its local edits", () => {
+    useConverterStore.setState({ imageFile: fakeFile("before.png"), source_version: "legacy", lut_name: "before", hasManualPreview: true, sessionId: "before" });
+    renderHook(() => useAutoPreview());
+    act(() => {
+      useConverterStore.getState().commitProjectRestore({ ...useConverterStore.getState(), imageFile: fakeFile("restored.png"), lut_name: "restored", sessionId: "restored", previewBaseImageUrl: "/api/files/edited", regionReplacementCount: 3, hasManualPreview: true, previewAutoRefreshPending: false });
+    });
+    act(() => vi.advanceTimersByTime(1000));
+    expect(mockSubmitPreview).not.toHaveBeenCalled();
+    expect(useConverterStore.getState()).toMatchObject({ sessionId: "restored", previewBaseImageUrl: "/api/files/edited", regionReplacementCount: 3 });
+  });
+
   function establishMaterialPreviewBaseline() {
     useConverterStore.setState({
       imageFile: fakeFile("material-preview.png"),

@@ -377,8 +377,9 @@ def test_p1s_auto_layout_uses_compact_right_side_tower() -> None:
     assert placement is not None
     assert placement.reason == "adapted_right"
     assert placement.model_translation == pytest.approx((128.0, 128.0))
-    assert placement.tower_x == pytest.approx(192.0)
-    assert placement.tower_y == pytest.approx(100.75)
+    assert placement.tower_outer_bounds.left > placement.model_outer_bounds.right
+    assert placement.tower_outer_bounds.right <= 256
+    assert placement.tower_bounds.center[1] == pytest.approx(128.0)
     assert placement.tower_width == pytest.approx(30.0)
     assert placement.tower_rotation == pytest.approx(0.0)
 

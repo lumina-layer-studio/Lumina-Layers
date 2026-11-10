@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { useConverterStore } from "../stores/converter";
+import { useConverterStore, converterDocumentHistory } from "../stores/converter";
 import { useSettingsStore } from "../stores/settingsStore";
 import { captureConversionParameters, presetMatchesCurrent } from "../stores/conversionPreferences";
 
@@ -11,7 +11,7 @@ export function bindConversionPreferences(): () => void {
     const last = useSettingsStore.getState().conversionPreferences.last;
     if (!last || current.conversionParameterContext !== "defaults" || current.imageFile) return;
     if (presetMatchesCurrent(last, captureConversionParameters(current))) return;
-    current.restoreConversionDefaults();
+    converterDocumentHistory.amendCurrent(() => current.restoreConversionDefaults());
   };
   restore();
   const stopConverter = useConverterStore.subscribe((current, previous) => {

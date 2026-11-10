@@ -20,6 +20,7 @@ import {
   RpcPayloadValidationError,
   validateMethodPayload,
 } from "./payloadValidation";
+import type { WorkshopProjectChannel } from "./projectChannel";
 
 
 export {
@@ -67,6 +68,7 @@ export interface CreateWorkshopRpcHostOptions {
   supportedEvents?: ReadonlySet<string>;
   /** The exact module version declares a backend (manifest v2). */
   backendEnabled?: boolean;
+  projectChannel?: WorkshopProjectChannel;
   now?: () => number;
   scheduler?: WorkshopRpcScheduler;
 }
@@ -213,6 +215,7 @@ class WorkshopRpcHostImpl implements WorkshopRpcHost {
   private readonly pending = new Map<string, PendingRequest>();
   private activePort: WorkshopMessagePort | null = null;
   private closed = false;
+  private readonly projectChannel?: WorkshopProjectChannel;
 
   constructor(options: CreateWorkshopRpcHostOptions) {
     this.identity = validatedIdentity(options.identity);
@@ -222,6 +225,7 @@ class WorkshopRpcHostImpl implements WorkshopRpcHost {
     this.handlers = Object.freeze({ ...options.handlers });
     this.supportedEvents = new Set(options.supportedEvents ?? []);
     this.backendEnabled = options.backendEnabled === true;
+    this.projectChannel = options.projectChannel;
     this.scheduler = options.scheduler ?? DEFAULT_SCHEDULER;
     this.bucket = new TokenBucket(options.now ?? defaultNow);
   }
@@ -333,7 +337,9 @@ class WorkshopRpcHostImpl implements WorkshopRpcHost {
       return () => undefined;
     }
     this.activePort = port;
+    this.projectChannel?.connect(port);
     port.onmessage = (event) => {
+      if (this.projectChannel?.receive(event.data)) return;
       void this.dispatch(event.data).then((response) => {
         if (this.activePort !== port || this.closed) {
           return;
@@ -357,6 +363,7 @@ class WorkshopRpcHostImpl implements WorkshopRpcHost {
       port.onmessageerror = null;
       port.close();
       this.activePort = null;
+      this.projectChannel?.close();
     };
   }
 
@@ -386,6 +393,7 @@ class WorkshopRpcHostImpl implements WorkshopRpcHost {
       return;
     }
     this.closed = true;
+    this.projectChannel?.close();
     const port = this.activePort;
     this.activePort = null;
     if (port !== null) {

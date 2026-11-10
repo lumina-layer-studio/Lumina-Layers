@@ -16,6 +16,34 @@ export interface AnnouncementEntry {
 
 export const ANNOUNCEMENTS: ReadonlyArray<AnnouncementEntry> = [
   {
+    version: "2026-11-07",
+    title: { zh: "Lumina Layers — 11 月更新速览", en: "Lumina Layers — November updates" },
+    sections: [
+      {
+        category: { zh: "新功能", en: "New" },
+        items: [
+          {
+            zh: "新增 Bambu H3C，可在设置中选择 0.2 或 0.4 mm 喷嘴。更新了 Bambu、QIDI、Anycubic、Flash、Snapmaker 和 Prusa 的切片配置及 Prusa 机型图片。Prusa 使用 3.0.0-alpha13 预览版。",
+            en: "Added Bambu H3C with 0.2 and 0.4 mm nozzles in Settings. Updated Bambu, QIDI, Anycubic, Flash, Snapmaker and Prusa slicer profiles and Prusa printer images. Prusa uses the 3.0.0-alpha13 preview.",
+          },
+          {
+            zh: "使用 Bambu Studio 和 X2D 时，可在「耗材配置」中指定外置料盘上安装的耗材。导出的 3MF 会保留对应的喷嘴分配。",
+            en: "For the X2D in Bambu Studio, choose the filament loaded on the external spool under Filament settings. The exported 3MF keeps that nozzle assignment.",
+          },
+        ],
+      },
+      {
+        category: { zh: "稳定性", en: "Stability" },
+        items: [
+          {
+            zh: "重排、减少或合并耗材槽位时，完整保留各耗材的原生温度等设置和已有工艺参数，支持混合使用不同参数数量的原生耗材预设。",
+            en: "Reordering, reducing or merging material slots preserves native temperatures and existing process settings, including native material presets with different numbers of parameters.",
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: "2026-10-28",
     title: { zh: "Lumina Layers — 10 月更新速览", en: "Lumina Layers — October updates" },
     sections: [

@@ -1,4 +1,10 @@
 import { create } from "zustand";
+import { invalidatePreviewRequest } from "../previewRequestCoordinator";
+import { boundProjectResources, captureProjectSettings, resolveConverterSettings, withCurrentConverterCatalogs } from "./project";
+import { previewResultState } from "./previewResult";
+import { installConverterDocumentHistory } from "./documentHistory";
+import { createDocumentCommandWrapper } from "./documentCommands";
+import { externalSpoolPaletteKey } from "./nativeMaterialSelection";
 import { subscribeWithSelector } from "zustand/middleware";
 import { trackLuminaEvent } from "../../analytics/umami";
 import {
@@ -113,14 +119,14 @@ import {
 } from "../generatedArtifactInvalidation";
 import { lutErrorToVisibleMessage } from "../lutErrorMessages";
 import { registerPrinterBedLabelSynchronizer } from "../printerBedLabelSync";
-import { useSettingsStore } from "../settingsStore";
+import { useSettingsStore, withExternalSpoolSelection } from "../settingsStore";
 import { fitTargetDimensions, getTargetDimensionLimits } from "./dimensions";
 import { createConversionPresetActions } from "./conversionPresetActions";
 import {
   newestEditorContentRevision
 } from "./editorRevision";
 import {
-  buildCurrentVisibleColorRemapMap,buildSourceChangeProjectColorState,chooseLastSelectedColor,clonePortableProjectColorState,cloneRecipeOverrides,cloneRemapHistory,cloneReplacementRegions,colorRemapFromReplacementRegions,createAdjustmentSnapshot,editorCommitResultStateFromResponse,EMPTY_LUT_MATCH_STATE,getPreviewBaseUrl,hasAdjustmentState,historyFlagsFromResponse,INVALIDATE_LAYER_IMAGES_AFTER_REPLACE,normalizeHexNoHash,normalizeReplacementRegionsFromHistory,selectionModeForTool,selectionStateFromDocument,selectionToolForLegacyMode,toggleHexInSet,
+  buildCurrentVisibleColorRemapMap,buildSourceChangeProjectColorState,chooseLastSelectedColor,clonePortableProjectColorState,cloneRecipeOverrides,cloneRemapHistory,cloneReplacementRegions,colorRemapFromReplacementRegions,editorCommitResultStateFromResponse,EMPTY_LUT_MATCH_STATE,getPreviewBaseUrl,hasAdjustmentState,historyFlagsFromResponse,INVALIDATE_LAYER_IMAGES_AFTER_REPLACE,normalizeHexNoHash,normalizeReplacementRegionsFromHistory,selectionModeForTool,selectionStateFromDocument,selectionToolForLegacyMode,toggleHexInSet,
 } from "./editorState";
 import {
   CONVERTER_ERROR_KEYS,createGenerationActions,getElapsedMsSince,getErrorType,invalidateGenerationRequests,notifyCompletion,
@@ -291,10 +297,13 @@ function selectionUpdatesFromResponse(
   ) {
     return {};
   }
-  return selectionStateFromDocument(
-    document,
-    getPreviewBaseUrl(current) ?? "",
-  );
+  return {
+    ...selectionStateFromDocument(document, getPreviewBaseUrl(current) ?? ""),
+    confirmedEditorCommit: {
+      sessionId, selectionRevision: document.selection_revision,
+      contentRevision: document.editor_content_revision ?? document.content_revision,
+    },
+  };
 }
 
 function clearedHeightmapUploadState() {
@@ -355,6 +364,11 @@ function editorCommitStateFromResponse(
   return {
     contentCommitStatus: "committed",
     contentCommitOperationId: null,
+    confirmedEditorCommit: current.sessionId ? {
+      sessionId: current.sessionId,
+      selectionRevision: current.selectionDocument?.selection_revision ?? 0,
+      contentRevision: revision,
+    } : null,
     ...(selectionDocument ? { selectionDocument } : {}),
   };
 }
@@ -371,7 +385,7 @@ function dynamicMaterialResultState(
   Partial<
     Pick<
       ConverterState,
-      "contentCommitStatus" | "contentCommitOperationId" | "selectionDocument"
+      "contentCommitStatus" | "contentCommitOperationId" | "selectionDocument" | "confirmedEditorCommit"
     >
   > {
   return {
@@ -399,8 +413,8 @@ function buildHistoryRestoreState(
     replacement_regions: replacementRegions,
     recipe_overrides: cloneRecipeOverrides(response.recipe_overrides ?? []),
     regionReplacementCount: response.region_replacement_count ?? replacementRegions.length,
-    color_layers: response.color_layers ?? undefined,
-    layer_height_mm: response.layer_height_mm ?? undefined,
+    ...(response.color_layers !== undefined ? { color_layers: response.color_layers } : {}),
+    ...(response.layer_height_mm !== undefined ? { layer_height_mm: response.layer_height_mm } : {}),
     colorRemapMap: colorRemapFromReplacementRegions(response.replacement_regions ?? []),
     historyCanUndo: response.can_undo,
     historyCanRedo: response.can_redo,
@@ -917,7 +931,7 @@ function rememberConfirmedEditorContentRevision(
   if (
     current.sessionId === sessionId &&
     current.selectionDocument &&
-    (current.selectionDocument.editor_content_revision ?? -1) <=
+    (current.selectionDocument.editor_content_revision ?? -1) <
       editorContentRevision
   ) {
     useConverterStore.setState({
@@ -1056,7 +1070,7 @@ async function reconcileContentCommitStatus(
           ) &&
           rememberConfirmedSelectionDocument(sessionId, document)
         ) {
-          setState(selectionStateFromDocument(document, getPreviewBaseUrl(currentAfterRead) ?? ""));
+          setState(selectionUpdatesFromResponse(currentAfterRead, sessionId, document));
         }
       } catch {
         // The operation receipt is authoritative even if selection hydration
@@ -1068,8 +1082,7 @@ async function reconcileContentCommitStatus(
         return { active: false, committed: false };
       }
       setState({
-        contentCommitStatus: "committed",
-        contentCommitOperationId: null,
+        ...editorCommitStateFromResponse(receipt),
         replacePreviewLoading: false,
         historyBusy: false,
         error: `${message}；服务端已确认本次编辑已提交（编辑版本 ${receipt.editor_content_revision}），已保留当前草稿。`,
@@ -1157,6 +1170,8 @@ async function settleReplacementPreviewError(
   }
 
   setState({
+    contentCommitStatus: "unknown",
+    contentCommitOperationId: guard.operationId,
     replacePreviewLoading: false,
     historyBusy: false,
     error: visibleConverterError(error, fallback),
@@ -1310,6 +1325,7 @@ function rememberConfirmedSelectionDocument(
 async function readConfirmedSelectionDocument(
   sessionId: string,
   canPublish: () => boolean = () => true,
+  recordMutation = false,
 ): Promise<void> {
   try {
     const document = await apiGetEditorSelection(sessionId);
@@ -1324,7 +1340,9 @@ async function readConfirmedSelectionDocument(
       }))
     ) return;
     rememberConfirmedSelectionDocument(sessionId, document);
-    useConverterStore.setState(selectionStateFromDocument(document, getPreviewBaseUrl(current) ?? ""));
+    useConverterStore.setState(recordMutation || document.can_undo
+      ? selectionUpdatesFromResponse(current, sessionId, document)
+      : selectionStateFromDocument(document, getPreviewBaseUrl(current) ?? ""));
   } catch {
     // Startup and error reconciliation are best-effort. Mutations expose their
     // own errors and keep using only server-confirmed revisions.
@@ -1526,13 +1544,12 @@ function buildPreviewSessionResetState(
     colorRemapMap: {},
     remapHistory: [],
     remapRedoHistory: [],
-    adjustmentHistory: [],
-    adjustmentRedoHistory: [],
     historyCanUndo: false,
     historyCanRedo: false,
     historyBusy: false,
     contentCommitStatus: "idle",
     contentCommitOperationId: null,
+    confirmedEditorCommit: null,
     replacement_regions: [],
     pendingEditorProject: preserveProjectComparisonState ? current.pendingEditorProject : null,
     recipe_overrides: [],
@@ -1706,7 +1723,7 @@ function buildImageAspectRatioState(state: ConverterState, ratio: number): Parti
     target_width_mm: ratio >= 1 ? longestEdge : Math.max(10, Math.round(longestEdge * ratio)),
     target_height_mm: ratio >= 1 ? Math.max(10, Math.round(longestEdge / ratio)) : longestEdge,
   };
-  const dimensions = fitTargetDimensions(requested, state, useSettingsStore.getState().printerModel);
+  const dimensions = fitTargetDimensions(requested, state, resolveConverterSettings(state, useSettingsStore.getState()).printerModel);
   return {
     aspectRatio: ratio,
     ...dimensions,
@@ -1718,7 +1735,7 @@ function buildImageAspectRatioState(state: ConverterState, ratio: number): Parti
 }
 
 function buildPrinterDimensionState(state: ConverterState): Partial<ConverterState> {
-  const dimensions = fitTargetDimensions(state, state, useSettingsStore.getState().printerModel);
+  const dimensions = fitTargetDimensions(state, state, resolveConverterSettings(state, useSettingsStore.getState()).printerModel);
   if (dimensions.target_width_mm === state.target_width_mm && dimensions.target_height_mm === state.target_height_mm) return {};
   return {
     ...buildSvgHoleCompensationResizeState(state, dimensions),
@@ -1882,6 +1899,11 @@ function persistMaterialBackingMaterialDirName(name: string | null): void {
 const DEFAULT_LUT_NAME = loadLutName();
 
 export const DEFAULT_STATE: ConverterState = {
+  projectSettings: null,
+  projectLutFile: null,
+  projectMaterialArchiveFile: null,
+  projectSourceKey: null,
+  projectResourceSessionIds: [],
   imageFile: null,
   imagePreviewUrl: null,
   aspectRatio: null,
@@ -1996,13 +2018,12 @@ export const DEFAULT_STATE: ConverterState = {
   colorRemapMap: {},
   remapHistory: [],
   remapRedoHistory: [],
-  adjustmentHistory: [],
-  adjustmentRedoHistory: [],
   historyCanUndo: false,
   historyCanRedo: false,
   historyBusy: false,
   contentCommitStatus: "idle",
   contentCommitOperationId: null,
+  confirmedEditorCommit: null,
   pendingEditorProject: null,
   colorContours: {},
   autoHeightMode: "darker-higher" as AutoHeightMode,
@@ -2049,6 +2070,7 @@ export const DEFAULT_STATE: ConverterState = {
   lutColorCards: [],
   lutColorsLoading: false,
   lutColorsLutName: "",
+  lutColorsSessionId: null,
   materialSuggestions: null,
   materialSuggestionsLoading: false,
   materialSuggestionsTargetHex: null,
@@ -2188,6 +2210,155 @@ function restoreConversionDefaultsForNewSource(): void {
   current.restoreConversionDefaults();
 }
 
+/** Serialize full-map edits and keep their optimistic state owned by the receipt. */
+async function commitColorRemap(
+  getState: () => ConverterState & ConverterActions,
+  setState: (updates: Partial<ConverterState>) => void,
+  updateMap?: (state: ConverterState) => Record<string, string> | null,
+  failureMessage = "颜色替换预览失败",
+): Promise<void> {
+  const sid = getState().sessionId;
+  if (!sid) return;
+  const pendingSelection = waitForSelectionMutation(sid);
+  if (pendingSelection && !(await pendingSelection)) return;
+  const reservation = acquireContentCommitTurn(sid);
+  if (!reservation.readyImmediately && !(await reservation.ready)) {
+    releaseContentCommit(reservation, false);
+    return;
+  }
+  const state = getState();
+  if (state.sessionId !== sid) {
+    releaseContentCommit(reservation, false);
+    return;
+  }
+  const map = updateMap ? updateMap(state) : state.colorRemapMap;
+  if (!map) {
+    releaseContentCommit(reservation, false);
+    return;
+  }
+  const previewCommit = captureReplacementPreviewCommit(state, reservation);
+  if (updateMap) {
+    // The same rollback applies to immediate failure and a later failed receipt.
+    attachContentCommitRollback(previewCommit, {
+      colorRemapMap: state.colorRemapMap,
+      remapHistory: state.remapHistory,
+      remapRedoHistory: state.remapRedoHistory,
+      threemfDiskPath: state.threemfDiskPath,
+      downloadUrl: state.downloadUrl,
+    });
+  }
+  setState({
+    ...(updateMap ? {
+      colorRemapMap: map,
+      remapHistory: [...state.remapHistory, { ...state.colorRemapMap }],
+      remapRedoHistory: [],
+      threemfDiskPath: null,
+      downloadUrl: null,
+    } : {}),
+    replacePreviewLoading: true,
+    error: null,
+  });
+  try {
+    const pairs = Object.entries(map).map(([origHex, newHex]) => ({
+      selectedColor: `#${state.palette.find(p => p.matched_hex === origHex)?.matched_hex ?? origHex}`,
+      replacementColor: `#${newHex}`,
+    }));
+    const response = await apiReplaceColorsBatch(sid, pairs, previewCommit.operationId);
+    if (!isCurrentReplacementPreviewCommit(getState(), previewCommit)) return;
+    setState({
+      replacePreviewLoading: false,
+      previewImageUrl: normalizeResourceUrl(response.preview_url),
+      previewBaseImageUrl: normalizeResourceUrl(response.preview_url),
+      ...(response.preview_3d_url ? { previewGlbUrl: normalizeResourceUrl(response.preview_3d_url) } : {}),
+      ...INVALIDATE_LAYER_IMAGES_AFTER_REPLACE,
+      ...dynamicMaterialResultState(response),
+      ...historyFlagsFromResponse(response),
+      ...selectionUpdatesFromResponse(getState(), sid, response.selection),
+    });
+    getState()._pollAsyncGlb();
+  } catch (err) {
+    const settlement = await settleReplacementPreviewError(
+      getState(), previewCommit, getState, setState, err, failureMessage,
+    );
+    if (!settlement.active || settlement.committed || settlement.unknown) return;
+    setState({ replacePreviewLoading: false, error: visibleConverterError(err, failureMessage) });
+  }
+}
+
+/** One backend history transition owns ordering, receipts and preview publication. */
+async function navigateEditorHistory(
+  direction: "undo" | "redo",
+  getState: () => ConverterState & ConverterActions,
+  setState: (updates: Partial<ConverterState>) => void,
+): Promise<void> {
+  const state = getState();
+  if (!state.sessionId || state.historyBusy) return;
+  const failureMessage = direction === "undo" ? "撤销颜色调整失败" : "重做颜色调整失败";
+  const sid = state.sessionId;
+  const pendingSelection = waitForSelectionMutation(sid);
+  if (pendingSelection && !(await pendingSelection)) return;
+  const contentReservation = acquireContentCommitTurn(sid);
+  if (
+    !contentReservation.readyImmediately &&
+    !(await contentReservation.ready)
+  ) {
+    releaseContentCommit(contentReservation, false);
+    return;
+  }
+  const latestState = getState();
+  if (
+    latestState.sessionId !== sid ||
+    latestState.historyBusy ||
+    !(direction === "undo" ? latestState.historyCanUndo : latestState.historyCanRedo)
+  ) {
+    releaseContentCommit(contentReservation, false);
+    return;
+  }
+  const previewCommit = captureReplacementPreviewCommit(
+    latestState,
+    contentReservation,
+  );
+  setState({ historyBusy: true, replacePreviewLoading: true, error: null });
+  try {
+    const response = await apiReplacementHistory(
+      sid,
+      direction,
+      previewCommit.operationId,
+    );
+    if (
+      !isCurrentReplacementPreviewCommit(getState(), previewCommit)
+    ) return;
+    setState({
+      ...editorCommitStateFromResponse(response),
+      ...buildHistoryRestoreState(response),
+      historyBusy: false,
+      replacePreviewLoading: false,
+      ...selectionUpdatesFromResponse(getState(), sid, response.selection),
+    });
+    if (response.entry_kind !== "selection") {
+      getState()._pollAsyncGlb();
+    }
+  } catch (err) {
+    const settlement = await settleReplacementPreviewError(
+      getState(),
+      previewCommit,
+      getState,
+      setState,
+      err,
+      failureMessage,
+    );
+    if (!settlement.active || settlement.committed || settlement.unknown) return;
+    setState({
+      historyBusy: false,
+      replacePreviewLoading: false,
+      error: apiErrorToVisibleMessage(err, failureMessage),
+    });
+  }
+}
+
+const documentCommand = createDocumentCommandWrapper((action, blocked, options) =>
+  converterDocumentHistory.run(action, blocked, options));
+
 export const useConverterStore = create<ConverterState & ConverterActions>()(
   subscribeWithSelector((set, _get) => ({
     ...DEFAULT_STATE,
@@ -2197,12 +2368,43 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
       getReplacementEpoch: () => replacementPreviewEpoch,
       confirmedEditorRevision: (sessionId) => confirmedSelectionRevisions.get(sessionId)?.editorContentRevision,
       refreshConfirmedEditorContentRevision,
-    }),
+    }, documentCommand),
     ...createDerivedPreviewActions(set, _get),
-    ...createConversionPresetActions(set, _get),
+    ...createConversionPresetActions(set, _get, documentCommand),
+
+    setProjectSettings: documentCommand((changes) => {
+      const current = _get();
+      const defaults = useSettingsStore.getState();
+      const palette = externalSpoolPaletteKey(current);
+      const previous = current.projectSettings ?? {
+        ...captureProjectSettings(defaults),
+        externalSpoolSelections: withExternalSpoolSelection(palette, defaults.externalSpoolSelections[palette]),
+      };
+      const settings = { ...previous, ...changes };
+      if (JSON.stringify(previous) === JSON.stringify(settings)) {
+        if (!current.projectSettings) set({ projectSettings: settings });
+        return;
+      }
+      invalidateGeneratedArtifacts({ preservePreviews: true });
+      const dimensions = buildPrinterDimensionState({ ...current, projectSettings: settings });
+      const previewChanged = ["svgPixelsPerMm", "materialDeltaE00Tolerance", "enableSolverCacheGridSelection", "solverCacheGridResolution"]
+        .some((key) => previous[key as keyof typeof previous] !== settings[key as keyof typeof settings]);
+      set({ projectSettings: settings, ...dimensions });
+      _get().clearMaterialSuggestions();
+      if (previewChanged && (current.sessionId || current.isLoading || current.hasManualPreview)) _get().invalidatePreviewForAutoRefresh();
+    }),
 
     // --- 图片 ---
-    setImageFile: (file: File | null) => {
+    commitProjectRestore: (state) => {
+      _cancelPreviewWork();
+      invalidateGenerationRequests();
+      _materialSuggestCache.clear();
+      state = withCurrentConverterCatalogs(state, _get());
+      const printer = resolveConverterSettings(state, useSettingsStore.getState()).printerModel;
+      const bed = state.bedSizes.find((item) => item.printer_id === printer);
+      set({ ...state, ...(bed ? { bed_label: bed.label } : {}), previewRequestRevision: _get().previewRequestRevision + 1, previewSubmissionSequence: _get().previewSubmissionSequence + 1 });
+    },
+    setImageFile: documentCommand((file: File | null) => {
       const currentFile = _get().imageFile;
       // Rotations and other derived images still belong to the current project.
       // Restore daily defaults only when the underlying source is replaced or cleared.
@@ -2305,9 +2507,9 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
         ...buildPreviewSessionResetState(currentState),
         cropModalOpen: shouldOpenCrop,
       });
-    },
+    }, { joinAsync: true }),
 
-    rotateImageForExport: async (degrees: ImageRotationDegrees) => {
+    rotateImageForExport: documentCommand(async (degrees: ImageRotationDegrees) => {
       const state = _get();
       if (!state.imageFile || !state.imagePreviewUrl || state.batchMode) {
         return;
@@ -2350,9 +2552,9 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
           set({ isLoading: false });
         }
       }
-    },
+    }, { blocked: () => Promise.resolve() }),
 
-    loadVectorizedSvgIntoConverter: (file: File) => {
+    loadVectorizedSvgIntoConverter: documentCommand((file: File) => {
       restoreConversionDefaultsForNewSource();
       _cancelPreviewWork();
 
@@ -2406,9 +2608,9 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
         selectedGradientRegions: [],
         puzzleEnabled: false,
       });
-    },
+    }),
 
-    loadWorkshopImageIntoConverter: ({
+    loadWorkshopImageIntoConverter: documentCommand(({
       file,
       pixelWidth,
       pixelHeight,
@@ -2466,9 +2668,9 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
         puzzleEnabled: false,
         error: null,
       });
-    },
+    }),
 
-    setModelSurfaceEnabled: (enabled: boolean) => {
+    setModelSurfaceEnabled: documentCommand((enabled: boolean) => {
       set((state) => ({
         modelSurfaceEnabled: enabled,
         backing_infill_density_percent: enabled
@@ -2480,9 +2682,9 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
         modelSurfaceError: null,
         ...buildPreviewSessionResetState(state),
       }));
-    },
+    }),
 
-    uploadModelSurfaceFile: async (file: File) => {
+    uploadModelSurfaceFile: documentCommand(async (file: File) => {
       const currentState = _get();
       const prev = currentState.modelSurfacePreviewUrl;
       if (prev && prev.startsWith("blob:")) {
@@ -2536,9 +2738,9 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
           ),
         });
       }
-    },
+    }, { blocked: () => Promise.resolve() }),
 
-    clearModelSurface: () => {
+    clearModelSurface: documentCommand(() => {
       const currentState = _get();
       const prev = currentState.modelSurfacePreviewUrl;
       if (prev && prev.startsWith("blob:")) {
@@ -2562,9 +2764,9 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
         modelSurfaceWarnings: [],
         ...buildPreviewSessionResetState(currentState),
       });
-    },
+    }),
 
-    selectModelSurfaceFace: async (faceIndex: number, candidateId?: string) => {
+    selectModelSurfaceFace: documentCommand(async (faceIndex: number, candidateId?: string) => {
       const state = _get();
       if (state.modelSurfaceLoading || state.modelSurfaceSelecting) {
         return;
@@ -2618,9 +2820,9 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
           ),
         });
       }
-    },
+    }, { blocked: () => Promise.resolve() }),
 
-    updateModelSurfacePlacement: (updates: Partial<ModelSurfacePlacement>) => {
+    updateModelSurfacePlacement: documentCommand((updates: Partial<ModelSurfacePlacement>) => {
       const currentState = _get();
       const current = currentState.modelSurfacePlacement;
       set({
@@ -2632,9 +2834,9 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
         },
         ...buildPreviewSessionResetState(currentState),
       });
-    },
+    }),
 
-    updateModelSurfaceModelRotation: (updates: Partial<ModelSurfaceModelRotation>) => {
+    updateModelSurfaceModelRotation: documentCommand((updates: Partial<ModelSurfaceModelRotation>) => {
       const currentState = _get();
       const current = currentState.modelSurfaceModelRotation;
       set({
@@ -2644,17 +2846,17 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
         },
         ...buildPreviewSessionResetState(currentState),
       });
-    },
+    }),
 
-    fitModelSurfaceArtwork: () => {
+    fitModelSurfaceArtwork: documentCommand(() => {
       set((state) => ({
         modelSurfacePlacement: { ...DEFAULT_MODEL_SURFACE_PLACEMENT },
         ...buildPreviewSessionResetState(state),
       }));
-    },
+    }),
 
     // --- 基础参数 ---
-    setLutName: (name: string) => {
+    setLutName: documentCommand((name: string) => {
       const state = _get();
       const lutInfo = state.lutListFull.find((l) => l.name === name);
       const lutLocation = lutInfo
@@ -2749,9 +2951,9 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
             /* best effort */
           });
       }
-    },
+    }),
 
-    setLegacyLutNames: (names: string[]) => {
+    setLegacyLutNames: documentCommand((names: string[]) => {
       const state = _get();
       const normalized = normalizeLegacyLutNames(names, "");
       const primaryName = normalized[0] ?? "";
@@ -2857,7 +3059,7 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
             /* best effort */
           });
       }
-    },
+    }),
 
     setLegacyManufacturer: (name: string) => {
       // Browsing the catalog must not change the applied LUTs or preview.
@@ -2866,7 +3068,7 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
       });
     },
 
-    setSourceVersion: (version: SourceVersion) =>
+    setSourceVersion: documentCommand((version: SourceVersion) =>
       set((state) => {
         if (version === state.source_version) {
           return {};
@@ -2920,9 +3122,9 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
           ...buildNativeModelState(selectedBrand, state),
           ...buildPreviewSessionResetState(state, true),
         };
-      }),
+      })),
 
-    setSelectedMaterialDirNames: (names: string[]) => {
+    setSelectedMaterialDirNames: documentCommand((names: string[]) => {
       const state = _get();
       const currentBacking = state.materialBackingMaterialDirName;
       const nextBacking =
@@ -2946,8 +3148,8 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
         ..._cancelMaterialSuggestionWork(),
         ...buildPreviewSessionResetState(state, true),
       });
-    },
-    setMaterialLayerCount: (count: number) => {
+    }),
+    setMaterialLayerCount: documentCommand((count: number) => {
       const materialSuggestionReset = _cancelMaterialSuggestionWork();
       set((state) => {
         const materialLayerCount = clampValue(Math.round(count), 1, 20);
@@ -2967,8 +3169,8 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
           ...buildPreviewSessionResetState(state, true),
         };
       });
-    },
-    setMaterialDynamicLayerCountEnabled: (enabled: boolean) => {
+    }),
+    setMaterialDynamicLayerCountEnabled: documentCommand((enabled: boolean) => {
       _cancelPreviewWork();
       const materialSuggestionReset = _cancelMaterialSuggestionWork();
       set((state) => ({
@@ -2988,8 +3190,8 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
             : state.heightmap_max_height,
         ...buildPreviewSessionResetState(state, true),
       }));
-    },
-    setMaterialMinLayerCount: (count: number) => {
+    }),
+    setMaterialMinLayerCount: documentCommand((count: number) => {
       _cancelPreviewWork();
       const materialSuggestionReset = _cancelMaterialSuggestionWork();
       set((state) => {
@@ -3021,8 +3223,8 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
           ...buildPreviewSessionResetState(state, true),
         };
       });
-    },
-    setMaterialMaxLayerCount: (count: number) => {
+    }),
+    setMaterialMaxLayerCount: documentCommand((count: number) => {
       _cancelPreviewWork();
       const materialSuggestionReset = _cancelMaterialSuggestionWork();
       set((state) => {
@@ -3054,16 +3256,16 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
           ...buildPreviewSessionResetState(state, true),
         };
       });
-    },
-    setMaterialLayerHeightMm: (height: number) => {
+    }),
+    setMaterialLayerHeightMm: documentCommand((height: number) => {
       const materialSuggestionReset = _cancelMaterialSuggestionWork();
       set((state) => ({
         materialLayerHeightMm: height,
         ...materialSuggestionReset,
         ...buildPreviewSessionResetState(state, true),
       }));
-    },
-    setMaterialBackingMaterialDirName: (name: string | null) => {
+    }),
+    setMaterialBackingMaterialDirName: documentCommand((name: string | null) => {
       persistMaterialBackingMaterialDirName(name);
       if (isDynamicMaterialActive(_get())) {
         set({
@@ -3078,9 +3280,9 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
         threemfDiskPath: null,
         downloadUrl: null,
       });
-    },
+    }),
 
-    setNativeBrandKey: (brandKey: string) =>
+    setNativeBrandKey: documentCommand((brandKey: string) =>
       set((state) => {
         const selectedBrand = getNativeBrandGroupByKey(
           state.nativeBrandGroups,
@@ -3111,9 +3313,9 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
           ...buildNativeModelState(selectedBrand, state),
           ...buildPreviewSessionResetState(state, true),
         };
-      }),
+      })),
 
-    setNativeSupportedMode: (mode: {
+    setNativeSupportedMode: documentCommand((mode: {
       color_layers: number;
       layer_height_mm: number;
     }) =>
@@ -3151,9 +3353,9 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
           layer_height_mm: supported.layer_height_mm,
           ...buildPreviewSessionResetState(state, true),
         };
-      }),
+      })),
 
-    setNativeDbNames: (dbNames: string[]) =>
+    setNativeDbNames: documentCommand((dbNames: string[]) =>
       set((state) => {
         const selectedBrand = getSelectedNativeBrandGroup(state);
         const allowed = selectedBrand
@@ -3167,9 +3369,9 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
           selectedNativeDbNames: normalized,
           ...buildPreviewSessionResetState(state, true),
         };
-      }),
+      })),
 
-    setTargetWidthMm: (width: number) =>
+    setTargetWidthMm: documentCommand((width: number) =>
       set((state) => {
         const limits = getTargetDimensionLimits(state, useSettingsStore.getState().printerModel);
         const safeWidth = Number.isFinite(width) ? width : 10;
@@ -3198,9 +3400,9 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
           threemfDiskPath: null,
           downloadUrl: null,
         };
-      }),
+      })),
 
-    setTargetHeightMm: (height: number) =>
+    setTargetHeightMm: documentCommand((height: number) =>
       set((state) => {
         const limits = getTargetDimensionLimits(state, useSettingsStore.getState().printerModel);
         const safeHeight = Number.isFinite(height) ? height : 10;
@@ -3229,9 +3431,9 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
           threemfDiskPath: null,
           downloadUrl: null,
         };
-      }),
+      })),
 
-    setSpacerThick: (thick: number) =>
+    setSpacerThick: documentCommand((thick: number) =>
       set((state) => {
         const fridgeState = buildFridgeMagnetState(state, {
           base_spacer_thick: clampValue(thick, 0.2, 10),
@@ -3251,9 +3453,9 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
           threemfDiskPath: null,
           downloadUrl: null,
         };
-      }),
+      })),
 
-    setBackingInfillDensityPercent: (density: number) => {
+    setBackingInfillDensityPercent: documentCommand((density: number) => {
       const normalized = normalizeBackingInfillDensityPercent(density);
       persistBackingInfillDensityPercent(normalized);
       set({
@@ -3261,9 +3463,9 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
         threemfDiskPath: null,
         downloadUrl: null,
       });
-    },
+    }),
 
-    setStructureMode: (mode: StructureMode) =>
+    setStructureMode: documentCommand((mode: StructureMode) =>
       set((state) => {
         // Automatic single-sided constraints must not replace the user's choice.
         if (
@@ -3290,8 +3492,8 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
           threemfDiskPath: null,
           downloadUrl: null,
         };
-      }),
-    setColorMode: (mode: ColorMode) =>
+      })),
+    setColorMode: documentCommand((mode: ColorMode) =>
       set((state) => ({
         color_mode: mode,
         enable_relief:
@@ -3301,8 +3503,8 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
             : state.enable_relief,
         threemfDiskPath: null,
         downloadUrl: null,
-      })),
-    setModelingMode: (mode: ModelingMode) => {
+      }))),
+    setModelingMode: documentCommand((mode: ModelingMode) => {
       const state = _get();
       if (mode === ModelingModeEnum.VECTOR && !hasOnlySvgInputs(state)) {
         return;
@@ -3326,47 +3528,47 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
         threemfDiskPath: null,
         downloadUrl: null,
       });
-    },
-    setColorLayers: (layers: number | null) =>
+    }),
+    setColorLayers: documentCommand((layers: number | null) =>
       set({
         color_layers:
           layers == null ? null : clampValue(Math.round(layers), 1, 20),
         threemfDiskPath: null,
         downloadUrl: null,
-      }),
-    setLayerHeightMm: (height: number | null) =>
+      })),
+    setLayerHeightMm: documentCommand((height: number | null) =>
       set({
         layer_height_mm: height == null ? null : clampValue(height, 0.04, 0.2),
         threemfDiskPath: null,
         downloadUrl: null,
-      }),
-    setModelEnable: (enabled: boolean) =>
+      })),
+    setModelEnable: documentCommand((enabled: boolean) =>
       set({
         model_enable: enabled,
         threemfDiskPath: null,
         downloadUrl: null,
-      }),
-    setModelOnly: (enabled: boolean) =>
+      })),
+    setModelOnly: documentCommand((enabled: boolean) =>
       set({
         model_only: enabled,
         threemfDiskPath: null,
         downloadUrl: null,
-      }),
-    setModelThreshold: (value: number | null) =>
+      })),
+    setModelThreshold: documentCommand((value: number | null) =>
       set({
         model_threshold: value == null ? null : Number(value),
         threemfDiskPath: null,
         downloadUrl: null,
-      }),
-    setModelMargin: (value: number | null) =>
+      })),
+    setModelMargin: documentCommand((value: number | null) =>
       set({
         model_margin: value == null ? null : Number(value),
         threemfDiskPath: null,
         downloadUrl: null,
-      }),
+      })),
 
     // --- 高级设置 ---
-    setQuantizeColors: (colors: number) => {
+    setQuantizeColors: documentCommand((colors: number) => {
       const state = _get();
       const upperBound = state.quantize_colors_unlocked ? 8192 : 256;
       set({
@@ -3374,8 +3576,8 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
         threemfDiskPath: null,
         downloadUrl: null,
       });
-    },
-    setQuantizeColorsUnlocked: (unlocked: boolean) => {
+    }),
+    setQuantizeColorsUnlocked: documentCommand((unlocked: boolean) => {
       const state = _get();
       const upperBound = unlocked ? 8192 : 256;
       set({
@@ -3384,66 +3586,66 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
         threemfDiskPath: null,
         downloadUrl: null,
       });
-    },
-    setHighPrecision3dPreview: (enabled: boolean) =>
+    }),
+    setHighPrecision3dPreview: documentCommand((enabled: boolean) =>
       set({
         high_precision_3d_preview: enabled,
         previewGlbUrl: null,
         modelUrl: null,
         threemfDiskPath: null,
         downloadUrl: null,
-      }),
-    setEnableCleanup: (enabled: boolean) =>
+      })),
+    setEnableCleanup: documentCommand((enabled: boolean) =>
       set({
         enable_cleanup: enabled,
         threemfDiskPath: null,
         downloadUrl: null,
-      }),
-    setSvgHoleCompensationEnabled: (enabled: boolean) => {
+      })),
+    setSvgHoleCompensationEnabled: documentCommand((enabled: boolean) => {
       const current = _get();
       if (enabled === current.svg_hole_compensation_enabled) return;
       set(buildSvgHoleCompensationChangeState(current, { svg_hole_compensation_enabled: enabled }));
-    },
-    setSvgHoleMaxAreaMm2: (area: number) => {
+    }),
+    setSvgHoleMaxAreaMm2: documentCommand((area: number) => {
       const current = _get();
       if (!Number.isFinite(area) || area < 0 || area === current.svg_hole_max_area_mm2) return;
       set(buildSvgHoleCompensationChangeState(current, { svg_hole_max_area_mm2: area }));
-    },
-    setSvgHoleMaxWidthMm: (width: number) => {
+    }),
+    setSvgHoleMaxWidthMm: documentCommand((width: number) => {
       const current = _get();
       if (!Number.isFinite(width) || width < 0 || width === current.svg_hole_max_width_mm) return;
       set(buildSvgHoleCompensationChangeState(current, { svg_hole_max_width_mm: width }));
-    },
-    setHueEnable: (enabled: boolean) =>
+    }),
+    setHueEnable: documentCommand((enabled: boolean) =>
       set((state) => ({
         hue_enable:
           enabled && isDynamicMaterialActive(state) ? false : enabled,
         threemfDiskPath: null,
         downloadUrl: null,
-      })),
-    setUseLutConstrained: (enabled: boolean) =>
-      set({ use_lut_constrained: enabled }),
-    setAutoDynamicRange: (enabled: boolean) =>
+      }))),
+    setUseLutConstrained: documentCommand((enabled: boolean) =>
+      set({ use_lut_constrained: enabled })),
+    setAutoDynamicRange: documentCommand((enabled: boolean) =>
       set({
         auto_dynamic_range: enabled,
         threemfDiskPath: null,
         downloadUrl: null,
-      }),
-    setChromaGate: (gate: number) =>
+      })),
+    setChromaGate: documentCommand((gate: number) =>
       set({
         chroma_gate: clampValue(gate, 0, 50),
         threemfDiskPath: null,
         downloadUrl: null,
-      }),
-    setSeparateBacking: (enabled: boolean) =>
-      set({ separate_backing: enabled }),
-    setBackingOutput: (backingOutput) => {
+      })),
+    setSeparateBacking: documentCommand((enabled: boolean) =>
+      set({ separate_backing: enabled })),
+    setBackingOutput: documentCommand((backingOutput) => {
       invalidateGeneratedArtifacts({ preservePreviews: true });
       set({ backingOutput, threemfDiskPath: null, downloadUrl: null });
-    },
+    }),
 
     // --- 鎸備欢鐜?---
-    setAddLoop: (enabled: boolean) =>
+    setAddLoop: documentCommand((enabled: boolean) =>
       set((state) => ({
         add_loop:
           enabled && (state.puzzleEnabled || state.enable_fridge_magnet)
@@ -3451,23 +3653,23 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
             : enabled,
         threemfDiskPath: null,
         downloadUrl: null,
-      })),
-    setLoopWidth: (width: number) =>
-      set({ loop_width: clampValue(width, 2, 10) }),
-    setLoopLength: (length: number) =>
-      set({ loop_length: clampValue(length, 4, 15) }),
-    setLoopHole: (hole: number) => set({ loop_hole: clampValue(hole, 1, 5) }),
-    setLoopAngle: (angle: number) =>
-      set({ loop_angle: clampValue(angle, -180, 180) }),
-    setLoopOffsetX: (x: number) =>
-      set({ loop_offset_x: clampValue(x, -200, 200) }),
-    setLoopOffsetY: (y: number) =>
-      set({ loop_offset_y: clampValue(y, -200, 200) }),
-    setLoopPositionPreset: (preset: string) => {
+      }))),
+    setLoopWidth: documentCommand((width: number) =>
+      set({ loop_width: clampValue(width, 2, 10) })),
+    setLoopLength: documentCommand((length: number) =>
+      set({ loop_length: clampValue(length, 4, 15) })),
+    setLoopHole: documentCommand((hole: number) => set({ loop_hole: clampValue(hole, 1, 5) })),
+    setLoopAngle: documentCommand((angle: number) =>
+      set({ loop_angle: clampValue(angle, -180, 180) })),
+    setLoopOffsetX: documentCommand((x: number) =>
+      set({ loop_offset_x: clampValue(x, -200, 200) })),
+    setLoopOffsetY: documentCommand((y: number) =>
+      set({ loop_offset_y: clampValue(y, -200, 200) })),
+    setLoopPositionPreset: documentCommand((preset: string) => {
       set({ loop_position_preset: preset });
-    },
+    }),
 
-    setEnableFridgeMagnet: (enabled: boolean) =>
+    setEnableFridgeMagnet: documentCommand((enabled: boolean) =>
       set((state) => {
         const shouldSeedDefaults =
           enabled &&
@@ -3493,9 +3695,9 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
           threemfDiskPath: null,
           downloadUrl: null,
         };
-      }),
+      })),
 
-    resetFridgeMagnetLayout: () =>
+    resetFridgeMagnetLayout: documentCommand(() =>
       set((state) => ({
         ...buildFridgeMagnetState(state, {
           fridge_magnets: autoLayoutFridgeMagnets(
@@ -3506,9 +3708,9 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
         selectedFridgeMagnetId: null,
         threemfDiskPath: null,
         downloadUrl: null,
-      })),
+      }))),
 
-    addFridgeMagnet: () =>
+    addFridgeMagnet: documentCommand(() =>
       set((state) => {
         const nextFridgeMagnets = autoLayoutFridgeMagnets(
           getFallbackModelBounds(state),
@@ -3532,9 +3734,9 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
           threemfDiskPath: null,
           downloadUrl: null,
         };
-      }),
+      })),
 
-    removeFridgeMagnet: (id: string) =>
+    removeFridgeMagnet: documentCommand((id: string) =>
       set((state) => {
         const nextFridgeMagnets = state.fridge_magnets.filter(
           (item) => item.id !== id,
@@ -3551,9 +3753,9 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
           threemfDiskPath: null,
           downloadUrl: null,
         };
-      }),
+      })),
 
-    updateFridgeMagnet: (
+    updateFridgeMagnet: documentCommand((
       id: string,
       updates: Partial<Omit<FridgeMagnetItem, "id">>,
     ) =>
@@ -3607,9 +3809,9 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
           threemfDiskPath: null,
           downloadUrl: null,
         };
-      }),
+      })),
 
-    updateFridgeMagnetCenter: (id: string, centerX: number, centerY: number) =>
+    updateFridgeMagnetCenter: documentCommand((id: string, centerX: number, centerY: number) =>
       set((state) => {
         const nextFridgeMagnets = state.fridge_magnets.map((item) =>
           item.id === id
@@ -3628,7 +3830,7 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
           threemfDiskPath: null,
           downloadUrl: null,
         };
-      }),
+      })),
 
     selectFridgeMagnet: (id: string | null) =>
       set({ selectedFridgeMagnetId: id }),
@@ -3636,7 +3838,7 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
     clearSelectedFridgeMagnet: () => set({ selectedFridgeMagnetId: null }),
 
     // --- 浮雕（互斥） ---
-    setEnableRelief: (enabled: boolean) => {
+    setEnableRelief: documentCommand((enabled: boolean) => {
       set((state) => {
         if (
           enabled &&
@@ -3690,10 +3892,10 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
         }
         return updates;
       });
-    },
-    setColorHeightMap: (map: Record<string, number>) =>
-      set({ color_height_map: map }),
-    setHeightmapMaxHeight: (height: number) => {
+    }),
+    setColorHeightMap: documentCommand((map: Record<string, number>) =>
+      set({ color_height_map: map })),
+    setHeightmapMaxHeight: documentCommand((height: number) => {
       const state = _get();
       const minimumReliefExtraHeight = getMaterialArchiveReliefMinimumExtraHeight(state);
       const newMax = clampValue(
@@ -3713,33 +3915,33 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
       } else {
         set({ heightmap_max_height: newMax });
       }
-    },
+    }),
 
     // --- 描边 ---
-    setEnableOutline: (enabled: boolean) =>
+    setEnableOutline: documentCommand((enabled: boolean) =>
       set({
         enable_outline: enabled,
         threemfDiskPath: null,
         downloadUrl: null,
-      }),
-    setOutlineWidth: (width: number) =>
-      set({ outline_width: clampValue(width, 0.5, 10.0) }),
+      })),
+    setOutlineWidth: documentCommand((width: number) =>
+      set({ outline_width: clampValue(width, 0.5, 10.0) })),
 
     // --- 掐丝珐琅（互斥） ---
-    setEnableCloisonne: (enabled: boolean) =>
+    setEnableCloisonne: documentCommand((enabled: boolean) =>
       set((state) => ({
         enable_cloisonne: enabled,
         enable_relief: enabled ? false : state.enable_relief,
         threemfDiskPath: null,
         downloadUrl: null,
-      })),
-    setWireWidthMm: (width: number) =>
-      set({ wire_width_mm: clampValue(width, 0.2, 1.2) }),
-    setWireHeightMm: (height: number) =>
-      set({ wire_height_mm: clampValue(height, 0.04, 1.0) }),
+      }))),
+    setWireWidthMm: documentCommand((width: number) =>
+      set({ wire_width_mm: clampValue(width, 0.2, 1.2) })),
+    setWireHeightMm: documentCommand((height: number) =>
+      set({ wire_height_mm: clampValue(height, 0.04, 1.0) })),
 
     // --- 涂层 ---
-    setEnableCoating: (enabled: boolean) => {
+    setEnableCoating: documentCommand((enabled: boolean) => {
       invalidateGeneratedArtifacts({ preservePreviews: true });
       set({
         enable_coating: enabled,
@@ -3748,15 +3950,15 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
         threemfDiskPath: null,
         downloadUrl: null,
       });
-    },
-    setCoatingHeightMm: (height: number) => {
+    }),
+    setCoatingHeightMm: documentCommand((height: number) => {
       invalidateGeneratedArtifacts({ preservePreviews: true });
       set({ coating_height_mm: clampValue(height, 0.04, 0.12),
         threemfDiskPath: null, downloadUrl: null });
-    },
+    }),
 
     // --- 大画幅 ---
-    setLargeFormatEnabled: (enabled: boolean) =>
+    setLargeFormatEnabled: documentCommand((enabled: boolean) =>
       set((state) => ({
         largeFormatEnabled:
           enabled && (state.puzzleEnabled || state.enable_fridge_magnet)
@@ -3766,28 +3968,28 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
         largeFormatFailedTiles: [],
         threemfDiskPath: null,
         downloadUrl: null,
-      })),
-    setTileWidthMm: (width: number) =>
+      }))),
+    setTileWidthMm: documentCommand((width: number) =>
       set({
         tileWidthMm: Math.max(50, Number.isFinite(width) ? width : 50),
         largeFormatWarnings: [],
         largeFormatFailedTiles: [],
         threemfDiskPath: null,
         downloadUrl: null,
-      }),
-    setTileHeightMm: (height: number) =>
+      })),
+    setTileHeightMm: documentCommand((height: number) =>
       set({
         tileHeightMm: Math.max(50, Number.isFinite(height) ? height : 50),
         largeFormatWarnings: [],
         largeFormatFailedTiles: [],
         threemfDiskPath: null,
         downloadUrl: null,
-      }),
+      })),
     // View-only toggle: does not change generated output, so keep downloads.
     setLargeFormatTileOverlayVisible: (visible: boolean) =>
       set({ largeFormatTileOverlayVisible: visible }),
 
-    setPuzzleEnabled: (enabled: boolean) =>
+    setPuzzleEnabled: documentCommand((enabled: boolean) =>
       set((state) => {
         const puzzleEnabled = enabled && !state.batchMode;
         return {
@@ -3806,81 +4008,81 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
           threemfDiskPath: null,
           downloadUrl: null,
         };
-      }),
-    setPuzzleStyle: (style: PuzzleStyle) =>
+      })),
+    setPuzzleStyle: documentCommand((style: PuzzleStyle) =>
       set({
         puzzleStyle: style,
         threemfDiskPath: null,
         downloadUrl: null,
-      }),
-    setPuzzleSizingMode: (mode: PuzzleSizingMode) =>
+      })),
+    setPuzzleSizingMode: documentCommand((mode: PuzzleSizingMode) =>
       set({
         puzzleSizingMode: mode,
         threemfDiskPath: null,
         downloadUrl: null,
-      }),
-    setPieceWidthMm: (width: number) =>
+      })),
+    setPieceWidthMm: documentCommand((width: number) =>
       set({
         pieceWidthMm: clampValue(width, 5, 200),
         threemfDiskPath: null,
         downloadUrl: null,
-      }),
-    setPieceHeightMm: (height: number) =>
+      })),
+    setPieceHeightMm: documentCommand((height: number) =>
       set({
         pieceHeightMm: clampValue(height, 5, 200),
         threemfDiskPath: null,
         downloadUrl: null,
-      }),
-    setPuzzleRows: (rows: number) =>
+      })),
+    setPuzzleRows: documentCommand((rows: number) =>
       set({
         puzzleRows: clampValue(Math.round(rows), 1, 200),
         threemfDiskPath: null,
         downloadUrl: null,
-      }),
-    setPuzzleCols: (cols: number) =>
+      })),
+    setPuzzleCols: documentCommand((cols: number) =>
       set({
         puzzleCols: clampValue(Math.round(cols), 1, 200),
         threemfDiskPath: null,
         downloadUrl: null,
-      }),
-    setTargetPieceCount: (count: number) =>
+      })),
+    setTargetPieceCount: documentCommand((count: number) =>
       set({
         targetPieceCount: clampValue(Math.round(count), 2, 2000),
         threemfDiskPath: null,
         downloadUrl: null,
-      }),
-    setConnectorStyle: (style: PuzzleConnectorStyle) =>
+      })),
+    setConnectorStyle: documentCommand((style: PuzzleConnectorStyle) =>
       set({
         connectorStyle: style,
         threemfDiskPath: null,
         downloadUrl: null,
-      }),
-    setLabelsEnabled: (enabled: boolean) =>
+      })),
+    setLabelsEnabled: documentCommand((enabled: boolean) =>
       set({
         labelsEnabled: enabled,
         engraveBackLabels: false,
         threemfDiskPath: null,
         downloadUrl: null,
-      }),
-    setEngraveBackLabels: () => {
+      })),
+    setEngraveBackLabels: documentCommand(() => {
       set({
         engraveBackLabels: false,
         threemfDiskPath: null,
         downloadUrl: null,
       });
-    },
-    setIrregularityStrength: (strength: number) =>
+    }),
+    setIrregularityStrength: documentCommand((strength: number) =>
       set({
         irregularityStrength: clampValue(strength, 0, 1),
         threemfDiskPath: null,
         downloadUrl: null,
-      }),
-    setMinNeckWidthMm: (width: number) =>
+      })),
+    setMinNeckWidthMm: documentCommand((width: number) =>
       set({
         minNeckWidthMm: clampValue(width, 0.2, 20),
         threemfDiskPath: null,
         downloadUrl: null,
-      }),
+      })),
     submitPuzzleLayoutPreview: async () => {
       const state = _get();
       if (!state.puzzleEnabled || !state.sessionId) {
@@ -4059,6 +4261,8 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
         const state = _get();
         if (state.sessionId !== requestedSessionId) return false;
         const previousDocument = state.selectionDocument;
+        // A restored editor can publish a newer document than the last local request.
+        if (previousDocument) rememberConfirmedSelectionDocument(requestedSessionId, previousDocument);
         const confirmed = confirmedSelectionRevisions.get(requestedSessionId);
         const baseRevision =
           confirmed?.selectionRevision ?? state.selectionDocument?.selection_revision ?? 0;
@@ -4103,10 +4307,7 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
           // The document, union outline and history flags come from the same
           // confirmed operation. Pending gestures never invent server revisions.
           set({
-            ...selectionStateFromDocument(
-              document,
-              getPreviewBaseUrl(current) ?? "",
-            ),
+            ...selectionUpdatesFromResponse(current, requestedSessionId, document),
             gradientSelection: input.selectionSource ?? null,
             selectedGradientRegions: [],
             pendingSelectionMutations: current.pendingSelectionMutations.filter((item) => item.id !== mutationId),
@@ -4149,7 +4350,7 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
               pendingSelectionMutations: _get().pendingSelectionMutations.filter((item) => item.id !== mutationId),
             });
           }
-          await readConfirmedSelectionDocument(requestedSessionId);
+          await readConfirmedSelectionDocument(requestedSessionId, undefined, true);
           return false;
         }
       });
@@ -4203,121 +4404,9 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
 
     // --- 批量颜色替换 ---
     applyBatchColorRemap: async (newHex: string) => {
-      const initialState = _get();
-      const sessionId = initialState.sessionId;
-      if (!sessionId) return;
-      const pendingSelection = waitForSelectionMutation(sessionId);
-      if (pendingSelection && !(await pendingSelection)) return;
-      const contentReservation = acquireContentCommitTurn(sessionId);
-      if (
-        !contentReservation.readyImmediately &&
-        !(await contentReservation.ready)
-      ) {
-        releaseContentCommit(contentReservation, false);
-        return;
-      }
-      const state = _get();
-      if (state.sessionId !== sessionId) {
-        releaseContentCommit(contentReservation, false);
-        return;
-      }
-      const colors = Array.from(state.selectedColors);
-      if (colors.length === 0) {
-        releaseContentCommit(contentReservation, false);
-        return;
-      }
-
-      // Snapshot + optimistic remap map update (kept exactly as before so
-      // the undo/redo stack is unchanged).
-      // 快照 colorRemapMap + 乐观更新（保留原 undo/redo 行为）。
-      const snapshot = { ...state.colorRemapMap };
-      const adjustmentSnapshot = createAdjustmentSnapshot(state);
-      const newHistory = [...state.remapHistory, snapshot];
-      const newMap = buildCurrentVisibleColorRemapMap(
-        state.colorRemapMap,
-        colors,
-        newHex,
-      );
-      const previewCommit = captureReplacementPreviewCommit(
-        state,
-        contentReservation,
-      );
-      attachContentCommitRollback(previewCommit, {
-        adjustmentHistory: [...state.adjustmentHistory],
-        adjustmentRedoHistory: [...state.adjustmentRedoHistory],
-      });
-      set({
-        colorRemapMap: newMap,
-        remapHistory: newHistory,
-        adjustmentHistory: [...state.adjustmentHistory, adjustmentSnapshot],
-        remapRedoHistory: [],
-        adjustmentRedoHistory: [],
-        replacePreviewLoading: true,
-        threemfDiskPath: null,
-        downloadUrl: null,
-      });
-
-      // Single round-trip: the backend runs styled PNG + segmented GLB +
-      // material-matrix sync exactly once instead of N times. This is the
-      // main "batch colour swap feels slow" fix.
-      // 单次请求：后端 PNG + GLB + 物料 sync 只跑 1 次（不再 N 次），
-      // 解决"多色一起替换很慢"的问题。
-      try {
-        const response = await apiReplaceColorsBatch(
-          sessionId,
-          Object.entries(newMap).map(([origHex, targetHex]) => {
-            const paletteEntry = state.palette.find(
-              (p) => p.matched_hex === origHex,
-            );
-            return {
-              selectedColor: `#${paletteEntry?.matched_hex ?? origHex}`,
-              replacementColor: `#${targetHex}`,
-            };
-          }),
-          previewCommit.operationId,
-        );
-        if (!isCurrentReplacementPreviewCommit(_get(), previewCommit)) return;
-        const updates: Partial<ConverterState> = {
-          replacePreviewLoading: false,
-          previewImageUrl: normalizeResourceUrl(response.preview_url),
-          previewBaseImageUrl: normalizeResourceUrl(response.preview_url),
-          ...INVALIDATE_LAYER_IMAGES_AFTER_REPLACE,
-          ...dynamicMaterialResultState(response),
-          ...historyFlagsFromResponse(response),
-        };
-        if (response.preview_3d_url) {
-          updates.previewGlbUrl = normalizeResourceUrl(response.preview_3d_url);
-        }
-        set({
-          ...updates,
-          ...selectionUpdatesFromResponse(
-            _get(),
-            sessionId,
-            response.selection,
-          ),
-        });
-        _get()._pollAsyncGlb();
-      } catch (err) {
-        const settlement = await settleReplacementPreviewError(
-          _get(),
-          previewCommit,
-          _get,
-          (partial) => set(partial),
-          err,
-          "批量颜色替换失败",
-        );
-        if (!settlement.active || settlement.committed || settlement.unknown) return;
-        // Roll the whole batch back — same semantics as the old loop.
-        // 整批回滚，和旧循环语义一致。
-        set({
-          colorRemapMap: snapshot,
-          remapHistory: state.remapHistory,
-          adjustmentHistory: state.adjustmentHistory,
-          adjustmentRedoHistory: state.adjustmentRedoHistory,
-          replacePreviewLoading: false,
-          error: visibleConverterError(err, "批量颜色替换失败"),
-        });
-      }
+      await commitColorRemap(_get, set, state => state.selectedColors.size
+        ? buildCurrentVisibleColorRemapMap(state.colorRemapMap, [...state.selectedColors], newHex)
+        : null, "批量颜色替换失败");
     },
 
     // --- Connected region detection: single region ---
@@ -4495,7 +4584,7 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
       }));
     },
 
-    upsertRecipeOverrides: (
+    upsertRecipeOverrides: documentCommand((
       regionIds: string[],
       recipe: number[],
       layerOrder: string,
@@ -4542,9 +4631,9 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
           recipe_overrides: next,
         };
       });
-    },
+    }, { localEditor: true }),
 
-    clearRecipeOverrides: (regionIds?: string[]) => {
+    clearRecipeOverrides: documentCommand((regionIds?: string[]) => {
       if (!regionIds || regionIds.length === 0) {
         set({ recipe_overrides: [] });
         return;
@@ -4554,7 +4643,7 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
           (item) => !regionIds.includes(item.region_id),
         ),
       }));
-    },
+    }, { localEditor: true }),
 
     pushCustomRecipeHistory: (item: RecipeHistoryItem) => {
       set((state) => {
@@ -4623,20 +4712,13 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
         set({ error: "Please select a connected region first" });
         return;
       }
-      const adjustmentSnapshot = createAdjustmentSnapshot(state);
       const previewCommit = captureReplacementPreviewCommit(
         state,
         contentReservation,
       );
-      attachContentCommitRollback(previewCommit, {
-        adjustmentHistory: [...state.adjustmentHistory],
-        adjustmentRedoHistory: [...state.adjustmentRedoHistory],
-      });
       set({
         replacePreviewLoading: true,
         error: null,
-        adjustmentHistory: [...state.adjustmentHistory, adjustmentSnapshot],
-        adjustmentRedoHistory: [],
       });
       try {
         const response = await apiRegionReplace(
@@ -4701,8 +4783,6 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
           return;
         }
         set({
-          adjustmentHistory: state.adjustmentHistory,
-          adjustmentRedoHistory: state.adjustmentRedoHistory,
           replacePreviewLoading: false,
           error: visibleConverterError(err, "区域颜色替换失败"),
         });
@@ -4740,18 +4820,9 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
         state,
         contentReservation,
       );
-      attachContentCommitRollback(previewCommit, {
-        adjustmentHistory: [...state.adjustmentHistory],
-        adjustmentRedoHistory: [...state.adjustmentRedoHistory],
-      });
       set({
         replacePreviewLoading: true,
         error: null,
-        adjustmentHistory: [
-          ...state.adjustmentHistory,
-          createAdjustmentSnapshot(state),
-        ],
-        adjustmentRedoHistory: [],
       });
       try {
         const response = await apiRegionReplace(
@@ -4816,8 +4887,6 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
         if (!settlement.active || settlement.committed || settlement.unknown) return;
         if (_get().sessionId !== sid) return;
         set({
-          adjustmentHistory: state.adjustmentHistory,
-          adjustmentRedoHistory: state.adjustmentRedoHistory,
           replacePreviewLoading: false,
           error: visibleConverterError(err, "区域颜色替换失败"),
         });
@@ -4984,11 +5053,6 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
       set({
         replacePreviewLoading: true,
         error: null,
-        adjustmentHistory: [
-          ...state.adjustmentHistory,
-          createAdjustmentSnapshot(state),
-        ],
-        adjustmentRedoHistory: [],
       });
       try {
         const response = await apiRegionReplaceBatch(
@@ -5048,8 +5112,6 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
         if (!settlement.active || settlement.committed || settlement.unknown) return;
         if (_get().sessionId !== sid) return;
         set({
-          adjustmentHistory: state.adjustmentHistory,
-          adjustmentRedoHistory: state.adjustmentRedoHistory,
           replacePreviewLoading: false,
           error: visibleConverterError(err, "合并去海带纹失败"),
         });
@@ -5112,11 +5174,6 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
       set({
         replacePreviewLoading: true,
         error: null,
-        adjustmentHistory: [
-          ...state.adjustmentHistory,
-          createAdjustmentSnapshot(state),
-        ],
-        adjustmentRedoHistory: [],
       });
       try {
         const response = await apiRegionRequantize(
@@ -5194,8 +5251,6 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
         if (!settlement.active || settlement.committed || settlement.unknown) return;
         if (_get().sessionId !== sid) return;
         set({
-          adjustmentHistory: state.adjustmentHistory,
-          adjustmentRedoHistory: state.adjustmentRedoHistory,
           replacePreviewLoading: false,
           error: visibleConverterError(err, "区域二次量化失败"),
         });
@@ -5239,11 +5294,6 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
       set({
         replacePreviewLoading: true,
         error: null,
-        adjustmentHistory: [
-          ...state.adjustmentHistory,
-          createAdjustmentSnapshot(state),
-        ],
-        adjustmentRedoHistory: [],
       });
       try {
         const response = await apiRegionReplaceBatch(
@@ -5298,8 +5348,6 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
         if (!settlement.active || settlement.committed || settlement.unknown) return;
         if (_get().sessionId !== sid) return;
         set({
-          adjustmentHistory: state.adjustmentHistory,
-          adjustmentRedoHistory: state.adjustmentRedoHistory,
           replacePreviewLoading: false,
           error: visibleConverterError(err, "合并换色失败"),
         });
@@ -5379,18 +5427,9 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
         state,
         contentReservation,
       );
-      attachContentCommitRollback(previewCommit, {
-        adjustmentHistory: [...state.adjustmentHistory],
-        adjustmentRedoHistory: [...state.adjustmentRedoHistory],
-      });
       set({
         replacePreviewLoading: true,
         error: null,
-        adjustmentHistory: [
-          ...state.adjustmentHistory,
-          createAdjustmentSnapshot(state),
-        ],
-        adjustmentRedoHistory: [],
       });
       try {
         const response = await apiApplyRecipeOverride({
@@ -5465,8 +5504,6 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
         );
               if (!settlement.active || settlement.committed || settlement.unknown) return;
         set({
-          adjustmentHistory: state.adjustmentHistory,
-          adjustmentRedoHistory: state.adjustmentRedoHistory,
           replacePreviewLoading: false,
           error: visibleConverterError(err, "自定义配方应用失败"),
         });
@@ -5680,11 +5717,6 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
           );
           set({
             replacePreviewLoading: true,
-            adjustmentHistory: [
-              ...latestState.adjustmentHistory,
-              createAdjustmentSnapshot(latestState),
-            ],
-            adjustmentRedoHistory: [],
             threemfDiskPath: null,
             downloadUrl: null,
           });
@@ -5735,8 +5767,6 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
             if (!settlement.active || settlement.committed || settlement.unknown) return;
             if (_get().sessionId !== sid) return;
             set({
-              adjustmentHistory: curState.adjustmentHistory,
-              adjustmentRedoHistory: curState.adjustmentRedoHistory,
               replacePreviewLoading: false,
               error: visibleConverterError(
                 err,
@@ -5760,12 +5790,16 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
       }
     },
 
-    // --- 颜色替换（纯前端） ---
-    applyColorRemap: (origHex: string, newHex: string) => {
+    // --- 全图颜色替换 ---
+    applyColorRemap: documentCommand((origHex: string, newHex: string) => {
       const state = _get();
+      if (state.sessionId) {
+        void commitColorRemap(_get, set, current =>
+          buildCurrentVisibleColorRemapMap(current.colorRemapMap, [origHex], newHex));
+        return;
+      }
       // 推入当前快照到 history
       const snapshot = { ...state.colorRemapMap };
-      const adjustmentSnapshot = createAdjustmentSnapshot(state);
       const newHistory = [...state.remapHistory, snapshot];
       // 更新 map。origHex 表示当前可见颜色；若该颜色来自此前的 A→origHex
       // 替换，也同步改写那些上游映射，使“点当前看到的颜色再替换”生效。
@@ -5777,18 +5811,11 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
       set({
         colorRemapMap: newMap,
         remapHistory: newHistory,
-        adjustmentHistory: [...state.adjustmentHistory, adjustmentSnapshot],
         remapRedoHistory: [],
-        adjustmentRedoHistory: [],
         threemfDiskPath: null,
         downloadUrl: null,
       });
-      // Rebuild preview from the full map so replacing the same source
-      // colour twice updates from A→C instead of searching for A inside an
-      // already A→B-mutated backend cache.
-      // 按完整映射重放预览，避免同一源色二次替换时在已变异缓存里找不到原色。
-      void _get().submitReplacePreview();
-    },
+    }, { localEditor: true }),
 
     undoColorRemap: async () => {
       const state = _get();
@@ -5805,67 +5832,7 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
         });
         return;
       }
-      if (state.historyBusy) return;
-      const sid = state.sessionId;
-      const pendingSelection = waitForSelectionMutation(sid);
-      if (pendingSelection && !(await pendingSelection)) return;
-      const contentReservation = acquireContentCommitTurn(sid);
-      if (
-        !contentReservation.readyImmediately &&
-        !(await contentReservation.ready)
-      ) {
-        releaseContentCommit(contentReservation, false);
-        return;
-      }
-      const latestState = _get();
-      if (
-        latestState.sessionId !== sid ||
-        latestState.historyBusy ||
-        !latestState.historyCanUndo
-      ) {
-        releaseContentCommit(contentReservation, false);
-        return;
-      }
-      const previewCommit = captureReplacementPreviewCommit(
-        latestState,
-        contentReservation,
-      );
-      set({ historyBusy: true, replacePreviewLoading: true, error: null });
-      try {
-        const response = await apiReplacementHistory(
-          sid,
-          "undo",
-          previewCommit.operationId,
-        );
-        if (
-          !isCurrentReplacementPreviewCommit(_get(), previewCommit)
-        ) return;
-        set({
-          ...editorCommitStateFromResponse(response),
-          ...buildHistoryRestoreState(response),
-          historyBusy: false,
-          replacePreviewLoading: false,
-          ...selectionUpdatesFromResponse(_get(), sid, response.selection),
-        });
-        if (response.entry_kind !== "selection") {
-          _get()._pollAsyncGlb();
-        }
-      } catch (err) {
-        const settlement = await settleReplacementPreviewError(
-          _get(),
-          previewCommit,
-          _get,
-          (partial) => set(partial),
-          err,
-          "撤销颜色调整失败",
-        );
-        if (!settlement.active || settlement.committed || settlement.unknown) return;
-        set({
-          historyBusy: false,
-          replacePreviewLoading: false,
-          error: apiErrorToVisibleMessage(err, "撤销颜色调整失败"),
-        });
-      }
+      await navigateEditorHistory("undo", _get, set);
     },
 
     redoColorRemap: async () => {
@@ -5882,67 +5849,7 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
         });
         return;
       }
-      if (state.historyBusy) return;
-      const sid = state.sessionId;
-      const pendingSelection = waitForSelectionMutation(sid);
-      if (pendingSelection && !(await pendingSelection)) return;
-      const contentReservation = acquireContentCommitTurn(sid);
-      if (
-        !contentReservation.readyImmediately &&
-        !(await contentReservation.ready)
-      ) {
-        releaseContentCommit(contentReservation, false);
-        return;
-      }
-      const latestState = _get();
-      if (
-        latestState.sessionId !== sid ||
-        latestState.historyBusy ||
-        !latestState.historyCanRedo
-      ) {
-        releaseContentCommit(contentReservation, false);
-        return;
-      }
-      const previewCommit = captureReplacementPreviewCommit(
-        latestState,
-        contentReservation,
-      );
-      set({ historyBusy: true, replacePreviewLoading: true, error: null });
-      try {
-        const response = await apiReplacementHistory(
-          sid,
-          "redo",
-          previewCommit.operationId,
-        );
-        if (
-          !isCurrentReplacementPreviewCommit(_get(), previewCommit)
-        ) return;
-        set({
-          ...editorCommitStateFromResponse(response),
-          ...buildHistoryRestoreState(response),
-          historyBusy: false,
-          replacePreviewLoading: false,
-          ...selectionUpdatesFromResponse(_get(), sid, response.selection),
-        });
-        if (response.entry_kind !== "selection") {
-          _get()._pollAsyncGlb();
-        }
-      } catch (err) {
-        const settlement = await settleReplacementPreviewError(
-          _get(),
-          previewCommit,
-          _get,
-          (partial) => set(partial),
-          err,
-          "重做颜色调整失败",
-        );
-        if (!settlement.active || settlement.committed || settlement.unknown) return;
-        set({
-          historyBusy: false,
-          replacePreviewLoading: false,
-          error: apiErrorToVisibleMessage(err, "重做颜色调整失败"),
-        });
-      }
+      await navigateEditorHistory("redo", _get, set);
     },
 
     canUndoAdjustments: () => {
@@ -5961,7 +5868,7 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
       return state.historyCanRedo && !state.historyBusy;
     },
 
-    clearAllRemaps: async () => {
+    clearAllRemaps: documentCommand(async () => {
       let state = _get();
       const sessionId = state.sessionId;
       let contentReservation: ContentCommitReservation | undefined;
@@ -5986,10 +5893,6 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
         state,
         contentReservation,
       );
-      const adjustmentSnapshot = createAdjustmentSnapshot(state);
-      const nextAdjustmentHistory = hasAdjustmentState(state)
-        ? [...state.adjustmentHistory, adjustmentSnapshot]
-        : state.adjustmentHistory;
       // 关键修复：清空本身也要可撤销。无 session（本地预览）时 remapHistory 是
       // 唯一撤销数据源，原先无条件 remapHistory: [] 把"清空前状态"抹掉，导致
       // "清空替换完全无法撤销"。这里把清空前 colorRemapMap 入栈，让清空可回退。
@@ -6006,8 +5909,6 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
         colorRemapMap: { ...state.colorRemapMap },
         remapHistory: cloneRemapHistory(state.remapHistory),
         remapRedoHistory: cloneRemapHistory(state.remapRedoHistory),
-        adjustmentHistory: [...state.adjustmentHistory],
-        adjustmentRedoHistory: [...state.adjustmentRedoHistory],
         replacement_regions: cloneReplacementRegions(state.replacement_regions),
         recipe_overrides: cloneRecipeOverrides(state.recipe_overrides),
         previewImageUrl: state.previewImageUrl,
@@ -6028,8 +5929,6 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
         colorRemapMap: {},
         remapHistory: nextRemapHistory,
         remapRedoHistory: [],
-        adjustmentHistory: nextAdjustmentHistory,
-        adjustmentRedoHistory: [],
         replacement_regions: [],
         recipe_overrides: [],
         replacePreviewLoading: Boolean(state.sessionId),
@@ -6108,16 +6007,16 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
           replacePreviewLoading: false,
         });
       }
-    },
+    }, { blocked: () => Promise.resolve(), localEditor: true }),
 
     // --- 浮雕高度 ---
-    updateColorHeight: (hex: string, heightMm: number) => {
+    updateColorHeight: documentCommand((hex: string, heightMm: number) => {
       set((state) => ({
         color_height_map: { ...state.color_height_map, [hex]: heightMm },
       }));
-    },
+    }),
 
-    applyAutoHeight: (mode: "darker-higher" | "lighter-higher") => {
+    applyAutoHeight: documentCommand((mode: "darker-higher" | "lighter-higher") => {
       const state = _get();
       const heightMap = computeAutoHeightMap(
         state.palette,
@@ -6125,23 +6024,23 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
         state.heightmap_max_height,
       );
       set({ color_height_map: heightMap });
-    },
+    }),
 
-    setAutoHeightMode: (mode: AutoHeightMode) =>
+    setAutoHeightMode: documentCommand((mode: AutoHeightMode) =>
       set((state) => ({
         autoHeightMode: mode,
         ...(mode === "use-heightmap" && state.autoHeightMode !== "use-heightmap"
           ? clearedHeightmapUploadState()
           : {}),
-      })),
+      }))),
 
     // --- 高度图 ---
-    setHeightmapFile: (file: File | null) =>
+    setHeightmapFile: documentCommand((file: File | null) =>
       set({
         ...clearedHeightmapUploadState(),
         heightmapFile: file,
         isLoading: false,
-      }),
+      })),
 
     uploadHeightmap: async () => {
       const state = _get();
@@ -6213,7 +6112,7 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
         const response = await apiFetchBedSizes();
         const beds = response.beds;
 
-        const settingsPrinterModel = useSettingsStore.getState().printerModel;
+        const settingsPrinterModel = resolveConverterSettings(_get(), useSettingsStore.getState()).printerModel;
         const printerBed = beds.find(
           (bed) => bed.printer_id === settingsPrinterModel,
         );
@@ -6256,7 +6155,14 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
       set({ lutListLoading: true });
       try {
         const response = await apiFetchLutList(options);
-        const luts = response.luts.map(normalizeLutColorMode);
+        let luts = response.luts.map(normalizeLutColorMode);
+        const bound = _get();
+        if (boundProjectResources(bound).lut) {
+          const names = new Set([bound.lut_name, ...bound.lut_names]);
+          luts = [...luts.filter((lut) => !names.has(lut.name)), ...bound.lutListFull.filter((lut) => names.has(lut.name))];
+          set({ lutList: luts.map((lut) => lut.name), lutListFull: luts, lutListLoading: false });
+          return;
+        }
         const updates: Partial<ConverterState> = {
           lutList: luts.map((l) => l.name),
           lutListFull: luts,
@@ -6320,6 +6226,18 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
         );
         const legacyLuts = legacyGroups.flatMap((group) => group.items ?? []);
         const currentState = _get();
+        if (boundProjectResources(currentState).lut) {
+          // Refresh the library without replacing a project's independent source.
+          const boundNames = new Set([currentState.lut_name, ...currentState.lut_names]);
+          const boundBrand = currentState.nativeBrandGroups.find((brand) => brand.brand_key === currentState.selectedNativeBrandKey);
+          set({
+            lutList: [...new Set([...legacyLuts.map((lut) => lut.name), ...boundNames])],
+            lutListFull: [...legacyLuts.filter((lut) => !boundNames.has(lut.name)), ...currentState.lutListFull.filter((lut) => boundNames.has(lut.name))],
+            nativeBrandGroups: boundBrand ? [...groups.filter((brand) => brand.brand_key !== boundBrand.brand_key), boundBrand] : groups,
+            nativeBrandGroupsLoading: false,
+          });
+          return;
+        }
         const updates: Partial<ConverterState> = {
           lutList: legacyLuts.map((lut) => lut.name),
           lutListFull: legacyLuts,
@@ -6434,23 +6352,31 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
       signal?: AbortSignal,
     ) => {
       const requestToken = ++_lutColorsRequestToken;
+      const lutSessionId = boundProjectResources(_get()).lut ? _get().sessionId : null;
+      if (boundProjectResources(_get()).lut && !_get().sessionId) {
+        // A portable draft has no globally installed LUT. Its first preview
+        // creates the private session from which the palette can be read.
+        set({ lutColors: [], lutColorCards: [], lutColorsLutName: "", lutColorsSessionId: null, lutColorsLoading: false });
+        return;
+      }
       if (!lutName) {
         set({
           lutColors: [],
           lutColorCards: [],
           lutColorsLutName: "",
+          lutColorsSessionId: null,
           lutColorsLoading: false,
         });
         return;
       }
       // 缓存命中检查：LUT 名称未变且已有数据时跳过请求
-      if (lutName === _get().lutColorsLutName && _get().lutColors.length > 0) {
+      if (lutName === _get().lutColorsLutName && lutSessionId === _get().lutColorsSessionId && _get().lutColors.length > 0) {
         set({ lutColorsLoading: false });
         return;
       }
-      set({ lutColorsLoading: true });
+      set({ lutColorsLoading: true, lutColors: [], lutColorCards: [], lutColorsLutName: "", lutColorsSessionId: null });
       try {
-        const response = await apiFetchLutColors(lutName, signal);
+        const response = await apiFetchLutColors(lutName, signal, lutSessionId);
         if (
           signal?.aborted ||
           requestToken !== _lutColorsRequestToken
@@ -6465,6 +6391,7 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
           lutColorCards: response.cards ?? [],
           lutColorsLoading: false,
           lutColorsLutName: lutName,
+          lutColorsSessionId: lutSessionId,
         });
       } catch (err) {
         if (
@@ -6522,13 +6449,13 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
       const { signal } = _materialSuggestAbortController;
       const requestToken = ++_materialSuggestRequestToken;
       const suggestionLayerCount = resolveMaterialPrintLayerCount(state);
-      const settingsState = useSettingsStore.getState();
+      const settingsState = resolveConverterSettings(state, useSettingsStore.getState());
       const gridResolutionOverride =
         settingsState.enableSolverCacheGridSelection
           ? settingsState.solverCacheGridResolution
           : undefined;
 
-      const cacheKey = _materialSuggestCacheKey({
+      const cacheKey = (boundProjectResources(state).materials ? `${state.sessionId}:` : "") + _materialSuggestCacheKey({
         directoryNames: dirNames,
         layerCount: suggestionLayerCount,
         layerHeightMm: state.materialLayerHeightMm,
@@ -6568,17 +6495,21 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
           },
           cleaned,
           { signal, gridResolution: gridResolutionOverride },
+          ...(boundProjectResources(state).materials ? [state.sessionId] as const : []),
         );
-        const currentSettingsState = useSettingsStore.getState();
+        const currentSettingsState = resolveConverterSettings(_get(), useSettingsStore.getState());
         const currentGridResolution =
           currentSettingsState.enableSolverCacheGridSelection
             ? currentSettingsState.solverCacheGridResolution
             : undefined;
         if (
           signal.aborted ||
-          requestToken !== _materialSuggestRequestToken ||
-          currentGridResolution !== gridResolutionOverride
+          requestToken !== _materialSuggestRequestToken
         ) {
+          return;
+        }
+        if (currentGridResolution !== gridResolutionOverride) {
+          set({ materialSuggestionsLoading: false });
           return;
         }
         // Stash into LRU, evicting oldest when over limit.
@@ -6831,43 +6762,17 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
     },
 
     applyAutoGradientReplace: async () => {
-      const state = _get();
-      if (!state.sessionId) return;
-      const groups = state.gradientGroups;
-      if (!groups || groups.length === 0) return;
-
-      // Build "non-rep → rep" map from the groups. Hex values are stored
-      // without the leading '#' and in lowercase, matching the frontend
-      // ``colorRemapMap`` convention.
-      // 构建 "非代表色 → 代表色" 映射（去掉 '#'、统一小写）。
-      const remap: Record<string, string> = {};
-      for (const g of groups) {
-        const rep = g.representative_hex.replace(/^#/, "").toLowerCase();
-        for (const mc of g.material_colours) {
-          const src = mc.hex.replace(/^#/, "").toLowerCase();
-          if (!src || src === rep) continue;
-          remap[src] = rep;
+      await commitColorRemap(_get, set, state => {
+        const remap: Record<string, string> = {};
+        for (const group of state.gradientGroups ?? []) {
+          const representative = group.representative_hex.replace(/^#/, "").toLowerCase();
+          for (const color of group.material_colours) {
+            const source = color.hex.replace(/^#/, "").toLowerCase();
+            if (source && source !== representative) remap[source] = representative;
+          }
         }
-      }
-      if (Object.keys(remap).length === 0) return;
-
-      // Merge into existing remap map so earlier user edits survive.
-      // 与已有手工 remap 合并，保留用户先前的手动替换。
-      const snapshot = { ...state.colorRemapMap };
-      const mergedMap = { ...state.colorRemapMap, ...remap };
-      set({
-        colorRemapMap: mergedMap,
-        remapHistory: [...state.remapHistory, snapshot],
-        adjustmentHistory: [
-          ...state.adjustmentHistory,
-          createAdjustmentSnapshot(state),
-        ],
-        remapRedoHistory: [],
-        adjustmentRedoHistory: [],
-        threemfDiskPath: null,
-        downloadUrl: null,
+        return Object.keys(remap).length ? { ...state.colorRemapMap, ...remap } : null;
       });
-      await _get().submitReplacePreview();
     },
 
     invalidatePreviewForAutoRefresh: () => {
@@ -7047,6 +6952,7 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
           imageFile,
           previewParams,
           signal,
+          { ...boundProjectResources(state), editor: editorFile },
         );
         freshSessionId = response.session_id;
         if (isStalePreviewRequest()) {
@@ -7084,12 +6990,8 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
         const glbUrl = responseGlb
           ? normalizeResourceUrl(responseGlb)
           : null;
-        // Normalize palette hex values: strip leading '#' for frontend consistency
-        const normalizedPalette = (response.palette ?? []).map((e) => ({
-          ...e,
-          quantized_hex: e.quantized_hex.replace(/^#/, ""),
-          matched_hex: e.matched_hex.replace(/^#/, ""),
-        }));
+        const publishedPreview = previewResultState(state, response);
+        const normalizedPalette = publishedPreview.palette ?? [];
         const autoReliefHeightMap = buildMissingAutoReliefHeightMap(
           state,
           normalizedPalette,
@@ -7120,26 +7022,18 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
         });
 
         set({
-          sessionId: response.session_id,
+          ...publishedPreview,
           previewImageUrl: previewUrl,
           originalPreviewUrl: sourcePreviewUrl,
           previewBaseImageUrl:
             normalizeResourceUrl(response.dimensions?.preview_raw_url) ??
             sourcePreviewUrl,
-          lutMatchMode: response.lut_match_mode ?? "legacy",
-          lutMatchInfo: response.lut_match_info ?? {
-            match_mode: response.lut_match_mode ?? "legacy",
-          },
-          palette: normalizedPalette,
-          ...dynamicMaterialResultState(response),
           ...(shouldResetHeightmapMapping
             ? clearedHeightmapUploadState()
             : autoReliefHeightMap
               ? { color_height_map: autoReliefHeightMap }
               : {}),
-          colorContours: response.contours ?? {},
           previewGlbUrl: glbUrl,
-          previewPerformanceTiming: response.performance_timing ?? null,
           generatePerformanceTiming: null,
           colorRemapMap: shouldReplayGlobalReplacements
             ? state.colorRemapMap
@@ -7149,12 +7043,6 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
             : [],
           remapRedoHistory: shouldReplayGlobalReplacements
             ? state.remapRedoHistory
-            : [],
-          adjustmentHistory: shouldReplayGlobalReplacements
-            ? state.adjustmentHistory
-            : [],
-          adjustmentRedoHistory: shouldReplayGlobalReplacements
-            ? state.adjustmentRedoHistory
             : [],
           historyCanUndo: false,
           historyCanRedo: false,
@@ -7177,16 +7065,8 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
           selectionBlinkEnabled: false,
           selectedGradientRegions: [],
           pendingReplacement: null,
-          preview_width_mm: state.target_width_mm,
-          preview_height_mm: state.target_height_mm,
-          preview_spacer_thick: state.spacer_thick,
           color_layers: resolvedColorLayers,
           layer_height_mm: resolvedLayerHeightMm,
-          previewPixelWidth: response.dimensions?.width ?? null,
-          previewPixelHeight: response.dimensions?.height ?? null,
-          previewWarnings: response.warnings ?? [],
-          hasManualPreview: true,
-          previewAutoRefreshPending: false,
           layerImages: [],
           layerImagesOpen: false,
           // Reset gradient-group cache so the panel shows loading while the
@@ -7310,6 +7190,7 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
             // Best-effort: if the session hasn't been bound yet or the
             // endpoint errors, leave selectedLutInfo untouched.
           });
+        if (boundProjectResources(_get()).lut) void _get().fetchLutColors(_get().lut_name);
       } catch (err) {
         if (isStalePreviewRequest()) {
           return;
@@ -7369,7 +7250,7 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
 
     setCropModalOpen: (open: boolean) => set({ cropModalOpen: open }),
 
-    submitCrop: async (x: number, y: number, width: number, height: number, rotation: 0 | ImageRotationDegrees = 0) => {
+    submitCrop: documentCommand(async (x: number, y: number, width: number, height: number, rotation: 0 | ImageRotationDegrees = 0) => {
       const state = _get();
       if (!state.imageFile) {
         set({ error: "No image file to crop" });
@@ -7429,10 +7310,10 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
           error: visibleConverterError(err, "Crop failed"),
         });
       }
-    },
+    }, { blocked: () => Promise.resolve() }),
 
     // --- 自动检测颜色 ---
-    autoDetectColors: async () => {
+    autoDetectColors: documentCommand(async () => {
       const state = _get();
       if (!state.imageFile) {
         set({ error: "请先上传图片" });
@@ -7460,10 +7341,10 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
           error: visibleConverterError(err, "Auto color detection failed"),
         });
       }
-    },
+    }, { blocked: () => Promise.resolve() }),
 
     // --- 批量模式 ---
-    addBatchFiles: (files: File[]) => {
+    addBatchFiles: documentCommand((files: File[]) => {
       const valid = files.filter((f) => isValidImageType(f.type, f.name));
       if (valid.length === 0) return;
       restoreConversionDefaultsForNewSource();
@@ -7471,9 +7352,9 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
         batchFiles: [...state.batchFiles, ...valid],
         workshopSource: null,
       }));
-    },
+    }),
 
-    removeBatchFile: (index: number) => {
+    removeBatchFile: documentCommand((index: number) => {
       const state = _get();
       const remaining = state.batchFiles.filter((_, i) => i !== index);
       _cancelPreviewWork();
@@ -7579,9 +7460,9 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
           previewRequestRevision: nextPreviewRevision,
         });
       }
-    },
+    }),
 
-    clearBatchFiles: () => {
+    clearBatchFiles: documentCommand(() => {
       const state = _get();
       _cancelPreviewWork();
       set({
@@ -7605,9 +7486,9 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
         previewRequestRevision: state.previewRequestRevision + 1,
         ...DEFAULT_PUZZLE_PREVIEW_STATE,
       });
-    },
+    }),
 
-    handleFilesSelect: (files: File[]) => {
+    handleFilesSelect: documentCommand((files: File[]) => {
       // Filter out falsy values and invalid formats
       const validFiles = files.filter(
         (f) => f && isValidImageType(f.type, f.name),
@@ -7843,7 +7724,7 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
         layerImagesOpen: false,
         batchResult: null,
       });
-    },
+    }),
 
     // --- 颜色替换：单次即时替换 ---
     submitSingleReplace: async (origHex: string, newHex: string) => {
@@ -7931,89 +7812,7 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
 
     // --- 颜色替换预览 ---
     submitReplacePreview: async () => {
-      const initialState = _get();
-      const sid = initialState.sessionId;
-      if (!sid) return;
-      const pendingSelection = waitForSelectionMutation(sid);
-      if (pendingSelection && !(await pendingSelection)) return;
-      const contentReservation = acquireContentCommitTurn(sid);
-      if (
-        !contentReservation.readyImmediately &&
-        !(await contentReservation.ready)
-      ) {
-        releaseContentCommit(contentReservation, false);
-        return;
-      }
-      const state = _get();
-      if (state.sessionId !== sid) {
-        releaseContentCommit(contentReservation, false);
-        return;
-      }
-      const entries = Object.entries(state.colorRemapMap);
-
-      const previewCommit = captureReplacementPreviewCommit(
-        state,
-        contentReservation,
-      );
-      set({ replacePreviewLoading: true, error: null });
-      try {
-        // Resolve each remap entry to its palette-backed selected_color
-        // (falling back to the key if the palette doesn't list it) and
-        // send them in a single batch request — the backend runs PNG +
-        // GLB + material sync exactly once for the whole map.
-        // 将 colorRemapMap 一次性打包发给 /replace-colors-batch，后端
-        // PNG/GLB/物料 sync 只跑 1 次，代替老的 N 次循环。
-        const pairs = entries.map(([origHex, newHex]) => {
-          const paletteEntry = state.palette.find(
-            (p) => p.matched_hex === origHex,
-          );
-          const sel = paletteEntry ? paletteEntry.matched_hex : origHex;
-          return {
-            selectedColor: `#${sel}`,
-            replacementColor: `#${newHex}`,
-          };
-        });
-        const response = await apiReplaceColorsBatch(
-          sid,
-          pairs,
-          previewCommit.operationId,
-        );
-        if (!isCurrentReplacementPreviewCommit(_get(), previewCommit)) return;
-        const updates: Partial<ConverterState> = {
-          replacePreviewLoading: false,
-          previewImageUrl: normalizeResourceUrl(response.preview_url),
-          previewBaseImageUrl: normalizeResourceUrl(response.preview_url),
-          ...INVALIDATE_LAYER_IMAGES_AFTER_REPLACE,
-          ...dynamicMaterialResultState(response),
-          ...historyFlagsFromResponse(response),
-        };
-        if (response.preview_3d_url) {
-          updates.previewGlbUrl = normalizeResourceUrl(response.preview_3d_url);
-        }
-        set({
-          ...updates,
-          ...selectionUpdatesFromResponse(
-            _get(),
-            sid,
-            response.selection,
-          ),
-        });
-        _get()._pollAsyncGlb();
-      } catch (err) {
-        const settlement = await settleReplacementPreviewError(
-          _get(),
-          previewCommit,
-          _get,
-          (partial) => set(partial),
-          err,
-          "颜色替换预览失败",
-        );
-        if (!settlement.active || settlement.committed || settlement.unknown) return;
-        set({
-          replacePreviewLoading: false,
-          error: visibleConverterError(err, "颜色替换预览失败"),
-        });
-      }
+      await commitColorRemap(_get, set);
     },
 
     // --- 完整流水线（preview → generate）---
@@ -8042,7 +7841,7 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
     },
 
     // --- 自由色 ---
-    toggleFreeColor: (hex: string) => {
+    toggleFreeColor: documentCommand((hex: string) => {
       const state = _get();
       if (!state.sessionId) {
         const selectionColors = state.selectionDocument?.selected_color_hexes ?? [];
@@ -8113,9 +7912,9 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
           set({ error: visibleConverterError(err, "Free color update failed") });
         }
       });
-    },
+    }, { localEditor: true }),
 
-    clearFreeColors: () => {
+    clearFreeColors: documentCommand(() => {
       const state = _get();
       if (!state.sessionId) {
         set({
@@ -8172,7 +7971,7 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
           set({ error: visibleConverterError(err, "Free color clear failed") });
         }
       });
-    },
+    }, { localEditor: true }),
 
     // --- UI 状态 ---
     setError: (error: string | null) => set({ error }),
@@ -8209,7 +8008,7 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
       return { state, editorFile };
     },
 
-    importRecipeState: (
+    importRecipeState: documentCommand((
       partial: Partial<ConverterState>,
       imageFile: File,
       heightmapFile?: File | null,
@@ -8221,7 +8020,11 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
       // 调色数据必须在 setImageFile 的同步重置之后再写回。
       const prevEnableCrop = _get().enableCrop;
       const restoredWorkshopSource = partial.workshopSource ?? null;
-      set({ enableCrop: false, conversionParameterContext: "restoring" });
+      set({
+        enableCrop: false, conversionParameterContext: "restoring",
+        projectSettings: null, projectLutFile: null, projectMaterialArchiveFile: null,
+        projectSourceKey: null, projectResourceSessionIds: [],
+      });
       _get().setImageFile(imageFile);
 
       const baseState = _get();
@@ -8267,7 +8070,7 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
       if (heightmapFile) {
         _get().setHeightmapFile(heightmapFile);
       }
-    },
+    }),
 
     cleanupAfterDownload: () => {
       const state = _get();
@@ -8281,13 +8084,64 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
   })),
 );
 
+export const converterDocumentHistory = installConverterDocumentHistory(useConverterStore, (document, editor, sources) => {
+  const current = useConverterStore.getState();
+  const { portableBrand, ...sourceRuntime } = sources;
+  for (const url of [current.imagePreviewUrl, current.modelSurfacePreviewUrl]) if (url?.startsWith("blob:")) URL.revokeObjectURL(url);
+  current.commitProjectRestore({
+    ...current, ...document, ...sourceRuntime, ...editor,
+    nativeBrandGroups: portableBrand ? [...current.nativeBrandGroups.filter(brand => brand.brand_key !== portableBrand.brand_key), portableBrand] : current.nativeBrandGroups,
+    imagePreviewUrl: document.imageFile ? (isRawFileConverter(document.imageFile) ? sources.imagePreviewUrl : URL.createObjectURL(document.imageFile)) : null,
+    modelSurfacePreviewUrl: document.modelSurfaceFile ? URL.createObjectURL(document.modelSurfaceFile) : null,
+    isLoading: false, isGenerating: false, isCropping: false, batchLoading: false, batchResult: null, batchPreviewItems: [],
+    cropModalOpen: false, historyBusy: false, replacePreviewLoading: false,
+    contentCommitStatus: "idle", contentCommitOperationId: null, pendingSelectionMutations: [], pendingReplacement: null,
+    modelSurfaceLoading: false, modelSurfaceSelecting: false, modelSurfaceError: null,
+    nativeMaterialSelection: null, nativeMaterialSelectionLoading: false, nativeMaterialSelectionAction: null, nativeMaterialSelectionError: null,
+    materialSuggestions: null, materialSuggestionsLoading: false, materialSuggestionsTargetHex: null, materialSuggestionsError: null,
+    gradientGroupsLoading: false, gradientGroupsError: null, layerImagesLoading: false,
+    error: null, downloadUrl: null, threemfDiskPath: null, modelUrl: null,
+    previewPerformanceTiming: null, generatePerformanceTiming: null, generateWarnings: [], largeFormatWarnings: [], largeFormatFailedTiles: [],
+  });
+  const restored = useConverterStore.getState();
+  const file = restored.imageFile;
+  const previewUrl = restored.imagePreviewUrl;
+  if (file && sources.aspectRatio === null) {
+    const publishDimensions = (width: number, height: number, url?: string) => {
+      const latest = useConverterStore.getState();
+      if (latest.imageFile === file && latest.imagePreviewUrl === previewUrl) useConverterStore.setState({ ...buildImageAspectRatioState(latest, width / height), ...(url ? { imagePreviewUrl: url } : {}) });
+    };
+    if (isRawFileConverter(file) && !previewUrl) {
+      void uploadImagePreview(file).then(result => publishDimensions(result.width, result.height, result.preview_url)).catch(error => {
+        if (useConverterStore.getState().imageFile === file) useConverterStore.setState({ error: rawPreviewFailureMessage(error) });
+      });
+    } else if (previewUrl) {
+      const image = new Image();
+      image.onload = () => publishDimensions(image.naturalWidth, image.naturalHeight);
+      image.src = previewUrl;
+    }
+  }
+  if (editor.sessionId && !editor.previewGlbUrl) current._pollAsyncGlb();
+});
+
 registerPrinterBedLabelSynchronizer((printerId) => {
-  const { bedSizes, setBedLabel } = useConverterStore.getState();
-  const printerBed = bedSizes.find((bed) => bed.printer_id === printerId);
-  if (printerBed) {
+  const { bedSizes, bed_label, setBedLabel, projectSettings } = useConverterStore.getState();
+  const activePrinter = projectSettings?.printerModel ?? printerId;
+  const printerBed = bedSizes.find((bed) => bed.printer_id === activePrinter);
+  if (printerBed && (!projectSettings || printerBed.label !== bed_label)) {
     setBedLabel(printerBed.label);
   }
 });
+
+useConverterStore.subscribe(
+  (state) => state.projectSettings?.printerModel,
+  () => {
+    const state = useConverterStore.getState();
+    const printer = resolveConverterSettings(state, useSettingsStore.getState()).printerModel;
+    const bed = state.bedSizes.find((item) => item.printer_id === printer);
+    if (bed && bed.label !== state.bed_label) state.setBedLabel(bed.label);
+  },
+);
 
 useConverterStore.subscribe(
   (state) => [state.target_width_mm, state.target_height_mm] as const,
@@ -8337,9 +8191,9 @@ useConverterStore.subscribe(
 );
 
 registerPreviewArtifactInvalidator(() => {
-  if (!isDynamicMaterialActive(useConverterStore.getState())) {
-    return;
-  }
+  if (useConverterStore.getState().projectSettings) return;
+  invalidatePreviewRequest();
+  if (!isDynamicMaterialActive(useConverterStore.getState())) return;
   useConverterStore.setState(
     buildPreviewSessionResetState(useConverterStore.getState()),
   );

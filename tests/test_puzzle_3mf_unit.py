@@ -165,6 +165,16 @@ def test_real_puzzle_can_disable_final_tower_planning(tmp_path, slicer, printer)
 
 _NS = {"m": "http://schemas.microsoft.com/3dmanufacturing/core/2015/02"}
 
+def test_unused_named_palette_slot_does_not_steal_another_material():
+    from core.puzzle_3mf import _select_puzzle_palette_slots
+    slots = [MaterialSlot(index, name, "#FFFFFF", "PLA") for index, name in enumerate(["Red", "Slot 2", "Blue", "White"])]
+    result = _select_puzzle_palette_slots(
+        piece_slots=[slots], slot_names=["Red", "Yellow", "Blue", "White"],
+        preview_colors={}, slot_index_by_name={"White": 0, "Red": 1, "Yellow": 2, "Blue": 3},
+    )[0]
+    assert [slot.source_slot_index for slot in result] == [0, 1, 2, 3]
+    assert [slot.slot_name for slot in result] == ["Red", "Yellow", "Blue", "White"]
+
 def _metadata_value(element, key):
     return next((row.get("value") for row in element.findall("metadata") if row.get("key") == key), None)
 

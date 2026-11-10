@@ -1,22 +1,28 @@
-"""Integration tests for converter puzzle router log canaries."""
+"""Integration tests for converter puzzle layouts, generated meshes and worker scheduling."""
 
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import pickle
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
+from xml.etree import ElementTree
+from zipfile import ZipFile
 
 import numpy as np
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from PIL import Image
 import pytest
+import shapely
+import trimesh
 
 from api.dependencies import get_file_registry, get_session_store, get_worker_pool
 from api.file_registry import FileRegistry
 from api.preview_cache_artifacts import externalize_preview_cache
+from api.schemas.converter import ConvertGenerateRequest
 from api.routers.converter import puzzle as puzzle_router
 from api.selection_state import RECIPE_OVERRIDE_APPLIED_MASKS_KEY
 from api.session_store import SessionStore
@@ -26,9 +32,11 @@ from core.puzzle import PuzzlePiece
 
 
 @pytest.fixture()
-def puzzle_harness():
+def puzzle_harness(tmp_path, monkeypatch):
     """Create an isolated puzzle-router test client."""
 
+    monkeypatch.setattr(puzzle_router, "TEMP_DIR", str(tmp_path))
+    monkeypatch.setattr("api.file_registry.TEMP_DIR", str(tmp_path))
     store = SessionStore(ttl=1800)
     registry = FileRegistry()
     pool = MagicMock(spec=WorkerPoolManager)
@@ -44,6 +52,7 @@ def puzzle_harness():
         yield {"client": client, "store": store, "registry": registry, "pool": pool}
 
     store.clear_all()
+    registry.clear_all()
 
 
 @pytest.fixture(autouse=True)
@@ -57,11 +66,19 @@ def stub_metadata_reads_for_stub_worker_packages(monkeypatch):
         {'slot_id': 0, 'slot_name': 'White', 'preview_color': '#FFFFFF', 'material_id': 'PLA'},
     ])
     monkeypatch.setattr(puzzle_router, 'read_wipe_tower_placement_warnings', lambda path: [])
+    # Scheduling fixtures have sentinel LUTs/material names, not native files.
+    monkeypatch.setattr(puzzle_router, 'require_material_selection', lambda *args, **kwargs: {"materials": [
+        {"name": name, "material_type": "PLA", "selected_profile_name": None} for name in ["White", "Red", "Blue"]
+    ]})
+    # Canary tests attach caplog directly, so do not deliver each record again
+    # through pytest's root handler.
+    monkeypatch.setattr(logging.getLogger("lumina.api.routers.converter.puzzle"), "propagate", False)
 
 
 def _capture_puzzle_logger(caplog: pytest.LogCaptureFixture) -> logging.Logger:
     logger = logging.getLogger("lumina.api.routers.converter.puzzle")
     logger.addHandler(caplog.handler)
+    logger.propagate = False
     caplog.set_level(logging.INFO, logger=logger.name)
     return logger
 
@@ -124,6 +141,10 @@ def _seed_dynamic_puzzle_generate_session(store: SessionStore, tmp_path) -> str:
     cache["quantized_image"] = np.array(matched_rgb, copy=True)
     cache["material_matrix"] = material_matrix
     cache["material_dynamic_layer_info"] = {"enabled": True}
+    cache.update(ConvertGenerateRequest.model_validate(
+        _generate_puzzle_body(session_id)["params"]["params"],
+    ).model_dump())
+    cache.update(material_source="material_archive", color_layers=max_layers, layer_height_mm=0.08)
     store.put(session_id, "preview_cache", cache)
     store.put(session_id, "material_source", "material_archive")
     store.put(session_id, "selected_materials", ["White", "Red", "Blue"])
@@ -241,6 +262,203 @@ def test_prepare_piece_worker_assets_adds_actual_cut_clearance() -> None:
     assert max(x_values) == pytest.approx(39.5)
     assert max(y_values) == pytest.approx(39.5)
     assert boundary_payload["bbox_px"] == [0, 0, 40, 40]
+
+
+@pytest.mark.parametrize("dtype", [np.int8, np.int16, np.int32, np.int64])
+@pytest.mark.parametrize("target_size", [(3, 2), (8, 7)])
+def test_recipe_resampling_keeps_integer_values_on_the_rgb_sampling_grid(dtype, target_size) -> None:
+    """Recipe channels must follow RGB pixels without interpolation or truncation."""
+    pixels = np.arange(15, dtype=np.uint8).reshape(3, 5)
+    offset = 2**40 if dtype == np.int64 else 0
+    recipes = pixels[..., None].astype(dtype) * 3 + np.arange(7, dtype=dtype) + offset
+    rgb_reference = np.asarray(Image.fromarray(pixels).resize(target_size, Image.Resampling.NEAREST))
+
+    result = puzzle_router._resize_piece_array_nearest(recipes, target_size)
+
+    assert result.dtype == recipes.dtype
+    assert np.array_equal(result, rgb_reference[..., None].astype(dtype) * 3 + np.arange(7, dtype=dtype) + offset)
+
+
+def test_layout_overlay_updates_when_the_backing_covers_a_color_gap(puzzle_harness, tmp_path) -> None:
+    store = puzzle_harness["store"]
+    session_id = _seed_puzzle_preview_session(store)
+    cache = store.get(session_id)["preview_cache"]
+    color = cache["mask_solid"]
+    color[20:38, 18:36] = False  # A through-hole in the design.
+    color[20:38, 74:92] = False  # An unpainted patch over the backing.
+    color[58:] = False
+    body = _layout_preview_body(session_id)
+    body["params"].update(rows=1, cols=1, labels_enabled=False)
+
+    def preview_alpha() -> np.ndarray:
+        response = puzzle_harness["client"].post("/api/convert/puzzle-layout-preview", json=body)
+        assert response.status_code == 200, response.text
+        file_id = response.json()["overlay_url"].rsplit("/", 1)[-1]
+        path, _ = puzzle_harness["registry"].resolve(file_id)
+        with Image.open(path) as overlay:
+            return np.asarray(overlay.getchannel("A"))
+
+    # Older sessions have only a color mask, so both patches have cut lines.
+    legacy = preview_alpha()
+    assert legacy[17:41, 15:39].any()
+    assert legacy[17:41, 71:95].any()
+    assert not legacy[-1].any()
+
+    cache["backing_mask"] = color.copy()
+    np.testing.assert_array_equal(preview_alpha(), legacy)
+    backing = np.ones_like(color)
+    backing[20:38, 18:36] = False
+    cache["backing_mask"] = backing
+    cache_ref = externalize_preview_cache(session_id, store, cache, root_dir=tmp_path)
+    store.put(session_id, "preview_cache", cache_ref)
+    current = preview_alpha()
+
+    assert current[17:41, 15:39].any(), "the real hole needs a cut line"
+    assert not current[17:41, 71:95].any(), "the color gap has continuous backing"
+    assert current[-1, 45:65].any(), "the overlay must reach the unpainted edge of the backing"
+
+
+def _seed_backed_puzzle(
+    store: SessionStore, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, case: str,
+) -> tuple[str, int, str]:
+    """Prepare printable source materials and a preview with separately defined optical and backing layers."""
+    from config import LUTMetadata, PaletteEntry
+    from utils.lut_manager import LUTManager
+
+    colors = {"White": (255, 255, 255), "Red": (255, 0, 0)}
+    if case == "cloisonne":
+        colors["Wire"] = (218, 165, 32)
+    palette = list(colors)
+    uses_material_archive = case in {"fixed_material", "dynamic_material"}
+    layers = 6 if uses_material_archive or case == "five_color" else 5
+    color_mode = "5-Color Extended" if case == "five_color" else "4-Color (RYBW)"
+    if not uses_material_archive:
+        session_id = _seed_puzzle_generate_session(store, tmp_path)
+        lut_path = tmp_path / "colors.npz"
+        rgb = np.array([colors["White"], colors["Red"]], dtype=np.uint8)
+        LUTManager.save_npz_with_metadata(
+            str(lut_path), rgb, np.array([[0] * layers, [1] * layers], dtype=np.int32),
+            LUTMetadata(
+                color_mode=color_mode, max_color_layers=layers,
+                palette=[PaletteEntry(color=name, material="PLA") for name in palette],
+            ),
+        )
+        store.put(session_id, "lut_path", str(lut_path))
+    else:
+        session_id = _seed_dynamic_puzzle_generate_session(store, tmp_path)
+        store.put(session_id, "selected_materials", palette)
+        store.put(session_id, "material_dynamic_layer_count_enabled", case == "dynamic_material")
+        for module in ("core.material_lut_provider", "core.material_lut_synthesis"):
+            monkeypatch.setattr(f"{module}.MATERIALS_DIR", str(tmp_path))
+        fixture_materials = Path(__file__).parent / "fixtures" / "dynamic_material_materials"
+        for name in palette:
+            material_dir = tmp_path / name
+            material_dir.mkdir()
+            (material_dir / "material.json").write_text(
+                json.dumps({"material_name": name, "material_type": "PLA"}), encoding="utf-8",
+            )
+            stage = fixture_materials / name.lower() / "stage_A_parameters.json"
+            (material_dir / stage.name).write_bytes(stage.read_bytes())
+
+    cache = store.get(session_id)["preview_cache"]
+    cache["slot_names"] = palette
+    cache["preview_colors"] = {name: [*value, 255] for name, value in colors.items()}
+    color = cache["mask_solid"]
+    color[:, 37:] = False  # The entire right-hand piece has backing alone.
+    color[15:29, 9:23] = False
+    color[48:62, 9:23] = False
+    backing = np.ones_like(color)
+    backing[15:29, 9:23] = False
+    cache["backing_mask"] = backing
+    cache["matched_rgb"][:] = colors["Red"]
+    cache["preview_rgba"][..., :3] = colors["Red"]
+    cache["preview_rgba"][..., 3] = color.astype(np.uint8) * 255
+    if uses_material_archive:
+        cache["quantized_image"][:] = cache["matched_rgb"]
+        cache["material_matrix"][color] = 1
+        cache["material_matrix"][~color] = -1
+    Image.fromarray(cache["preview_rgba"]).save(store.get(session_id)["image_path"])
+    cache_ref = externalize_preview_cache(session_id, store, cache, root_dir=tmp_path)
+    store.put(session_id, "preview_cache", cache_ref)
+    return session_id, layers, color_mode
+
+
+@pytest.mark.parametrize("case", [
+    "lut", "five_color", "cloisonne", "fixed_material", "dynamic_material", "color_relief", "heightmap_relief",
+])
+def test_puzzle_3mf_preserves_backing_only_regions_and_through_holes(
+    puzzle_harness, tmp_path, monkeypatch, case: str,
+) -> None:
+    """Probe the physical layers of both pieces after route, worker and assembly."""
+    from api.routers.converter.export_materials import require_material_selection
+    from api.workers.converter_workers import _batch_extract_slots_from_3mf
+
+    for field in (
+        "config.TEMP_DIR", "core.pipeline.s04_debug_preview.OUTPUT_DIR", "core.pipeline.s09_export_3mf.MODELS_DIR",
+        "core.pipeline.s10_color_recipe.OUTPUT_DIR", "core.pipeline.s11_glb_preview.OUTPUT_DIR",
+    ):
+        monkeypatch.setattr(field, str(tmp_path))
+    monkeypatch.setattr("utils.stats.Stats._file", str(tmp_path / "stats.txt"))
+    monkeypatch.setattr(puzzle_router, "_batch_extract_slots_from_3mf", _batch_extract_slots_from_3mf)
+    monkeypatch.setattr(puzzle_router, "require_material_selection", require_material_selection)
+    session_id, layers, color_mode = _seed_backed_puzzle(puzzle_harness["store"], tmp_path, monkeypatch, case)
+    puzzle_harness["pool"].submit = AsyncMock(side_effect=lambda worker, *args: worker(*args))
+    body = _generate_puzzle_body(session_id)
+    body["params"].update(rows=1, cols=2, target_height_mm=6.4)
+    body["params"]["params"].update(
+        target_width_mm=9.6, color_mode=color_mode, enable_cloisonne=case == "cloisonne",
+        enable_wipe_tower_auto_placement=False,
+    )
+    if case == "color_relief":
+        body["params"]["params"].update(
+            enable_relief=True, structure_mode="Single-sided", height_mode="color", color_height_map={"#ff0000": 2.0},
+        )
+    elif case == "heightmap_relief":
+        heights = np.zeros((80, 120), dtype=np.uint8)
+        heights[:, :37] = 255
+        puzzle_harness["store"].put(session_id, "heightmap_grayscale", heights)
+        body["params"]["params"].update(
+            enable_relief=True, structure_mode="Single-sided", height_mode="heightmap",
+            spacer_thick=0.8, heightmap_max_height=2.0,
+        )
+    response = puzzle_harness["client"].post("/api/convert/generate-puzzle", json=body)
+
+    assert response.status_code == 200, response.text
+    file_id = response.json()["download_url"].rsplit("/", 1)[-1]
+    path, _ = puzzle_harness["registry"].resolve(file_id)
+    triangles = trimesh.load_scene(path, process=False).to_geometry().triangles
+    horizontal = triangles[np.ptp(triangles[:, :, 2], axis=1) < 1e-6]
+    faces = shapely.polygons(horizontal[:, :, :2])
+
+    def surface_heights(x: float, y: float) -> np.ndarray:
+        return np.unique(horizontal[shapely.intersects_xy(faces, x, y), 0, 2].round(4))
+
+    # The same 120 x 80 preview is exported at 0.08 mm per source pixel.
+    assert surface_heights(1.31, 4.65).size == 0, "the design hole must remain open"
+    optical_depth = 0.08 * layers
+    if case in {"color_relief", "heightmap_relief"}:
+        painted_limits = [0, 2.0 - optical_depth, 2.0]
+        unpainted_limits = [0, 1.2 if case == "color_relief" else 2.0]
+        bare_piece_limits = [0, 1.2 if case == "color_relief" else 0.8]
+        with ZipFile(path) as model:
+            assembly = ElementTree.fromstring(model.read("3D/3dmodel.model"))
+            settings = ElementTree.fromstring(model.read("Metadata/model_settings.config"))
+        labels = {obj.attrib["id"]: obj.attrib["name"] for obj in assembly.findall("{*}resources/{*}object")}
+        piece_slots = {
+            labels[piece.attrib["id"]]: {int(slot.attrib["value"]) for slot in piece.findall("part/metadata[@key='extruder']")}
+            for piece in settings.findall("object")
+        }
+        assert piece_slots == {"A1": {1, 2}, "A2": {1}}, "only the painted piece may use red filament"
+    elif case in {"five_color", "cloisonne"}:
+        unpainted_limits = bare_piece_limits = [0, 1.2]
+        painted_limits = [0, 1.2, 1.2 + optical_depth]
+    else:
+        unpainted_limits = bare_piece_limits = [optical_depth, optical_depth + 1.2]
+        painted_limits = [0, *unpainted_limits, 2 * optical_depth + 1.2]
+    assert surface_heights(1.31, 2.03) == pytest.approx(unpainted_limits), "unpainted patch"
+    assert surface_heights(7.71, 3.23) == pytest.approx(bare_piece_limits), "backing-only piece"
+    assert surface_heights(2.51, 4.65) == pytest.approx(painted_limits), "red optical layers over white backing"
+    assert response.json()["piece_count"] == 2
 
 
 class TestPuzzleLayoutPreviewCanary:
@@ -435,16 +653,12 @@ def test_generate_puzzle_runs_bounded_parallel_pieces_in_layout_order(
 
     store = puzzle_harness["store"]
     pool = puzzle_harness["pool"]
-    if source == "dynamic_material":
+    if source in {"dynamic_material", "material_archive"}:
         session_id = _seed_dynamic_puzzle_generate_session(store, tmp_path)
+        if source == "material_archive":
+            store.put(session_id, "material_dynamic_layer_count_enabled", False)
     else:
         session_id = _seed_puzzle_generate_session(store, tmp_path)
-        if source == "material_archive":
-            store.put(session_id, "material_source", source)
-            store.put(session_id, "selected_materials", ["Red", "White"])
-            store.put(session_id, "material_layer_count", 10)
-            store.put(session_id, "material_layer_height_mm", 0.08)
-            store.put(session_id, "material_backing_material_index", 1)
 
     active = 0
     peak_active = 0
@@ -493,6 +707,8 @@ def test_generate_puzzle_runs_bounded_parallel_pieces_in_layout_order(
     pool.submit = AsyncMock(side_effect=submit_piece)
     body = _generate_puzzle_body(session_id)
     body["params"]["params"]["modeling_mode"] = "vector"
+    if source != "lut":
+        store.get(session_id)["preview_cache"]["modeling_mode"] = "vector"
     body['params']['params']['backing_infill_density_percent'] = 20
     body['params']['params']['enable_base_layer_height_modifier'] = False
     with patch.object(puzzle_router, "assemble_puzzle_3mf", side_effect=assemble_pieces):
@@ -600,8 +816,87 @@ async def test_cancelled_puzzle_drains_active_batch_without_starting_more_pieces
     assert all(not path.exists() for path in outputs)
 
 
-class TestDynamicPuzzlePreviewReuse:
-    """Dynamic puzzle pieces must carry preview authority arrays to P03."""
+class TestMaterialPuzzlePreviewReuse:
+    """Fixed and dynamic puzzle pieces must load confirmed recipes through S02."""
+
+    @pytest.mark.parametrize("externalized", [False, True])
+    @pytest.mark.parametrize("session_layers,confirmed_layers,layer_height,explicit", [
+        (6, 6, 0.08, False),
+        (5, 8, 0.08, False),
+        (5, 8, 0.08, True),
+        (None, 5, 0.08, False),
+        (5, 5, 0.12, False),
+        (5, 5, 0.12, True),
+    ])
+    def test_fixed_material_pieces_keep_preview_recipes_without_resolving(
+        self, puzzle_harness, tmp_path, monkeypatch, externalized: bool,
+        session_layers: int | None, confirmed_layers: int, layer_height: float, explicit: bool,
+    ) -> None:
+        """Splitting a confirmed preview must not solve new recipes per piece."""
+        from core.pipeline import p03_core_processing, s02_image_processing
+
+        store = puzzle_harness["store"]
+        pool = puzzle_harness["pool"]
+        session_id = _seed_dynamic_puzzle_generate_session(store, tmp_path)
+        store.put(session_id, "material_dynamic_layer_count_enabled", False)
+        store.put(session_id, "material_layer_count", session_layers)
+        store.put(session_id, "color_layers", session_layers)
+        store.put(session_id, "layer_height_mm", 0.08)
+        expected_recipe = [2, 1, 2, 1, 0, 0, 0, 0][:confirmed_layers]
+        cache = dict(store.get(session_id)["preview_cache"])
+        cache["material_matrix"] = np.broadcast_to(
+            np.asarray(expected_recipe, dtype=np.int16),
+            (*cache["mask_solid"].shape, confirmed_layers),
+        ).copy()
+        cache["color_layers"] = len(expected_recipe)
+        cache["layer_height_mm"] = layer_height
+        cache["material_dynamic_layer_info"] = {"enabled": False}
+        store.put(session_id, "preview_cache", cache)
+        if externalized:
+            store.put(session_id, "preview_cache", externalize_preview_cache(
+                session_id, store, cache, root_dir=tmp_path,
+            ))
+        solver_calls = []
+
+        def unexpected_resolve(ctx):
+            solver_calls.append(ctx)
+            raise AssertionError("a puzzle piece must not rerun the material solver")
+
+        monkeypatch.setattr(p03_core_processing, "_run_material_archive_branch", unexpected_resolve)
+        checked_pieces = []
+
+        async def submit_piece(_fn, image_path, _lut_path, params):
+            result = s02_image_processing.run(dict(params))
+            mask = result["mask_solid"]
+            matrix = result["material_matrix"]
+            assert np.any(mask)
+            assert params["material_layer_count"] == len(expected_recipe)
+            assert params["material_layer_height_mm"] == layer_height
+            assert matrix.shape == (*mask.shape, len(expected_recipe))
+            assert np.all(matrix[mask] == expected_recipe)
+            assert np.all(matrix[~mask] == -1)
+            checked_pieces.append(Path(image_path).stem.split("_")[1])
+            output = tmp_path / f"piece-{len(checked_pieces)}.3mf"
+            output.write_bytes(b"piece-3mf")
+            return {"threemf_path": str(output), "glb_path": None,
+                    "status_msg": "ok", "x_mirrored": False, "mirror_span_mm": 1.0}
+
+        def assemble(*, output_path: str, **_kwargs):
+            Path(output_path).write_bytes(b"combined-3mf")
+            return output_path
+
+        pool.submit = AsyncMock(side_effect=submit_piece)
+        monkeypatch.setattr(puzzle_router, "assemble_puzzle_3mf", assemble)
+        body = _generate_puzzle_body(session_id)
+        body["params"]["target_height_mm"] = 8.0
+        body["params"]["params"]["target_width_mm"] = 12.0
+        if explicit:
+            body["params"]["params"].update(color_layers=confirmed_layers, layer_height_mm=layer_height)
+        response = puzzle_harness["client"].post("/api/convert/generate-puzzle", json=body)
+
+        assert not solver_calls, "puzzle pieces solved new recipes instead of reusing the preview"
+        assert response.status_code == 200, response.text
+        assert checked_pieces == ["A1", "A2", "B1", "B2"]
 
     def test_dynamic_puzzle_accepts_externalized_int32_authority_assets(
         self,
@@ -703,7 +998,7 @@ class TestDynamicPuzzlePreviewReuse:
         assert response.status_code == 200, response.text
         assert len(captured_params) == 4
         for params in captured_params:
-            assert params["reuse_preview_analysis"] is True
+            assert params["reuse_preview_analysis"] == "required"
             assert params["material_dynamic_layer_count_enabled"] is True
             assert params["material_max_layer_count"] == 6
             matched = np.load(params["matched_rgb_path"], allow_pickle=False)
@@ -719,19 +1014,29 @@ class TestDynamicPuzzlePreviewReuse:
             assert matrix.shape == (*mask_solid.shape, 6)
             assert np.all(matrix[~mask_solid] == -1)
 
-    def test_dynamic_puzzle_missing_authority_asset_returns_repreview_error(
+    @pytest.mark.parametrize("dynamic", [False, True])
+    @pytest.mark.parametrize("broken_asset", ["missing", "float_matrix", "wrong_depth"])
+    def test_material_puzzle_rejects_incomplete_preview_before_scheduling(
         self,
         puzzle_harness,
         tmp_path,
+        dynamic: bool,
+        broken_asset: str,
     ) -> None:
         store: SessionStore = puzzle_harness["store"]
         pool: MagicMock = puzzle_harness["pool"]
         client: TestClient = puzzle_harness["client"]
         session_id = _seed_dynamic_puzzle_generate_session(store, tmp_path)
+        store.put(session_id, "material_dynamic_layer_count_enabled", dynamic)
         session_data = store.get(session_id)
         assert session_data is not None
         cache = dict(session_data["preview_cache"])
-        cache.pop("quantized_image")
+        if broken_asset == "missing":
+            cache.pop("material_matrix")
+        elif broken_asset == "float_matrix":
+            cache["material_matrix"] = cache["material_matrix"].astype(np.float64)
+        else:
+            cache["material_matrix"] = cache["material_matrix"][..., :-1 if dynamic else 0]
         store.put(session_id, "preview_cache", cache)
 
         response = client.post(
@@ -743,10 +1048,29 @@ class TestDynamicPuzzlePreviewReuse:
         assert "Re-run preview" in response.json()["detail"]
         pool.submit.assert_not_called()
 
-    def test_dynamic_puzzle_forwards_manual_virtual_recipe_context(
+    @pytest.mark.parametrize("dynamic", [False, True])
+    @pytest.mark.parametrize("changed", [{"quantize_colors": 12}, {"enable_cleanup": False}])
+    def test_material_puzzle_rejects_analysis_changes_before_scheduling(
+        self, puzzle_harness, tmp_path, dynamic: bool, changed: dict[str, object],
+    ) -> None:
+        session_id = _seed_dynamic_puzzle_generate_session(puzzle_harness["store"], tmp_path)
+        puzzle_harness["store"].put(session_id, "material_dynamic_layer_count_enabled", dynamic)
+        puzzle_harness["pool"].submit = AsyncMock(return_value={"threemf_path": None})
+        body = _generate_puzzle_body(session_id)
+        body["params"]["params"].update(changed)
+
+        response = puzzle_harness["client"].post("/api/convert/generate-puzzle", json=body)
+
+        assert response.status_code == 409, response.text
+        assert "preview" in response.json()["detail"].lower()
+        puzzle_harness["pool"].submit.assert_not_called()
+
+    @pytest.mark.parametrize("dynamic", [False, True])
+    def test_material_puzzle_forwards_manual_virtual_recipe_context(
         self,
         puzzle_harness,
         tmp_path,
+        dynamic: bool,
     ) -> None:
         """A copied dynamic matrix must retain its virtual-palette definition."""
 
@@ -754,6 +1078,7 @@ class TestDynamicPuzzlePreviewReuse:
         pool: MagicMock = puzzle_harness["pool"]
         client: TestClient = puzzle_harness["client"]
         session_id = _seed_dynamic_puzzle_generate_session(store, tmp_path)
+        store.put(session_id, "material_dynamic_layer_count_enabled", dynamic)
         session_data = store.get(session_id)
         assert session_data is not None
         assert RECIPE_OVERRIDE_APPLIED_MASKS_KEY not in session_data

@@ -474,6 +474,7 @@ def worker_generate_preview(
     svg_hole_compensation_enabled: bool = False,
     svg_hole_max_area_mm2: float = 0.5,
     svg_hole_max_width_mm: float = 0.1,
+    materials_dir: str | None = None,
 ) -> dict:
     """Execute preview generation in a worker process.
     在工作进程中执行预览生成。
@@ -587,6 +588,7 @@ def worker_generate_preview(
             auto_dynamic_range=auto_dynamic_range,
             high_precision_3d_preview=high_precision_3d_preview,
             material_source=material_source,
+            materials_dir=materials_dir,
             selected_materials=selected_materials,
             material_layer_count=material_layer_count,
             material_layer_height_mm=material_layer_height_mm,
@@ -924,6 +926,8 @@ def worker_batch_convert_item(
     coating_material: dict[str, str] | None = None,
     enable_outline: bool = False,
     outline_width: float = 2.0,
+    external_spool_material: str | None = None,
+    materials_dir: str | None = None,
 ) -> dict:
     """Execute a single batch conversion item in a worker process.
     在工作进程中执行单个批量转换项。
@@ -1060,6 +1064,7 @@ def worker_batch_convert_item(
         enable_base_layer_height_modifier=enable_base_layer_height_modifier,
         enable_wipe_tower_auto_placement=enable_wipe_tower_auto_placement,
         material_source=material_source,
+        materials_dir=materials_dir,
         native_filament_profiles=native_filament_profiles,
         selected_materials=selected_materials,
         material_layer_count=material_layer_count,
@@ -1112,6 +1117,7 @@ def worker_batch_convert_item(
         )
         (width_mm, depth_mm), slots = read_merge_source_info(
             threemf_path, metadata_target=slot_target,
+            use_base_material_names=external_spool_material is not None,
         )
     except Exception as exc:
         # Artifact inspection is a worker boundary: an unknown footprint
@@ -1484,6 +1490,7 @@ def worker_generate_model_surface_overlay(
             preview_colors=overlay.preview_colors,
             project_slot_names=overlay.project_slot_names,
             material_types=overlay.scene.metadata.get("material_types"),
+            external_spool_material=normalized_params.get("external_spool_material"),
             native_filament_profiles=normalized_params.get("native_filament_profiles"),
             preserve_template_filament_slots=(
                 False if converter_params.get("material_source") == "material_archive" else None
@@ -2194,6 +2201,7 @@ def worker_generate_large_format_svg_native(
                 nozzle_size=params.get("nozzle_size", "0.4"),
                 project_slot_names=slot_names,
                 material_types=worker_ctx.get("material_types"),
+                external_spool_material=params.get("external_spool_material"),
                 native_filament_profiles=params.get("native_filament_profiles"),
                 enable_base_layer_height_modifier=bool(
                     worker_ctx.get("enable_base_layer_height_modifier", True)

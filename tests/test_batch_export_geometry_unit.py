@@ -225,8 +225,9 @@ def test_real_batch_footprint_matches_export_across_sources(
         assert actual[0] > 19
 
 
+@pytest.mark.parametrize("external_spool", [None, "Red"])
 def test_api_footprint_failure_keeps_successful_download_after_session_close(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, external_spool: str | None,
 ) -> None:
     from fastapi.testclient import TestClient
     from api.app import app
@@ -276,6 +277,13 @@ def test_api_footprint_failure_keeps_successful_download_after_session_close(
             name: "Bambu PLA Basic @BBL H2D" for name in ("White", "Red", "Yellow", "Blue")
         }),
     }
+    if external_spool is not None:
+        data.update(
+            printer_id="bambu-lab-x2d", external_spool_material=external_spool,
+            native_filament_profiles=json.dumps(dict.fromkeys(
+                ["White", "Red", "Yellow", "Blue"], "Bambu PLA Basic @BBL X2D 0.4 nozzle",
+            )),
+        )
     files = [("images", (f"image-{i}.svg", image, "image/svg+xml")) for i in range(2)]
     client = TestClient(app, raise_server_exceptions=False)
     session_id = store.create()
@@ -289,6 +297,14 @@ def test_api_footprint_failure_keeps_successful_download_after_session_close(
     assert downloaded.status_code == 200
     artifact = tmp_path / "downloaded.3mf"
     artifact.write_bytes(downloaded.content)
+    if external_spool is not None:
+        from xml.etree import ElementTree as ET
+        from zipfile import ZipFile
+
+        with ZipFile(artifact) as package:
+            root = ET.fromstring(package.read("Metadata/model_settings.config"))
+            assert root.find("plate/metadata[@key='filament_maps']").get("value") == "1 2 1 1"
+            assert root.find("plate/metadata[@key='filament_map_mode']").get("value") == "Manual"
     assert 19 < trimesh.load_scene(artifact, process=False).extents[0] <= 20
 
     failure_count = 2

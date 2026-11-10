@@ -144,6 +144,22 @@ def test_package_accepts_backend_sources_and_validates_locks(tmp_path: Path) -> 
         inspect_workshop_package(write_package(broken, manifest, backend_files('lock-version = "9.0"\n')))
 
 
+def test_backend_package_preserves_project_snapshot_capability(tmp_path: Path) -> None:
+    manifest = backend_manifest("fixture.editor", "1.0.0")
+    manifest["permissions"] = [{"name": "project.storage", "reason": "Save edits."}]
+    manifest["projectSnapshots"] = {"protocol": 1, "schemas": ["editor/v1"]}
+
+    inspected = inspect_workshop_package(write_package(tmp_path, manifest, backend_files()))
+    assert isinstance(inspected.manifest, WorkshopManifestV2)
+    assert inspected.manifest.backend.entry == "backend/main.py"
+    assert inspected.manifest.project_snapshots is not None
+    assert inspected.manifest.project_snapshots.schemas == ("editor/v1",)
+
+    manifest["permissions"] = []
+    with pytest.raises(ValueError, match="project.storage"):
+        WorkshopManifestV2.model_validate(manifest)
+
+
 @pytest.mark.parametrize(
     "extra",
     [

@@ -62,6 +62,8 @@ export const useVectorizerStore = create<VectorizerState & VectorizerActions>(
     params: { ...DEFAULT_PARAMS },
 
     setImageFile: (file: File | null) => {
+      get().abortController?.abort();
+      set({ isProcessing: false, abortController: null });
       const prev = get().imagePreviewUrl;
       if (prev) URL.revokeObjectURL(prev);
 
@@ -88,8 +90,10 @@ export const useVectorizerStore = create<VectorizerState & VectorizerActions>(
 
       try {
         const result = await vectorizeImage(imageFile, params, controller.signal);
+        if (get().abortController !== controller || controller.signal.aborted) return;
         set({ result, isProcessing: false, abortController: null });
       } catch (err: unknown) {
+        if (get().abortController !== controller) return;
         if (err instanceof Error && err.name === "CanceledError") {
           set({ isProcessing: false, abortController: null });
           return;

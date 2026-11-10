@@ -16,6 +16,43 @@ export interface AnnouncementEntry {
 
 export const ANNOUNCEMENTS: ReadonlyArray<AnnouncementEntry> = [
   {
+    version: "2026-11-11",
+    title: { zh: "Lumina Layers — 11 月更新速览", en: "Lumina Layers — November updates" },
+    sections: [
+      {
+        category: { zh: "新功能", en: "New" },
+        items: [
+          {
+            zh: "创意工坊支持在本机运行带 Python 处理功能的模块，可按需准备依赖、查看任务进度，并把结果送到图像转换。切换页面不会中断任务。",
+            en: "Creative Workshop can run modules with local Python processing. Prepare dependencies when needed, follow task progress and send results to Image Conversion. Switching pages keeps tasks running.",
+          },
+        ],
+      },
+      {
+        category: { zh: "预览 & 交互", en: "Preview & Interaction" },
+        items: [
+          {
+            zh: "大图预览使用更轻的显示图，模型尺寸、打印精度和编辑用的原图保持不变。拖动挂孔时位置同步更稳定，松手或取消后可正常调整视角。",
+            en: "Large images use a lighter display preview without changing model dimensions, print detail or the image used for editing. Keychain-loop positions stay in sync while dragging, and view controls resume after releasing or cancelling.",
+          },
+        ],
+      },
+      {
+        category: { zh: "稳定性", en: "Stability" },
+        items: [
+          {
+            zh: "批量生成后若合并失败，仍可逐件下载已完成的模型；关闭对应预览后，下载在保留期内仍可使用。",
+            en: "If a batch cannot be merged, completed models remain available as individual downloads. They stay available for their retention period even after closing the source preview.",
+          },
+          {
+            zh: "使用自定义 3MF 模板时，会在生成模型前提示耗材槽位不足，并说明需要多少槽位。",
+            en: "Custom 3MF templates are checked for enough filament slots before model generation, with a message showing how many are needed.",
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: "2026-11-07",
     title: { zh: "Lumina Layers — 11 月更新速览", en: "Lumina Layers — November updates" },
     sections: [

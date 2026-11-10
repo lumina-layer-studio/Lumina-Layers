@@ -24,6 +24,7 @@ import {
   isWorkshopApiCompatible,
 } from "../workshop/runtime/health";
 import type { WorkshopMessagePort } from "../workshop/runtime/rpcHost";
+import { useWorkshopProjectRuntime } from "../project/workshopRuntime";
 
 class FakeHostPort implements WorkshopMessagePort {
   onmessage: ((event: MessageEvent) => void) | null = null;
@@ -66,6 +67,8 @@ function postReady(
     moduleVersion: string;
     apiVersion: string;
     events: string[];
+    features: string[];
+    projectSnapshotProtocol: number;
   }> = {},
 ): void {
   const event = new MessageEvent("message", {
@@ -86,7 +89,8 @@ function rpcRequest(
     | "image.pick"
     | "status.progress"
     | "lifecycle.ready"
-    | "colorLibrary.read",
+    | "colorLibrary.read"
+    | "backend.list",
   payload: unknown,
   requestId: string,
 ) {
@@ -119,6 +123,62 @@ afterEach(() => {
 });
 
 describe("WorkshopFrame", () => {
+  it("keeps project snapshots and backend tasks connected in the same frame", async () => {
+    const channel = channelFixture();
+    const listTasks = vi.fn().mockResolvedValue([]);
+    const view = render(
+      <WorkshopFrame
+        module={installedFixture({
+          hasBackend: true,
+          permissions: ["project.storage"],
+          projectSnapshotProtocol: 1,
+          projectSnapshotSchemas: ["editor/v1"],
+        })}
+        handlers={{ "backend.list": listTasks }}
+        createChannel={channel.createChannel}
+      />,
+    );
+    const iframe = screen.getByTitle("Fixture Hello") as HTMLIFrameElement;
+    fireEvent.load(iframe);
+    act(() => {
+      postReady(iframe.contentWindow, {
+        apiVersion: "1.1.0",
+        features: ["backend.tasks"],
+        projectSnapshotProtocol: 1,
+      });
+    });
+    await waitFor(() => expect(channel.port1.start).toHaveBeenCalledTimes(1));
+    act(() => {
+      channel.port1.onmessage?.(new MessageEvent("message", {
+        data: rpcRequest("lifecycle.ready", {}, "ready"),
+      }));
+    });
+    await waitFor(() => expect(useWorkshopProjectRuntime.getState().current).not.toBeNull());
+    act(() => {
+      channel.port1.onmessage?.(new MessageEvent("message", {
+        data: rpcRequest("backend.list", {}, "backend-list"),
+      }));
+    });
+    await waitFor(() => expect(channel.port1.postMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ requestId: "backend-list", ok: true, result: [] }),
+    ));
+    expect(listTasks).toHaveBeenCalledTimes(1);
+
+    const project = useWorkshopProjectRuntime.getState().current!;
+    const capture = project.capture();
+    const captureRequest = channel.port1.postMessage.mock.calls.at(-1)![0] as { requestId: string };
+    channel.port1.onmessage?.(new MessageEvent("message", {
+      data: {
+        protocol: "lumina-workshop-project", version: 1, kind: "response",
+        requestId: captureRequest.requestId, ok: true,
+        result: { schemaVersion: "editor/v1", state: { cells: [1, 2] } },
+      },
+    }));
+    await expect(capture).resolves.toEqual({ schemaVersion: "editor/v1", state: { cells: [1, 2] } });
+    view.unmount();
+    expect(useWorkshopProjectRuntime.getState().current).toBeNull();
+  });
+
   it.each([
     ["official Registry", "registry", true, "browser", true],
     ["official seed", "seed", true, "browser", true],
@@ -1047,9 +1107,16 @@ describe("Workshop runtime helpers", () => {
         maxExclusive: "2.0.0",
       }),
     ).toBe(true);
+    // The host implements Workshop API 1.1.0 (module backends).
     expect(
       isWorkshopApiCompatible({
         min: "1.1.0",
+        maxExclusive: "2.0.0",
+      }),
+    ).toBe(true);
+    expect(
+      isWorkshopApiCompatible({
+        min: "1.2.0",
         maxExclusive: "2.0.0",
       }),
     ).toBe(false);

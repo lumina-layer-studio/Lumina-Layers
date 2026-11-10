@@ -96,7 +96,13 @@ from api.routers import (
     single_stage_router,
     system_router,
     vectorizer_router,
+    workshop_backend_router,
     workshop_router,
+)
+from api.workshop_runtime_service import (
+    purge_expired_backend_task_data,
+    shutdown_backend_runtimes,
+    start_existing_backend_runtime,
 )
 from core.workshop import WorkshopError
 from api.routers.projects import router as projects_router
@@ -486,12 +492,31 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             },
         )
 
+    try:
+        # Kill backends left by an abrupt exit, mark their tasks interrupted,
+        # and retry pending reclamation. No-op until a backend was ever used.
+        await asyncio.to_thread(start_existing_backend_runtime)
+    except (OSError, ValueError, WorkshopError) as exc:
+        log.error(
+            "Creative Workshop backend runtime reconciliation failed",
+            extra={
+                "event": "workshop_backend_startup_failed",
+                "error_type": type(exc).__name__,
+                "error_message": str(exc),
+            },
+        )
+
     async def _cleanup_loop() -> None:
         """Periodically clean up expired sessions and their registered files.
         定期清理过期会话及其注册文件。
         """
+        passes = 0
         while True:
             await asyncio.sleep(60)
+            passes += 1
+            if passes % 60 == 0:
+                # Hourly: drop finished backend task data past its retention.
+                await asyncio.to_thread(purge_expired_backend_task_data)
             expired_sids, registry_cleanup_sids, expired_files = _run_cleanup_pass()
             if expired_sids:
                 log.info(
@@ -523,6 +548,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # --- Shutdown ---
     cleanup_task.cancel()
     await cancel_material_sync_auto_refresh_tasks(material_sync_refresh_tasks)
+    # Module backends end with their unfinished tasks; Job Objects (Windows)
+    # and the control-pipe EOF also cover abrupt termination of this process.
+    await asyncio.to_thread(shutdown_backend_runtimes)
     worker_pool.shutdown(wait=True)
     log.info("Worker pool shutdown complete", extra={"event": "worker_pool_shutdown"})
 
@@ -686,6 +714,7 @@ def create_app() -> FastAPI:
     app.include_router(system_router)
     app.include_router(vectorizer_router)
     app.include_router(workshop_router)
+    app.include_router(workshop_backend_router)
 
     @app.get("/api/files/{file_id}")
     def serve_file(

@@ -24,6 +24,7 @@ from api.routers.single_stage import router as single_stage_router
 from api.routers.system import router as system_router
 from api.routers.vectorizer import router as vectorizer_router
 from api.routers.workshop import router as workshop_router
+from api.routers.workshop_backend import router as workshop_backend_router
 
 __all__ = [
     "converter_router",
@@ -42,4 +43,5 @@ __all__ = [
     "system_router",
     "vectorizer_router",
     "workshop_router",
+    "workshop_backend_router",
 ]

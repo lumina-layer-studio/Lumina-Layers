@@ -28,6 +28,7 @@ from .package_validator import (
 InstallSource = Literal["registry", "github", "local", "seed"]
 AfterExtract = Callable[[InspectedWorkshopPackage, Path], None]
 DirectoryReplace = Callable[[Path, Path], None]
+VersionInUse = Callable[[str, str], bool]
 _MODULE_LOCKS_GUARD = threading.Lock()
 _MODULE_LOCKS: dict[tuple[str, str], threading.RLock] = {}
 
@@ -37,6 +38,10 @@ def _noop_after_extract(
     _staging_path: Path,
 ) -> None:
     return None
+
+
+def _version_never_in_use(_module_id: str, _version: str) -> bool:
+    return False
 
 
 def _canonical_versions(values: set[str]) -> tuple[str, ...]:
@@ -64,6 +69,7 @@ class WorkshopInstaller:
         data_dir: str | Path,
         after_extract: AfterExtract | None = None,
         directory_replace: DirectoryReplace = os.replace,
+        version_in_use: VersionInUse | None = None,
     ) -> None:
         self.data_dir = Path(data_dir).expanduser().resolve()
         self.modules_dir = self.data_dir / "modules"
@@ -80,6 +86,21 @@ class WorkshopInstaller:
         self._store = InstallStateStore(self.state_path)
         self._after_extract = after_extract or _noop_after_extract
         self._directory_replace = directory_replace
+        # Backend tasks may still need a version that rollback retention
+        # would prune; such versions stay installed until they are released.
+        self._version_in_use = version_in_use or _version_never_in_use
+
+    def _busy_versions(
+        self,
+        module_id: str,
+        candidates: set[str],
+    ) -> set[str]:
+        return {
+            version
+            for version in candidates
+            if self.version_path(module_id, version).is_dir()
+            and self._version_in_use(module_id, version)
+        }
 
     def _validate_module_id(self, module_id: str) -> str:
         if MODULE_ID_PATTERN.fullmatch(module_id) is None:
@@ -201,6 +222,9 @@ class WorkshopInstaller:
             if value is not None
         }
         removed_versions = set(existing.versions) - protected
+        busy = self._busy_versions(existing.module_id, removed_versions)
+        protected |= busy
+        removed_versions -= busy
         state = _replace_state(
             existing,
             source=source,
@@ -368,6 +392,10 @@ class WorkshopInstaller:
                 for value in (version, previous)
                 if value is not None
             }
+            retained |= self._busy_versions(
+                module_id,
+                set(state.versions) - retained,
+            )
             replacement = _replace_state(
                 state,
                 enabled=True,
@@ -404,6 +432,10 @@ class WorkshopInstaller:
                 for value in (previous, state.active_version)
                 if value is not None
             }
+            retained |= self._busy_versions(
+                module_id,
+                set(state.versions) - retained,
+            )
             replacement = _replace_state(
                 state,
                 enabled=True,
@@ -440,6 +472,10 @@ class WorkshopInstaller:
                 )
                 if value is not None
             }
+            retained |= self._busy_versions(
+                module_id,
+                set(state.versions) - retained,
+            )
             replacement = _replace_state(
                 state,
                 candidate_version=None,
@@ -450,6 +486,43 @@ class WorkshopInstaller:
                 self._remove_tree(
                     self.version_path(module_id, candidate)
                 )
+            return replacement
+
+    def prune_retired_versions(
+        self,
+        module_id: str,
+    ) -> InstalledModuleState | None:
+        """Remove kept-for-task versions once no backend task needs them.
+
+        删除因后端任务仍在使用而暂留、现已无人使用的版本。
+        """
+
+        module_id = self._validate_module_id(module_id)
+        with self._lock_for(module_id):
+            state = self._store.get(module_id)
+            if state is None:
+                return None
+            keep = {
+                value
+                for value in (
+                    state.active_version,
+                    state.previous_version,
+                    state.candidate_version,
+                )
+                if value is not None
+            }
+            extra = set(state.versions) - keep
+            busy = self._busy_versions(module_id, extra)
+            removable = extra - busy
+            if not removable:
+                return state
+            replacement = _replace_state(
+                state,
+                versions=_canonical_versions(keep | busy),
+            )
+            self._store.upsert(replacement)
+            for version in removable:
+                self._remove_tree(self.version_path(module_id, version))
             return replacement
 
     def set_enabled(

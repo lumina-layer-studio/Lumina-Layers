@@ -10,10 +10,7 @@ import { createRandomId } from "../../utils/randomId";
 import { registerWorkshopProject, workshopProjectChanged } from "../../project/workshopRuntime";
 import { WorkshopProjectChannel } from "./projectChannel";
 import {
-  WORKSHOP_API_VERSION,
-  WORKSHOP_RPC_EVENT_NAMES,
   type WorkshopPermissionName,
-  type WorkshopRpcEventName,
   type WorkshopUiState,
 } from "../contracts";
 import {
@@ -21,6 +18,7 @@ import {
   desktopModuleUrl,
   injectWorkshopRuntimeCsp,
   isWorkshopApiCompatible,
+  negotiateReady,
   WORKSHOP_HANDSHAKE_TIMEOUT_MS,
   type WorkshopApiRange,
   type WorkshopInstallSource,
@@ -50,9 +48,13 @@ export interface WorkshopFrameModule {
   candidate: boolean;
   previousVersion: string | null;
   consecutiveStartFailures: number;
+  /** The exact version declares a host-managed backend (manifest v2). */
+  hasBackend?: boolean;
   projectSnapshotProtocol?: number | null;
   projectSnapshotSchemas?: readonly string[];
 }
+
+const BACKEND_PRESENCE_INTERVAL_MS = 30_000;
 
 export interface WorkshopFrameChannel {
   port1: WorkshopMessagePort;
@@ -86,6 +88,8 @@ export interface WorkshopFrameProps {
     moduleId: string,
     moduleVersion: string,
   ) => void | Promise<void>;
+  /** Heartbeat while a backend module's UI is open (extends idle time). */
+  onBackendPresence?: (moduleId: string) => void | Promise<void>;
 }
 
 type RuntimePhase =
@@ -146,39 +150,6 @@ async function defaultLoadBrowserRuntime(
   return response.text();
 }
 
-function readyEvents(
-  value: unknown,
-  moduleId: string,
-  moduleVersion: string,
-): ReadonlySet<WorkshopRpcEventName> | null {
-  if (
-    typeof value !== "object" ||
-    value === null ||
-    Array.isArray(value)
-  ) {
-    return null;
-  }
-  const message = value as Record<string, unknown>;
-  if (
-    message.type !== "lumina.workshop.ready" ||
-    message.moduleId !== moduleId ||
-    message.moduleVersion !== moduleVersion ||
-    message.apiVersion !== WORKSHOP_API_VERSION
-  ) {
-    return null;
-  }
-  if (!Array.isArray(message.events)) {
-    return new Set();
-  }
-  const knownEvents = new Set<string>(WORKSHOP_RPC_EVENT_NAMES);
-  return new Set(
-    message.events.filter(
-      (event): event is WorkshopRpcEventName =>
-        typeof event === "string" && knownEvents.has(event),
-    ),
-  );
-}
-
 function progressValue(value: unknown): RuntimeProgress | null {
   if (value === null) {
     return null;
@@ -206,6 +177,7 @@ export function WorkshopFrame({
   onStartSuccess,
   onStartFailure,
   disableVersion,
+  onBackendPresence,
 }: WorkshopFrameProps) {
   const { t } = useI18n();
   const iframeRef = useRef<HTMLIFrameElement>(null);
@@ -451,13 +423,36 @@ export function WorkshopFrame({
     runtimeDocument,
   ]);
 
+  const hasBackend = module.hasBackend === true;
+  const presenceRef = useRef(onBackendPresence);
+  useEffect(() => {
+    presenceRef.current = onBackendPresence;
+  }, [onBackendPresence]);
+
+  useEffect(() => {
+    // Presence only extends the idle window; leaving stops the heartbeat
+    // but never cancels submitted tasks.
+    if (!hasBackend || phase !== "ready") {
+      return;
+    }
+    const beat = () => {
+      void Promise.resolve(presenceRef.current?.(runtimeModuleId)).catch(
+        () => undefined,
+      );
+    };
+    beat();
+    const timer = setInterval(beat, BACKEND_PRESENCE_INTERVAL_MS);
+    return () => clearInterval(timer);
+  }, [hasBackend, phase, runtimeModuleId]);
+
   useEffect(() => {
     const onMessage = (event: MessageEvent) => {
-      const supportedEvents = readyEvents(
+      const handshake = negotiateReady(
         event.data,
         runtimeModuleId,
         runtimeModuleVersion,
       );
+      const supportedEvents = handshake?.events ?? null;
       // Runtimes post ready once and Chromium can deliver it before the
       // frame's load event, so trust the current frame window, not load order.
       const frameWindow = iframeRef.current?.contentWindow ?? null;
@@ -554,7 +549,10 @@ export function WorkshopFrame({
             ) as WorkshopPermissionName[],
           ),
           handlers: runtimeHandlers,
-          supportedEvents,
+          supportedEvents: supportedEvents ?? undefined,
+          // Backend RPC needs both a declared backend and the module's
+          // request in the handshake; the API re-checks consent per call.
+          backendEnabled: hasBackend && handshake?.backendRequested === true,
           projectChannel,
         });
         channel = createChannel();
@@ -586,6 +584,7 @@ export function WorkshopFrame({
     createChannel,
     failStartup,
     handlers,
+    hasBackend,
     onStartSuccess,
     runtimeApiMaxExclusive,
     runtimeApiMin,

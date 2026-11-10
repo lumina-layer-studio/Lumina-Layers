@@ -8745,8 +8745,8 @@ export const translations: Record<string, Record<"zh" | "en", string>> = {
     en: "Uninstall module",
   },
   "workshop.manager.uninstallDescription": {
-    zh: "默认只删除模块代码并保留本地工程。删除工程需要单独确认。",
-    en: "By default, only module code is removed and local projects are retained. Deleting projects requires separate confirmation.",
+    zh: "卸载会删除这个模块，本地工程默认保留。",
+    en: "Uninstalling removes this module. Its local projects are kept by default.",
   },
   "workshop.manager.deleteProjects": {
     zh: "同时删除本地工程",
@@ -8767,6 +8767,418 @@ export const translations: Record<string, Record<"zh" | "en", string>> = {
   "workshop.manager.license": {
     zh: "许可证",
     en: "License",
+  },
+  "workshop.manager.view.storage": {
+    zh: "存储",
+    en: "Storage",
+  },
+  "workshop.manager.deleteTaskData": {
+    zh: "同时删除原图副本和处理结果",
+    en: "Also delete source-image copies and results",
+  },
+  "workshop.manager.retainModels": {
+    zh: "保留已下载的模型，重装时直接复用",
+    en: "Keep downloaded models to reuse if you reinstall",
+  },
+  "workshop.manager.uninstallBackendNote": {
+    zh: "后端的运行环境会一并删除，其他模块仍在用的部分除外。保留的原图副本和处理结果会在任务完成 14 天后自动删除。",
+    en: "The backend's environment is removed too, except parts other modules still use. If you keep source-image copies and results, they're deleted automatically 14 days after their task finished.",
+  },
+  "workshop.backend.setupTitle": {
+    zh: "运行本机后端",
+    en: "Run a local backend",
+  },
+  "workshop.backend.setupIntro": {
+    zh: "{name} 需要在这台电脑上运行后端程序。Lumina 会先下载所需组件，之后后端只在有任务时启动，空闲后自动停止。",
+    en: "{name} needs to run a backend program on this computer. Lumina downloads what it needs first. After that, the backend starts only when there's a task and stops when idle.",
+  },
+  "workshop.backend.review.official": {
+    zh: "官方模块：已与创意工坊目录核对。",
+    en: "Official module: verified against the Workshop catalog.",
+  },
+  "workshop.backend.review.reviewed": {
+    zh: "社区模块：此版本已通过审核。",
+    en: "Community module: this version has been reviewed.",
+  },
+  "workshop.backend.review.unreviewed": {
+    zh: "未审核：此版本没有审核记录。",
+    en: "Unreviewed: this version has no review record.",
+  },
+  "workshop.backend.capabilities": {
+    zh: "模块声明需要",
+    en: "The module says it needs",
+  },
+  "workshop.backend.noCapabilities": {
+    zh: "模块声明不需要联网、启动其他程序或访问任务文件夹以外的文件。",
+    en: "The module says it doesn't need network access, other programs, or files outside its task folder.",
+  },
+  "workshop.backend.capability.network": {
+    zh: "联网",
+    en: "Network access",
+  },
+  "workshop.backend.capability.subprocess": {
+    zh: "启动其他程序",
+    en: "Running other programs",
+  },
+  "workshop.backend.capability.external-files": {
+    zh: "访问任务文件夹以外的文件",
+    en: "Files outside its task folder",
+  },
+  "workshop.backend.declarationNotice": {
+    zh: "后端在本机运行，权限与你的账户相同。",
+    en: "The backend runs on this computer with the same permissions as your account.",
+  },
+  "workshop.backend.footprint": {
+    zh: "下载与磁盘占用",
+    en: "Download and disk space",
+  },
+  "workshop.backend.newDownload": {
+    zh: "需要下载约 {bytes}",
+    en: "About {bytes} to download",
+  },
+  "workshop.backend.environmentReused": {
+    zh: "本机已有相同的运行环境，直接复用，不用再下载运行库。",
+    en: "The same environment is already on this computer and will be reused; no libraries need downloading.",
+  },
+  "workshop.backend.dependencies": {
+    zh: "运行库：{packages} 个，其中 {shared} 个本机已有；需下载约 {bytes}",
+    en: "Libraries: {packages}, {shared} already on this computer; about {bytes} to download",
+  },
+  "workshop.backend.unknownSizes": {
+    zh: "{count} 个运行库没有标明大小，安装后会显示实际占用。",
+    en: "Libraries without a listed size: {count}. Actual disk use is shown after installing.",
+  },
+  "workshop.backend.interpreter": {
+    zh: "需要下载 Python {version}（各模块共用，占用约 {bytes}）",
+    en: "Python {version} will be downloaded (shared by all modules, about {bytes} on disk)",
+  },
+  "workshop.backend.model": {
+    zh: "模型 {file}（{bytes}，许可：{license}）",
+    en: "Model {file} ({bytes}, license: {license})",
+  },
+  "workshop.backend.shared": {
+    zh: "已在本机",
+    en: "Already on this computer",
+  },
+  "workshop.backend.variantsAvailable": {
+    zh: "可选加速（{names}）开启后才下载；不开启时用 CPU 运行。",
+    en: "Optional acceleration ({names}) downloads only if you turn it on; otherwise the backend runs on the CPU.",
+  },
+  "workshop.backend.blocked": {
+    zh: "此版本已被创意工坊目录阻止，后端无法启动。你的数据会保留。",
+    en: "The Workshop catalog has blocked this version, so its backend can't start. Your data is kept.",
+  },
+  "workshop.backend.platformUnsupported": {
+    zh: "这个模块的后端不支持当前系统。",
+    en: "This module's backend doesn't support this system.",
+  },
+  "workshop.backend.toolUnavailable": {
+    zh: "当前 Lumina 缺少安装后端所需的工具，无法安装后端。",
+    en: "This copy of Lumina is missing the tool needed to install backends.",
+  },
+  "workshop.backend.unreviewedWarning": {
+    zh: "这段代码未经审核，是否安全取决于发布者。",
+    en: "This code hasn't been reviewed, so whether it's safe depends on its publisher.",
+  },
+  "workshop.backend.acknowledgeUnreviewed": {
+    zh: "我信任发布者，允许运行未经审核的代码",
+    en: "I trust the publisher and allow this unreviewed code to run",
+  },
+  "workshop.backend.authorizeAndPrepare": {
+    zh: "允许并安装",
+    en: "Allow and install",
+  },
+  "workshop.backend.prepare": {
+    zh: "安装",
+    en: "Install",
+  },
+  "workshop.backend.preparing": {
+    zh: "正在安装后端",
+    en: "Installing the backend",
+  },
+  "workshop.backend.phase.interpreter": {
+    zh: "准备 Python",
+    en: "Setting up Python",
+  },
+  "workshop.backend.phase.environment": {
+    zh: "安装运行库",
+    en: "Installing libraries",
+  },
+  "workshop.backend.phase.models": {
+    zh: "下载模型",
+    en: "Downloading models",
+  },
+  "workshop.backend.phase.self-check": {
+    zh: "检查能否正常运行",
+    en: "Checking that it runs",
+  },
+  "workshop.backend.cancelPreparation": {
+    zh: "取消安装",
+    en: "Cancel installation",
+  },
+  "workshop.backend.prepareFailed": {
+    zh: "后端安装失败。错误代码：{code}",
+    en: "Backend installation failed. Error code: {code}",
+  },
+  "workshop.backend.statusUnavailable": {
+    zh: "暂时无法获取后端状态。",
+    en: "Backend status isn't available right now.",
+  },
+  "workshop.backend.state.unprepared": {
+    zh: "后端未安装",
+    en: "Backend not installed",
+  },
+  "workshop.backend.state.preparing": {
+    zh: "后端安装中",
+    en: "Installing backend",
+  },
+  "workshop.backend.state.prepareFailed": {
+    zh: "后端安装失败",
+    en: "Backend installation failed",
+  },
+  "workshop.backend.state.authorizationRequired": {
+    zh: "需要你重新允许后端运行",
+    en: "Backend needs your approval again",
+  },
+  "workshop.backend.state.stopped": {
+    zh: "后端已就绪，用到时自动启动",
+    en: "Backend ready; starts when needed",
+  },
+  "workshop.backend.state.starting": {
+    zh: "后端正在启动",
+    en: "Backend starting",
+  },
+  "workshop.backend.state.ready": {
+    zh: "后端空闲，稍后自动停止",
+    en: "Backend idle; stops automatically after a while",
+  },
+  "workshop.backend.state.busy": {
+    zh: "后端正在处理任务，停止会取消任务",
+    en: "Backend running a task; stopping cancels it",
+  },
+  "workshop.backend.state.stopping": {
+    zh: "后端正在停止",
+    en: "Backend stopping",
+  },
+  "workshop.backend.state.failed": {
+    zh: "后端启动失败",
+    en: "Backend failed to start",
+  },
+  "workshop.backend.prepareAction": {
+    zh: "安装后端",
+    en: "Set up backend",
+  },
+  "workshop.backend.stop": {
+    zh: "停止后端",
+    en: "Stop backend",
+  },
+  "workshop.backend.footprintMeasured": {
+    zh: "磁盘占用：新增 {new}，复用 {shared}",
+    en: "Disk use: {new} new, {shared} reused",
+  },
+  "workshop.backend.acceleration": {
+    zh: "加速",
+    en: "Acceleration",
+  },
+  "workshop.backend.cpu": {
+    zh: "仅 CPU",
+    en: "CPU only",
+  },
+  "workshop.backend.variantFailed": {
+    zh: "加速无法启用，已改用 CPU。",
+    en: "Acceleration couldn't start; using the CPU instead.",
+  },
+  "workshop.backend.stopFailed": {
+    zh: "后端未停止：{reason}",
+    en: "Backend didn't stop: {reason}",
+  },
+  "workshop.backend.accelerationFailed": {
+    zh: "加速设置未更改：{reason}",
+    en: "Acceleration wasn't changed: {reason}",
+  },
+  "workshop.backend.cancelFailed": {
+    zh: "未能取消，安装仍在继续：{reason}",
+    en: "Couldn't cancel; installation is still running: {reason}",
+  },
+  "workshop.backend.statusStale": {
+    zh: "后端状态未能刷新，可能不是最新的。",
+    en: "Couldn't refresh the backend status; it may be out of date.",
+  },
+  "workshop.backend.error.authorization": {
+    zh: "需要你重新允许后端运行。点击“安装后端”，确认后再试。",
+    en: "The backend needs your approval again. Choose “Set up backend”, confirm, then try again.",
+  },
+  "workshop.backend.error.taskActive": {
+    zh: "还有任务在运行。等任务完成或停止后端后再试。",
+    en: "A task is still running. Wait for it to finish or stop the backend, then try again.",
+  },
+  "workshop.backend.error.conflict": {
+    zh: "后端状态已变化，请查看当前状态后再试。",
+    en: "The backend's state has changed. Check it, then try again.",
+  },
+  "workshop.backend.error.gone": {
+    zh: "该项已不存在，可能已被删除或卸载。",
+    en: "This item no longer exists; it may have been deleted or uninstalled.",
+  },
+  "workshop.backend.error.network": {
+    zh: "Lumina 没有响应。请稍后重试；如果一直这样，请重启 Lumina。",
+    en: "Lumina didn't respond. Try again in a moment, or restart Lumina if this keeps happening.",
+  },
+  "workshop.backend.error.generic": {
+    zh: "操作未完成。请重试；如果问题持续，请提交反馈。",
+    en: "The action didn't complete. Try again, or submit feedback if it keeps happening.",
+  },
+  "workshop.report.title": {
+    zh: "卸载结果",
+    en: "Uninstall results",
+  },
+  "workshop.report.cleared": {
+    zh: "已删除",
+    en: "Deleted",
+  },
+  "workshop.report.shared": {
+    zh: "其他模块仍在使用",
+    en: "Still used by other modules",
+  },
+  "workshop.report.retained": {
+    zh: "按你的选择保留",
+    en: "Kept as you chose",
+  },
+  "workshop.report.failed": {
+    zh: "未能删除",
+    en: "Couldn't delete",
+  },
+  "workshop.report.none": {
+    zh: "无",
+    en: "None",
+  },
+  "workshop.report.users": {
+    zh: "使用者：{users}",
+    en: "Used by: {users}",
+  },
+  "workshop.report.willRetry": {
+    zh: "正被占用，稍后自动重试",
+    en: "In use; Lumina will retry later",
+  },
+  "workshop.report.scope": {
+    zh: "这里只列出 Lumina 管理的文件。模块写到其他位置的文件不在其中，也没有被删除。",
+    en: "This covers only files Lumina manages. Anything the module saved elsewhere isn't listed and wasn't deleted.",
+  },
+  "workshop.report.kind.module-code": {
+    zh: "模块代码",
+    en: "Module code",
+  },
+  "workshop.report.kind.projects": {
+    zh: "工程",
+    en: "Projects",
+  },
+  "workshop.report.kind.module-cache": {
+    zh: "缓存和临时文件",
+    en: "Cache and temporary files",
+  },
+  "workshop.report.kind.task-data": {
+    zh: "原图副本和处理结果",
+    en: "Source-image copies and results",
+  },
+  "workshop.report.kind.environments": {
+    zh: "运行环境",
+    en: "Environments",
+  },
+  "workshop.report.kind.environment": {
+    zh: "运行环境",
+    en: "Environment",
+  },
+  "workshop.report.kind.shared-files": {
+    zh: "共享文件",
+    en: "Shared files",
+  },
+  "workshop.report.kind.interpreters": {
+    zh: "Python",
+    en: "Python",
+  },
+  "workshop.report.kind.model": {
+    zh: "模型",
+    en: "Model",
+  },
+  "workshop.report.kind.model-files": {
+    zh: "模型副本",
+    en: "Model copies",
+  },
+  "workshop.report.kind.file": {
+    zh: "文件",
+    en: "File",
+  },
+  "workshop.storage.title": {
+    zh: "后端存储",
+    en: "Backend storage",
+  },
+  "workshop.storage.description": {
+    zh: "查看模块后端占用的空间，删除不再需要的模型和处理结果。",
+    en: "See how much space module backends use, and delete kept models or task results you no longer need.",
+  },
+  "workshop.storage.loadError": {
+    zh: "无法读取后端存储信息。",
+    en: "Couldn't load backend storage.",
+  },
+  "workshop.storage.refreshError": {
+    zh: "存储信息未能刷新，可能不是最新的。",
+    en: "Couldn't refresh storage; it may be out of date.",
+  },
+  "workshop.storage.deleteFailed": {
+    zh: "未删除：{reason}",
+    en: "Not deleted: {reason}",
+  },
+  "workshop.storage.modelCopies": {
+    zh: "模型副本：{count} 个，{bytes}（此磁盘无法共用同一份文件，每个版本各存一份）",
+    en: "Model copies: {count}, {bytes} (this drive can't share one file between versions, so each keeps its own copy)",
+  },
+  "workshop.storage.empty": {
+    zh: "模块后端还没有占用空间。",
+    en: "Module backends aren't using any space yet.",
+  },
+  "workshop.storage.environments": {
+    zh: "运行环境",
+    en: "Environments",
+  },
+  "workshop.storage.environmentRow": {
+    zh: "Python {python} · {packages} 个运行库 · 单独占用 {bytes} · 使用者：{users}",
+    en: "Python {python} · {packages} libraries · {bytes} not shared · used by: {users}",
+  },
+  "workshop.storage.noUsers": {
+    zh: "无，之后会自动删除",
+    en: "none; will be removed automatically",
+  },
+  "workshop.storage.sharedStore": {
+    zh: "共享文件：{count} 个，{bytes}",
+    en: "Shared files: {count}, {bytes}",
+  },
+  "workshop.storage.interpreters": {
+    zh: "Python 版本：{versions}",
+    en: "Python versions: {versions}",
+  },
+  "workshop.storage.retainedModels": {
+    zh: "卸载时保留的模型",
+    en: "Models kept after uninstalling",
+  },
+  "workshop.storage.delete": {
+    zh: "删除",
+    en: "Delete",
+  },
+  "workshop.storage.taskData": {
+    zh: "原图副本和处理结果",
+    en: "Source-image copies and results",
+  },
+  "workshop.storage.taskRow": {
+    zh: "{module}：{count} 个任务，{bytes}",
+    en: "{module}: {count} tasks, {bytes}",
+  },
+  "workshop.storage.retention": {
+    zh: "原图副本和处理结果会在任务完成 14 天后自动删除，也可以现在手动删除。",
+    en: "Copies and results are deleted automatically 14 days after their task finishes. You can also delete them now.",
+  },
+  "workshop.storage.pending": {
+    zh: "{count} 个文件正被占用，稍后或下次启动时会再尝试删除。",
+    en: "Files in use and not yet deleted: {count}. Lumina will retry later or at next startup.",
   },
   recipe_import_schema_newer: {
     zh: "配方版本较新，部分参数可能无法恢复",

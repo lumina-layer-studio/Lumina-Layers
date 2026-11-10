@@ -156,14 +156,10 @@ jobs:
 
       - name: Run backend lifecycle tests with real processes
         # Windows ends a backend tree through a job object; POSIX walks the
-        # process tree, which Windows runs never exercise. The retired-version
-        # pruning test is deselected until its Linux race is fixed: release
-        # can run before the worker frees the finished task.
+        # process tree, which Windows runs never exercise.
         run: >-
           python -m pytest
           tests/test_workshop_backend_supervisor_unit.py
           tests/test_workshop_backend_store_unit.py
           tests/test_workshop_backend_runtime_integration.py
-          --deselect
-          tests/test_workshop_backend_runtime_integration.py::test_version_needed_by_running_task_survives_pruning
           -q

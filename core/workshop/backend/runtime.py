@@ -314,6 +314,7 @@ class WorkshopBackendRuntime:
                     on_variant_failed=lambda version, variant, owner=module_id: self._variant_failed(
                         owner, version, variant
                     ),
+                    on_process_released=lambda version, owner=module_id: self._release_if_retired(owner, version),
                     process_factory=self._process_factory,
                 )
                 self._supervisors[module_id] = supervisor
@@ -1105,18 +1106,28 @@ class WorkshopBackendRuntime:
                 "error_code": record.error.code if record.error else None,
             },
         )
+        self._release_if_retired(record.module_id, record.module_version, finished_task=record.task_id)
+
+    def _release_if_retired(self, module_id: str, version: str, *, finished_task: str | None = None) -> None:
+        """Finish retiring ``version`` in the background if no slot keeps it.
+
+        Runs when a task of the version ends and when a process of the version
+        is released: either may be the moment its last user goes away. Callers
+        may hold the supervisor's lock, so this takes no runtime lock.
+        """
+
         try:
-            state = self._installer().get(record.module_id)
+            state = self._installer().get(module_id)
         except WorkshopInstallError:
             return
-        if state is not None and record.module_version not in {
+        if state is not None and version not in {
             state.active_version,
             state.previous_version,
             state.candidate_version,
         }:
-            threading.Thread(target=self._release_retired, args=(record.module_id,), daemon=True).start()
+            threading.Thread(target=self._release_retired, args=(module_id, finished_task), daemon=True).start()
 
-    def _release_retired(self, module_id: str) -> None:
+    def _release_retired(self, module_id: str, finished_task: str | None = None) -> None:
         try:
             installer = self._installer()
             state = installer.get(module_id)
@@ -1130,7 +1141,7 @@ class WorkshopBackendRuntime:
             with self._lock:
                 supervisor = self._supervisors.get(module_id)
             if supervisor is not None:
-                supervisor.release_idle_version(keep)
+                supervisor.release_idle_version(keep, finished_task)
             installer.prune_retired_versions(module_id)
         except (WorkshopInstallError, OSError):
             return

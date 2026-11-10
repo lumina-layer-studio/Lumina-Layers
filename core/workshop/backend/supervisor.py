@@ -90,10 +90,14 @@ class ModuleBackendSupervisor:
         start_timeout_seconds: float = 120.0,
         on_task_finished: Callable[[TaskRecord], None] | None = None,
         on_variant_failed: VariantFailure | None = None,
+        on_process_released: Callable[[str], None] | None = None,
         process_factory: Callable[..., BackendProcess] = BackendProcess,
     ) -> None:
         self.module_id = module_id
         self._on_variant_failed = on_variant_failed
+        # Told the version of every released process: the version may now be
+        # unused (for example after switching to a newer version's task).
+        self._on_process_released = on_process_released
         self._tasks = tasks
         self._resolve_target = resolve_target
         self._process_record_path = process_record_path
@@ -247,12 +251,16 @@ class ModuleBackendSupervisor:
                 "last_failure": self._last_failure,
             }
 
-    def release_idle_version(self, keep: set[str]) -> bool:
-        """Stop an idle process whose version is no longer retained."""
+    def release_idle_version(self, keep: set[str], finished_task: str | None = None) -> bool:
+        """Stop an idle process whose version is no longer retained.
+
+        ``finished_task`` has already ended; the worker may not have let go of
+        it yet, which must not make the process look busy.
+        """
 
         with self._condition:
             target = self._process_target
-            idle = self._current_task is None and not self._queue
+            idle = self._current_task in (None, finished_task) and not self._queue
             stale = target is not None and target[0] not in keep and not self._exited
         if idle and stale:
             self._terminate_process()
@@ -645,8 +653,10 @@ class ModuleBackendSupervisor:
         if process is None:
             return
         process.shutdown(wait_seconds=0.5, grace_seconds=1.0)
+        released: str | None = None
         with self._condition:
             if self._process is process:
+                released = self._process_target[0] if self._process_target else None
                 self._process = None
                 self._process_target = None
                 self._ready = False
@@ -655,6 +665,20 @@ class ModuleBackendSupervisor:
                     self._state = "stopped"
             self._condition.notify_all()
         self._remove_process_record()
+        if released is not None and self._on_process_released is not None:
+            try:
+                self._on_process_released(released)
+            except Exception as exc:  # noqa: BLE001 - observer must not break stops
+                log.warning(
+                    "Workshop backend release observer failed",
+                    extra={
+                        "event": "workshop_backend_release_observer_failed",
+                        "module_id": self.module_id,
+                        "version": released,
+                        "error_type": type(exc).__name__,
+                        "error_message": str(exc),
+                    },
+                )
 
     def _send(self, message: dict[str, Any]) -> None:
         with self._condition:

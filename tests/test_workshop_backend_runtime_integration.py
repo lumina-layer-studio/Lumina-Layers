@@ -14,11 +14,13 @@ import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import psutil
 import pytest
 
+from core.workshop.backend import runtime as runtime_module
 from core.workshop.backend import store as store_module
 from core.workshop.backend.locks import WheelSourcePolicy
 from core.workshop.backend.review import ReviewContext
@@ -1114,6 +1116,52 @@ def test_version_needed_by_running_task_survives_pruning(harness: Harness) -> No
         lambda: "1.0.0" not in harness.installer().get("fixture.alpha").versions and not retired.exists(),
         timeout=30,
     )
+
+
+class _CleanupFinishesFirst(threading.Thread):
+    """Run a runtime cleanup thread to completion before its starter continues.
+
+    A legal schedule: the worker reporting a finished task may be preempted
+    before it lets go of that task or starts the next one.
+    """
+
+    def start(self) -> None:
+        super().start()
+        self.join(timeout=120)
+
+
+@pytest.mark.parametrize("next_task", [False, True], ids=["nothing-queued", "new-version-queued"])
+def test_retired_version_is_released_whatever_runs_first(
+    harness: Harness,
+    monkeypatch: pytest.MonkeyPatch,
+    next_task: bool,
+) -> None:
+    lock = lock_text([harness.wheels["shared"]])
+    harness.install("fixture.alpha", "1.0.0", lock)
+    harness.prepare("fixture.alpha", "1.0.0")
+    running = harness.runtime.submit("fixture.alpha", "1.0.0", operation="slow", params={"steps": 2000}, inputs=[], idempotency_key=None)
+    wait_until(lambda: harness.runtime.get_task("fixture.alpha", running.task_id).status == "running")
+    for version in ("1.1.0", "1.2.0"):
+        harness.install("fixture.alpha", version, lock)
+        harness.prepare("fixture.alpha", version)
+    queued = (
+        harness.runtime.submit("fixture.alpha", "1.2.0", operation="echo", params={}, inputs=[], idempotency_key=None)
+        if next_task
+        else None
+    )
+    # Only threads the runtime starts (its cleanups) change; workers do not.
+    monkeypatch.setattr(runtime_module, "threading", SimpleNamespace(**{**vars(threading), "Thread": _CleanupFinishesFirst}))
+    harness.runtime.cancel_task("fixture.alpha", running.task_id)
+    wait_terminal(harness.runtime, "fixture.alpha", running.task_id)
+    retired = harness.installer().version_path("fixture.alpha", "1.0.0")
+    wait_until(
+        lambda: "1.0.0" not in harness.installer().get("fixture.alpha").versions and not retired.exists(),
+        timeout=30,
+    )
+    if queued is not None:
+        assert wait_terminal(harness.runtime, "fixture.alpha", queued.task_id).status == "succeeded"
+    # The retired version's process does not linger until the idle timeout.
+    assert harness.runtime.describe("fixture.alpha", "1.2.0")["runtime"]["version"] != "1.0.0"
 
 
 def test_startup_marks_interrupted_tasks_and_kills_leftover_backend(tmp_path: Path) -> None:

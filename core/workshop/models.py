@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 from datetime import datetime
 from pathlib import Path
@@ -16,7 +17,22 @@ from pydantic import (
     model_validator,
 )
 
-from .constants import ALLOWED_PERMISSION_NAMES, WORKSHOP_MANIFEST_VERSION
+from .constants import (
+    ALLOWED_PERMISSION_NAMES,
+    BACKEND_CAPABILITY_NAMES,
+    BACKEND_IDLE_TIMEOUT_MAX_SECONDS,
+    BACKEND_IDLE_TIMEOUT_MIN_SECONDS,
+    BACKEND_PACKAGE_PREFIX,
+    BACKEND_PLATFORMS,
+    BACKEND_PYTHON_VERSIONS,
+    MAX_BACKEND_CAPABILITIES,
+    MAX_BACKEND_MODEL_BYTES,
+    MAX_BACKEND_MODELS,
+    MAX_BACKEND_VARIANTS,
+    WORKSHOP_BACKEND_API_VERSION,
+    WORKSHOP_BACKEND_MANIFEST_VERSION,
+    WORKSHOP_MANIFEST_VERSION,
+)
 
 
 SEMVER_PATTERN = re.compile(
@@ -136,7 +152,7 @@ class WorkshopProjectSnapshots(StrictFrozenModel):
         return value
 
 
-class WorkshopManifestV1(StrictFrozenModel):
+class _WorkshopManifestBase(StrictFrozenModel):
     manifest_version: int = Field(alias="manifestVersion")
     id: str = Field(min_length=3, max_length=128)
     version: str
@@ -148,13 +164,6 @@ class WorkshopManifestV1(StrictFrozenModel):
     entrypoints: WorkshopEntrypoints
     permissions: tuple[WorkshopPermission, ...] = Field(max_length=32)
     project_snapshots: WorkshopProjectSnapshots | None = Field(default=None, alias="projectSnapshots")
-
-    @field_validator("manifest_version")
-    @classmethod
-    def manifest_version_is_supported(cls, value: int) -> int:
-        if value != WORKSHOP_MANIFEST_VERSION:
-            raise ValueError("unsupported manifest version")
-        return value
 
     @field_validator("id")
     @classmethod
@@ -177,13 +186,299 @@ class WorkshopManifestV1(StrictFrozenModel):
         return normalized
 
     @model_validator(mode="after")
-    def permissions_are_unique(self) -> "WorkshopManifestV1":
+    def permissions_are_unique(self) -> "_WorkshopManifestBase":
         names = [permission.name for permission in self.permissions]
         if len(names) != len(set(names)):
             raise ValueError("manifest contains duplicate permission entries")
         if self.project_snapshots and "project.storage" not in names:
             raise ValueError("project snapshots require project.storage permission")
         return self
+
+
+class WorkshopManifestV1(_WorkshopManifestBase):
+    """Frontend-only module manifest."""
+
+    @field_validator("manifest_version")
+    @classmethod
+    def manifest_version_is_supported(cls, value: int) -> int:
+        if value != WORKSHOP_MANIFEST_VERSION:
+            raise ValueError("unsupported manifest version")
+        return value
+
+
+_BACKEND_ID_PATTERN = re.compile(r"^[a-z][a-z0-9-]{0,31}$")
+_MODEL_ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9._-]{0,63}$")
+_SAFE_FILE_NAME_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
+_BACKEND_PATH_PATTERN = re.compile(
+    r"^backend/(?:[A-Za-z0-9_][A-Za-z0-9._-]{0,127}/){0,8}"
+    r"[A-Za-z0-9_][A-Za-z0-9._-]{0,127}$"
+)
+
+
+_PYLOCK_NAME_PATTERN = re.compile(r"^pylock(?:\.[A-Za-z0-9_-]+)?\.toml$")
+
+
+def _backend_path(value: str, *, suffix: str) -> str:
+    if (
+        not value.startswith(BACKEND_PACKAGE_PREFIX)
+        or _BACKEND_PATH_PATTERN.fullmatch(value) is None
+        or ".." in value.split("/")
+        or not value.endswith(suffix)
+    ):
+        raise ValueError(f"backend path must be backend/...{suffix}")
+    return value
+
+
+def _backend_lock_path(value: str) -> str:
+    _backend_path(value, suffix=".toml")
+    if _PYLOCK_NAME_PATTERN.fullmatch(value.rsplit("/", 1)[-1]) is None:
+        raise ValueError(
+            "backend lock must be named pylock.toml or pylock.<name>.toml"
+        )
+    return value
+
+
+def _https_url(value: str) -> str:
+    parsed = urlsplit(value)
+    if (
+        parsed.scheme != "https"
+        or not parsed.hostname
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.fragment
+    ):
+        raise ValueError("URL must be credential-free HTTPS")
+    return value
+
+
+def _unique(values: list[str], label: str) -> None:
+    if len(values) != len(set(values)):
+        raise ValueError(f"{label} must be unique")
+
+
+class BackendCapability(StrictFrozenModel):
+    """A declared, informational backend behavior shown before consent."""
+
+    name: str
+    reason: str = Field(max_length=500)
+
+    @field_validator("name")
+    @classmethod
+    def capability_is_known(cls, value: str) -> str:
+        if value not in BACKEND_CAPABILITY_NAMES:
+            raise ValueError(f"unknown backend capability: {value}")
+        return value
+
+    @field_validator("reason")
+    @classmethod
+    def capability_reason_is_not_blank(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("capability reason must not be blank")
+        return normalized
+
+
+class BackendModelFile(StrictFrozenModel):
+    """One hash-pinned model file downloaded into the host content store."""
+
+    id: str
+    file_name: str = Field(alias="fileName")
+    url: str = Field(max_length=2048)
+    sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    size_bytes: int = Field(alias="bytes", gt=0, le=MAX_BACKEND_MODEL_BYTES)
+    license: str = Field(min_length=1, max_length=200)
+
+    @field_validator("id")
+    @classmethod
+    def model_id_is_safe(cls, value: str) -> str:
+        if _MODEL_ID_PATTERN.fullmatch(value) is None:
+            raise ValueError("model id is invalid")
+        return value
+
+    @field_validator("file_name")
+    @classmethod
+    def file_name_is_one_safe_segment(cls, value: str) -> str:
+        if (
+            _SAFE_FILE_NAME_PATTERN.fullmatch(value) is None
+            or value.endswith(".")
+        ):
+            raise ValueError("model fileName must be one safe file name")
+        return value
+
+    @field_validator("url")
+    @classmethod
+    def model_url_is_https(cls, value: str) -> str:
+        return _https_url(value)
+
+
+class BackendVariant(StrictFrozenModel):
+    """An optional dependency variant, such as GPU acceleration."""
+
+    id: str
+    name: LocalizedText
+    description: LocalizedText
+    lock: str
+    platforms: tuple[str, ...] = Field(min_length=1, max_length=8)
+
+    @field_validator("id")
+    @classmethod
+    def variant_id_is_safe(cls, value: str) -> str:
+        if _BACKEND_ID_PATTERN.fullmatch(value) is None or value == "cpu":
+            raise ValueError("variant id is invalid or reserved")
+        return value
+
+    @field_validator("lock")
+    @classmethod
+    def variant_lock_is_backend_toml(cls, value: str) -> str:
+        return _backend_lock_path(value)
+
+    @field_validator("platforms")
+    @classmethod
+    def variant_platforms_are_known(
+        cls,
+        value: tuple[str, ...],
+    ) -> tuple[str, ...]:
+        if any(platform not in BACKEND_PLATFORMS for platform in value):
+            raise ValueError("variant declares an unknown platform")
+        _unique(list(value), "variant platforms")
+        return value
+
+
+class BackendDeclaration(StrictFrozenModel):
+    """Manifest v2 backend contract; the host never imports this code."""
+
+    entry: str
+    python: str
+    lock: str
+    platforms: tuple[str, ...] = Field(min_length=1, max_length=8)
+    capabilities: tuple[BackendCapability, ...] = Field(
+        default=(),
+        max_length=MAX_BACKEND_CAPABILITIES,
+    )
+    models: tuple[BackendModelFile, ...] = Field(
+        default=(),
+        max_length=MAX_BACKEND_MODELS,
+    )
+    variants: tuple[BackendVariant, ...] = Field(
+        default=(),
+        max_length=MAX_BACKEND_VARIANTS,
+    )
+    idle_timeout_seconds: int | None = Field(
+        default=None,
+        alias="idleTimeoutSeconds",
+        ge=BACKEND_IDLE_TIMEOUT_MIN_SECONDS,
+        le=BACKEND_IDLE_TIMEOUT_MAX_SECONDS,
+    )
+
+    @field_validator("entry")
+    @classmethod
+    def entry_is_backend_python(cls, value: str) -> str:
+        return _backend_path(value, suffix=".py")
+
+    @field_validator("lock")
+    @classmethod
+    def lock_is_backend_toml(cls, value: str) -> str:
+        return _backend_lock_path(value)
+
+    @field_validator("python")
+    @classmethod
+    def python_is_supported(cls, value: str) -> str:
+        if value not in BACKEND_PYTHON_VERSIONS:
+            raise ValueError("backend Python version is not supported")
+        return value
+
+    @field_validator("platforms")
+    @classmethod
+    def platforms_are_known(cls, value: tuple[str, ...]) -> tuple[str, ...]:
+        if any(platform not in BACKEND_PLATFORMS for platform in value):
+            raise ValueError("backend declares an unknown platform")
+        _unique(list(value), "backend platforms")
+        return value
+
+    @model_validator(mode="after")
+    def references_are_consistent(self) -> "BackendDeclaration":
+        _unique([item.name for item in self.capabilities], "capabilities")
+        _unique([item.id for item in self.models], "model ids")
+        _unique(
+            [item.file_name.casefold() for item in self.models],
+            "model file names",
+        )
+        _unique([item.id for item in self.variants], "variant ids")
+        locks = [self.lock, *(variant.lock for variant in self.variants)]
+        _unique(locks, "backend locks")
+        for variant in self.variants:
+            if not set(variant.platforms) <= set(self.platforms):
+                raise ValueError(
+                    "variant platforms must be backend platforms"
+                )
+        return self
+
+    def referenced_files(self) -> tuple[str, ...]:
+        """Return package files the declaration requires to exist."""
+
+        return tuple(
+            sorted(
+                {
+                    self.entry,
+                    self.lock,
+                    *(variant.lock for variant in self.variants),
+                }
+            )
+        )
+
+
+class WorkshopManifestV2(_WorkshopManifestBase):
+    """Module manifest with a host-managed backend declaration."""
+
+    backend: BackendDeclaration
+
+    @field_validator("manifest_version")
+    @classmethod
+    def manifest_version_is_backend(cls, value: int) -> int:
+        if value != WORKSHOP_BACKEND_MANIFEST_VERSION:
+            raise ValueError("unsupported manifest version")
+        return value
+
+    @model_validator(mode="after")
+    def backend_requires_backend_api(self) -> "WorkshopManifestV2":
+        # Older hosts filter Registry candidates by workshopApi.min, so a
+        # backend module must not claim compatibility with API 1.0.x hosts.
+        if compare_semver(
+            self.workshop_api.minimum,
+            WORKSHOP_BACKEND_API_VERSION,
+        ) < 0:
+            raise ValueError(
+                "backend modules require workshopApi.min >= "
+                f"{WORKSHOP_BACKEND_API_VERSION}"
+            )
+        return self
+
+
+WorkshopManifest = WorkshopManifestV1 | WorkshopManifestV2
+
+
+def parse_workshop_manifest(raw: dict[str, Any]) -> WorkshopManifest:
+    """Validate a manifest object against its declared closed schema.
+
+    按清单声明的版本，使用对应的封闭结构校验清单对象。
+    """
+
+    version = raw.get("manifestVersion")
+    if version == WORKSHOP_BACKEND_MANIFEST_VERSION:
+        return WorkshopManifestV2.model_validate(raw)
+    return WorkshopManifestV1.model_validate(raw)
+
+
+def parse_workshop_manifest_json(text: str) -> WorkshopManifest:
+    """Parse installed manifest JSON as v1 or v2.
+
+    将已安装的清单 JSON 解析为 v1 或 v2 结构。
+    """
+
+    raw = json.loads(text)
+    if not isinstance(raw, dict):
+        raise ValueError("manifest root must be an object")
+    return parse_workshop_manifest(raw)
 
 
 def semver_sort_key(
@@ -401,7 +696,7 @@ class RegistryRefreshResult(StrictFrozenModel):
 
 class InspectedWorkshopPackage(StrictFrozenModel):
     archive_path: Path
-    manifest: WorkshopManifestV1
+    manifest: WorkshopManifestV1 | WorkshopManifestV2
     entry_html: str
     compressed_bytes: int = Field(ge=0)
     unpacked_bytes: int = Field(ge=0)

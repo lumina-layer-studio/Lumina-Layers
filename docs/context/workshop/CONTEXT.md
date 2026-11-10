@@ -38,6 +38,11 @@ independent module repository
   is not a requirement for the SDK version bundled into an installed module.
 - The SDK owns manifest, permission, RPC, project, color-library, UI-state,
   handoff, and recipe contracts plus the bounded iframe client.
+- SDK `1.1.0` (source on the SDK repository's topic branch, **not released**)
+  adds manifest v2 backends, the `backend.tasks` handshake feature, and the
+  stdlib-only Python backend SDK `lumina-workshop-backend`. The host keeps its
+  exact SDK 1.0.1 pin and carries the backend RPC contract host-side until a
+  tagged 1.1.0 Release exists.
 - The public repository's protected `validate` and Release workflows are the
   only SDK publication authority.
 
@@ -76,8 +81,54 @@ restore keeps using the exact lock. Existing assets and digests are immutable.
   public SDK checksum and pnpm integrity to the signed Registry, module
   Release bytes, reviewed manifest, and desktop seed lock.
 
-Python never executes module code. Routes validate requests and translate
-domain errors; installed bytes remain under `LUMINA_WORKSHOP_DATA_DIR`.
+The Python *host* never imports module code. Routes validate requests and
+translate domain errors; installed bytes remain under `LUMINA_WORKSHOP_DATA_DIR`.
+
+### Module backends (Workshop API 1.1.0, manifest v2)
+
+A module may declare a backend: a Python entry under `backend/`, a wheels-only
+PEP 751 `pylock.toml`, optional hash-pinned models, and optional acceleration
+variants. The host runs it as a **local process with the user's permissions**
+(not an OS sandbox); declared capabilities only explain intent.
+
+- `core/workshop/backend/runtime.py`: per-data-directory coordinator
+  (consent, transactional preparation, tasks, stop/disable/uninstall,
+  reference-based reclamation, startup reconciliation, shutdown).
+- `locks.py` (strict lock subset, canonical digest, wheelhouse/mirror
+  rewriting), `tooling.py` (pinned uv with private cache/interpreter dirs,
+  managed or explicit interpreter), `environments.py` (environment key =
+  platform + Python minor + lock digest), `store.py` (SHA-256 content store;
+  an object goes when no link, logical reference, or in-flight pin keeps it,
+  and publish/link/collect decisions share one lock), `model_files.py` (models
+  stay while an installed version or the user's retention references them,
+  also where views are copies on drives without hard links), `review.py`
+  (signed `reviews-v1.json`),
+  `state.py` (`runtime/state.json`, separate from install-state v1),
+  `tasks.py`, `supervisor.py`, `process.py`, `win_job.py`, `protocol.py`.
+- `api/workshop_runtime_service.py` creates runtimes lazily per data dir and
+  installers whose hooks bind package identity and keep versions needed by
+  running tasks; `api/routers/workshop_backend.py` exposes backend status,
+  consent, preparation, tasks, outputs, stop/presence, acceleration, and the
+  storage overview behind `require_local_app_origin`.
+- Prototype finding: uv's private cache gives hard-link sharing, but
+  `uv cache prune` frees nothing referenced and `uv cache clean <name>` drops
+  every version of a name, so later installs duplicate surviving versions. The
+  host therefore keeps large files in `runtime/store/objects/<sha256>` and uses
+  the uv cache only as a download cache cleaned during GC.
+- GC runs while other modules prepare: a preparation leases its environments
+  and pins its models until it commits under the GC lock, and destructive
+  cleanup (staging, download cache, temporary downloads, interpreters) runs
+  only when no preparation works.
+- A deletion that fails because a file is in use is never replayed by path:
+  names are reused (content hashes, environment keys, versions), so every
+  pass derives garbage from current references again. Environment folders
+  left without a valid record are swept by GC or cleared by the next build of
+  that key; `runtime/state.json` `pending` only reports what is still waiting.
+- Frontend: `contracts.ts` (host 1.1.0 extension of the pinned SDK),
+  `runtime/capabilities.ts` (backend methods need a declared backend),
+  `payloadValidation.ts`, `handlers.ts` (frame close never cancels host
+  tasks), `WorkshopFrame.tsx` (handshake API ≤ host, `backend.tasks` feature,
+  presence heartbeat), `workshop/backend/*` dialogs and storage view.
 
 ### API
 
@@ -169,6 +220,17 @@ mode.
     matrices, image bytes, paths, tokens, and signatures.
 11. Image handoff is the only module-to-converter path and is revalidated by
     the host.
+12. A backend version runs only after consent bound to its exact package
+    SHA-256 and declaration digest; unreviewed code needs an explicit risk
+    confirmation; a Registry block refuses the next start.
+13. Installed, enabled, and running are separate. Tasks are host-owned: page
+    switches and backend stops never cancel them; cancel, disable, uninstall,
+    and exit end the module's process tree. Outputs stay readable afterwards.
+14. Uninstall keeps projects and task data by default and reclaims programs by
+    reference; retained user data never pins environments or interpreters.
+15. One module's lifecycle never breaks another's: cleanup triggered by a
+    preparation, uninstall, or setting change spares other modules' running
+    preparations, and a variant start failure marks only its own module.
 
 ## Glossary
 
@@ -200,11 +262,22 @@ PYTHONPATH=/private/tmp/lumina-workshop-python-deps \
   tests/test_workshop_api_unit.py \
   tests/test_workshop_seed_lifecycle_unit.py \
   tests/test_workshop_seed_startup_unit.py \
-  tests/test_workshop_release_chain_unit.py -v
+  tests/test_workshop_release_chain_unit.py \
+  tests/test_workshop_backend_package_unit.py \
+  tests/test_workshop_backend_review_unit.py \
+  tests/test_workshop_backend_store_unit.py \
+  tests/test_workshop_backend_supervisor_unit.py \
+  tests/test_workshop_backend_runtime_integration.py \
+  tests/test_workshop_backend_api_unit.py -v
+# Optional cross-repository check against the public Python SDK source:
+LUMINA_WORKSHOP_SDK_PYTHON_SRC=/path/to/Lumina-Workshop-SDK/python/src \
+  .venv/bin/python -m pytest tests/test_workshop_backend_public_sdk_integration.py
 .venv/bin/python scripts/run_vitest.py run \
   src/__tests__/workshop-rpc-host.test.ts \
   src/__tests__/workshop-runtime.test.tsx \
   src/__tests__/workshop-manager.test.tsx \
+  src/__tests__/workshop-backend-rpc.test.ts \
+  src/__tests__/workshop-backend-manager.test.tsx \
   src/__tests__/workshop-project-storage.test.ts \
   src/__tests__/workshop-handoff.test.ts \
   src/__tests__/recipe-import.test.ts \

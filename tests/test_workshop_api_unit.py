@@ -364,6 +364,9 @@ def test_installed_modules_include_public_version_manifests(
                 "/api/workshop/v1/modules/"
                 "fixture.hello/1.0.0/assets"
             ),
+            # Frontend-only modules stay manifest v1 without a backend.
+            "manifest_version": 1,
+            "backend": None,
         }
     ]
     assert str(installer.data_dir) not in response.text

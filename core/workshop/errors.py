@@ -36,3 +36,20 @@ class WorkshopInstallError(WorkshopError):
 
     创意工坊安装状态事务无法安全收敛时抛出。
     """
+
+
+class WorkshopBackendError(WorkshopError):
+    """Raised by the module backend runtime with a stable error code.
+
+    模块后端运行时抛出的错误，附带稳定的错误码。
+
+    Args:
+        code: Stable kebab-case code shown to modules and the manager UI.
+            提供给模块与管理界面的稳定短横线错误码。
+        message: Actionable description without secrets or private paths.
+            不含密钥或私有路径的可操作说明。
+    """
+
+    def __init__(self, code: str, message: str) -> None:
+        super().__init__(message)
+        self.code = code

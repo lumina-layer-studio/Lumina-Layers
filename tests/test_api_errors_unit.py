@@ -37,3 +37,28 @@ def test_core_processing_error_maps_to_500() -> None:
     exc = to_http_exception(CoreProcessingError("processing failed"), "converter")
     assert exc.status_code == 500
     assert exc.detail == "processing failed"
+
+
+def test_workshop_backend_error_keeps_code_and_message_contract() -> None:
+    from core.workshop.errors import WorkshopBackendError
+
+    conflict = to_http_exception(
+        WorkshopBackendError("backend-authorization-required", "Confirm this backend first."),
+        "Creative Workshop backend request",
+    )
+    assert conflict.status_code == 409
+    assert conflict.detail == {
+        "code": "backend-authorization-required",
+        "message": "Confirm this backend first.",
+    }
+    statuses = {
+        code: to_http_exception(WorkshopBackendError(code, "x"), "backend").status_code
+        for code in ("task-not-found", "task-input-too-large", "backend-tool-unavailable", "task-input-invalid")
+    }
+    # Unlisted codes are request problems the user can correct.
+    assert statuses == {
+        "task-not-found": 404,
+        "task-input-too-large": 413,
+        "backend-tool-unavailable": 503,
+        "task-input-invalid": 422,
+    }

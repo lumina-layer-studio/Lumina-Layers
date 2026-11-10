@@ -29,6 +29,8 @@ numba
 msgpack
 # Runtime resource-aware task parallelism
 psutil>=5.9.8
+# Creative Workshop module backends: private, hash-verified environments.
+uv==0.13.7
 # Vectorizer (C++ image-to-SVG)
 neroued-vectorizer>=0.1.1
 # 3MF writer (C++ streaming 3MF with Production Extension).

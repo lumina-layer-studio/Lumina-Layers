@@ -90,6 +90,9 @@ class ModuleEnabledRequest(WorkshopHttpModel):
 
 class ModuleUninstallRequest(WorkshopHttpModel):
     delete_projects: bool = False
+    # Backend data categories; defaults keep user data and reclaim programs.
+    delete_task_data: bool = False
+    retain_models: bool = False
 
 
 class LocalizedTextResponse(WorkshopHttpModel):
@@ -132,6 +135,28 @@ class WorkshopCatalogResponse(WorkshopHttpModel):
     modules: tuple[WorkshopCatalogModuleResponse, ...]
 
 
+class WorkshopBackendCapabilityResponse(WorkshopHttpModel):
+    name: str
+    reason: str
+
+
+class WorkshopBackendVariantSummary(WorkshopHttpModel):
+    id: str
+    name: LocalizedTextResponse
+    description: LocalizedTextResponse
+    platforms: tuple[str, ...]
+
+
+class WorkshopBackendSummaryResponse(WorkshopHttpModel):
+    """Static backend declaration of one installed version (manifest v2)."""
+
+    python: str
+    platforms: tuple[str, ...]
+    capabilities: tuple[WorkshopBackendCapabilityResponse, ...]
+    model_count: int
+    variants: tuple[WorkshopBackendVariantSummary, ...]
+
+
 class InstalledWorkshopVersionResponse(WorkshopHttpModel):
     version: str
     name: LocalizedTextResponse
@@ -145,6 +170,8 @@ class InstalledWorkshopVersionResponse(WorkshopHttpModel):
     details_url: str
     icon_url: str
     asset_base_url: str
+    manifest_version: int = 1
+    backend: WorkshopBackendSummaryResponse | None = None
     project_snapshot_protocol: int | None = None
     project_snapshot_schemas: tuple[str, ...] = ()
 
@@ -179,6 +206,16 @@ class WorkshopModulesResponse(WorkshopHttpModel):
     modules: tuple[InstalledWorkshopModuleResponse, ...]
 
 
+class WorkshopUninstallReportResponse(WorkshopHttpModel):
+    """Cleared, still-shared, user-retained, and not-yet-deleted content."""
+
+    cleared: tuple[dict[str, object], ...]
+    shared: tuple[dict[str, object], ...]
+    retained: tuple[dict[str, object], ...]
+    failed: tuple[dict[str, object], ...]
+
+
 class WorkshopModuleMutationResponse(WorkshopHttpModel):
     status: Literal["ok"] = "ok"
     module: InstalledWorkshopModuleResponse | None
+    uninstall_report: WorkshopUninstallReportResponse | None = None

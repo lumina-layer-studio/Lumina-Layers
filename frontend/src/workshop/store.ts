@@ -9,7 +9,8 @@ import type {
 export type WorkshopManagerView =
   | "installed"
   | "discover"
-  | "developer";
+  | "developer"
+  | "storage";
 
 export type WorkshopCatalogStatus =
   | "idle"
@@ -77,7 +78,8 @@ function isPersistedView(value: unknown): value is WorkshopManagerView {
   return (
     value === "installed" ||
     value === "discover" ||
-    value === "developer"
+    value === "developer" ||
+    value === "storage"
   );
 }
 

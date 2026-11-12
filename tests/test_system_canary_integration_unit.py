@@ -123,6 +123,27 @@ _OPTIONAL_DEPENDENCY_FORBIDDEN_FRAGMENTS = (
 class TestSystemImagePreviewCanary:
     """Sessionless endpoint canary verifies session_id is not bound."""
 
+    def test_preview_decodes_actual_format_instead_of_trusting_png_filename(self) -> None:
+        pillow_heif = pytest.importorskip("pillow_heif")
+        buffer = io.BytesIO()
+        pillow_heif.from_pillow(Image.new("RGB", (24, 16), "red")).save(buffer)
+        client, registry = _client_with_registry()
+        try:
+            response = client.post(
+                "/api/system/image-preview",
+                files={"file": ("misnamed.png", buffer.getvalue(), "image/png")},
+            )
+            assert response.status_code == 200, response.text
+            body = response.json()
+            preview = client.get(body["preview_url"])
+            assert preview.status_code == 200
+            assert preview.content.startswith(b"\x89PNG\r\n\x1a\n")
+            with Image.open(io.BytesIO(preview.content)) as image:
+                assert image.size == (24, 16)
+                assert (body["width"], body["height"]) == image.size
+        finally:
+            registry.clear_all()
+
     def test_image_preview_emits_sessionless_contract_canary(
         self,
         caplog: pytest.LogCaptureFixture,

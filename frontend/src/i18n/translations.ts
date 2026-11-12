@@ -5960,6 +5960,10 @@ export const translations: Record<string, Record<"zh" | "en", string>> = {
     zh: "RAW 图片预览失败：{error}。请先转换为 PNG/JPG 后再试。",
     en: "RAW image preview failed: {error}. Please convert it to PNG or JPG and try again.",
   },
+  converter_image_preview_failed: {
+    zh: "图片预览失败：{error}。请转换为 PNG/JPG 后再试。",
+    en: "Image preview failed: {error}. Please convert it to PNG or JPG and try again.",
+  },
   extractor_raw_preview_failed: {
     zh: "RAW 图片预览失败：{error}。请先转换为 PNG/JPG 后再试。",
     en: "RAW image preview failed: {error}. Please convert it to PNG or JPG and try again.",

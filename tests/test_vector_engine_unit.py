@@ -1246,6 +1246,85 @@ class TestVectorCoatingBuildMeshRegression:
 
 class TestVectorSingleSidedMirrorRegression:
 
+    @pytest.mark.parametrize(
+        ("color_mode", "structure_mode", "height_mode", "mirror_x"),
+        [
+            ("Material Archive", "Single-sided", "color", False),
+            ("Material Archive", "Single-sided", "heightmap", False),
+            ("4-Color", "单面", "color", False),
+            ("Material Archive", "Single-sided", None, True),
+            ("5-Color Extended", "Single-sided", None, False),
+            ("4-Color", "Double-sided", None, False),
+        ],
+    )
+    def test_outline_surrounds_body_in_the_same_export_coordinates(
+        self, tmp_path, color_mode, structure_mode, height_mode, mirror_x
+    ):
+        from PIL import Image
+        from shapely import affinity
+        from shapely.ops import unary_union
+        from core.pipeline.vector_branch import _generate_vector_outline_mesh
+
+        processor = _make_parse_only_processor()
+        processor.color_mode = color_mode
+        # Offset and asymmetry expose both accidental translation and mirroring.
+        shape = Polygon([(2, 3), (18, 3), (18, 9), (8, 9), (8, 17), (2, 17)])
+        layers = 6 if color_mode == "5-Color Extended" else 5
+        records = [{"geometry": shape, "recipe": [1] * layers, "color": (0, 255, 255)}]
+        analysis = VectorAnalysis(
+            shape_data=records,
+            clipped_shapes=records,
+            matched_shapes=records,
+            silhouette=shape,
+            scale_factor=1.0,
+            bbox=(0.0, 0.0, 20.0, 20.0),
+            color_conf={},
+            slot_names=["White", "Cyan"],
+            num_channels=2,
+            num_layers=layers,
+            preview_colors={0: [255, 255, 255, 255], 1: [0, 255, 255, 255]},
+            stage_timings={},
+        )
+        relief_options = {}
+        if height_mode is not None:
+            relief_options = {"enable_relief": True, "height_mode": height_mode}
+        if height_mode == "heightmap":
+            heightmap = tmp_path / "heightmap.png"
+            Image.fromarray(np.arange(64, dtype=np.uint8).reshape(8, 8) * 4).save(heightmap)
+            relief_options.update(heightmap_path=str(heightmap), heightmap_max_height=3.0)
+        scene = processor.build_mesh(
+            analysis=analysis,
+            thickness_mm=1.2,
+            structure_mode=structure_mode,
+            **relief_options,
+        )
+        outline = _generate_vector_outline_mesh(
+            analysis, 1.0, [255, 255, 255, 255], "White",
+            {
+                "structure_mode": structure_mode,
+                "spacer_thick": 1.2,
+                "color_mode": "5-Color Extended",
+                **relief_options,
+            },
+            export_color_mode=color_mode,
+        )
+        assert outline is not None
+
+        def footprint(mesh):
+            triangles = np.asarray(mesh.triangles)[:, :, :2]
+            polygons = [Polygon(triangle) for triangle in triangles]
+            return unary_union([polygon for polygon in polygons if polygon.area > 1e-10])
+
+        expected = affinity.scale(shape, xfact=-1 if mirror_x else 1, yfact=-1, origin=(0, 0))
+        body = footprint(scene.geometry["Cyan"])
+        assert body.symmetric_difference(expected).area < 1e-6
+        assert expected.difference(footprint(scene.geometry["Board"])).area < 1e-6
+        ring = footprint(outline)
+        ring_parts = tuple(ring.geoms) if ring.geom_type == "MultiPolygon" else (ring,)
+        envelope = unary_union([Polygon(part.exterior) for part in ring_parts])
+        assert body.difference(envelope).area < 1e-6
+        assert np.max(scene.bounds[:, 0]) - np.min(scene.bounds[:, 0]) < 20
+
     def test_build_mesh_mirrors_non_5color_without_vertex_translation(self):
         processor = _make_parse_only_processor()
         processor.color_mode = "8-Color Max"

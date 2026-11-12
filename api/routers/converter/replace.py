@@ -5108,6 +5108,7 @@ def _resolve_dynamic_region_actual_recipe(
     session_data: dict,
     cache: dict,
     region_id: str,
+    region_mask: np.ndarray,
     print_recipe_top_to_bottom: list[int],
 ) -> list[int]:
     """Resolve an actual recipe only from authoritative dynamic metadata.
@@ -5118,6 +5119,7 @@ def _resolve_dynamic_region_actual_recipe(
         session_data: Current session state. / 当前会话状态。
         cache: Preview cache metadata. / 预览缓存元数据。
         region_id: Region identifier. / 区域标识。
+        region_mask: Selection whose first pixel supplied the print stack.
         print_recipe_top_to_bottom: Sampled full print stack. / 采样的完整打印栈。
 
     Returns:
@@ -5185,10 +5187,31 @@ def _resolve_dynamic_region_actual_recipe(
             )
         return actual_values
 
+    # Selection gestures replace synthetic IDs. Resolve ownership at the same
+    # first pixel sampled by _sample_region_recipe_top2bottom, newest edit first.
+    # Matching the padded stack alone would confuse real backing-colour layers
+    # with padding, and matching any overlap could read another selected pixel.
+    sample_index = int(np.argmax(region_mask))
+    live_masks = session_data.get("selected_region_masks") or {}
+    has_snapshots = RECIPE_OVERRIDE_APPLIED_MASKS_KEY in session_data
     for item in reversed(list(session_data.get("recipe_overrides") or [])):
-        if not isinstance(item, dict) or str(item.get("region_id")) != region_id:
+        if not isinstance(item, dict):
             continue
-        return validate_entry(item)
+        saved_region_id = str(item.get("region_id") or "")
+        if has_snapshots or saved_region_id in live_masks:
+            try:
+                masks = resolve_recipe_override_masks(
+                    session_data, [item], tuple(region_mask.shape),
+                )
+            except ValueError:
+                metadata_conflict(
+                    "Dynamic region recipe mask is inconsistent. Re-run preview."
+                )
+            if masks[saved_region_id].flat[sample_index]:
+                return validate_entry(item)
+        elif saved_region_id == region_id:
+            # Compatibility for sessions predating committed mask snapshots.
+            return validate_entry(item)
 
     dynamic_info = cache.get("material_dynamic_layer_info")
     colors = dynamic_info.get("colors") if isinstance(dynamic_info, dict) else None
@@ -6208,6 +6231,7 @@ def region_recipe(
                 session_data=session_data,
                 cache=cache,
                 region_id=region_id,
+                region_mask=region_mask,
                 print_recipe_top_to_bottom=recipe_t2b,
             )
         recipe_out = convert_recipe_between_orders(recipe_t2b, "Top2Bottom", target_order)

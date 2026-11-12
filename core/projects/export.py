@@ -8,10 +8,13 @@ embedded project snapshot can add one OPC part under ``Metadata/Lumina``.
 
 from __future__ import annotations
 
+from copy import copy
 from io import BytesIO
 import os
 from pathlib import Path
+import shutil
 import tempfile
+from typing import BinaryIO
 from xml.dom import minidom
 from xml.parsers.expat import ExpatError
 import zipfile
@@ -91,49 +94,60 @@ def _ensure_relationships(xml_bytes: bytes) -> bytes:
     return document.toxml(encoding="utf-8")
 
 
+def _copy_member(
+    source: zipfile.ZipFile,
+    destination: zipfile.ZipFile,
+    info: zipfile.ZipInfo,
+) -> None:
+    with source.open(info) as incoming, destination.open(copy(info), "w") as outgoing:
+        shutil.copyfileobj(incoming, outgoing, length=256 * 1024)
+
+
+def _embed_project_stream(
+    source_stream: BinaryIO,
+    output_stream: BinaryIO,
+    project_bytes: bytes,
+) -> None:
+    """Copy mesh members in bounded chunks and replace the frozen project."""
+    if len(project_bytes) > MAX_EMBEDDED_PROJECT_BYTES:
+        raise ProjectValidationError("Embedded project exceeds size limit")
+    try:
+        source = zipfile.ZipFile(source_stream, "r")
+    except (zipfile.BadZipFile, OSError) as exc:
+        raise ProjectValidationError("3MF package is not a valid ZIP") from exc
+
+    with source:
+        names = source.namelist()
+        if names.count(EMBEDDED_PROJECT_PATH) > 1:
+            raise ProjectValidationError("3MF contains duplicate project parts")
+        content_types = _ensure_content_type(
+            source.read("[Content_Types].xml")
+            if "[Content_Types].xml" in names
+            else f'<?xml version="1.0" encoding="UTF-8"?><Types xmlns="{_CONTENT_TYPES_NS}" />'.encode()
+        )
+        relationships = _ensure_relationships(
+            source.read("_rels/.rels")
+            if "_rels/.rels" in names
+            else f'<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="{_RELATIONSHIPS_NS}" />'.encode()
+        )
+        with zipfile.ZipFile(output_stream, "w", compression=zipfile.ZIP_DEFLATED) as destination:
+            destination.comment = source.comment
+            for info in source.infolist():
+                if info.filename in {EMBEDDED_PROJECT_PATH, "[Content_Types].xml", "_rels/.rels"}:
+                    continue
+                _copy_member(source, destination, info)
+            destination.writestr("[Content_Types].xml", content_types)
+            destination.writestr("_rels/.rels", relationships)
+            destination.writestr(EMBEDDED_PROJECT_PATH, project_bytes)
+
+
 def embed_project_bytes_in_3mf(
     three_mf_bytes: bytes,
     project_bytes: bytes,
 ) -> bytes:
-    """Add one frozen project part to an existing 3MF package.
-
-    Args:
-        three_mf_bytes: Existing OPC/ZIP 3MF bytes.
-        project_bytes: Validated ``lumina-project`` package bytes.
-
-    Returns:
-        New 3MF bytes. The input is not modified.
-    """
-    if len(project_bytes) > MAX_EMBEDDED_PROJECT_BYTES:
-        raise ProjectValidationError("Embedded project exceeds size limit")
-    try:
-        source = zipfile.ZipFile(BytesIO(three_mf_bytes), "r")
-    except (zipfile.BadZipFile, OSError) as exc:
-        raise ProjectValidationError("3MF package is not a valid ZIP") from exc
-
-    names = [info.filename for info in source.infolist()]
-    if EMBEDDED_PROJECT_PATH in names and names.count(EMBEDDED_PROJECT_PATH) > 1:
-        raise ProjectValidationError("3MF contains duplicate project parts")
-    content_types = (
-        source.read("[Content_Types].xml")
-        if "[Content_Types].xml" in names
-        else f'<?xml version="1.0" encoding="UTF-8"?><Types xmlns="{_CONTENT_TYPES_NS}" />'.encode()
-    )
-    relationships = (
-        source.read("_rels/.rels")
-        if "_rels/.rels" in names
-        else f'<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="{_RELATIONSHIPS_NS}" />'.encode()
-    )
-
+    """Add one frozen project part, returning new bytes without changing input."""
     output = BytesIO()
-    with source, zipfile.ZipFile(output, "w", compression=zipfile.ZIP_DEFLATED) as destination:
-        for info in source.infolist():
-            if info.filename in {EMBEDDED_PROJECT_PATH, "[Content_Types].xml", "_rels/.rels"}:
-                continue
-            destination.writestr(info, source.read(info.filename))
-        destination.writestr("[Content_Types].xml", _ensure_content_type(content_types))
-        destination.writestr("_rels/.rels", _ensure_relationships(relationships))
-        destination.writestr(EMBEDDED_PROJECT_PATH, project_bytes)
+    _embed_project_stream(BytesIO(three_mf_bytes), output, project_bytes)
     return output.getvalue()
 
 
@@ -146,11 +160,11 @@ def embed_project_file_in_3mf(
     将 3MF 替换为显式嵌入工程快照的版本，并使用同目录临时文件保证原文件安全。
     """
     path = Path(three_mf_path)
-    updated = embed_project_bytes_in_3mf(path.read_bytes(), project_bytes)
     fd, temporary_name = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=path.parent)
     try:
         with os.fdopen(fd, "wb") as temporary:
-            temporary.write(updated)
+            with path.open("rb") as source:
+                _embed_project_stream(source, temporary, project_bytes)
             temporary.flush()
             os.fsync(temporary.fileno())
         os.replace(temporary_name, path)
@@ -184,12 +198,24 @@ def embed_project_in_generated_file(output_path: str | os.PathLike[str], project
     try:
         count = 0
         with zipfile.ZipFile(target) as source, zipfile.ZipFile(temporary_name, "w", zipfile.ZIP_DEFLATED) as destination:
+            destination.comment = source.comment
             for info in source.infolist():
-                data = source.read(info)
-                if info.filename.lower().endswith(".3mf"):
-                    data = embed_project_bytes_in_3mf(data, project_bytes)
-                    count += 1
-                destination.writestr(info, data)
+                if not info.filename.lower().endswith(".3mf"):
+                    _copy_member(source, destination, info)
+                    continue
+                # Nested ZIP readers need random access. Keep just this tile on
+                # disk so neither the compressed 3MF nor its mesh fills RAM.
+                with tempfile.TemporaryFile(dir=target.parent) as tile_source, tempfile.TemporaryFile(dir=target.parent) as tile_output:
+                    with source.open(info) as incoming:
+                        shutil.copyfileobj(incoming, tile_source, length=256 * 1024)
+                    tile_source.seek(0)
+                    _embed_project_stream(tile_source, tile_output, project_bytes)
+                    updated_info = copy(info)
+                    updated_info.file_size = tile_output.tell()
+                    tile_output.seek(0)
+                    with destination.open(updated_info, "w") as outgoing:
+                        shutil.copyfileobj(tile_output, outgoing, length=256 * 1024)
+                count += 1
             if count == 0:
                 raise ProjectValidationError("Generated archive contains no 3MF files")
         os.replace(temporary_name, target)

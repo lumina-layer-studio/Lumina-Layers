@@ -186,7 +186,13 @@ def run(ctx: dict) -> dict:
             return ctx
 
         from core.pipeline.p03_core_processing import _run_material_archive_branch
-        return _run_material_archive_branch(ctx)
+
+        # Preview applies portable edits in P03. Final generation owns them
+        # in S03, after loading the confirmed RGB/recipe pair.
+        analysis = _run_material_archive_branch({**ctx, "replacement_regions": None})
+        analysis["replacement_regions"] = ctx.get("replacement_regions")
+        ctx.update(analysis)
+        return ctx
 
     actual_lut_path = ctx['actual_lut_path']
     color_mode = ctx['color_mode']

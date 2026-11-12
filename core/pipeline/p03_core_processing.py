@@ -870,10 +870,10 @@ def _run_material_archive_branch(ctx: dict) -> dict:
     from core.pipeline.s03_color_replacement import (
         _apply_dynamic_material_archive_color_replacements,
         _apply_material_archive_color_replacements,
-        _normalize_replayed_color_replacements_input,
+        _resolve_replayed_color_replacement_jobs,
     )
 
-    effective_color_replacements = _normalize_replayed_color_replacements_input(
+    effective_color_replacements = _resolve_replayed_color_replacement_jobs(
         ctx.get("replacement_regions"),
         matched_rgb,
         quantized_image,
@@ -1114,27 +1114,21 @@ def run(ctx: dict) -> dict:
     )
     if has_portable_replacements:
         from core.pipeline.s03_color_replacement import (
-            _normalize_replayed_color_replacements_input,
+            _resolve_replayed_color_replacement_jobs,
         )
-        from core.color_replacement import ColorReplacementManager
-
-        replacements = _normalize_replayed_color_replacements_input(
+        replacements = _resolve_replayed_color_replacement_jobs(
             ctx.get("replacement_regions"),
             matched_rgb,
             quantized_image,
             mask_solid,
         )
         if replacements:
-            manager = ColorReplacementManager.from_dict(replacements)
-            previous_matched_rgb = matched_rgb
-            matched_rgb = manager.apply_to_image(previous_matched_rgb)
-            for source_hex, target_hex in replacements.items():
-                source_rgb = ColorReplacementManager._hex_to_color(source_hex)
-                source_mask = np.all(previous_matched_rgb == source_rgb, axis=-1)
-                source_mask &= mask_solid
-                if not np.any(source_mask):
-                    continue
-                target_rgb = ColorReplacementManager._hex_to_color(target_hex)
+            from core.pipeline.pipeline_utils import _hex_to_rgb_tuple
+
+            matched_rgb = matched_rgb.copy()
+            for target_hex, source_mask in replacements:
+                target_rgb = _hex_to_rgb_tuple(target_hex)
+                matched_rgb[source_mask] = target_rgb
                 target_lab = processor._rgb_to_lab(
                     np.array([target_rgb], dtype=np.uint8)
                 )

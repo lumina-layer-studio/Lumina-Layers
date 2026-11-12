@@ -7,10 +7,11 @@ from __future__ import annotations
 from unittest.mock import patch
 
 import numpy as np
+import pytest
 
 from core.pipeline.p03_core_processing import run as process_preview
 from core.pipeline.s03_color_replacement import (
-    _normalize_replayed_color_replacements_input,
+    _resolve_replayed_color_replacement_jobs,
     run as apply_color_replacements,
 )
 from core.vector_engine import (
@@ -72,14 +73,16 @@ def test_raster_replay_resolves_saved_source_against_current_match() -> None:
     quantized = np.array([[[0xAA, 0x00, 0x00]]], dtype=np.uint8)
     matched = np.array([[[0xFE, 0xDC, 0xBA]]], dtype=np.uint8)
 
-    resolved = _normalize_replayed_color_replacements_input(
+    resolved = _resolve_replayed_color_replacement_jobs(
         _saved_replacement(),
         matched,
         quantized,
         np.ones((1, 1), dtype=bool),
     )
 
-    assert resolved == {"#fedcba": "#44cc55"}
+    assert len(resolved) == 1
+    assert resolved[0][0] == "#44cc55"
+    np.testing.assert_array_equal(resolved[0][1], [[True]])
 
 
 def test_lut_preview_rebuild_applies_portable_global_replacement() -> None:
@@ -182,6 +185,73 @@ def test_generation_replay_keeps_transparent_pixels_without_material() -> None:
     )
 
     np.testing.assert_array_equal(result["material_matrix"], [[[7], [-1]]])
+
+
+@pytest.mark.parametrize("source_match_survives", [False, True])
+def test_replay_does_not_promote_cleanup_neighbors_to_global_replacements(
+    source_match_survives: bool,
+) -> None:
+    source_match = [0x11, 0x22, 0x33] if source_match_survives else [0xFE, 0xDC, 0xBA]
+    neighbor = [0x20, 0x90, 0xE0]
+    matched = np.array([[source_match, neighbor, neighbor]], dtype=np.uint8)
+    result = apply_color_replacements(
+        {
+            "matched_rgb": matched.copy(),
+            "material_matrix": np.array([[[0], [1], [1]]], dtype=np.int32),
+            "mask_solid": np.ones((1, 3), dtype=bool),
+            # Cleanup merged one source pixel into its blue neighbor.
+            "quantized_image": np.array(
+                [[[0xAA, 0, 0], [0xAA, 0, 0], [0, 0, 0xFF]]], dtype=np.uint8
+            ),
+            "processor": _RasterProcessor(),
+            "replacement_regions": _saved_replacement(),
+        }
+    )
+
+    np.testing.assert_array_equal(result["matched_rgb"][0, 0], [0x44, 0xCC, 0x55])
+    np.testing.assert_array_equal(result["matched_rgb"][0, 2], neighbor)
+    np.testing.assert_array_equal(result["material_matrix"][0, 2], [1])
+    if source_match_survives:
+        np.testing.assert_array_equal(result["matched_rgb"][0, 1], neighbor)
+
+
+def test_replay_keeps_distinct_source_edits_when_new_materials_match_them_equally() -> None:
+    result = apply_color_replacements(
+        {
+            "matched_rgb": np.full((1, 2, 3), 100, dtype=np.uint8),
+            "material_matrix": np.zeros((1, 2, 1), dtype=np.int32),
+            "mask_solid": np.ones((1, 2), dtype=bool),
+            "quantized_image": np.array([[[0xAA, 0, 0], [0, 0, 0xBB]]], dtype=np.uint8),
+            "processor": _RasterProcessor(),
+            "replacement_regions": [
+                *_saved_replacement(),
+                {
+                    "quantized_hex": "#0000bb",
+                    "matched_hex": "#112244",
+                    "replacement_hex": "#ff6600",
+                },
+            ],
+        }
+    )
+    np.testing.assert_array_equal(
+        result["matched_rgb"], [[[0x44, 0xCC, 0x55], [0xFF, 0x66, 0]]]
+    )
+
+
+def test_material_change_does_not_select_old_match_found_outside_source_region() -> None:
+    result = apply_color_replacements(
+        {
+            "matched_rgb": np.array([[[100, 100, 100], [0x11, 0x22, 0x33]]], dtype=np.uint8),
+            "material_matrix": np.zeros((1, 2, 1), dtype=np.int32),
+            "mask_solid": np.ones((1, 2), dtype=bool),
+            "quantized_image": np.array([[[0xAA, 0, 0], [0, 0, 0xBB]]], dtype=np.uint8),
+            "processor": _RasterProcessor(),
+            "replacement_regions": _saved_replacement(),
+        }
+    )
+    np.testing.assert_array_equal(
+        result["matched_rgb"], [[[0x44, 0xCC, 0x55], [0x11, 0x22, 0x33]]]
+    )
 
 
 class _VectorMatcher:

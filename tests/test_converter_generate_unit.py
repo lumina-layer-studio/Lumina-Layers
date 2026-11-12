@@ -4096,17 +4096,24 @@ class TestStandardCachedAnalysisRouting:
             _test_store.close(sid)
 
     @pytest.mark.parametrize(
-        ("dynamic_enabled", "expect_replay"),
-        [(True, False), (False, True)],
-        ids=("dynamic-final-cache", "fixed-layer-legacy-replay"),
+        ("dynamic_enabled", "matching_edits", "use_cached_rgb", "expect_replay"),
+        [
+            (True, False, True, False),
+            (False, False, True, True),
+            (False, True, True, False),
+            (False, True, False, False),
+        ],
+        ids=("dynamic-final-cache", "new-fixed-edit", "fixed-final-cache", "fixed-forwarded-cache"),
     )
-    def test_generate_cached_analysis_only_skips_dynamic_replacement_replay(
+    def test_generate_replays_only_edits_not_already_confirmed_in_cache(
         self,
         tmp_path,
         dynamic_enabled: bool,
+        matching_edits: bool,
+        use_cached_rgb: bool,
         expect_replay: bool,
     ) -> None:
-        """Only dynamic final caches suppress already-applied replacements."""
+        """Final RGB/recipe pairs must not be changed by replaying saved edits."""
 
         from core.preview_analysis_cache import REQUIRED_PREVIEW_ANALYSIS_REUSE
 
@@ -4135,7 +4142,7 @@ class TestStandardCachedAnalysisRouting:
             "replacement_regions",
             [
                 {
-                    "selected_color": "#112233",
+                    "selected_color": "#445566" if matching_edits else "#112233",
                     "replacement_color": "#778899",
                 }
             ],
@@ -4149,16 +4156,15 @@ class TestStandardCachedAnalysisRouting:
             }
         ]
         payload["params"]["replacement_regions"] = requested_replacements
+        payload["params"]["use_cached_matched_rgb"] = use_cached_rgb
 
         try:
             response = client.post("/api/convert/generate", json=payload)
 
             assert response.status_code == 200, response.text
             submitted_params = _mock_pool.submit.call_args.args[3]
-            assert (
-                submitted_params["reuse_preview_analysis"]
-                == REQUIRED_PREVIEW_ANALYSIS_REUSE
-            )
+            if use_cached_rgb:
+                assert submitted_params["reuse_preview_analysis"] == REQUIRED_PREVIEW_ANALYSIS_REUSE
             assert submitted_params["replacement_regions"] == (
                 requested_replacements if expect_replay else None
             )

@@ -29,6 +29,36 @@ from core.pipeline.material_dynamic_layers import (
 from core.pipeline.pipeline_utils import _hex_to_rgb_tuple
 
 _log = get_logger(__name__)
+RasterColorReplacements = dict[str, str] | list[tuple[str, np.ndarray]]
+
+
+def _color_replacement_jobs(
+    replacements: RasterColorReplacements,
+    matched_rgb: np.ndarray,
+    mask_solid: np.ndarray,
+) -> list[tuple[str, np.ndarray]]:
+    """Resolve all masks before any writes so replacements cannot cascade."""
+    if isinstance(replacements, list):
+        return replacements
+    jobs: list[tuple[str, np.ndarray]] = []
+    for source_hex, target_hex in replacements.items():
+        try:
+            source_rgb = _hex_to_rgb_tuple(source_hex)
+        except (TypeError, ValueError) as exc:
+            _log.warning(
+                "Invalid replacement source skipped",
+                extra={
+                    "event": "color_replacement_invalid_source",
+                    "source_hex": str(source_hex),
+                    "error_type": type(exc).__name__,
+                    "error_message": str(exc),
+                },
+            )
+            continue
+        mask = np.all(matched_rgb == source_rgb, axis=-1) & mask_solid
+        if np.any(mask):
+            jobs.append((target_hex, mask))
+    return jobs
 
 
 def _load_required_edit_array(path: object, *, field_name: str) -> np.ndarray:
@@ -407,7 +437,7 @@ def _apply_material_archive_color_replacements(
     matched_rgb: np.ndarray,
     material_matrix: np.ndarray,
     mask_solid: np.ndarray,
-    color_replacements: dict[str, str],
+    color_replacements: RasterColorReplacements,
     materials: list,
     layer_count: int,
     layer_height_mm: float,
@@ -435,8 +465,8 @@ def _apply_material_archive_color_replacements(
             Uses the pipeline ``Top2Bottom`` convention (layer 0 = viewing
             surface). (材料矩阵，Top2Bottom)
         mask_solid: (H, W) bool solid-pixel mask. (实体像素掩码)
-        color_replacements: ``{orig_hex: repl_hex}`` mapping in ``#rrggbb``
-            lowercase form. (颜色替换字典)
+        color_replacements: Whole-color mappings, or resolved
+            ``(target_hex, pixel_mask)`` jobs for portable source edits.
         materials: Ordered :class:`core.material_color_solver.MaterialParams`
             list the image was quantised against. (耗材列表)
         layer_count: Number of layers per pixel. (每像素层数)
@@ -459,19 +489,23 @@ def _apply_material_archive_color_replacements(
     # 先筛选出当前图像里确实存在的 orig → repl 对，避免无谓求解。
     jobs: list[tuple[str, tuple[int, int, int], np.ndarray]] = []
     repl_rgbs: list[tuple[int, int, int]] = []
-    for orig_hex, repl_hex in color_replacements.items():
+    for repl_hex, orig_mask in _color_replacement_jobs(
+        color_replacements, matched_rgb, mask_solid,
+    ):
         try:
-            orig_rgb_tuple = _hex_to_rgb_tuple(orig_hex)
             repl_rgb_tuple = _hex_to_rgb_tuple(repl_hex)
         except ValueError as exc:
-            _log.warning("Skipping invalid hex pair %s→%s: %s",
-                         orig_hex, repl_hex, exc)
+            _log.warning(
+                "Invalid replacement target skipped",
+                extra={
+                    "event": "color_replacement_invalid_target",
+                    "replacement_hex": str(repl_hex),
+                    "error_type": type(exc).__name__,
+                    "error_message": str(exc),
+                },
+            )
             continue
-        orig_mask = np.all(matched_rgb == np.asarray(orig_rgb_tuple, dtype=np.uint8), axis=-1)
-        orig_mask &= mask_solid
-        if not np.any(orig_mask):
-            continue
-        jobs.append((orig_hex, repl_rgb_tuple, orig_mask))
+        jobs.append((repl_hex, repl_rgb_tuple, orig_mask))
         repl_rgbs.append(repl_rgb_tuple)
 
     if not jobs:
@@ -587,7 +621,7 @@ def _apply_material_archive_color_replacements(
         new_material_matrix = new_material_matrix[:, :, :recipe_layers].copy()
 
     applied = 0
-    for job_idx, (orig_hex, _repl_rgb, orig_mask) in enumerate(jobs):
+    for job_idx, (target_hex, _repl_rgb, orig_mask) in enumerate(jobs):
         achieved_rgb = matched_rgb_unique[job_idx]
         recipe = recipes_unique[job_idx]
         new_matched_rgb[orig_mask] = achieved_rgb
@@ -598,7 +632,7 @@ def _apply_material_archive_color_replacements(
         _log.debug(
             "%s %s → rgb(%d,%d,%d) ΔE=%.2f recipe=%s",
             solver_path,
-            orig_hex,
+            target_hex,
             int(achieved_rgb[0]), int(achieved_rgb[1]), int(achieved_rgb[2]),
             float(delta_e[job_idx]),
             recipe.tolist(),
@@ -612,7 +646,7 @@ def _apply_dynamic_material_archive_color_replacements(
     material_matrix: np.ndarray,
     mask_solid: np.ndarray,
     target_rgb_map: np.ndarray,
-    color_replacements: dict[str, str],
+    color_replacements: RasterColorReplacements,
     materials: list,
     *,
     backing_material_index: int,
@@ -677,9 +711,10 @@ def _apply_dynamic_material_archive_color_replacements(
     jobs: list[tuple[tuple[int, int, int], np.ndarray]] = []
     solid_mask = np.asarray(mask_solid, dtype=bool)
     updated_target_map = target_map.copy()
-    for orig_hex, replacement_hex in color_replacements.items():
+    for replacement_hex, original_mask in _color_replacement_jobs(
+        color_replacements, np.asarray(matched_rgb), solid_mask,
+    ):
         try:
-            original = _hex_to_rgb_tuple(orig_hex)
             target = _hex_to_rgb_tuple(replacement_hex)
         except ValueError as exc:
             _log.warning(
@@ -688,19 +723,9 @@ def _apply_dynamic_material_archive_color_replacements(
                     "event": "dynamic_material_replacement_invalid_hex",
                     "error_type": type(exc).__name__,
                     "error_message": str(exc),
-                    "original_hex": str(orig_hex),
                     "replacement_hex": str(replacement_hex),
                 },
             )
-            continue
-        original_mask = (
-            np.all(
-                np.asarray(matched_rgb) == np.asarray(original, dtype=np.uint8),
-                axis=-1,
-            )
-            & solid_mask
-        )
-        if not np.any(original_mask):
             continue
         target_key = tuple(int(value) for value in target)
         jobs.append((target_key, original_mask))
@@ -856,50 +881,34 @@ def _normalize_color_replacements_input(color_replacements):
     return {}
 
 
-def _normalize_replayed_color_replacements_input(
+def _resolve_replayed_color_replacement_jobs(
     replacement_records: object,
     matched_rgb: np.ndarray | None,
     quantized_image: np.ndarray | None,
     mask_solid: np.ndarray | None,
-) -> dict[str, str]:
-    """Resolve portable whole-image edits against the active material map.
-    按当前耗材映射重新解析项目中的全图改色。
+) -> list[tuple[str, np.ndarray]]:
+    """Resolve edits to pixel masks without widening cleanup neighbors.
 
-    ``matched_hex`` belongs to the material set used when a project was
-    saved. ``quantized_hex`` identifies the stable source-image color, so it
-    can locate the corresponding current matches after a LUT or material
-    change. Malformed or legacy records retain the historical matched-color
-    fallback.
-
-    Args:
-        replacement_records: Saved API-format replacement records.
-            (保存的 API 格式替换记录。)
-        matched_rgb: Current material-matched RGB image. (当前匹配图。)
-        quantized_image: Current quantized source image. (当前量化源图。)
-        mask_solid: Current printable-pixel mask. (当前实体像素掩码。)
-
-    Returns:
-        Current matched-color to target-color mappings.
-        (当前匹配色到目标色的映射。)
+    An existing matched color retains whole-color selection semantics. If
+    a material change removes that identity, the stable source color locates
+    the affected pixels. Neighbor colors found inside that source region must
+    never become whole-image replacement keys.
     """
     fallback = _normalize_color_replacements_input(replacement_records)
-    if not isinstance(replacement_records, list):
-        return fallback
-    if matched_rgb is None or quantized_image is None:
-        return fallback
-
+    if matched_rgb is None:
+        return []
     matched = np.asarray(matched_rgb)
-    quantized = np.asarray(quantized_image)
     if matched.ndim != 3 or matched.shape[-1] != 3:
-        return fallback
-    if quantized.shape != matched.shape:
-        return fallback
-
+        return []
     solid = np.asarray(mask_solid, dtype=bool)
     if solid.shape != matched.shape[:2]:
         solid = np.ones(matched.shape[:2], dtype=bool)
 
-    resolved: dict[str, str] = {}
+    quantized = np.asarray(quantized_image)
+    if not isinstance(replacement_records, list) or quantized.shape != matched.shape:
+        return _color_replacement_jobs(fallback, matched, solid)
+
+    resolved: list[tuple[str, np.ndarray]] = []
     for item in replacement_records:
         if not isinstance(item, dict):
             continue
@@ -907,35 +916,29 @@ def _normalize_replayed_color_replacements_input(
         if not item_fallback:
             continue
         fallback_source, replacement_hex = next(iter(item_fallback.items()))
-        quantized_hex = item.get("quantized") or item.get("quantized_hex")
-        if not isinstance(quantized_hex, str):
-            resolved[fallback_source] = replacement_hex
-            continue
         try:
-            quantized_rgb = np.asarray(
-                _hex_to_rgb_tuple(quantized_hex),
-                dtype=quantized.dtype,
-            )
+            source_rgb = _hex_to_rgb_tuple(fallback_source)
         except (TypeError, ValueError):
-            resolved[fallback_source] = replacement_hex
             continue
-
-        source_mask = np.all(quantized == quantized_rgb, axis=-1) & solid
-        if not np.any(source_mask):
-            resolved[fallback_source] = replacement_hex
-            continue
-
-        current_matches = np.unique(matched[source_mask], axis=0)
-        if current_matches.size == 0:
-            resolved[fallback_source] = replacement_hex
-            continue
-        for current_rgb in current_matches:
-            current_hex = "#{:02x}{:02x}{:02x}".format(
-                int(current_rgb[0]),
-                int(current_rgb[1]),
-                int(current_rgb[2]),
-            )
-            resolved[current_hex] = replacement_hex
+        matched_mask = np.all(matched == source_rgb, axis=-1) & solid
+        quantized_hex = item.get("quantized") or item.get("quantized_hex")
+        source_mask = None
+        if isinstance(quantized_hex, str):
+            try:
+                quantized_rgb = np.asarray(
+                    _hex_to_rgb_tuple(quantized_hex),
+                    dtype=quantized.dtype,
+                )
+            except (TypeError, ValueError):
+                pass
+            else:
+                candidate = np.all(quantized == quantized_rgb, axis=-1) & solid
+                if np.any(candidate):
+                    source_mask = candidate
+        if source_mask is None or np.any(source_mask & matched_mask):
+            source_mask = matched_mask
+        if np.any(source_mask):
+            resolved.append((replacement_hex, source_mask))
 
     return resolved
 
@@ -1282,16 +1285,20 @@ def run(ctx: dict) -> dict:
             )
 
     # ---- Apply global color replacements ----
-    effective_color_replacements = _normalize_color_replacements_input(color_replacements)
+    effective_color_replacements = _color_replacement_jobs(
+        _normalize_color_replacements_input(color_replacements),
+        matched_rgb,
+        mask_solid,
+    )
     if replacement_regions:
-        api_format_replacements = _normalize_replayed_color_replacements_input(
+        api_format_replacements = _resolve_replayed_color_replacement_jobs(
             replacement_regions,
             matched_rgb,
             ctx.get("quantized_image"),
             mask_solid,
         )
         if api_format_replacements:
-            effective_color_replacements.update(api_format_replacements)
+            effective_color_replacements.extend(api_format_replacements)
             # Remove API-format items (no mask) from replacement_regions to avoid
             # _apply_regions_to_raster_outputs skipping them silently
             replacement_regions = [r for r in replacement_regions if r.get("mask") is not None]
@@ -1305,7 +1312,7 @@ def run(ctx: dict) -> dict:
             "%d color replacements skipped (no LUT processor in material-archive mode)",
             len(effective_color_replacements),
         )
-        effective_color_replacements = {}
+        effective_color_replacements = []
     if effective_color_replacements and is_material_archive:
         # Material-archive mode re-solves every replacement target against
         # the saved MaterialParams palette (cache-first, MITM fallback) so
@@ -1383,22 +1390,13 @@ def run(ctx: dict) -> dict:
             )
         _log.debug("Applied %d material-archive color replacements", applied)
     elif effective_color_replacements:
-        from core.color_replacement import ColorReplacementManager
-
-        manager = ColorReplacementManager.from_dict(effective_color_replacements)
-        old_rgb = matched_rgb.copy()
-        matched_rgb = manager.apply_to_image(matched_rgb)
-        _log.debug(f"Applied {len(manager)} color replacements")
+        matched_rgb = matched_rgb.copy()
+        _log.debug("Applying %d color replacements", len(effective_color_replacements))
 
         # Update material_matrix: find the replacement color's LUT entry
-        for orig_hex, repl_hex in effective_color_replacements.items():
-            orig_rgb_tuple = ColorReplacementManager._hex_to_color(orig_hex)
-            repl_rgb_tuple = ColorReplacementManager._hex_to_color(repl_hex)
-            orig_mask = np.all(old_rgb == orig_rgb_tuple, axis=-1) & np.asarray(
-                mask_solid, dtype=bool
-            )
-            if not np.any(orig_mask):
-                continue
+        for repl_hex, orig_mask in effective_color_replacements:
+            repl_rgb_tuple = _hex_to_rgb_tuple(repl_hex)
+            matched_rgb[orig_mask] = repl_rgb_tuple
             repl_lab = processor._rgb_to_lab(np.array([repl_rgb_tuple], dtype=np.uint8))
             _, lut_idx = processor.kdtree.query(repl_lab)
             lut_idx = lut_idx[0]
@@ -1406,7 +1404,7 @@ def run(ctx: dict) -> dict:
             material_matrix[orig_mask] = new_stacks
             lut_color = processor.lut_rgb[lut_idx]
             _log.debug(
-                f"material_matrix: {orig_hex} -> LUT#{lut_idx} "
+                f"material_matrix: {repl_hex} -> LUT#{lut_idx} "
                 f"rgb({lut_color[0]},{lut_color[1]},{lut_color[2]}) stacks={new_stacks}"
             )
 

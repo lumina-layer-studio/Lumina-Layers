@@ -18,6 +18,11 @@ import {
 } from "../api/types";
 import type { LutDetailsCatalogGroup, SavedMaterialLibraryItem } from "../api/types";
 
+vi.mock("../api/materialGamut", () => ({
+  // The cache status line asks for an overview; keep it pending so no request leaves the test.
+  fetchMaterialCacheOverview: vi.fn(() => new Promise(() => {})),
+}));
+
 vi.mock("../api/lut", async () => {
   const actual = await vi.importActual<typeof import("../api/lut")>(
     "../api/lut",
@@ -989,7 +994,9 @@ describe("BasicSettings", () => {
     expect(
       screen.queryByRole("slider", { name: "最小有效叠层数" }),
     ).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "穷举缓存…" })).toBeInTheDocument();
+    // Cache management moved to Material > Solver Cache; both layer modes link there.
+    expect(screen.getByTestId("material-cache-status-line")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "管理缓存" })).toBeInTheDocument();
 
     fireEvent.click(dynamicToggle);
 
@@ -1006,6 +1013,8 @@ describe("BasicSettings", () => {
       screen.getByRole("slider", { name: "最大有效叠层数" }),
     ).toHaveAttribute("max", "10");
     expect(screen.queryByText(/单一层数的缓存入口已隐藏/)).not.toBeInTheDocument();
+    // The cache status line replaces the old "cache control is hidden" banner.
+    expect(screen.getByRole("button", { name: "管理缓存" })).toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: "穷举缓存…" }),
     ).not.toBeInTheDocument();

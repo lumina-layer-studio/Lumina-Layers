@@ -31,7 +31,7 @@ import type { CropData } from "../ui/CropModal";
 import ImportConfirmDialog from "../ui/ImportConfirmDialog";
 import MaterialPickerDialog from "../ui/MaterialPickerDialog";
 import type { MaterialPickerDialogHandle } from "../ui/MaterialPickerDialog";
-import MaterialSolverCacheDialog from "../MaterialSolverCacheDialog";
+import MaterialCacheStatusLine from "../materialWorkbench/MaterialCacheStatusLine";
 import LegacyLutSelector from "./LegacyLutSelector";
 import { TUTORIAL_STEPS } from "../../data/tutorialSteps";
 import { useTutorialStore } from "../../stores/tutorialStore";
@@ -1347,13 +1347,7 @@ export default function BasicSettings() {
                 />
               </div>
 
-              {!materialDynamicLayerCountEnabled && (
-                <MaterialSolverCacheDialog
-                  materialDirectoryNames={selectedMaterialDirNames}
-                  layerCount={materialLayerCount}
-                  layerHeightMm={materialLayerHeightMm}
-                />
-              )}
+              <MaterialCacheStatusLine />
             </div>
           </div>
         ) : source_version === "legacy" && !isPredictiveLutSource(selectedLutInfo?.source_kind) ? (

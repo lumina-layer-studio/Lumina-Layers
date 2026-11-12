@@ -1486,6 +1486,148 @@ export interface MaterialSolverCacheDetailsResponse {
   rgb_points: LutDetailsPoint[];
 }
 
+/** Fixed layer count, or a dynamic min..max layer range. 固定层数或动态层数范围。 */
+export type MaterialLayerMode = "fixed" | "dynamic";
+
+/** Reached / total sRGB reference cells. 已触达 / 总 sRGB 参考单元。 */
+export interface MaterialGamutCoverageValue {
+  reached_cell_count: number;
+  reference_cell_count: number;
+  percent: number;
+}
+
+/** Color groups match accuracy is reported for. 匹配精度统计的颜色组。 */
+export type MaterialGamutColorGroup = "all" | "neutral" | "dark" | "skin" | "vivid";
+
+/** Groups a material's loss can be attributed to (excludes "all"). 可归因损失的颜色组。 */
+export type MaterialGamutLossGroup = Exclude<MaterialGamutColorGroup, "all">;
+
+export interface MaterialGamutGroupAccuracy {
+  group: MaterialGamutColorGroup;
+  target_count: number;
+  /** Mean CIEDE2000 to the closest printable color; null when nothing is printable. */
+  mean_delta_e: number | null;
+}
+
+/** Per-group match accuracy and printable lightness range. 逐组匹配精度与可打印亮度范围。 */
+export interface MaterialGamutAccuracy {
+  groups: MaterialGamutGroupAccuracy[];
+  darkest_lightness: number | null;
+  lightest_lightness: number | null;
+}
+
+export type MaterialGamutSourceKind =
+  | "exhaustive_cache"
+  | "saved_smart_cache"
+  | "quick_sample"
+  | "dynamic_catalog";
+
+/** Where the evaluated colors came from. 被评估颜色的来源。 */
+export interface MaterialGamutSource {
+  kind: MaterialGamutSourceKind;
+  candidate_budget: number | null;
+  /** Every layer stack was evaluated, so the figure is exact. 是否完整枚举。 */
+  is_complete: boolean;
+  /** Loaded from disk rather than computed for this request. 是否直接读盘。 */
+  was_cached: boolean;
+}
+
+export interface MaterialGamutLayerCap {
+  layer_count: number;
+  coverage: MaterialGamutCoverageValue;
+}
+
+/**
+ * sRGB coverage of one material combination plus LUT-details-shaped charts.
+ * 单个耗材组合的 sRGB 覆盖率及与 LUT 详情同构的图表数据。
+ */
+export interface MaterialGamutCoverageResponse {
+  status: string;
+  message: string;
+  material_directory_names: string[];
+  layer_mode: MaterialLayerMode;
+  layer_count: number;
+  min_layer_count: number | null;
+  layer_height_mm: number;
+  substrate: string;
+  backing_material_directory_name: string | null;
+  cell_size_delta_e: number;
+  coverage: MaterialGamutCoverageValue;
+  accuracy: MaterialGamutAccuracy;
+  color_count: number;
+  source: MaterialGamutSource;
+  layer_cap_coverage: MaterialGamutLayerCap[];
+  coverage_stats: LutDetailsCoverageStats;
+  lab_points: LutDetailsPoint[];
+  lab_points_3d: LutDetailsPoint3D[];
+  lab_hull: Array<{ x: number; y: number }>;
+  rgb_points: LutDetailsPoint[];
+}
+
+export interface MaterialGamutContributionItem {
+  directory_name: string;
+  material_name: string;
+  coverage_without: MaterialGamutCoverageValue;
+  /** Percentage points lost without this material; may dip below 0 when sampled. */
+  drop_percent: number;
+  accuracy_without: MaterialGamutAccuracy;
+  /** Group whose mean error rises most without this material. 平均色差上升最多的颜色组。 */
+  largest_loss_group: MaterialGamutLossGroup | null;
+  largest_loss_delta_e: number | null;
+}
+
+export interface MaterialGamutContributionsResponse {
+  status: string;
+  message: string;
+  layer_count: number;
+  cell_size_delta_e: number;
+  baseline: MaterialGamutCoverageValue;
+  baseline_accuracy: MaterialGamutAccuracy;
+  is_complete: boolean;
+  items: MaterialGamutContributionItem[];
+}
+
+export interface MaterialSavedFile {
+  size_bytes: number;
+  modified_at: string | null;
+}
+
+export interface MaterialFixedCacheOverview {
+  exhaustive_grid_resolutions: number[];
+  saved_runtime_budgets: number[];
+}
+
+export interface MaterialDynamicCacheOverview {
+  candidate_budget: number;
+  is_ready: boolean;
+  catalog: MaterialSavedFile | null;
+  saved_layer_counts: number[];
+  missing_layer_counts: number[];
+  prepared_layer_counts: number[];
+}
+
+export interface MaterialCacheOverviewResponse {
+  status: string;
+  message: string;
+  layer_mode: MaterialLayerMode;
+  fixed: MaterialFixedCacheOverview | null;
+  dynamic: MaterialDynamicCacheOverview | null;
+}
+
+export interface MaterialDynamicCachePrepareResponse {
+  status: string;
+  message: string;
+  built: boolean;
+  elapsed_seconds: number;
+  dynamic: MaterialDynamicCacheOverview;
+}
+
+export interface MaterialDynamicCacheDeleteResponse {
+  status: string;
+  message: string;
+  deleted: boolean;
+}
+
 /** One achievable-color candidate returned by the suggester endpoint. */
 export interface MaterialColorSuggestionItem {
   hex: string;

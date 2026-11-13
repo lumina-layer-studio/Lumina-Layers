@@ -16,6 +16,71 @@ export interface AnnouncementEntry {
 
 export const ANNOUNCEMENTS: ReadonlyArray<AnnouncementEntry> = [
   {
+    version: "2026-11-11",
+    title: { zh: "Lumina Layers — 11 月更新速览", en: "Lumina Layers — November updates" },
+    sections: [
+      {
+        category: { zh: "新功能", en: "New" },
+        items: [
+          {
+            zh: "创意工坊支持在本机运行带 Python 处理功能的模块，可按需准备依赖、查看任务进度，并把结果送到图像转换。切换页面不会中断任务。",
+            en: "Creative Workshop can run modules with local Python processing. Prepare dependencies when needed, follow task progress and send results to Image Conversion. Switching pages keeps tasks running.",
+          },
+        ],
+      },
+      {
+        category: { zh: "预览 & 交互", en: "Preview & Interaction" },
+        items: [
+          {
+            zh: "大图预览使用更轻的显示图，模型尺寸、打印精度和编辑用的原图保持不变。拖动挂孔时位置同步更稳定，松手或取消后可正常调整视角。",
+            en: "Large images use a lighter display preview without changing model dimensions, print detail or the image used for editing. Keychain-loop positions stay in sync while dragging, and view controls resume after releasing or cancelling.",
+          },
+        ],
+      },
+      {
+        category: { zh: "稳定性", en: "Stability" },
+        items: [
+          {
+            zh: "批量生成后若合并失败，仍可逐件下载已完成的模型；关闭对应预览后，下载在保留期内仍可使用。",
+            en: "If a batch cannot be merged, completed models remain available as individual downloads. They stay available for their retention period even after closing the source preview.",
+          },
+          {
+            zh: "使用自定义 3MF 模板时，会在生成模型前提示耗材槽位不足，并说明需要多少槽位。",
+            en: "Custom 3MF templates are checked for enough filament slots before model generation, with a message showing how many are needed.",
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: "2026-11-07",
+    title: { zh: "Lumina Layers — 11 月更新速览", en: "Lumina Layers — November updates" },
+    sections: [
+      {
+        category: { zh: "新功能", en: "New" },
+        items: [
+          {
+            zh: "新增 Bambu H3C，可在设置中选择 0.2 或 0.4 mm 喷嘴。更新了 Bambu、QIDI、Anycubic、Flash、Snapmaker 和 Prusa 的切片配置及 Prusa 机型图片。Prusa 使用 3.0.0-alpha13 预览版。",
+            en: "Added Bambu H3C with 0.2 and 0.4 mm nozzles in Settings. Updated Bambu, QIDI, Anycubic, Flash, Snapmaker and Prusa slicer profiles and Prusa printer images. Prusa uses the 3.0.0-alpha13 preview.",
+          },
+          {
+            zh: "使用 Bambu Studio 和 X2D 时，可在「耗材配置」中指定外置料盘上安装的耗材。导出的 3MF 会保留对应的喷嘴分配。",
+            en: "For the X2D in Bambu Studio, choose the filament loaded on the external spool under Filament settings. The exported 3MF keeps that nozzle assignment.",
+          },
+        ],
+      },
+      {
+        category: { zh: "稳定性", en: "Stability" },
+        items: [
+          {
+            zh: "重排、减少或合并耗材槽位时，完整保留各耗材的原生温度等设置和已有工艺参数，支持混合使用不同参数数量的原生耗材预设。",
+            en: "Reordering, reducing or merging material slots preserves native temperatures and existing process settings, including native material presets with different numbers of parameters.",
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: "2026-10-28",
     title: { zh: "Lumina Layers — 10 月更新速览", en: "Lumina Layers — October updates" },
     sections: [

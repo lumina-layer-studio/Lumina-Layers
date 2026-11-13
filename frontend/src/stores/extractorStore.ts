@@ -108,6 +108,7 @@ function cornerPointsEqual(
 // ========== State Interface ==========
 
 export interface ExtractorState {
+  workspaceSessionId: string | null;
   // 图片
   imageFile: File | null;
   imagePreviewUrl: string | null;
@@ -250,6 +251,7 @@ function buildBasicMaterialType(material: string | null | undefined): string {
 // ========== Default State ==========
 
 const DEFAULT_STATE: ExtractorState = {
+  workspaceSessionId: null,
   imageFile: null,
   imagePreviewUrl: null,
   imageNaturalWidth: null,
@@ -1157,6 +1159,7 @@ export const useExtractorStore = create<ExtractorState & ExtractorActions>(
       set({ isLoading: true, error: null });
       try {
         const response = await extractColors(useColorcheckerFull ? null : fileToExtract, {
+          workspaceSessionId: state.workspaceSessionId ?? "new",
           corner_points: state.corner_points,
           color_mode: state.color_mode,
           page: state.page,
@@ -1226,6 +1229,7 @@ export const useExtractorStore = create<ExtractorState & ExtractorActions>(
 
         set({
           session_id: response.session_id,
+          workspaceSessionId: response.workspace_session_id ?? get().workspaceSessionId,
           lut_download_url: response.lut_download_url
             ? normalizeResourceUrl(response.lut_download_url)
             : null,
@@ -1319,10 +1323,11 @@ export const useExtractorStore = create<ExtractorState & ExtractorActions>(
       set({ mergeLoading: true, mergeError: null });
       try {
         const response = is5c
-          ? await mergeFiveColorExtended()
-          : await mergeEightColor(state.eight_color_full_export);
+          ? await mergeFiveColorExtended(state.workspaceSessionId)
+          : await mergeEightColor(state.eight_color_full_export, state.workspaceSessionId);
         set({
           session_id: response.session_id,
+          workspaceSessionId: response.workspace_session_id ?? get().workspaceSessionId,
           lut_download_url: response.lut_download_url
             ? normalizeResourceUrl(response.lut_download_url)
             : null,

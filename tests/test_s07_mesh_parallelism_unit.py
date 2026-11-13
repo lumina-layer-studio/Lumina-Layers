@@ -6,12 +6,14 @@ from concurrent.futures import ThreadPoolExecutor as RealThreadPoolExecutor
 import logging
 import threading
 import time
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
 import trimesh
+from hypothesis import given, settings, strategies as st
 
-from config import ModelingMode
+from config import ModelingMode, PrinterConfig
 from core.pipeline import s07_mesh_generation
 from core.task_parallelism import AdaptiveParallelismPlan
 
@@ -292,6 +294,7 @@ def test_s07_worker_exception_fails_closed_with_original_material_context(
     target_logger = logging.getLogger(
         "lumina.core.pipeline.s07_mesh_generation"
     )
+    monkeypatch.setattr(target_logger, "propagate", False)
     target_logger.addHandler(caplog.handler)
     try:
         with pytest.raises(ValueError, match="refusing partial model export"):
@@ -443,3 +446,117 @@ def test_s07_serial_and_parallel_mesh_outputs_are_byte_identical(
 
     assert serial_result["valid_slot_names"] == parallel_result["valid_slot_names"]
     assert _scene_signature(serial_result) == _scene_signature(parallel_result)
+
+
+@pytest.mark.parametrize("available_bytes", [None, 0, 32 * 1024 * 1024])
+def test_s07_memory_pressure_prevents_overlapping_material_working_sets(
+    monkeypatch: pytest.MonkeyPatch,
+    available_bytes: int | None,
+) -> None:
+    """Large volumes stay exact while memory pressure limits concurrency."""
+
+    mesher = _RecordingMesher()
+    context = _make_context(4)
+    z, y, x = np.indices((4, 128, 128))
+    context["full_matrix"] = ((x + y + z) % 4).astype(np.int16)
+    context["target_h"] = 128
+    monkeypatch.setattr(
+        s07_mesh_generation,
+        "get_mesher",
+        lambda *args, **kwargs: mesher,
+    )
+    monkeypatch.setattr(
+        s07_mesh_generation,
+        "resolve_task_parallelism_plan",
+        lambda *args, **kwargs: _parallelism_plan(4),
+    )
+    monkeypatch.setattr(
+        s07_mesh_generation,
+        "get_effective_memory_capacity",
+        lambda: SimpleNamespace(available_bytes=available_bytes),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        s07_mesh_generation,
+        "ThreadPoolExecutor",
+        lambda **kwargs: pytest.fail("material working sets must not overlap"),
+    )
+    monkeypatch.delenv("LUMINA_DISABLE_PARALLEL_MESH", raising=False)
+
+    result = s07_mesh_generation.run(context)
+
+    assert mesher.thread_ids == [threading.get_ident()] * 4
+    assert result["valid_slot_names"] == context["slot_names"]
+    assert result["_hifi_timings"]["mesh_parallelism_workers"] == 1
+    assert result["_hifi_timings"]["mesh_parallelism_limit"] == "memory_budget"
+    for index, name in enumerate(result["valid_slot_names"]):
+        mesh = result["scene"].geometry[name]
+        assert float(mesh.volume) == pytest.approx((index + 1) * PrinterConfig.LAYER_HEIGHT)
+        np.testing.assert_array_equal(mesh.visual.face_colors[0], context["preview_colors"][index])
+
+
+@pytest.mark.parametrize("sparse", [False, True])
+def test_s07_smooth_large_volumes_keep_useful_material_parallelism(
+    monkeypatch: pytest.MonkeyPatch,
+    sparse: bool,
+) -> None:
+    """Array size alone must not serialize smooth or sparse surfaces."""
+
+    context = _make_context(4)
+    labels = np.full((4, 1024, 1024), -1, dtype=np.int16)
+    for mat_id in range(4):
+        if sparse:
+            labels[:, 4:12, mat_id * 16 : mat_id * 16 + 8] = mat_id
+        else:
+            labels[:, :, mat_id * 256 : (mat_id + 1) * 256] = mat_id
+    context["full_matrix"] = labels
+    context["target_h"] = 1024
+    pool_workers: list[int] = []
+
+    def pool(*, max_workers: int) -> RealThreadPoolExecutor:
+        pool_workers.append(max_workers)
+        return RealThreadPoolExecutor(max_workers=max_workers)
+
+    monkeypatch.setattr(s07_mesh_generation, "get_mesher", lambda *args, **kwargs: _RecordingMesher())
+    monkeypatch.setattr(s07_mesh_generation, "resolve_task_parallelism_plan", lambda *args, **kwargs: _parallelism_plan(4))
+    monkeypatch.setattr(
+        s07_mesh_generation,
+        "get_effective_memory_capacity",
+        lambda: SimpleNamespace(available_bytes=512 * 1024 * 1024),
+    )
+    monkeypatch.setattr(s07_mesh_generation, "ThreadPoolExecutor", pool)
+    monkeypatch.delenv("LUMINA_DISABLE_PARALLEL_MESH", raising=False)
+
+    result = s07_mesh_generation.run(context)
+
+    assert pool_workers == [4]
+    assert result["valid_slot_names"] == context["slot_names"]
+    assert result["_hifi_timings"]["mesh_parallelism_workers"] == 4
+
+
+@settings(max_examples=60, deadline=None)
+@given(st.lists(st.integers(-1, 3), min_size=24, max_size=24))
+def test_surface_budget_upper_bound_covers_all_material_face_runs(
+    values: list[int],
+) -> None:
+    """The fast path must cover every orientation, material, and air border."""
+
+    labels = np.asarray(values, dtype=np.int16).reshape((2, 3, 4))
+    actual_runs = 0
+    for material_id in range(4):
+        selected = labels == material_id
+        for normal_axis in range(3):
+            run_axis = 1 if normal_axis == 2 else 2
+            for direction in (-1, 1):
+                neighbor = np.roll(selected, direction, axis=normal_axis)
+                boundary = [slice(None)] * 3
+                boundary[normal_axis] = 0 if direction == 1 else -1
+                neighbor[tuple(boundary)] = False
+                exposed = selected & ~neighbor
+                preceding = np.roll(exposed, 1, axis=run_axis)
+                boundary = [slice(None)] * 3
+                boundary[run_axis] = 0
+                preceding[tuple(boundary)] = False
+                actual_runs += int(np.count_nonzero(exposed & ~preceding))
+
+    assert s07_mesh_generation._mesh_surface_run_upper_bound(labels) >= actual_runs

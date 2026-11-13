@@ -173,6 +173,23 @@ def test_generate_worker_exception_uses_public_error_language(tmp_path: Path) ->
     assert "decode failed" not in response.text
 
 
+def test_generate_late_template_capacity_error_preserves_422_and_slot_counts(tmp_path: Path) -> None:
+    """Auxiliary geometry can exceed template capacity after material preflight."""
+    from core.errors import TemplateSlotCapacityError
+
+    pool = MagicMock(spec=WorkerPoolManager)
+    pool.submit_timed = AsyncMock(side_effect=TemplateSlotCapacityError(5, 4))
+
+    response = _post_generate_with_pool(tmp_path, pool)
+
+    assert pool.submit_timed.await_count == 1
+    assert response.status_code == 422, response.text
+    detail = response.json()["detail"]
+    assert detail["code"] == "template_slot_capacity"
+    assert detail["required_slots"] == 5
+    assert detail["available_slots"] == 4
+
+
 def test_generate_missing_worker_output_uses_public_error_language(tmp_path: Path) -> None:
     private_path = "/Users/min/private/model.3mf"
     pool = MagicMock(spec=WorkerPoolManager)

@@ -291,8 +291,10 @@ export async function fetchMaterialColorSuggestions(
   key: MaterialSolverCacheKey,
   targetHex: string,
   options?: MaterialColorSuggestOptions,
+  sessionId?: string | null,
 ): Promise<MaterialColorSuggestionsResponse> {
   const extra: Record<string, string> = { target_hex: targetHex };
+  if (sessionId) extra.session_id = sessionId;
   if (options?.topK != null) extra.top_k = String(options.topK);
   if (options?.minSpacing != null) {
     extra.min_spacing = String(options.minSpacing);

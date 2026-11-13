@@ -57,7 +57,11 @@ from core.vector_layer_geometry import (
     build_vector_layered_volume,
     resolve_vector_writer_grid_mm,
 )
-from core.svg_coordinate_domain import SvgCoordinateDomain, prepare_print_slabs
+from core.svg_coordinate_domain import (
+    SvgCoordinateDomain,
+    prepare_print_slabs,
+    should_mirror_vector_export,
+)
 
 # ---------------------------------------------------------------------------
 # Cycle-safe re-import of small helpers that originate in coordinator.
@@ -864,13 +868,8 @@ def _apply_vector_outline_export_transform(
 
     Body meshes are normalised in ``VectorProcessor.build_mesh`` after
     extrusion: SVG's Y-down coordinates are flipped into printer Y-up space,
-    and non-5-colour single-sided exports are mirrored on X. The Outline mesh
-    is generated outside ``build_mesh``, so it must repeat those two transforms
-    explicitly.
-
-    主体网格在 ``VectorProcessor.build_mesh`` 里完成坐标归一：先把 SVG 的
-    Y-down 坐标翻到打印坐标，再对非 5 色单面导出做 X 镜像。Outline 是在
-    ``build_mesh`` 外部生成的，因此这里显式复用同一组变换。
+    and face-down artwork is mirrored on X. Relief remains face-up. Outline
+    uses the body's orientation rule because it is built outside ``build_mesh``.
     """
     if _resolve_vector_outline_export_size_mm(analysis, scale_factor) is None:
         return
@@ -889,9 +888,11 @@ def _apply_vector_outline_export_transform(
         else ctx.get("color_mode", "")
     )
     color_mode_text = str(color_mode_source or "")
-    is_single_sided = "单面" in structure_mode_text or "Single" in structure_mode_text
-    is_5color = "5-Color Extended" in color_mode_text
-    if is_single_sided and not is_5color:
+    if should_mirror_vector_export(
+        structure_mode_text,
+        color_mode_text,
+        enable_relief=bool(ctx.get("enable_relief", False)),
+    ):
         mirror_x = np.eye(4)
         mirror_x[0, 0] = -1.0
         outline_mesh.apply_transform(mirror_x)
@@ -2597,6 +2598,7 @@ def _run_vector_branch(ctx: dict) -> dict:
             project_slot_names=vec_slot_list,
             material_types=ctx.get("material_types"),
             backing_output=ctx.get("backing_output", "same_project"),
+            external_spool_material=ctx.get("external_spool_material"),
             native_filament_profiles=ctx.get("native_filament_profiles"),
             enable_base_layer_height_modifier=(
                 bool(ctx.get("enable_base_layer_height_modifier", True))

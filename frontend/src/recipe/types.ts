@@ -123,6 +123,7 @@ export interface ConverterRecipeColorOps {
     quantized_hex: string;
     matched_hex: string;
     replacement_hex: string;
+    source_scope?: { shape: number[]; bits: string } | null;
   }>;
   free_color_set: string[];
   /** V2+: per-region custom recipe overrides (region_id, recipe, layer_order). */
@@ -209,6 +210,7 @@ export interface ConverterRecipeDevice {
   custom_3mf_template_id?: string | null;
   /** Exact native filament presets, scoped to this recipe's hardware target. */
   native_filament_profiles?: Record<string, string>;
+  external_spool_material?: string;
   /** Preserve the slicer's base-layer height modifier choice. */
   enable_base_layer_height_modifier?: boolean;
   /** Allow Lumina to adapt the model and wipe-tower layout during export. */

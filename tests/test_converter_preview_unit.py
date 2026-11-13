@@ -484,6 +484,79 @@ def test_preview_lut_constrained_positive_hue_weight_succeeds_through_worker(
                 app.dependency_overrides[dependency] = previous
 
 
+def test_preview_small_real_input_keeps_print_dimensions_with_bounded_display(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The worker PNG budget must not become the printable grid dimensions."""
+    monkeypatch.setattr("config.IMAGE_PREVIEW_MAX_EDGE", 32)
+    monkeypatch.setattr("config.TEMP_DIR", str(tmp_path))
+    monkeypatch.setattr("api.file_registry.TEMP_DIR", str(tmp_path))
+    monkeypatch.setattr("api.preview_cache_artifacts.TEMP_DIR", str(tmp_path))
+    monkeypatch.setattr("api.routers.converter.preview.TEMP_DIR", str(tmp_path))
+    image_path = tmp_path / "input.png"
+    rgba = np.full((12, 8, 4), 255, dtype=np.uint8)
+    rgba[:2, :, 3] = 0
+    rgba[4:10, 2:6, :3] = [220, 20, 60]
+    Image.fromarray(rgba).save(image_path)
+    lut_path = tmp_path / "lut.npz"
+    np.savez(
+        lut_path,
+        rgb=np.array([[255, 255, 255], [220, 20, 60]], dtype=np.uint8),
+        stacks=np.array([[0, 0, 0, 0, 0], [1, 1, 1, 1, 1]], dtype=np.int32),
+    )
+    store = SessionStore(ttl=1800)
+    registry = FileRegistry()
+    monkeypatch.setitem(app.dependency_overrides, get_session_store, lambda: store)
+    monkeypatch.setitem(app.dependency_overrides, get_file_registry, lambda: registry)
+    monkeypatch.setitem(
+        app.dependency_overrides, get_worker_pool, lambda: _InlineRealWorkerPool(),
+    )
+
+    try:
+        local_client = TestClient(app, raise_server_exceptions=False)
+        with (
+            patch(
+                "api.routers.converter.preview.LUTManager.resolve_source_selection",
+                return_value=(str(lut_path), "Temporary LUT"),
+            ),
+            patch(
+                "api.routers.converter.preview.ensure_png_tempfile",
+                new=AsyncMock(return_value=str(image_path)),
+            ),
+            patch("api.routers.converter.preview.generate_segmented_glb", return_value=None),
+        ):
+            response = local_client.post(
+                "/api/convert/preview",
+                files={"image": ("input.png", image_path.read_bytes(), "image/png")},
+                data={
+                    "lut_name": "temporary_lut", "color_mode": "4-Color (RYBW)",
+                    "target_width_mm": "4", "quantize_colors": "8",
+                    "enable_cleanup": "false",
+                },
+            )
+            assert response.status_code == 200, response.text
+            payload = response.json()
+            dimensions = payload["dimensions"]
+            assert dimensions["width"] == 40
+            assert dimensions["height"] == 60
+            assert dimensions["width_mm"] == 4.0
+            assert dimensions["height_mm"] == 6.0
+            display_response = local_client.get(payload["preview_url"])
+            assert display_response.status_code == 200
+            with Image.open(io.BytesIO(display_response.content)) as display:
+                assert display.size == (21, 32)
+                assert display.mode == "RGBA"
+                assert display.getchannel("A").getextrema() == (0, 255)
+            raw_response = local_client.get(dimensions["preview_raw_url"])
+            assert raw_response.status_code == 200
+            with Image.open(io.BytesIO(raw_response.content)) as raw:
+                assert raw.size == (40, 60)
+    finally:
+        store.clear_all()
+        registry.clear_all()
+
+
 def test_empty_svg_real_worker_returns_actionable_422(tmp_path: Path) -> None:
     """Exercise the real vector wrapper that prefixes the stable diagnostic."""
 
@@ -2230,6 +2303,64 @@ class TestTimeoutReturns504:
 class TestGeneralExceptionReturns500:
     """Verify general Exception from pool.submit returns HTTP 500."""
 
+    @pytest.mark.parametrize("source_type", ["png", "svg"])
+    def test_preview_preserves_source_and_publishes_once(
+        self, source_type: str, tmp_path: Path,
+    ) -> None:
+        """PNG and native SVG inputs reach the worker unchanged."""
+        source = tmp_path / f"original.{source_type}"
+        if source_type == "png":
+            source.write_bytes(_make_test_image_buf().getvalue())
+        else:
+            source.write_text(
+                '<svg xmlns="http://www.w3.org/2000/svg" width="120" height="80">'
+                '<rect width="120" height="80" fill="#ff0000"/></svg>',
+                encoding="utf-8",
+            )
+        original_bytes = source.read_bytes()
+        worker_result = _create_worker_result_files()
+        calls: list[tuple[object, ...]] = []
+
+        async def successful_preview(*args: object) -> dict:
+            calls.append(args)
+            assert Path(str(args[1])).read_bytes() == original_bytes
+            return worker_result
+
+        _mock_pool.submit = AsyncMock(side_effect=successful_preview)
+        with (
+            patch(
+                "api.routers.converter.preview.LUTManager.get_lut_path",
+                return_value="/tmp/fake.npy",
+            ),
+            patch(
+                "api.routers.converter.preview.ensure_png_tempfile",
+                new=AsyncMock(return_value=str(source)),
+            ),
+            patch("api.routers.converter.preview.schedule_glb_build"),
+            patch.object(_test_store, "create", wraps=_test_store.create) as create,
+        ):
+            response = client.post(
+                "/api/convert/preview",
+                files={"image": (source.name, original_bytes)},
+                data={
+                    "lut_name": "test_lut", "color_mode": "4-Color",
+                    "modeling_mode": "vector" if source_type == "svg" else "high-fidelity",
+                    "target_width_mm": 100, "quantize_colors": 48,
+                },
+            )
+
+        assert response.status_code == 200, response.text
+        assert len(calls) == 1
+        create.assert_called_once()
+        data = response.json()
+        try:
+            assert _test_store.get(data["session_id"]) is not None
+            assert client.get(data["preview_url"]).status_code == 200
+            assert source.read_bytes() == original_bytes
+        finally:
+            _test_registry.cleanup_session(data["session_id"])
+            _test_store.close(data["session_id"])
+
     def test_preview_exception_returns_500(self) -> None:
         """Simulate pool.submit raising RuntimeError, expect 500."""
         buf = _make_test_image_buf()
@@ -2263,14 +2394,19 @@ class TestGeneralExceptionReturns500:
         )
         assert private_path not in response.text
         assert "Worker crashed" not in response.text
+        assert _mock_pool.submit.await_count == 1
         log_exception.assert_called_once()
         log_extra = log_exception.call_args.kwargs["extra"]
         assert log_extra["error_type"] == "RuntimeError"
         assert log_extra["error_message"] == response.json()["detail"]
         assert private_path not in log_extra["error_message"]
 
-    def test_preview_broken_worker_pool_returns_retryable_503(self) -> None:
+    def test_preview_worker_crash_returns_503_without_replay(
+        self, tmp_path: Path,
+    ) -> None:
         buf = _make_test_image_buf()
+        source = tmp_path / "uploaded.png"
+        source.write_bytes(buf.getvalue())
         _mock_pool.submit = AsyncMock(
             side_effect=BrokenProcessPool("worker was killed")
         )
@@ -2282,7 +2418,7 @@ class TestGeneralExceptionReturns500:
             ),
             patch(
                 "api.routers.converter.preview.ensure_png_tempfile",
-                new=AsyncMock(return_value="/tmp/uploaded.png"),
+                new=AsyncMock(return_value=str(source)),
             ),
         ):
             response = client.post(
@@ -2292,6 +2428,8 @@ class TestGeneralExceptionReturns500:
             )
 
         assert response.status_code == 503
+        assert _mock_pool.submit.await_count == 1
+        assert not source.exists()
         assert response.json()["detail"] == (
             "Preview generation failed. Re-run preview and try again."
         )

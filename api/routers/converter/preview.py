@@ -22,8 +22,10 @@ from pydantic import ValidationError
 
 from api.dependencies import get_file_registry, get_session_store, get_worker_pool
 from api.dynamic_material_response import dynamic_material_result_from_cache
+from api.editor_project import EDITOR_PROJECT_MAX_BYTES, editor_project_preview_params
 from api.file_bridge import ensure_png_tempfile, ndarray_to_png_bytes
 from api.file_registry import FileRegistry
+from api.project_resources import stage_project_resources, discard_project_resources
 from api.preview_response_payload import build_preview_response_palette
 from api.preview_cache_artifacts import (
     estimate_preview_cache_bytes,
@@ -691,7 +693,7 @@ def _parse_preview_replacement_regions(
         )
     try:
         return [
-            ColorReplacementItem.model_validate(item).model_dump()
+            ColorReplacementItem.model_validate(item).model_dump(exclude_none=True)
             for item in parsed
         ]
     except ValidationError as exc:
@@ -901,6 +903,9 @@ async def crop_image(
 @router.post("/preview")
 async def convert_preview(
     image: UploadFile = File(..., description="输入图像"),
+    project_lut: Annotated[UploadFile | None, File()] = None,
+    project_materials: Annotated[UploadFile | None, File()] = None,
+    project_editor: Annotated[UploadFile | None, File()] = None,
     source_kind: str = Form("legacy_single", description="源类型: legacy_single | legacy_multi | native_bundle"),
     lut_name: str | None = Form(None, description="LUT 名称"),
     lut_names: list[str] | str | None = Form(None, description="经典 LUT 名称列表"),
@@ -993,6 +998,7 @@ async def convert_preview(
     surface_original_image_path: str | None = None
     surface_config: dict | None = None
     temp_native_bundle_path: str | None = None
+    project_resources = None
     svg_large_format_policy = None
     material_source = _validate_material_source(material_source)
     (
@@ -1080,16 +1086,19 @@ async def convert_preview(
             }
             if request.source_kind == "legacy_multi":
                 source_kwargs["lut_names"] = request.lut_names
-            lut_path, resolved_lut_name = LUTManager.resolve_source_selection(
-                **source_kwargs
-            )
+            if project_lut is not None:
+                lut_path, resolved_lut_name = "", request.lut_name or "Project source"
+            else:
+                lut_path, resolved_lut_name = LUTManager.resolve_source_selection(
+                    **source_kwargs
+                )
         except ValueError as exc:
             detail = str(exc)
             status_code = 404 if detail.startswith("LUT not found:") else 422
             raise HTTPException(status_code=status_code, detail=detail) from exc
 
         resolved_lut_path = os.path.abspath(lut_path)
-    if request.source_kind in ("native_bundle", "legacy_multi"):
+    if project_lut is None and request.source_kind in ("native_bundle", "legacy_multi"):
         try:
             Path(resolved_lut_path).resolve().relative_to(Path(TEMP_DIR).resolve())
         except ValueError:
@@ -1106,6 +1115,11 @@ async def convert_preview(
 
     worker_completed = False
     try:
+        if (project_lut is not None and material_source == "material_archive") or (project_materials is not None and material_source != "material_archive"):
+            raise HTTPException(422, "Project resources do not match the selected color source")
+        project_resources = await stage_project_resources(project_lut, project_materials, _selected_mats or [])
+        if project_resources and project_resources.lut_path:
+            lut_path = project_resources.lut_path
         # 1. File upload (I/O, main thread)
         _t = time.perf_counter()
         temp_path = await ensure_png_tempfile(image)
@@ -1139,6 +1153,19 @@ async def convert_preview(
             surface_original_image_path = temp_path
             temp_path = surface_config["surface_artwork_path"]
             target_width_mm = float(surface_config["target_width_mm"])
+        if project_editor is not None:
+            try:
+                editor_payload = await project_editor.read(EDITOR_PROJECT_MAX_BYTES + 1)
+                editor_params = await asyncio.to_thread(
+                    editor_project_preview_params, editor_payload,
+                    image_path=temp_path, modeling_mode=modeling_mode,
+                )
+            except ValueError as exc:
+                raise HTTPException(status_code=422, detail=str(exc)) from exc
+            finally:
+                await project_editor.close()
+            target_width_mm = editor_params["target_width_mm"]
+            svg_pixels_per_mm = editor_params.get("svg_pixels_per_mm", svg_pixels_per_mm)
         _t_upload = time.perf_counter() - _t
         is_svg_upload = str(temp_path).lower().endswith(".svg")
         _validate_svg_hole_compensation(
@@ -1248,6 +1275,7 @@ async def convert_preview(
             svg_hole_compensation_enabled,
             svg_hole_max_area_mm2,
             svg_hole_max_width_mm,
+            project_resources.materials_dir if project_resources else None,
         )
         _t_worker = time.perf_counter() - _worker_t0
         worker_completed = True
@@ -1288,6 +1316,7 @@ async def convert_preview(
         raise HTTPException(status_code=500, detail=_PREVIEW_GENERATION_FAILED_DETAIL)
     finally:
         if not worker_completed:
+            discard_project_resources(project_resources)
             _cleanup_pre_session_temp_paths(
                 temp_path,
                 surface_original_image_path,
@@ -1391,8 +1420,9 @@ async def convert_preview(
                     cache_data = pickle.load(f)
             _t_pickle_load = time.perf_counter() - _t
 
-            # Load preview image from disk (worker saved as .png). Copy it so the
-            # file handle is closed before rollback cleanup can run on Windows.
+            # The worker saves a bounded screen image, separate from the full
+            # cache grid. Keep Pillow's normal image-read protection enabled.
+            # Copy it so rollback cleanup can close the file on Windows.
             with Image.open(worker_preview_png_path) as worker_preview_img:
                 preview_img = worker_preview_img.copy()
 
@@ -1673,6 +1703,9 @@ async def convert_preview(
                 if surface_original_image_path is not None:
                     store.put(session_id, "surface_source_image_path", surface_original_image_path)
             store.put(session_id, "lut_path", lut_path)
+            if project_resources is not None:
+                store.put(session_id, "project_materials_dir", project_resources.materials_dir)
+                store.register_temp_file(session_id, project_resources.root)
             store.put(session_id, "lut_name", resolved_lut_name)
             store.put(session_id, "lut_source_kind", request.source_kind)
             store.put(session_id, "lut_names", list(request.lut_names))
@@ -1733,7 +1766,7 @@ async def convert_preview(
             if worker_gradient_region_id_map_path is not None:
                 store.register_temp_file(session_id, worker_gradient_region_id_map_path)
 
-            # Register preview image (bed-rendered, for general display)
+            # Register the bounded preview image for general display.
             preview_bytes = _image_to_png_bytes(preview_img)
             preview_id = registry.register_bytes(session_id, preview_bytes, "preview.png")
 
@@ -1784,9 +1817,13 @@ async def convert_preview(
 
             dimensions: dict = {}
             if cache_data:
+                # Printable dimensions come from the model grid, never the
+                # bounded screen image loaded above.
                 dimensions = {
                     "width": cache_data.get("target_w", 0),
                     "height": cache_data.get("target_h", 0),
+                    "width_mm": target_width_mm,
+                    "height_mm": target_width_mm * cache_data.get("target_h", 0) / max(1, cache_data.get("target_w", 0)),
                 }
             if preview_raw_url:
                 dimensions["preview_raw_url"] = preview_raw_url
@@ -1875,6 +1912,7 @@ async def convert_preview(
             return response
         finally:
             if not publication_succeeded:
+                discard_project_resources(project_resources)
                 extra_temp_paths = (
                     temp_path,
                     surface_original_image_path,

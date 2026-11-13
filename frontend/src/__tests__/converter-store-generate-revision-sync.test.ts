@@ -68,8 +68,6 @@ function seedEditorState(): string {
     free_color_set: new Set<string>(),
     remapHistory: [],
     remapRedoHistory: [],
-    adjustmentHistory: [],
-    adjustmentRedoHistory: [],
     historyCanUndo: true,
     historyCanRedo: false,
     historyBusy: false,

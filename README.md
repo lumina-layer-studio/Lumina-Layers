@@ -217,7 +217,7 @@ Open the frontend address printed by the launcher, normally `http://localhost:41
 
 Source installs do not connect to an online material library by default. Local material profiles work offline. To connect a Registry you host or are authorized to use, configure its service URL separately; see the [Registry connection guide](docs/material-registry-connection.md).
 
-The native 3MF dependencies are `fatcat-metadata==0.1.3` and the official `neroued-3mf==0.4.2` release. Both install from PyPI through `requirements.txt`; no custom writer wheelhouse is needed. See [the native dependency guide](docs/desktop-electron.md) for supported platforms. The SVG dependency remains `lumina-svg-core==0.3.4`.
+Installing `requirements.txt` downloads the PyPI wheels for `fatcat-metadata==0.1.5`, `neroued-3mf==0.4.2` and `lumina-svg-core==0.3.4`. See [the native dependency guide](docs/desktop-electron.md) for supported platforms.
 
 ### Optional: desktop window
 
@@ -235,7 +235,7 @@ The desktop window starts its own Python backend and frontend, so do not also ru
 - Check that the materials and layer height match your profile or preset. Transparent coating follows the model's material type; mixed or unknown types default to PLA. Confirm the actual transparent filament, temperatures, and compatibility warnings in the slicer before printing.
 - Model surface overlay currently cannot be exported together with large-format tiling; choose one of the two workflows.
 - If a large model's wipe tower or brim will not fit, Lumina keeps the warning and lets you download the project. You still need to arrange it in the slicer; a downloaded file has not necessarily been placed or sliced successfully.
-- Prusa export currently uses the **PrusaSlicer 3.0.0-alpha12** preview format. Check compatibility before using another version. Details are in [3MF export](docs/3mf-metadata-export.md).
+- Prusa export currently uses the **PrusaSlicer 3.0.0-alpha13** preview format. Check compatibility before using another version. Details are in [3MF export](docs/3mf-metadata-export.md).
 - Save a JSON project or PNG share card to continue editing later, and keep the original image, presets, and material profiles for important projects.
 
 ## Documentation, community, and support

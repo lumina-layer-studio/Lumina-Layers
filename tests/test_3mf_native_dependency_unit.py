@@ -58,7 +58,7 @@ def test_fatcat_build_contract_uses_public_root_and_writer_source() -> None:
     )
 
     assert FATCAT_REPOSITORY == "https://github.com/MOVIBALE/fatcat-metadata"
-    assert FATCAT_VERSION == "0.1.3"
+    assert FATCAT_VERSION == "0.1.5"
     assert len(FATCAT_SOURCE_COMMIT) == 40
     assert len(FATCAT_WRITER_SOURCE_COMMIT) == 40
     assert FATCAT_WRITER_VERSION == "0.4.2"
@@ -69,7 +69,7 @@ def test_fatcat_build_contract_uses_public_root_and_writer_source() -> None:
     assert 'fatcat_root / "cpp"' not in build_script
 
 
-@pytest.mark.parametrize("missing_target", ["bambu-studio-02.08.02.61.json", "orca-slicer-2.4.2.json"])
+@pytest.mark.parametrize("missing_target", ["bambu-studio-02.09.01.70.json", "orca-slicer-2.4.2.json"])
 def test_shared_fatcat_packaging_contract_rejects_missing_target_data(
     monkeypatch,
     tmp_path: Path,

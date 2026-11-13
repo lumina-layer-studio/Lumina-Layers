@@ -1,6 +1,38 @@
 import type { ExportMaterialSelection } from "../../api/types";
 import type { SettingsState } from "../settingsStore";
 import type { ConverterState, NativeFilamentProfileScope } from "./types";
+import { normalizeSlicerOptionId } from "../../utils/settingsOptionIds";
+import { normalizeLegacyLutNames } from "./sources";
+
+export function supportsExternalSpool(settings: Pick<SettingsState, "custom3mfTemplateId" | "slicerSoftware" | "deviceProfileId" | "printerModel">): boolean {
+  return !settings.custom3mfTemplateId && normalizeSlicerOptionId(settings.slicerSoftware) === "BambuStudio" &&
+    (settings.deviceProfileId
+      ? settings.deviceProfileId.startsWith("BambuStudio:bbl:bambu-lab-x2d:")
+      : settings.printerModel === "bambu-lab-x2d");
+}
+
+/** Material names stay attached to their palette even when its channels are reordered. */
+export function externalSpoolPaletteKey(state: ConverterState): string {
+  if (state.source_version === "material") {
+    return JSON.stringify(["material", ...[...state.selectedMaterialDirNames].sort()]);
+  }
+  if (state.source_version === "native") {
+    return JSON.stringify(["native", state.selectedNativeBrandKey, ...[...state.selectedNativeDbNames].sort()]);
+  }
+  const lutNames = normalizeLegacyLutNames(state.lut_names, state.lut_name);
+  return JSON.stringify(["legacy", state.color_mode, ...lutNames.sort()]);
+}
+
+export function externalSpoolMaterial(state: ConverterState, settings: SettingsState): string | undefined {
+  const owner = state.projectSettings ?? settings;
+  return supportsExternalSpool(owner) ? owner.externalSpoolSelections?.[externalSpoolPaletteKey(state)] : undefined;
+}
+
+/** An external spool must resolve to exactly one exported slot. */
+export function selectableExternalSpoolMaterials(selection: ExportMaterialSelection): string[] {
+  const names = selection.materials.map(({ name }) => name);
+  return names.filter((name, index) => names.indexOf(name) === index && names.lastIndexOf(name) === index);
+}
 
 /** The exact hardware target that owns the user's native filament choices. */
 export function nativeFilamentProfileScope(

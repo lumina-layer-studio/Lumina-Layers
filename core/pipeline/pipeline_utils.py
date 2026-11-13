@@ -115,32 +115,21 @@ def extract_color_palette(preview_cache: dict) -> List[dict]:
     if matched_rgb is None or mask_solid is None:
         return []
 
-    # Get only solid pixels
-    solid_pixels = matched_rgb[mask_solid]
+    from core.pipeline.processing_ops.color_histogram import count_visible_rgb
 
-    if len(solid_pixels) == 0:
-        return []
-
-    total_solid = len(solid_pixels)
-
-    # Pack RGB into one uint32 so NumPy can use a fast 1-D unique path.
-    solid_rgb = np.asarray(solid_pixels[:, :3], dtype=np.uint8)
-    packed_rgb = (
-        (solid_rgb[:, 0].astype(np.uint32) << 16)
-        | (solid_rgb[:, 1].astype(np.uint32) << 8)
-        | solid_rgb[:, 2].astype(np.uint32)
+    unique_colors, counts = count_visible_rgb(
+        np.asarray(matched_rgb[..., :3], dtype=np.uint8), mask_solid
     )
-    unique_colors, counts = np.unique(packed_rgb, return_counts=True)
+    total_solid = int(counts.sum())
+    if total_solid == 0:
+        return []
 
     # Build palette entries
     palette = []
     order = np.argsort(-counts, kind="stable")
     for idx in order:
-        code = int(unique_colors[idx])
         count = int(counts[idx])
-        r = (code >> 16) & 0xFF
-        g = (code >> 8) & 0xFF
-        b = code & 0xFF
+        r, g, b = (int(channel) for channel in unique_colors[idx])
         palette.append(
             {
                 "color": (r, g, b),

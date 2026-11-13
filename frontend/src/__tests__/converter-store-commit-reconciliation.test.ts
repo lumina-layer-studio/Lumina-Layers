@@ -1,5 +1,7 @@
+import { buildPreviewParams } from "../stores/converter/requests";
+import { DEFAULT_SETTINGS } from "../stores/settingsStore";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { useConverterStore } from "../stores/converter";
+import { converterDocumentHistory, useConverterStore } from "../stores/converter";
 import type {
   ColorReplacementItem,
   ExportMaterialSelection,
@@ -17,6 +19,7 @@ vi.mock("../api/converter", async () => {
     resetReplacements: vi.fn(),
     applyRecipeOverride: vi.fn(),
     replacementHistory: vi.fn(),
+    replaceColorsBatch: vi.fn(),
     convertGenerate: vi.fn(),
     fetchExportMaterialSelection: vi.fn(),
     getEditorSelection: vi.fn(),
@@ -31,12 +34,14 @@ import {
   getEditorCommitStatus,
   getEditorSelection,
   replacementHistory,
+  replaceColorsBatch,
   resetReplacements,
 } from "../api/converter";
 
 const mockedResetReplacements = vi.mocked(resetReplacements);
 const mockedApplyRecipeOverride = vi.mocked(applyRecipeOverride);
 const mockedReplacementHistory = vi.mocked(replacementHistory);
+const mockedReplaceColorsBatch = vi.mocked(replaceColorsBatch);
 const mockedConvertGenerate = vi.mocked(convertGenerate);
 const mockedFetchExportMaterialSelection = vi.mocked(fetchExportMaterialSelection);
 const mockedGetEditorCommitStatus = vi.mocked(getEditorCommitStatus);
@@ -89,8 +94,6 @@ function seedEditorState(overrides: Record<string, unknown> = {}) {
     free_color_set: new Set(["abcdef"]),
     remapHistory: [{ ff0000: "0000ff" }],
     remapRedoHistory: [],
-    adjustmentHistory: [],
-    adjustmentRedoHistory: [],
     layerImages: [
       { layer_index: 0, name: "L0", url: "/api/files/layer-before.png" },
     ],
@@ -106,6 +109,7 @@ function seedEditorState(overrides: Record<string, unknown> = {}) {
     lut_name: "test-lut",
     ...overrides,
   } as never);
+  converterDocumentHistory.reset();
   return `commit-reconciliation-${sessionCounter}`;
 }
 
@@ -127,8 +131,8 @@ function expectPageStateUnchanged(
   expect(after.recipe_overrides).toEqual(before.recipe_overrides);
   expect(after.free_color_set).toEqual(before.free_color_set);
   expect(after.selectionDocument).toEqual(before.selectionDocument);
-  expect(after.adjustmentHistory).toEqual(before.adjustmentHistory);
-  expect(after.adjustmentRedoHistory).toEqual(before.adjustmentRedoHistory);
+  expect(after.historyCanUndo).toBe(before.historyCanUndo);
+  expect(after.historyCanRedo).toBe(before.historyCanRedo);
 }
 
 beforeEach(() => {
@@ -148,6 +152,75 @@ beforeEach(() => {
 });
 
 describe("editor commit receipt business-state reconciliation", () => {
+  it.each(["single", "batch", "gradient"].flatMap(mode => [false, true].map(delayed => ({ mode, delayed }))))("restores $mode remaps and exports on failure (delayed=$delayed)", async ({ mode, delayed }) => {
+    seedEditorState({
+      selectedColors: new Set(["00ff00"]),
+      remapRedoHistory: [{ ff0000: "cccccc" }],
+      threemfDiskPath: "/saved/model.3mf",
+      downloadUrl: "/api/files/model.3mf",
+      gradientGroups: [{ representative_hex: "#0000ff", material_colours: [{ hex: "#00ff00" }] }],
+      contentCommitStatus: "committed",
+    });
+    const before = useConverterStore.getState();
+    const beforePosition = converterDocumentHistory.store.getState().position;
+    mockedReplaceColorsBatch.mockRejectedValueOnce(new Error("response lost"));
+    mockedGetEditorCommitStatus.mockResolvedValueOnce({
+      status: delayed ? "pending" : "failed", operation_id: "remap-operation", editor_content_revision: 1, visible_content_revision: 1,
+    });
+
+    if (mode === "single") before.applyColorRemap("00ff00", "0000ff");
+    else if (mode === "batch") await before.applyBatchColorRemap("0000ff");
+    else await before.applyAutoGradientReplace();
+    await vi.waitFor(() => expect(useConverterStore.getState().contentCommitStatus).toBe(delayed ? "unknown" : "failed"));
+    if (delayed) {
+      expect(useConverterStore.getState().colorRemapMap).not.toEqual(before.colorRemapMap);
+      mockedGetEditorCommitStatus.mockResolvedValueOnce({
+        status: "failed", operation_id: "remap-operation", editor_content_revision: 1, visible_content_revision: 1,
+      });
+      await useConverterStore.getState().reconcileUnknownContentCommit();
+    }
+
+    const after = useConverterStore.getState();
+    expect(after.contentCommitStatus).toBe("failed");
+    expect(after.colorRemapMap).toEqual(before.colorRemapMap);
+    expect(after.remapHistory).toEqual(before.remapHistory);
+    expect(after.remapRedoHistory).toEqual(before.remapRedoHistory);
+    expect(after.threemfDiskPath).toBe(before.threemfDiskPath);
+    expect(after.downloadUrl).toBe(before.downloadUrl);
+    expect(after.previewImageUrl).toBe(before.previewImageUrl);
+    expect(converterDocumentHistory.store.getState().position).toBe(beforePosition);
+  });
+
+  it("prepares a queued single-color edit from the rolled-back map after a failed receipt", async () => {
+    const sid = seedEditorState();
+    const before = useConverterStore.getState();
+    const beforePosition = converterDocumentHistory.store.getState().position;
+    mockedReplaceColorsBatch.mockRejectedValue(new Error("response lost"));
+    mockedGetEditorCommitStatus.mockResolvedValueOnce({
+      status: "pending", operation_id: "first-remap", editor_content_revision: 1, visible_content_revision: 1,
+    });
+    before.applyColorRemap("00ff00", "0000ff");
+    await vi.waitFor(() => expect(useConverterStore.getState().contentCommitStatus).toBe("unknown"));
+    before.applyColorRemap("00ff00", "ffffff");
+    await Promise.resolve();
+    expect(mockedReplaceColorsBatch).toHaveBeenCalledTimes(1);
+    expect(useConverterStore.getState().colorRemapMap.ff0000).toBe("0000ff");
+    mockedGetEditorCommitStatus.mockResolvedValue({
+      status: "failed", operation_id: "remap", editor_content_revision: 1, visible_content_revision: 1,
+    });
+    await useConverterStore.getState().reconcileUnknownContentCommit();
+    await vi.waitFor(() => {
+      expect(mockedReplaceColorsBatch).toHaveBeenCalledTimes(2);
+      expect(useConverterStore.getState().contentCommitStatus).toBe("failed");
+    });
+    expect(mockedReplaceColorsBatch).toHaveBeenLastCalledWith(sid, [
+      { selectedColor: "#ff0000", replacementColor: "#ffffff" },
+      { selectedColor: "#00ff00", replacementColor: "#ffffff" },
+    ], expect.any(String));
+    expect(useConverterStore.getState().colorRemapMap).toEqual(before.colorRemapMap);
+    expect(converterDocumentHistory.store.getState().position).toBe(beforePosition);
+  });
+
   it("restores the clear snapshot when a later receipt confirms failure", async () => {
     const sessionId = seedEditorState();
     mockedResetReplacements.mockRejectedValueOnce(new Error("response lost"));
@@ -230,9 +303,9 @@ describe("editor commit receipt business-state reconciliation", () => {
     expect(state.previewGlbUrl).toBe("/api/files/recipe-committed.glb");
   });
 
-  it("restores the recipe history snapshot when a delayed receipt confirms failure", async () => {
+  it("keeps the document history unchanged when a delayed recipe receipt confirms failure", async () => {
     seedEditorState({ recipe_overrides: [] });
-    const beforeHistory = useConverterStore.getState().adjustmentHistory;
+    const beforePosition = converterDocumentHistory.store.getState().position;
     mockedApplyRecipeOverride.mockRejectedValueOnce(new Error("response lost"));
     mockedGetEditorCommitStatus.mockResolvedValueOnce({
       status: "pending",
@@ -245,7 +318,7 @@ describe("editor commit receipt business-state reconciliation", () => {
       .getState()
       .applyCustomRecipeOverride(["region-a"], [3, 3, 3]);
     expect(useConverterStore.getState().contentCommitStatus).toBe("unknown");
-    expect(useConverterStore.getState().adjustmentHistory).toHaveLength(1);
+    expect(converterDocumentHistory.store.getState().position).toBe(beforePosition);
 
     mockedGetEditorCommitStatus.mockResolvedValueOnce({
       status: "failed",
@@ -257,7 +330,7 @@ describe("editor commit receipt business-state reconciliation", () => {
 
     expect(useConverterStore.getState().contentCommitStatus).toBe("failed");
     expect(useConverterStore.getState().recipe_overrides).toEqual([]);
-    expect(useConverterStore.getState().adjustmentHistory).toEqual(beforeHistory);
+    expect(converterDocumentHistory.store.getState()).toMatchObject({ position: beforePosition, canUndo: false });
   });
 
   it("uses the committed undo result when preparing generation after sync", async () => {
@@ -555,4 +628,31 @@ describe("editor commit receipt business-state reconciliation", () => {
 
     expectPageStateUnchanged(beforeB);
   });
+});
+
+
+it("publishes normal HTTP success scope before material reset and next preview", async () => {
+  const scope = { shape: [1, 2], bits: "eJxrAAAAgQCB" };
+  seedEditorState({
+    replacement_regions: [], colorRemapMap: {}, recipe_overrides: [], regionReplacementCount: 0,
+    palette: [{ quantized_hex: "010101", matched_hex: "112233", pixel_count: 1, percentage: 50 }],
+    _pollAsyncGlb: vi.fn(),
+  });
+  mockedReplaceColorsBatch.mockResolvedValueOnce({
+    status: "ok", message: "Replaced 1 colors in batch", preview_url: "/api/files/changed.png",
+    replacement_count: 1, replacement_regions: [{ quantized_hex: "#112233", matched_hex: "#112233",
+      replacement_hex: "#ff0000", source_scope: scope }],
+    selection: document(2, 2), editor_content_revision: 2,
+  });
+  useConverterStore.getState().applyColorRemap("112233", "ff0000");
+  await vi.waitFor(() => expect(useConverterStore.getState().replacement_regions[0]?.source_scope).toEqual(scope));
+  expect(mockedGetEditorCommitStatus).not.toHaveBeenCalled();
+  useConverterStore.getState().setLutName("");
+  const after = useConverterStore.getState();
+  expect(after.sessionId).toBeNull();
+  expect(after.replacement_regions).toHaveLength(1);
+  expect(after.replacement_regions[0].source_scope).toEqual(scope);
+  const params = buildPreviewParams(after, DEFAULT_SETTINGS,
+    { source_kind: "legacy_single", lut_name: "new-lut" }, after.replacement_regions);
+  expect(JSON.parse(JSON.stringify(params)).replacement_regions[0].source_scope).toEqual(scope);
 });

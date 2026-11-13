@@ -249,6 +249,20 @@ def client(
     return TestClient(app)
 
 
+def test_external_spool_identity_is_preserved_in_saved_ticket(client, feedback_root) -> None:
+    payload = _payload()
+    material = "PETG Basic 黑色"
+    payload["context"].update(
+        printer_id="bambu-lab-x2d", external_spool_material=material,
+        advanced_params={"generation": {"external_spool_material": material}},
+    )
+    response = client.post("/api/feedback/bug-report", json=payload)
+    assert response.status_code == 200, response.text
+    ticket = _read_ticket_json(feedback_root, response.json()["ticket_id"])
+    assert ticket["context"]["external_spool_material"] == material
+    assert ticket["context"]["advanced_params"]["generation"]["external_spool_material"] == material
+
+
 def test_submit_bug_report_accepts_full_payload_and_logs_canary(
     client: TestClient,
     feedback_root: Path,

@@ -153,10 +153,14 @@ export default function BedPlatform({
   const modelUrl = useConverterStore((s) => s.modelUrl);
   const previewGlbUrl = useConverterStore((s) => s.previewGlbUrl);
   const batchPreviewItems = useConverterStore((s) => s.batchPreviewItems);
+  const projectSettings = useConverterStore((s) => s.projectSettings);
   const theme = useSettingsStore((s) => s.theme);
-  const buildPlateId = useSettingsStore((s) => s.buildPlateId);
-  const deviceProfileId = useSettingsStore((s) => s.deviceProfileId);
-  const slicerSoftware = useSettingsStore((s) => s.slicerSoftware);
+  const globalBuildPlateId = useSettingsStore((s) => s.buildPlateId);
+  const globalDeviceProfileId = useSettingsStore((s) => s.deviceProfileId);
+  const globalSlicerSoftware = useSettingsStore((s) => s.slicerSoftware);
+  const buildPlateId = projectSettings?.buildPlateId ?? globalBuildPlateId;
+  const deviceProfileId = projectSettings?.deviceProfileId ?? globalDeviceProfileId;
+  const slicerSoftware = projectSettings?.slicerSoftware ?? globalSlicerSoftware;
   const camera = useThree((state) => state.camera);
   const controls = useThree((state) => state.controls);
   const invalidate = useThree((state) => state.invalidate);

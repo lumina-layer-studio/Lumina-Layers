@@ -204,6 +204,32 @@ class TestResizeToTarget:
 class TestHeightClamping:
     """高度钳制测试：验证高度值小于 OPTICAL_LAYERS 厚度时被钳制为最小值"""
 
+    @pytest.mark.parametrize("mode", ["color", "heightmap"])
+    def test_bare_relief_has_no_optical_layers_and_uses_its_own_height(self, mode: str) -> None:
+        from core.converter import _build_relief_voxel_matrix
+
+        # Paint on backing, thin backing, true hole, paint alone and tall backing.
+        color = np.array([[True, False, False, True, False]])
+        backing = np.array([[True, True, False, False, True]])
+        heights = np.array([[0.64, 0.16, 2.4, 0.64, 1.12]], dtype=np.float32)
+        voxels, metadata = _build_relief_voxel_matrix(
+            matched_rgb=np.zeros((1, 5, 3), dtype=np.uint8),
+            material_matrix=np.full((1, 5, 5), 3), mask_solid=color, backing_mask=backing,
+            color_height_map={"#000000": 0.64}, default_height=1.2,
+            structure_mode="Single-sided", backing_color_id=7, pixel_scale=0.1,
+            height_matrix=heights if mode == "heightmap" else None,
+            global_max_height=None if mode == "heightmap" else 0.64,
+        )
+        thin_layers, tall_layers = (2, 14) if mode == "heightmap" else (15, 15)
+        np.testing.assert_array_equal(voxels[:8, 0, 0], [7, 7, 7, 3, 3, 3, 3, 3])
+        np.testing.assert_array_equal(voxels[:, 0, 1], np.where(np.arange(len(voxels)) < thin_layers, 7, -1))
+        assert np.all(voxels[:, 0, 2] == -1)
+        np.testing.assert_array_equal(voxels[:8, 0, 3], [-1, -1, -1, 3, 3, 3, 3, 3])
+        assert len(voxels) == tall_layers and np.all(voxels[:, 0, 4] == 7)
+        assert metadata["backing_z_range"] == (0, tall_layers - 1)
+        np.testing.assert_array_equal(metadata["backing_z_max_map"], [[2, thin_layers - 1, -1, -1, tall_layers - 1]])
+        np.testing.assert_array_equal(metadata["backing_z_min_map"], [[0, 0, -1, -1, 0]])
+
     def test_height_below_optical_thickness_is_clamped(self):
         """验证高度值小于 OPTICAL_LAYERS 厚度（0.4mm）时被钳制为最小值"""
         from core.converter import _build_relief_voxel_matrix

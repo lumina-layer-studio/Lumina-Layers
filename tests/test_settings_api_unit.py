@@ -64,6 +64,7 @@ class TestGetSettings:
         assert settings["device_profile_id"] == "BambuStudio:bbl:bambu-lab-h2d:0.4"
         assert settings["build_plate_id"] == ""
         assert settings["build_plate_selections"] == {}
+        assert settings["external_spool_selections"] == {}
         assert settings["nozzle_size"] == "0.4"
         assert settings["enable_wipe_tower_auto_placement"] is True
         assert settings["header_nav_alignment"] == "center"
@@ -174,6 +175,7 @@ class TestGetSettings:
     def test_get_settings_read_error_returns_defaults_without_unhandled_exception(
         self,
         caplog: pytest.LogCaptureFixture,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """I/O read failures fall back to defaults without app-level 500."""
         mock_file = MagicMock()
@@ -185,6 +187,8 @@ class TestGetSettings:
         client_no_raise = TestClient(app, raise_server_exceptions=False)
         system_logger = logging.getLogger("lumina.api.routers.system")
         app_logger = logging.getLogger("lumina.api.app")
+        monkeypatch.setattr(system_logger, "propagate", False)
+        monkeypatch.setattr(app_logger, "propagate", False)
         system_logger.addHandler(caplog.handler)
         app_logger.addHandler(caplog.handler)
         caplog.set_level(logging.WARNING, logger=system_logger.name)
@@ -277,12 +281,13 @@ class TestPostSettings:
         with patch("api.routers.system.SETTINGS_FILE", settings_file):
             saved = client.post(
                 "/api/system/settings",
-                json={"header_nav_alignment": alignment},
+                json={"header_nav_alignment": alignment, "external_spool_selections": {"rybw": "Black"}},
             )
             loaded = client.get("/api/system/settings")
 
         assert saved.status_code == 200, saved.text
         assert loaded.json()["settings"]["header_nav_alignment"] == alignment
+        assert loaded.json()["settings"]["external_spool_selections"] == {"rybw": "Black"}
         assert json.loads(settings_file.read_text(encoding="utf-8"))[
             "header_nav_alignment"
         ] == alignment

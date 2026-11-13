@@ -413,9 +413,11 @@ function KeychainRing3D({
   const intersectPoint = useRef(new THREE.Vector3());
   const isDraggingRef = useRef(false);
   const isHoveredRef = useRef(false);
+  const pendingOffset = useRef<{ x: number; y: number } | null>(null);
+  const dragFrame = useRef<number | null>(null);
 
   // Store setters
-  const setLoopOffsetX = useConverterStore((s) => s.setLoopOffsetX);
+  const setLoopOffsets = useConverterStore((s) => s.setLoopOffsets);
   const setLoopOffsetY = useConverterStore((s) => s.setLoopOffsetY);
   const shouldRenderGeometry = enabled && modelBounds !== null;
 
@@ -432,14 +434,13 @@ function KeychainRing3D({
     };
   }, [geometry]);
 
-  // Memoize position — recompute when preset/offset/bounds change (Req 2.2, 3.4)
-  const placement = useMemo(() => {
+  const getPlacement = useCallback((x: number, y: number) => {
     if (!modelBounds) return null;
     return computeLoopPlacement(
       positionPreset,
       modelBounds,
-      offsetX,
-      offsetY,
+      x,
+      y,
       Math.abs(angle) <= 1e-9 ? contours : undefined,
       width,
       contourCanvasBounds,
@@ -449,8 +450,6 @@ function KeychainRing3D({
   }, [
     positionPreset,
     modelBounds,
-    offsetX,
-    offsetY,
     angle,
     contours,
     width,
@@ -459,6 +458,10 @@ function KeychainRing3D({
     contourCanvasBounds,
     contourToDisplayPoint,
   ]);
+  const placement = useMemo(
+    () => getPlacement(offsetX, offsetY),
+    [getPlacement, offsetX, offsetY],
+  );
   const position = placement?.position ?? null;
   const constrainToLocalContour = placement?.usesLocalContour ?? false;
 
@@ -486,12 +489,44 @@ function KeychainRing3D({
     [controls],
   );
 
+  const cancelDragFrame = useCallback(() => {
+    if (dragFrame.current !== null) {
+      window.cancelAnimationFrame(dragFrame.current);
+      dragFrame.current = null;
+    }
+    pendingOffset.current = null;
+  }, []);
+
+  const commitDragPosition = useCallback(() => {
+    const next = pendingOffset.current;
+    pendingOffset.current = null;
+    if (next) {
+      // Use the destination contour before publishing either coordinate.
+      const y = getPlacement(next.x, next.y)?.usesLocalContour
+        ? Math.max(0, next.y)
+        : next.y;
+      setLoopOffsets(next.x, y);
+    }
+  }, [getPlacement, setLoopOffsets]);
+
   const restoreInteractionState = useCallback(() => {
+    cancelDragFrame();
     isDraggingRef.current = false;
     isHoveredRef.current = false;
     setControlsEnabled(true);
     document.body.style.cursor = "default";
-  }, [setControlsEnabled]);
+  }, [cancelDragFrame, setControlsEnabled]);
+
+  const finishDrag = useCallback(() => {
+    if (!isDraggingRef.current) return;
+    isDraggingRef.current = false;
+    // The last pointer event can arrive before its animation frame.
+    commitDragPosition();
+    cancelDragFrame();
+    setIsDragging(false);
+    setControlsEnabled(true);
+    document.body.style.cursor = isHoveredRef.current ? "grab" : "default";
+  }, [cancelDragFrame, commitDragPosition, setControlsEnabled]);
 
   // --- Drag handlers (Req 7.1–7.6) ---
   // Uses window-level pointermove/pointerup to prevent losing grip on fast drag.
@@ -502,12 +537,14 @@ function KeychainRing3D({
       if (cameraPanModifierActive || e.button !== 0) {
         return;
       }
+      if (!e.ray.intersectPlane(dragPlane.current, dragStartWorld.current)) {
+        return;
+      }
       e.stopPropagation();
       setIsDragging(true);
       isDraggingRef.current = true;
 
       // Record the world-space click position on the XY plane
-      e.ray.intersectPlane(dragPlane.current, dragStartWorld.current);
       dragStartOffset.current = { x: offsetX, y: offsetY };
 
       // Disable OrbitControls during drag (Req 7.3)
@@ -529,52 +566,48 @@ function KeychainRing3D({
 
       // Convert screen coords to normalized device coordinates
       const rect = canvas.getBoundingClientRect();
+      if (rect.width <= 0 || rect.height <= 0) return;
       _pointer.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
       _pointer.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
 
       // Build ray from camera through pointer
       _raycaster.setFromCamera(_pointer, camera);
-      _raycaster.ray.intersectPlane(dragPlane.current, intersectPoint.current);
+      if (!_raycaster.ray.intersectPlane(dragPlane.current, intersectPoint.current)) return;
 
       const deltaX = intersectPoint.current.x - dragStartWorld.current.x;
       const deltaY = intersectPoint.current.y - dragStartWorld.current.y;
 
-      const newOffsetX = clamp(dragStartOffset.current.x + deltaX);
-      const requestedOffsetY = clamp(dragStartOffset.current.y + deltaY);
-      const newOffsetY = constrainToLocalContour
-        ? Math.max(0, requestedOffsetY)
-        : requestedOffsetY;
-
-      setLoopOffsetX(newOffsetX);
-      setLoopOffsetY(newOffsetY);
-    };
-
-    const onPointerUp = () => {
-      if (!isDraggingRef.current) return;
-      isDraggingRef.current = false;
-      setIsDragging(false);
-
-      // Restore OrbitControls (Req 7.5)
-      setControlsEnabled(true);
-      document.body.style.cursor = isHovered ? "grab" : "default";
+      pendingOffset.current = {
+        x: clamp(dragStartOffset.current.x + deltaX),
+        y: clamp(dragStartOffset.current.y + deltaY),
+      };
+      if (dragFrame.current === null) {
+        dragFrame.current = window.requestAnimationFrame(() => {
+          dragFrame.current = null;
+          commitDragPosition();
+        });
+      }
     };
 
     window.addEventListener("pointermove", onPointerMove);
-    window.addEventListener("pointerup", onPointerUp);
+    window.addEventListener("pointerup", finishDrag);
+    window.addEventListener("pointercancel", finishDrag);
+    window.addEventListener("blur", finishDrag);
     return () => {
       window.removeEventListener("pointermove", onPointerMove);
-      window.removeEventListener("pointerup", onPointerUp);
+      window.removeEventListener("pointerup", finishDrag);
+      window.removeEventListener("pointercancel", finishDrag);
+      window.removeEventListener("blur", finishDrag);
+      cancelDragFrame();
     };
   }, [
     isDragging,
     camera,
     gl,
-    isHovered,
     clamp,
-    constrainToLocalContour,
-    setControlsEnabled,
-    setLoopOffsetX,
-    setLoopOffsetY,
+    commitDragPosition,
+    cancelDragFrame,
+    finishDrag,
   ]);
 
   // --- Hover handlers (Req 7.7) ---

@@ -37,6 +37,7 @@ import ModelSurfaceSelector3D from "./ModelSurfaceSelector3D";
 import { resolveModelSurfaceArtworkAsset } from "./modelSurface/artworkAsset";
 import { useConverterStore } from "../stores/converter";
 import { useSettingsStore } from "../stores/settingsStore";
+import { resolveConverterSettings } from "../stores/converter/project";
 import { computeScaleFactor } from "../utils/scaleUtils";
 import { createPreviewSpace } from "../utils/previewSpace";
 import { resolveCameraClippingPlanes } from "../utils/cameraDepthPrecision";
@@ -807,13 +808,14 @@ function Scene3D({ modelUrl, deferInitialization = false, suspended = false }: S
   const themeColors = useThemeConfig();
   const containerRef = useRef<HTMLDivElement>(null);
   const glRef = useRef<THREE.WebGLRenderer | null>(null);
+  const projectSettings = useConverterStore((s) => s.projectSettings);
   const getTransitionKey = useCallback(() => {
-    const settings = useSettingsStore.getState();
+    const settings = resolveConverterSettings({ projectSettings }, useSettingsStore.getState());
     return getSceneTransitionKey(useConverterStore.getState(), [
       settings.theme, settings.deviceProfileId, settings.buildPlateId,
       settings.slicerSoftware, modelUrl ?? null,
     ]);
-  }, [modelUrl]);
+  }, [modelUrl, projectSettings]);
   const transitionKey = getTransitionKey();
   const [transitionSnapshot, setTransitionSnapshot] = useState(
     () => getSceneTransitionSnapshot(transitionKey),

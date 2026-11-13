@@ -20,6 +20,7 @@ from shapely.geometry import Polygon
 
 from config import PrinterConfig
 from core.mesh_generators import get_mesher
+from core.system_capacity import get_effective_memory_capacity
 from core.task_parallelism import (
     resolve_task_parallelism_plan,
     task_parallelism_worker_scope,
@@ -27,6 +28,113 @@ from core.task_parallelism import (
 
 _log = get_logger(__name__)
 _MIN_PARALLEL_MESH_WORK_UNITS = 100_000
+_MESH_GRID_WORKING_BYTES_PER_VOXEL = 10
+# The 256px connected checkerboard needs <512 bytes per exposed face run for
+# patch splitting, exact token coordinates, sorting, and sparse connectivity.
+_MESH_WORKING_BYTES_PER_FACE_RUN = 512
+_MESH_ESTIMATE_BLOCK_VOXELS = 65_536
+
+
+def _mesh_surface_run_upper_bound(volume: np.ndarray) -> int:
+    """Bound all materials' face runs from label transitions in two axes."""
+
+    label_runs: list[int] = []
+    for axis in (2, 1):
+        first = [slice(None)] * 3
+        second = [slice(None)] * 3
+        first[axis] = slice(None, -1)
+        second[axis] = slice(1, None)
+        run_count = int(volume.size) // volume.shape[axis]
+        for left, right in np.nditer(
+            [volume[tuple(first)], volume[tuple(second)]],
+            flags=["external_loop", "buffered", "zerosize_ok"],
+            op_flags=["readonly"],
+            buffersize=_MESH_ESTIMATE_BLOCK_VOXELS,
+        ):
+            run_count += int(np.count_nonzero(left != right))
+        label_runs.append(run_count)
+    # A pair of adjacent label runs creates at most two oriented face runs.
+    # Each row meets at most two neighbors. Z/Y faces run along X; X along Y.
+    return min(6 * int(volume.size), 8 * label_runs[0] + 4 * label_runs[1])
+
+
+def _estimate_material_mesh_working_bytes(
+    volume: np.ndarray,
+    material_count: int,
+) -> np.ndarray:
+    """Estimate grid buffers plus surface complexity without building meshes.
+
+    Count contiguous material runs on exposed face planes. Unlike face area,
+    these stay small on smooth slabs whose pixel faces merge into rectangles.
+    All temporary comparisons and histogram input casts fit one bounded block.
+    """
+
+    face_runs = np.zeros(material_count, dtype=np.int64)
+
+    def add_runs(values: np.ndarray, selected: np.ndarray) -> None:
+        labels = values[selected]
+        labels = labels[(labels >= 0) & (labels < material_count)]
+        if len(labels):
+            face_runs[:] += np.bincount(
+                labels.astype(np.intp, copy=False),
+                minlength=material_count,
+            )
+
+    def count_face_runs(
+        first: np.ndarray,
+        second: np.ndarray,
+        run_axis: int,
+        *,
+        both_sides: bool,
+    ) -> None:
+        first_column = [slice(None)] * 3
+        first_column[run_axis] = slice(0, 1)
+        operands = [first[tuple(first_column)], second[tuple(first_column)]]
+        iterator_options = {
+            "flags": ["external_loop", "buffered", "zerosize_ok"],
+            "op_flags": ["readonly"],
+            "buffersize": _MESH_ESTIMATE_BLOCK_VOXELS,
+        }
+        for left, right in np.nditer(operands, **iterator_options):
+            exposed = left != right
+            add_runs(left, exposed)
+            if both_sides:
+                add_runs(right, exposed)
+
+        following = [slice(None)] * 3
+        previous = [slice(None)] * 3
+        following[run_axis] = slice(1, None)
+        previous[run_axis] = slice(None, -1)
+        operands = [
+            first[tuple(following)], second[tuple(following)],
+            first[tuple(previous)], second[tuple(previous)],
+        ]
+        for left, right, before_left, before_right in np.nditer(operands, **iterator_options):
+            exposed = left != right
+            previous_hidden = before_left == before_right
+            add_runs(left, exposed & ((left != before_left) | previous_hidden))
+            if both_sides:
+                add_runs(right, exposed & ((right != before_right) | previous_hidden))
+
+    for normal_axis in range(3):
+        run_axis = 1 if normal_axis == 2 else 2
+        first = [slice(None)] * 3
+        second = [slice(None)] * 3
+        first[normal_axis] = slice(None, -1)
+        second[normal_axis] = slice(1, None)
+        count_face_runs(volume[tuple(first)], volume[tuple(second)], run_axis, both_sides=True)
+        for boundary in (slice(0, 1), slice(-1, None)):
+            first[normal_axis] = boundary
+            boundary_values = volume[tuple(first)]
+            outside = np.broadcast_to(np.int8(-1), boundary_values.shape)
+            count_face_runs(boundary_values, outside, run_axis, both_sides=False)
+
+    # selected, int32 component labels, contact masks, and patch-extraction
+    # masks share the full grid; absent materials only allocate selected.
+    grid_bytes = int(volume.size) * np.where(
+        face_runs > 0, _MESH_GRID_WORKING_BYTES_PER_VOXEL, 1,
+    )
+    return grid_bytes + face_runs * _MESH_WORKING_BYTES_PER_FACE_RUN
 
 
 def _timed_generate_mesh(mesher, full_matrix, mat_id, target_h, z_edges: np.ndarray | None = None):
@@ -157,6 +265,35 @@ def run(ctx: dict) -> dict:
         if legacy_parallelism_disabled
         else parallelism_plan.limiting_reason
     )
+    if max_workers > 1:
+        available_bytes = get_effective_memory_capacity().available_bytes
+        memory_workers = 1
+        if available_bytes is not None:
+            memory_budget = max(0, int(available_bytes)) // 2
+            volume = np.asarray(full_matrix)
+            grid_working_bytes = (
+                int(volume.size) * _MESH_GRID_WORKING_BYTES_PER_VOXEL * max_workers
+            )
+            # Skip the statistics pass when even six exposed runs per voxel
+            # across all materials fit alongside concurrent grid buffers.
+            maximum_surface_bytes = (
+                int(volume.size) * 6 * _MESH_WORKING_BYTES_PER_FACE_RUN
+            )
+            if grid_working_bytes + maximum_surface_bytes <= memory_budget:
+                memory_workers = max_workers
+            elif memory_budget >= 2 * int(volume.size):
+                surface_bytes = (
+                    _mesh_surface_run_upper_bound(volume) * _MESH_WORKING_BYTES_PER_FACE_RUN
+                )
+                if grid_working_bytes + surface_bytes <= memory_budget:
+                    memory_workers = max_workers
+                else:
+                    working_bytes = _estimate_material_mesh_working_bytes(volume, num_materials)
+                    concurrent_bytes = np.cumsum(np.sort(working_bytes)[::-1])
+                    memory_workers = max(1, int(np.count_nonzero(concurrent_bytes <= memory_budget)))
+        if memory_workers < max_workers:
+            max_workers = memory_workers
+            parallelism_limit = "memory_budget"
     parallel_enabled = max_workers > 1
     mesh_results = {}
     mesh_errors = {}

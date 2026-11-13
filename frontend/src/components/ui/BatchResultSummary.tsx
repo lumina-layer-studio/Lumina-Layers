@@ -44,6 +44,7 @@ export default function BatchResultSummary({ result }: BatchResultSummaryProps) 
   ).length;
   const total = result.results.length;
   const failedItems = result.results.filter((r) => r.status === "failed");
+  const downloadableItems = result.results.filter((item) => item.download_url);
 
   return (
     <div className={cx(wellPadClass, "flex flex-col gap-3 text-sm")}>
@@ -87,8 +88,31 @@ export default function BatchResultSummary({ result }: BatchResultSummaryProps) 
         </a>
       )}
 
+      {downloadableItems.length > 0 && (
+        <ul className="flex flex-col gap-1">
+          {downloadableItems.map((item, index) => (
+            <li key={`${item.filename}-${index}`}>
+              <a
+                href={normalizeResourceUrl(item.download_url) ?? item.download_url ?? ""}
+                download
+                className="text-blue-700 underline underline-offset-2 dark:text-blue-400"
+              >
+                {item.filename}
+              </a>
+            </li>
+          ))}
+        </ul>
+      )}
+
       {/* Plate-overflow warnings — keyed by WarningEntry.code, never by message text */}
       {result.warnings?.map((w) => {
+        if (w.code === "merge-unavailable") {
+          return (
+            <StatusBanner key={w.code} role="status" tone="warning">
+              {t("batch.warnings.mergeUnavailable.body")}
+            </StatusBanner>
+          );
+        }
         if (w.code === "plate-overflow") {
           return (
             <StatusBanner key={w.code} role="status" tone="warning">

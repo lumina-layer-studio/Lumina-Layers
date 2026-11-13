@@ -339,6 +339,25 @@ class TestApplyMaterialArchiveColorReplacements:
         # And the recipe should not be entirely zeros (implying an actual solve).
         assert np.any(updated_mat != 0)
 
+    def test_resolved_source_mask_does_not_replace_same_match_outside_region(self):
+        matched = np.full((1, 3, 3), [200, 100, 50], dtype=np.uint8)
+        matrix = np.zeros((1, 3, 5), dtype=np.int32)
+        selected = np.array([[True, True, False]])
+        out_rgb, out_matrix, applied = _apply_material_archive_color_replacements(
+            matched,
+            matrix,
+            np.ones((1, 3), dtype=bool),
+            [("#14c814", selected)],
+            _SMALL_PALETTE,
+            5,
+            0.08,
+            "white",
+        )
+        assert applied == 1
+        assert np.any(out_matrix[selected] != matrix[selected])
+        np.testing.assert_array_equal(out_rgb[~selected], matched[~selected])
+        np.testing.assert_array_equal(out_matrix[~selected], matrix[~selected])
+
     def test_short_solver_recipe_trims_long_material_matrix(self):
         matched = np.full((2, 2, 3), [200, 100, 50], dtype=np.uint8)
         mat = np.zeros((2, 2, 7), dtype=np.int32)

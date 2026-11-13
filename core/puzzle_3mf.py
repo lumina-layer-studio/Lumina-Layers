@@ -59,6 +59,7 @@ def assemble_puzzle_3mf(
     enable_wipe_tower_auto_placement: bool = True,
     material_types: Mapping[str, str | None] | None = None,
     native_filament_profiles: Mapping[str, str] | None = None,
+    external_spool_material: str | None = None,
 ) -> str:
     """Write puzzle metadata through Fat Cat while retaining Lumina placement.
 
@@ -142,6 +143,7 @@ def assemble_puzzle_3mf(
         device_profile_id=device_profile_id,
         build_plate_id=build_plate_id,
         enable_wipe_tower_auto_placement=enable_wipe_tower_auto_placement,
+        external_spool_material=external_spool_material,
         source_materials=[
             {"name": name, "colour": _rgb_to_hex(_resolve_preview_rgb_for_material_name(
                 name, index, preview_colors, "#C8C8C8")),
@@ -184,17 +186,29 @@ def _select_puzzle_palette_slots(
     selected_by_piece: list[tuple[Any, ...]] = []
     for source_slots in piece_slots:
         slots_by_index = {int(slot.slot_id): slot for slot in source_slots}
+        named_indexes = {int(slot.slot_id) for slot in source_slots if slot.slot_name in palette}
+        used_indexes: set[int] = set()
         selected: list[Any] = []
         for output_index, name in enumerate(palette):
             source_index = int(source_indexes.get(name, output_index))
             source_slot = next((slot for slot in source_slots if slot.slot_name == name), None)
             if source_slot is None and len(source_slots) >= len(palette):
-                source_slot = slots_by_index.get(source_index)
+                # Full piece palettes retain unused slots as "Slot N".
+                # ColorSystem.map indexes layer codes, which can differ from
+                # the exported palette order. Never borrow another named slot.
+                for candidate_index in dict.fromkeys((output_index, source_index)):
+                    if candidate_index not in named_indexes and candidate_index not in used_indexes:
+                        source_slot = slots_by_index.get(candidate_index)
+                        if source_slot is not None:
+                            break
             if source_slot is None:
                 # A sparse piece contributes only its real source slots.
                 # The library completes genuinely absent global selections.
                 continue
             source_index = int(source_slot.slot_id)
+            if source_index in used_indexes:
+                continue
+            used_indexes.add(source_index)
             preview_color = _rgb_to_hex(
                 _resolve_preview_rgb_for_material_name(
                     material_name=name,

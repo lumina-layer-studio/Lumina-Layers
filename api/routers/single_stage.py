@@ -3228,6 +3228,8 @@ async def material_solver_cache_suggest_colors(
     top_k: int = Form(DEFAULT_SUGGEST_TOP_K),
     min_spacing: float = Form(DEFAULT_SUGGEST_MIN_SPACING),
     grid_resolution: int = Form(DEFAULT_GRID_RESOLUTION),
+    session_id: str | None = Form(None),
+    store: SessionStore = Depends(get_session_store),
 ) -> MaterialColorSuggestionsResponse:
     """Return up to ``top_k`` achievable colors near ``target_hex``.
     为 ``target_hex`` 返回至多 ``top_k`` 个可达近似色建议。
@@ -3250,7 +3252,15 @@ async def material_solver_cache_suggest_colors(
     _validate_grid_resolution(grid_resolution)
     _validate_suggest_parameters(top_k, min_spacing)
     target_hex_clean, target_rgb_tuple = _parse_target_hex(target_hex)
-    materials = _load_palette_or_raise(dir_names)
+    if isinstance(session_id, str) and session_id:
+        session = store.get(session_id)
+        if session is None:
+            raise HTTPException(404, "Project preview session expired")
+        if session.get("selected_materials") != dir_names:
+            raise HTTPException(422, "Material selection differs from the project preview")
+        materials = load_multiple_materials(dir_names, materials_dir=session.get("project_materials_dir"))
+    else:
+        materials = _load_palette_or_raise(dir_names)
     palette_hash = _palette_cache_identity(materials)
 
     target_rgb_arr = np.asarray(target_rgb_tuple, dtype=np.uint8)

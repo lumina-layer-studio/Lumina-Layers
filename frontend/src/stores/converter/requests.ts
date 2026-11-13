@@ -3,7 +3,7 @@ import { svgHoleCompensationOptions } from "../../constants/svgHoleCompensation"
 import { computeAutoHeightMap, toAbsoluteReliefHeightMap } from "../../utils/colorUtils";
 import type { SettingsState } from "../settingsStore";
 import { newestEditorContentRevision } from "./editorRevision";
-import { scopedNativeFilamentProfiles } from "./nativeMaterialSelection";
+import { externalSpoolMaterial, scopedNativeFilamentProfiles } from "./nativeMaterialSelection";
 import {
   buildConversionSourceParams,
   clampAbsoluteReliefHeightMap,
@@ -14,6 +14,7 @@ import {
   resolveRecipeAwareLayerCount,
 } from "./sources";
 import type { ConverterState } from "./types";
+import { resolveConverterSettings } from "./project";
 
 type SourceParams = NonNullable<ReturnType<typeof buildConversionSourceParams>>;
 
@@ -56,7 +57,7 @@ function buildOutputParams(
   state: ConverterState,
   settings: SettingsState,
 ) {
-
+  const spool = externalSpoolMaterial(state, settings);
   return {
     spacer_thick: state.spacer_thick,
     backing_infill_density_percent:
@@ -74,6 +75,7 @@ function buildOutputParams(
     build_plate_id: settings.buildPlateId,
     custom_3mf_template_id: settings.custom3mfTemplateId,
     native_filament_profiles: scopedNativeFilamentProfiles(state, settings),
+    ...(spool ? { external_spool_material: spool } : {}),
     enable_base_layer_height_modifier:
       settings.enableBaseLayerHeightModifier,
     enable_wipe_tower_auto_placement:
@@ -139,6 +141,7 @@ export function buildPreviewParams(
   sourceParams: SourceParams,
   previewReplacementRegions: ColorReplacementItem[],
 ) {
+  settings = resolveConverterSettings(state, settings);
   const shouldReplayGlobalReplacements = previewReplacementRegions.length > 0;
   return {
     ...buildConversionInputParams(state, settings, sourceParams),
@@ -159,6 +162,7 @@ export function buildGenerateParams(
   mergedReplacements: ColorReplacementItem[] | undefined,
   confirmedEditorContentRevision: number | undefined,
 ) {
+  settings = resolveConverterSettings(state, settings);
   const input = buildConversionInputParams(state, settings, sourceParams);
   return {
     ...input,
@@ -212,6 +216,7 @@ export function buildBatchParams(
   settings: SettingsState,
   sourceParams: SourceParams,
 ) {
+  settings = resolveConverterSettings(state, settings);
   const relief = buildReliefParams(state);
   return {
     ...buildConversionInputParams(state, settings, sourceParams),

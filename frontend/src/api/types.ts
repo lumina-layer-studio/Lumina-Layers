@@ -138,6 +138,7 @@ export interface CoatingMaterialReference {
 export type BackingOutput = "same_project" | "separate_project";
 
 export type ConvertGenerateRequest = ConvertPreviewRequest & {
+  project_revision_file_id?: string;
   spacer_thick: number;
   backing_infill_density_percent?: number;
   structure_mode: StructureMode;
@@ -177,6 +178,7 @@ export type ConvertGenerateRequest = ConvertPreviewRequest & {
   build_plate_id?: string;
   custom_3mf_template_id?: string | null;
   native_filament_profiles?: Record<string, string>;
+  external_spool_material?: string;
   enable_base_layer_height_modifier?: boolean;
   enable_wipe_tower_auto_placement?: boolean;
   use_cached_matched_rgb?: boolean;
@@ -373,6 +375,7 @@ export interface ColorReplacementItem {
   quantized_hex: string;
   matched_hex: string;
   replacement_hex: string;
+  source_scope?: { shape: number[]; bits: string } | null;
 }
 
 // ========== Palette & Height Types ==========
@@ -482,6 +485,8 @@ export interface PreviewResponse extends DynamicMaterialResultResponse {
   dimensions: {
     width: number;
     height: number;
+    width_mm?: number;
+    height_mm?: number;
     preview_raw_url?: string;
   };
   contours?: Record<string, number[][][]> | null; // hex -> list of contour polygons (world coords mm)
@@ -866,6 +871,7 @@ export interface ConfirmPaletteRequest {
 }
 
 export interface ExtractResponse {
+  workspace_session_id?: string | null;
   session_id: string;
   status: string;
   message: string;
@@ -1837,6 +1843,7 @@ export interface BatchItemResult {
   filename: string;
   status: string;
   error?: string;
+  download_url?: string | null;
 }
 
 /**
@@ -1882,6 +1889,7 @@ export interface BatchPreviewItem {
 }
 
 export interface BatchConvertParams {
+  project_revision_file_id?: string;
   enable_outline?: boolean;
   outline_width?: number;
   backing_output?: BackingOutput;
@@ -1940,6 +1948,7 @@ export interface BatchConvertParams {
   build_plate_id?: string;
   custom_3mf_template_id?: string | null;
   native_filament_profiles?: Record<string, string>;
+  external_spool_material?: string;
   enable_base_layer_height_modifier?: boolean;
   enable_wipe_tower_auto_placement?: boolean;
 }
@@ -2102,6 +2111,7 @@ export interface ColorReplaceResponse extends DynamicMaterialResultResponse {
   preview_url: string;
   preview_3d_url?: string | null;
   replacement_count: number;
+  replacement_regions?: ColorReplacementItem[];
   can_undo?: boolean;
   can_redo?: boolean;
   /** Authoritative selection and content revision after the edit. */
@@ -2346,6 +2356,7 @@ export interface UserSettings {
   device_profile_id: string;
   build_plate_id: string;
   build_plate_selections: Record<string, string>;
+  external_spool_selections?: Record<string, string>;
   custom_slicer_path: string;
   custom_slicer_id: string;
   nozzle_size: string;

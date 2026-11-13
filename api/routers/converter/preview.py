@@ -59,7 +59,7 @@ from api.session_store import SessionStore
 from api.structured_logging import bind_session_id, get_logger
 from api.visible_region_cache import schedule_visible_region_cache_prewarm
 from api.worker_pool import WorkerPoolManager
-from api.workers.converter_workers import worker_generate_preview
+from api.workers.converter_workers import worker_generate_preview, worker_prepare_material_catalog
 from config import (
     SVG_PIXELS_PER_MM_DEFAULT,
     SVG_PIXELS_PER_MM_MAX,
@@ -71,12 +71,15 @@ from config import (
     normalize_svg_pixels_per_mm,
 )
 from core.converter import generate_empty_bed_glb, generate_segmented_glb
+from core.errors import CoreError
 from core.naming import generate_segmented_glb_filename
 from core.heightmap_loader import HeightmapLoader
 from core.image_preprocessor import ImagePreprocessor
 from core.material_dynamic_solver import (
     DynamicMaterialCandidateError,
     DynamicMaterialSolverError,
+    MAX_DYNAMIC_LAYER_COUNT,
+    MIN_DYNAMIC_LAYER_COUNT,
 )
 from core.vector_large_format import inspect_svg_large_format_support, normalize_large_format_source_basename
 from utils.lut_manager import LUTManager
@@ -664,6 +667,44 @@ def _parse_selected_materials(value: list[str] | str | None) -> list[str]:
             if isinstance(parsed, list):
                 return [str(item).strip() for item in parsed if str(item).strip()]
     return [s.strip() for s in normalized if s.strip()]
+
+
+@router.post("/prepare-material-catalog")
+async def prepare_material_catalog(
+    selected_materials: Annotated[list[str], Form()],
+    material_min_layer_count: Annotated[int, Form(ge=MIN_DYNAMIC_LAYER_COUNT, le=MAX_DYNAMIC_LAYER_COUNT)],
+    material_max_layer_count: Annotated[int, Form(ge=MIN_DYNAMIC_LAYER_COUNT, le=MAX_DYNAMIC_LAYER_COUNT)],
+    material_layer_height_mm: Annotated[float, Form(gt=0, allow_inf_nan=False)],
+    material_backing_material_index: Annotated[int | None, Form()] = None,
+    project_materials: Annotated[UploadFile | None, File()] = None,
+    pool: WorkerPoolManager = Depends(get_worker_pool),
+) -> dict[str, bool]:
+    """Prepare the same image-independent candidate catalog that preview consumes."""
+    names = _parse_selected_materials(selected_materials)
+    if not names or material_min_layer_count > material_max_layer_count:
+        raise HTTPException(422, "Select materials and an ordered dynamic layer range.")
+    _validate_unique_dynamic_material_selection(names)
+    backing = _resolve_material_backing_index(names, material_backing_material_index)
+    resources = await stage_project_resources(None, project_materials, names)
+    job = asyncio.create_task(pool.submit(
+        worker_prepare_material_catalog, names, backing, material_layer_height_mm,
+        material_min_layer_count, material_max_layer_count,
+        resources.materials_dir if resources else None,
+    ))
+    try:
+        return {"cached": await asyncio.shield(job)}
+    except asyncio.CancelledError:
+        # The worker may still be reading the embedded material archive.
+        await job
+        raise
+    except FileNotFoundError as exc:
+        raise HTTPException(404, "Selected material archive was not found.") from exc
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    except (CoreError, OSError, RuntimeError) as exc:
+        _handle_core_error(exc, "Material catalog preparation")
+    finally:
+        discard_project_resources(resources)
 
 
 def _parse_preview_replacement_regions(

@@ -12,7 +12,7 @@ import zipfile
 from fastapi import HTTPException, UploadFile
 
 from config import TEMP_DIR
-from core.material_lut_provider import load_materials
+from core.material_lut_synthesis import load_multiple_materials
 from core.projects.dependencies import MAX_DEPENDENCY_BYTES, unpack_lut_source
 from core.single_stage import import_saved_stage_a_material_archives
 
@@ -49,7 +49,7 @@ async def stage_project_resources(
             archive.write_bytes(await _read_resource(materials))
             materials_dir = str(root / "materials")
             await asyncio.to_thread(import_saved_stage_a_material_archives, archive_path=str(archive), materials_dir=materials_dir)
-            await asyncio.to_thread(load_materials, selected_materials, materials_dir=materials_dir, use_cache=False)
+            await asyncio.to_thread(load_multiple_materials, selected_materials, materials_dir=materials_dir)
         return ProjectResources(str(root), lut_path, materials_dir)
     except (ValueError, KeyError, OSError, zipfile.BadZipFile) as exc:
         shutil.rmtree(root, ignore_errors=True)

@@ -31,6 +31,26 @@ export interface MaterialSolverCacheKey {
   substrate: "white" | "black";
 }
 
+export interface DynamicMaterialCatalogSelection {
+  materialDirectoryNames: string[];
+  backingMaterialIndex: number;
+  layerHeightMm: number;
+  minLayers: number;
+  maxLayers: number;
+  projectMaterials: File | null;
+}
+
+export async function prepareDynamicMaterialCatalog(selection: DynamicMaterialCatalogSelection): Promise<void> {
+  const form = new FormData();
+  for (const name of selection.materialDirectoryNames) form.append("selected_materials", name);
+  form.append("material_backing_material_index", String(selection.backingMaterialIndex));
+  form.append("material_layer_height_mm", String(selection.layerHeightMm));
+  form.append("material_min_layer_count", String(selection.minLayers));
+  form.append("material_max_layer_count", String(selection.maxLayers));
+  if (selection.projectMaterials) form.append("project_materials", selection.projectMaterials);
+  await apiClient.post("/convert/prepare-material-catalog", form, { timeout: 0 });
+}
+
 /**
  * User-facing bounded-runtime candidate budgets.
  * 面向用户的有界运行时候选预算档位。

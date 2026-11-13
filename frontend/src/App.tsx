@@ -5,6 +5,7 @@ import { useApplicationMenuCommand, useApplicationMenuLanguage } from "./integra
 import type { HealthResponse } from "./api/types";
 import { trackLuminaEvent } from "./analytics/umami";
 import { useAutoPreview } from "./hooks/useAutoPreview";
+import { useDynamicMaterialCatalog } from "./hooks/useDynamicMaterialCatalog";
 import { useVectorPreviewRenderer } from "./hooks/useVectorPreviewRenderer";
 import { useAnnouncement } from "./hooks/useAnnouncement";
 import { usePuzzleLayoutPreview } from "./hooks/usePuzzleLayoutPreview";
@@ -339,6 +340,7 @@ function AppContent({ connected }: { connected: boolean | null }) {
     setBugReportPreset("");
   }, [dismissErrorTicketPrompt]);
   const activeTab = useWidgetStore((s) => s.activeTab);
+  useDynamicMaterialCatalog(connected === true && activeTab === "converter" && !projectOpening);
   useEffect(() => {
     if (activeTab === "workshop") useWorkshopProjectRuntime.setState({ mounted: true });
   }, [activeTab]);

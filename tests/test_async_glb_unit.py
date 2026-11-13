@@ -243,6 +243,55 @@ def _native_vector_cache(sid: str, tmp_path: Path) -> dict:
 
 
 class TestRendererDispatch:
+    @pytest.mark.parametrize("smooth", [False, True])
+    def test_new_session_reuses_mesh_and_contours_after_first_session_closes(
+        self, tmp_path: Path, smooth: bool,
+    ) -> None:
+        def render(name: str, width: float) -> tuple[dict, Path]:
+            sid = _seed_session(tmp_path)
+            cache = _native_vector_cache(sid, tmp_path)
+            cache.update(enable_smooth_vector_preview=smooth, target_width_mm=width)
+            target = tmp_path / f"{name}.glb"
+            path, renderer = async_glb_module._build_preview_glb(
+                session_id=sid, store=_test_store, cache=cache, output_path=str(target),
+            )
+            assert path == str(target)
+            assert renderer == ("vector_analytic" if smooth else "segmented")
+            _test_store.close(sid)
+            return cache, target
+
+        initial, first = render("first", 60)
+        original = first.read_bytes()
+        first.unlink()
+        repeated, second = render("second", 60)
+        assert repeated["_glb_reused"]
+        assert second.read_bytes() == original
+        assert repeated["color_contours"] == initial["color_contours"]
+        assert repeated["color_contours"] is not initial["color_contours"]
+        resized, _ = render("resized", 30)
+        assert not resized["_glb_reused"]
+
+    def test_material_layers_and_slot_colors_invalidate_unchanged_surface(self, tmp_path: Path) -> None:
+        sid = _seed_session(tmp_path)
+        cache = _test_store.get(sid)["preview_cache"]
+        cache["material_source"] = "material_archive"
+        cache["material_matrix"][:, :, 1] = 0
+
+        def render(name: str) -> bytes:
+            target = tmp_path / f"{name}.glb"
+            path, _ = async_glb_module._build_preview_glb(
+                session_id=sid, store=_test_store, cache=cache, output_path=str(target),
+            )
+            assert path and not cache["_glb_reused"]
+            return target.read_bytes()
+
+        original = render("initial")
+        cache["material_matrix"][:, :, 1] = 1
+        swapped = render("swapped")
+        assert swapped != original
+        cache["preview_colors"] = {1: [90, 200, 25, 255]}
+        assert render("recolored") != swapped
+
     def test_real_session_artifact_reaches_analytic_glb(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
     ) -> None:
@@ -308,11 +357,6 @@ class TestRendererDispatch:
 
         monkeypatch.setattr(
             async_glb_module,
-            "load_vector_quick_preview_source",
-            lambda *_args, **_kwargs: object(),
-        )
-        monkeypatch.setattr(
-            async_glb_module,
             "build_vector_quick_preview_parts",
             lambda **_kwargs: [object()],
         )
@@ -363,11 +407,6 @@ class TestRendererDispatch:
                 "target_width_mm": 20.0,
                 "color_contours": {"stale": [[[0.0, 0.0]]]},
             }
-        )
-        monkeypatch.setattr(
-            async_glb_module,
-            "load_vector_quick_preview_source",
-            lambda *_args, **_kwargs: object(),
         )
         monkeypatch.setattr(
             async_glb_module,
@@ -484,11 +523,6 @@ class TestRendererDispatch:
     ) -> None:
         sid = _seed_session(tmp_path)
         cache = _native_vector_cache(sid, tmp_path)
-        monkeypatch.setattr(
-            async_glb_module,
-            "load_vector_quick_preview_source",
-            lambda *_args, **_kwargs: object(),
-        )
         monkeypatch.setattr(
             async_glb_module,
             "build_vector_quick_preview_parts",

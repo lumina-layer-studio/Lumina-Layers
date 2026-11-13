@@ -71,11 +71,16 @@ def _finish_preview_jobs_before_capture_closes(
     if async_glb is None:
         yield
         return
-    with ThreadPoolExecutor(
-        max_workers=2, thread_name_prefix="test-glb-build",
-    ) as executor:
-        monkeypatch.setattr(async_glb, "_GLB_EXECUTOR", executor)
-        yield
+    mesh_cache = async_glb.RecentPreviewMesh()
+    monkeypatch.setattr(async_glb, "_RECENT_MESH", mesh_cache)
+    try:
+        with ThreadPoolExecutor(
+            max_workers=2, thread_name_prefix="test-glb-build",
+        ) as executor:
+            monkeypatch.setattr(async_glb, "_GLB_EXECUTOR", executor)
+            yield
+    finally:
+        mesh_cache.clear()
 
 
 def pytest_configure(config: pytest.Config) -> None:

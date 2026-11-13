@@ -908,7 +908,7 @@ def _resolve_replayed_color_replacement_jobs(
     if not isinstance(replacement_records, list) or quantized.shape != matched.shape:
         return _color_replacement_jobs(fallback, matched, solid)
 
-    resolved: list[tuple[str, np.ndarray]] = []
+    pending: list[tuple[str, str, np.ndarray, np.ndarray | None]] = []
     for item in replacement_records:
         if not isinstance(item, dict):
             continue
@@ -935,10 +935,21 @@ def _resolve_replayed_color_replacement_jobs(
                 candidate = np.all(quantized == quantized_rgb, axis=-1) & solid
                 if np.any(candidate):
                     source_mask = candidate
+        pending.append((fallback_source, replacement_hex, matched_mask, source_mask))
+
+    resolved: list[tuple[str, np.ndarray]] = []
+    for old_match, replacement_hex, matched_mask, source_mask in pending:
         if source_mask is None or np.any(source_mask & matched_mask):
-            source_mask = matched_mask
-        if np.any(source_mask):
-            resolved.append((replacement_hex, source_mask))
+            # Another saved edit with a different former match may now have
+            # collapsed into this color. Its source identity owns those pixels.
+            selected = matched_mask.copy()
+            for other_match, _, _, other_source in pending:
+                if other_match != old_match and other_source is not None:
+                    selected &= ~other_source
+        else:
+            selected = source_mask
+        if np.any(selected):
+            resolved.append((replacement_hex, selected))
 
     return resolved
 

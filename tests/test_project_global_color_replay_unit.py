@@ -238,6 +238,45 @@ def test_replay_keeps_distinct_source_edits_when_new_materials_match_them_equall
     )
 
 
+@pytest.mark.parametrize("reverse", [False, True])
+def test_replay_preserves_both_edits_when_new_match_equals_old_match(reverse: bool) -> None:
+    class Tree:
+        def query(self, rgb):
+            return np.array([0.0]), np.array([int(rgb[0, 1] > 0)])
+
+    class Processor:
+        kdtree = Tree()
+        ref_stacks = np.array([[1], [2]], dtype=np.int32)
+        lut_rgb = np.array([[255, 0, 0], [0, 255, 0]], dtype=np.uint8)
+
+        def _rgb_to_lab(self, rgb):
+            return rgb
+
+    records = [
+        {"quantized_hex": "#020202", "matched_hex": "#112244", "replacement_hex": "#00ff00"},
+        {"quantized_hex": "#010101", "matched_hex": "#112233", "replacement_hex": "#ff0000"},
+    ]
+    result = apply_color_replacements({
+        "matched_rgb": np.array([[[17, 34, 51], [17, 34, 51]]], dtype=np.uint8),
+        "material_matrix": np.zeros((1, 2, 1), dtype=np.int32),
+        "mask_solid": np.ones((1, 2), dtype=bool),
+        "quantized_image": np.array([[[1, 1, 1], [2, 2, 2]]], dtype=np.uint8),
+        "processor": Processor(),
+        "replacement_regions": records[::-1] if reverse else records,
+    })
+    np.testing.assert_array_equal(result["matched_rgb"], [[[255, 0, 0], [0, 255, 0]]])
+    np.testing.assert_array_equal(result["material_matrix"], [[[1], [2]]])
+
+
+def test_replay_keeps_whole_color_selection_when_match_is_unchanged() -> None:
+    matched = np.array([[[17, 34, 51], [17, 34, 51]]], dtype=np.uint8)
+    quantized = np.array([[[0xAA, 0, 0], [0, 0, 0xBB]]], dtype=np.uint8)
+    jobs = _resolve_replayed_color_replacement_jobs(
+        _saved_replacement(), matched, quantized, np.ones((1, 2), dtype=bool)
+    )
+    np.testing.assert_array_equal(jobs[0][1], [[True, True]])
+
+
 def test_material_change_does_not_select_old_match_found_outside_source_region() -> None:
     result = apply_color_replacements(
         {

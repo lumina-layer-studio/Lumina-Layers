@@ -56,6 +56,8 @@ import GradientCardExtractPanel from "./components/GradientCardExtractPanel";
 import MaterialCloudSyncPanel from "./components/MaterialCloudSyncPanel";
 import MaterialLibraryPanel from "./components/MaterialLibraryPanel";
 import MaterialRecipeQueryPanel from "./components/MaterialRecipeQueryPanel";
+import MaterialGamutPanel from "./components/materialWorkbench/MaterialGamutPanel";
+import MaterialCachePanel from "./components/materialWorkbench/MaterialCachePanel";
 import LutCloudSyncPanel from "./components/LutCloudSyncPanel";
 import LutLibraryPanel from "./components/LutLibraryPanel";
 import LutComparePanel from "./components/LutComparePanel";
@@ -575,6 +577,8 @@ function AppContent({ connected }: { connected: boolean | null }) {
         {activeTab === 'material-library' && <MaterialLibraryPanel />}
         {activeTab === 'material-cloud-sync' && <MaterialCloudSyncPanel />}
         {activeTab === 'material-recipe' && <MaterialRecipeQueryPanel />}
+        {activeTab === 'material-gamut' && <MaterialGamutPanel />}
+        {activeTab === 'material-cache' && <MaterialCachePanel />}
 
         {activeTab === 'extractor' && (
           <div className="flex h-full min-h-0 flex-col xl:flex-row">

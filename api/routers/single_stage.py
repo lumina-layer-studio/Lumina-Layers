@@ -11,6 +11,7 @@ import threading
 import tempfile
 import uuid
 import zipfile
+from dataclasses import dataclass
 from typing import Any, Callable
 from urllib.parse import urlparse
 
@@ -21,6 +22,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Reques
 from config import TEMP_DIR
 from api.colorchecker_artifacts import load_colorchecker_full_rgb, scale_corner_points
 from api.dependencies import get_file_registry, get_session_store
+from api.errors import to_http_exception
 from api.export_device_validation import validate_export_device_selection
 from api.file_bridge import ndarray_to_png_bytes, upload_to_ndarray, upload_to_tempfile
 from api.file_registry import FileRegistry
@@ -42,8 +44,22 @@ from api.schemas.responses import (
     GradientCardStageAExtractResponse,
     MaterialColorSuggestionItem,
     MaterialColorSuggestionsResponse,
+    MaterialCacheOverviewResponse,
+    MaterialDynamicCacheDeleteResponse,
+    MaterialDynamicCacheOverviewResponse,
+    MaterialDynamicCachePrepareResponse,
+    MaterialFixedCacheOverviewResponse,
+    MaterialGamutContributionItem,
+    MaterialGamutContributionsResponse,
+    MaterialGamutCoverageResponse,
+    MaterialGamutAccuracy,
+    MaterialGamutCoverageValue,
+    MaterialGamutGroupAccuracy,
+    MaterialGamutLayerCapResponse,
+    MaterialGamutSourceResponse,
     MaterialRecipeLayerResponse,
     MaterialRecipePreviewResponse,
+    MaterialSavedFileResponse,
     MaterialSolverCacheBuildResponse,
     MaterialSolverCacheDeleteResponse,
     MaterialSolverCacheDetailsResponse,
@@ -81,7 +97,16 @@ from core.material_cache import (
     load_material_solver_cache_with_fallback,
     save_material_solver_cache,
 )
+from core.material_cache_overview import (
+    DynamicLayerCacheOverview,
+    DynamicLayerCachePrepareResult,
+    delete_dynamic_layer_cache,
+    describe_dynamic_layer_caches,
+    describe_fixed_layer_caches,
+    prepare_dynamic_layer_cache,
+)
 from core.material_cache_visualization import (
+    MaterialSolverCacheDetails,
     build_material_cache_details,
     build_material_runtime_details,
 )
@@ -105,6 +130,17 @@ from core.material_color_solver import (
     MaterialParams,
     predict_material_recipe_srgb,
     suggest_colors_for_target,
+)
+from core.material_dynamic_solver import DynamicMaterialCandidateError
+from core.material_gamut_coverage import (
+    SRGB_COVERAGE_CELL_SIZE,
+    GamutContributionResult,
+    GamutCoverageResult,
+    MatchAccuracy,
+    SrgbCoverage,
+    compute_dynamic_layer_gamut,
+    compute_fixed_layer_gamut,
+    compute_material_contributions,
 )
 from core.material_lut_synthesis import load_multiple_materials
 from core.lut_details.identity import canonicalize_lut_manufacturer
@@ -184,6 +220,7 @@ MATERIAL_SWATCH_EXPORT_FAILED_DETAIL = (
 _RUNTIME_BUILD_LOCKS_GUARD = threading.Lock()
 _RUNTIME_BUILD_LOCKS: dict[tuple[str, int, str, str, int], threading.Lock] = {}
 _RUNTIME_BUILD_GLOBAL_SEMAPHORE = threading.BoundedSemaphore(1)
+_MATERIAL_COMPUTE_QUEUE_TIMEOUT_SECONDS = 30.0
 
 
 def _is_missing_stage_json_path(path: str | None) -> bool:
@@ -3352,4 +3389,594 @@ async def material_solver_cache_suggest_colors(
         target_hex=f"#{target_hex_clean.upper()}",
         target_rgb=[int(v) for v in target_rgb_tuple],
         suggestions=_suggestions_to_response_items(suggestions),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Material gamut coverage and cache overview (Material > Gamut / Cache tabs)
+# 耗材色域覆盖与缓存概览（耗材 > 色域覆盖 / 求解缓存 标签页）
+# ---------------------------------------------------------------------------
+
+MATERIAL_GAMUT_FAILED_DETAIL = (
+    "Gamut coverage could not be computed. "
+    "Check the selected materials and cache storage, then try again."
+)
+MATERIAL_DYNAMIC_CACHE_FAILED_DETAIL = (
+    "The dynamic layer cache could not be updated. "
+    "Check the selected materials and cache storage, then try again."
+)
+
+
+@dataclass(frozen=True)
+class _MaterialComboRequest:
+    """Validated material combination shared by gamut and cache endpoints."""
+
+    dir_names: list[str]
+    materials: list[MaterialParams]
+    layer_mode: str
+    layer_count: int
+    min_layer_count: int | None
+    layer_height_mm: float
+    substrate: str
+    backing_index: int | None
+
+    @property
+    def backing_dir_name(self) -> str | None:
+        return None if self.backing_index is None else self.dir_names[self.backing_index]
+
+    def log_fields(self) -> dict[str, Any]:
+        return {
+            "material_count": len(self.dir_names),
+            "layer_mode": self.layer_mode,
+            "layer_count": self.layer_count,
+            "min_layer_count": self.min_layer_count,
+            "layer_height_mm": self.layer_height_mm,
+            "substrate": self.substrate,
+        }
+
+
+def _parse_material_combo(
+    material_directory_names: str,
+    layer_mode: str,
+    layer_count: int | None,
+    min_layer_count: int | None,
+    max_layer_count: int | None,
+    layer_height_mm: float,
+    substrate: str,
+    backing_material_directory_name: str | None,
+) -> _MaterialComboRequest:
+    """Validate the form fields that describe one material combination.
+
+    Fixed mode needs ``layer_count``; dynamic mode needs ``min_layer_count``,
+    ``max_layer_count`` and a ``backing_material_directory_name`` that is one
+    of the selected materials.
+    """
+    dir_names = _parse_material_directory_names(material_directory_names)
+    if len(set(dir_names)) != len(dir_names):
+        raise HTTPException(
+            status_code=422, detail="material_directory_names must not repeat a material"
+        )
+    if layer_mode == "fixed":
+        if layer_count is None:
+            raise HTTPException(status_code=422, detail="layer_count is required in fixed mode")
+        _validate_cache_parameters(layer_count, layer_height_mm, substrate)
+        effective_max, effective_min, backing_index = int(layer_count), None, None
+    elif layer_mode == "dynamic":
+        if min_layer_count is None or max_layer_count is None:
+            raise HTTPException(
+                status_code=422,
+                detail="min_layer_count and max_layer_count are required in dynamic mode",
+            )
+        _validate_cache_parameters(max_layer_count, layer_height_mm, substrate)
+        if not _SOLVER_MIN_LAYER_COUNT <= min_layer_count <= max_layer_count:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    f"min_layer_count must be in [{_SOLVER_MIN_LAYER_COUNT}, "
+                    f"{max_layer_count}], got {min_layer_count}"
+                ),
+            )
+        backing = (backing_material_directory_name or "").strip()
+        if backing not in dir_names:
+            raise HTTPException(
+                status_code=422,
+                detail="backing_material_directory_name must be one of the selected materials",
+            )
+        effective_max, effective_min = int(max_layer_count), int(min_layer_count)
+        backing_index = dir_names.index(backing)
+    else:
+        raise HTTPException(
+            status_code=422,
+            detail=f"layer_mode must be 'fixed' or 'dynamic', got {layer_mode!r}",
+        )
+    return _MaterialComboRequest(
+        dir_names=dir_names,
+        materials=_load_palette_or_raise(dir_names),
+        layer_mode=layer_mode,
+        layer_count=effective_max,
+        min_layer_count=effective_min,
+        layer_height_mm=float(layer_height_mm),
+        substrate=substrate,
+        backing_index=backing_index,
+    )
+
+
+def _require_dynamic_layer_mode(layer_mode: str) -> None:
+    if layer_mode != "dynamic":
+        raise HTTPException(status_code=422, detail="layer_mode must be 'dynamic'")
+
+
+def _coverage_value(coverage: SrgbCoverage) -> MaterialGamutCoverageValue:
+    return MaterialGamutCoverageValue(
+        reached_cell_count=coverage.reached_cell_count,
+        reference_cell_count=coverage.reference_cell_count,
+        percent=coverage.percent,
+    )
+
+
+def _accuracy_value(accuracy: MatchAccuracy) -> MaterialGamutAccuracy:
+    return MaterialGamutAccuracy(
+        groups=[
+            MaterialGamutGroupAccuracy(
+                group=entry.group,
+                target_count=entry.target_count,
+                mean_delta_e=entry.mean_delta_e,
+            )
+            for entry in accuracy.groups
+        ],
+        darkest_lightness=accuracy.darkest_lightness,
+        lightest_lightness=accuracy.lightest_lightness,
+    )
+
+
+def _axis_range_response(axis_range: Any) -> LutAxisRange:
+    return LutAxisRange(min=axis_range.min, max=axis_range.max)
+
+
+def _chart_response_fields(details: MaterialSolverCacheDetails) -> dict[str, Any]:
+    """Map chart details onto the shared LUT-details response fields."""
+    stats = details.coverage_stats
+    return {
+        "coverage_stats": LutCoverageStatsResponse(
+            entry_count=stats.entry_count,
+            plotted_point_count=stats.plotted_point_count,
+            l_range=_axis_range_response(stats.l_range),
+            a_range=_axis_range_response(stats.a_range),
+            b_range=_axis_range_response(stats.b_range),
+            r_range=_axis_range_response(stats.r_range),
+            g_range=_axis_range_response(stats.g_range),
+            b_rgb_range=_axis_range_response(stats.b_rgb_range),
+        ),
+        "lab_points": [
+            LutPlotPoint(x=p.x, y=p.y, hex_color=p.hex_color, rgb=p.rgb, label=p.label)
+            for p in details.lab_points
+        ],
+        "lab_points_3d": [
+            LutPlotPoint3D(
+                l=p.l, a=p.a, b=p.b, hex_color=p.hex_color, rgb=p.rgb, label=p.label
+            )
+            for p in details.lab_points_3d
+        ],
+        "lab_hull": [LutHullPoint(x=x, y=y) for x, y in details.lab_hull],
+        "rgb_points": [
+            LutPlotPoint(x=p.x, y=p.y, hex_color=p.hex_color, rgb=p.rgb, label=p.label)
+            for p in details.rgb_points
+        ],
+    }
+
+
+def _dynamic_overview_response(
+    overview: DynamicLayerCacheOverview,
+) -> MaterialDynamicCacheOverviewResponse:
+    catalog = overview.catalog
+    return MaterialDynamicCacheOverviewResponse(
+        candidate_budget=overview.candidate_budget,
+        is_ready=overview.is_ready,
+        catalog=(
+            None
+            if catalog is None
+            else MaterialSavedFileResponse(
+                size_bytes=catalog.size_bytes, modified_at=catalog.modified_at
+            )
+        ),
+        saved_layer_counts=list(overview.saved_layer_counts),
+        missing_layer_counts=list(overview.missing_layer_counts),
+        prepared_layer_counts=list(overview.prepared_layer_counts),
+    )
+
+
+async def _run_material_compute(
+    work: Callable[[], Any],
+    *,
+    combo: _MaterialComboRequest,
+    failed_event: str,
+    failed_detail: str,
+    serialize_builds: bool = False,
+) -> Any:
+    """Run CPU-heavy material work off the event loop with typed error mapping."""
+    def run() -> Any:
+        if serialize_builds:
+            if not _RUNTIME_BUILD_GLOBAL_SEMAPHORE.acquire(
+                timeout=_MATERIAL_COMPUTE_QUEUE_TIMEOUT_SECONDS,
+            ):
+                raise DynamicMaterialCandidateError(
+                    "material computation queue is busy; retry after the active build",
+                    layer_count=combo.layer_count,
+                    phase="material_compute_queue",
+                )
+            try:
+                return work()
+            finally:
+                _RUNTIME_BUILD_GLOBAL_SEMAPHORE.release()
+        return work()
+
+    try:
+        return await anyio.to_thread.run_sync(run)
+    except Exception as exc:
+        queue_busy = (
+            isinstance(exc, DynamicMaterialCandidateError)
+            and exc.phase == "material_compute_queue"
+        )
+        log_failure = log.warning if queue_busy else log.error
+        log_failure(
+            "Material combination computation failed",
+            extra={
+                "event": failed_event,
+                "error_type": type(exc).__name__,
+                "error_message": str(exc),
+                **combo.log_fields(),
+            },
+        )
+        http_error = to_http_exception(exc, "Material combination computation")
+        if http_error.status_code == 500:
+            http_error.detail = failed_detail
+        raise http_error from exc
+
+
+@router.post(
+    "/material-gamut/coverage",
+    dependencies=[Depends(require_local_app_origin)],
+)
+async def material_gamut_coverage(
+    material_directory_names: str = Form(...),
+    layer_mode: str = Form("fixed"),
+    layer_count: int | None = Form(None),
+    min_layer_count: int | None = Form(None),
+    max_layer_count: int | None = Form(None),
+    layer_height_mm: float = Form(...),
+    substrate: str = Form("white"),
+    backing_material_directory_name: str | None = Form(None),
+    max_points: int = Form(8000, ge=128, le=50000),
+) -> MaterialGamutCoverageResponse:
+    """Measure which share of sRGB a material combination can print.
+    测量耗材组合能打印的 sRGB 比例。
+
+    Fixed layers never write to disk (a missing cache is sampled in memory).
+    In dynamic mode the conversion catalog is built and saved when missing,
+    exactly as the first dynamic conversion would.
+
+    固定层数不写盘（缺少缓存时仅在内存中采样）；动态模式缺少目录时会像首次
+    动态转换一样构建并保存目录。
+    """
+    combo = _parse_material_combo(
+        material_directory_names, layer_mode, layer_count, min_layer_count,
+        max_layer_count, layer_height_mm, substrate, backing_material_directory_name,
+    )
+
+    def _compute() -> GamutCoverageResult:
+        if combo.layer_mode == "dynamic":
+            return compute_dynamic_layer_gamut(
+                combo.materials,
+                int(combo.backing_index),
+                combo.layer_height_mm,
+                combo.substrate,
+                int(combo.min_layer_count),
+                combo.layer_count,
+                max_points=int(max_points),
+            )
+        return compute_fixed_layer_gamut(
+            combo.materials,
+            combo.layer_count,
+            combo.layer_height_mm,
+            combo.substrate,
+            max_points=int(max_points),
+        )
+
+    result: GamutCoverageResult = await _run_material_compute(
+        _compute,
+        combo=combo,
+        failed_event="material_gamut_coverage_failed",
+        failed_detail=MATERIAL_GAMUT_FAILED_DETAIL,
+        serialize_builds=True,
+    )
+    log.info(
+        "Material gamut coverage measured",
+        extra={
+            "event": "material_gamut_coverage_done",
+            **combo.log_fields(),
+            "coverage_percent": result.coverage.percent,
+            "color_count": result.color_count,
+            "source_kind": result.source.kind,
+            "is_complete": result.source.is_complete,
+            "was_cached": result.source.was_cached,
+        },
+    )
+    return MaterialGamutCoverageResponse(
+        status="ok",
+        message=f"sRGB coverage {result.coverage.percent}% for {len(combo.dir_names)} materials",
+        material_directory_names=list(combo.dir_names),
+        layer_mode=combo.layer_mode,
+        layer_count=combo.layer_count,
+        min_layer_count=combo.min_layer_count,
+        layer_height_mm=combo.layer_height_mm,
+        substrate=combo.substrate,
+        backing_material_directory_name=combo.backing_dir_name,
+        cell_size_delta_e=SRGB_COVERAGE_CELL_SIZE,
+        coverage=_coverage_value(result.coverage),
+        accuracy=_accuracy_value(result.accuracy),
+        color_count=result.color_count,
+        source=MaterialGamutSourceResponse(
+            kind=result.source.kind,
+            candidate_budget=result.source.candidate_budget,
+            is_complete=result.source.is_complete,
+            was_cached=result.source.was_cached,
+        ),
+        layer_cap_coverage=[
+            MaterialGamutLayerCapResponse(
+                layer_count=cap.layer_count, coverage=_coverage_value(cap.coverage)
+            )
+            for cap in result.layer_cap_coverage
+        ],
+        **_chart_response_fields(result.chart_details),
+    )
+
+
+@router.post(
+    "/material-gamut/contributions",
+    dependencies=[Depends(require_local_app_origin)],
+)
+async def material_gamut_contributions(
+    material_directory_names: str = Form(...),
+    layer_mode: str = Form("fixed"),
+    layer_count: int | None = Form(None),
+    min_layer_count: int | None = Form(None),
+    max_layer_count: int | None = Form(None),
+    layer_height_mm: float = Form(...),
+    substrate: str = Form("white"),
+    backing_material_directory_name: str | None = Form(None),
+) -> MaterialGamutContributionsResponse:
+    """Coverage and accuracy each material adds, by removing it in turn (read-only).
+    逐个移除耗材，计算每个耗材贡献的覆盖率与匹配精度（只读）。
+
+    Dynamic mode compares at the maximum layer count without padding.
+    动态模式在最大层数下（不补位）进行对比。
+    """
+    combo = _parse_material_combo(
+        material_directory_names, layer_mode, layer_count, min_layer_count,
+        max_layer_count, layer_height_mm, substrate, backing_material_directory_name,
+    )
+    result: GamutContributionResult = await _run_material_compute(
+        lambda: compute_material_contributions(
+            combo.materials, combo.layer_count, combo.layer_height_mm, combo.substrate
+        ),
+        combo=combo,
+        failed_event="material_gamut_contributions_failed",
+        failed_detail=MATERIAL_GAMUT_FAILED_DETAIL,
+        serialize_builds=True,
+    )
+    log.info(
+        "Material gamut contributions measured",
+        extra={
+            "event": "material_gamut_contributions_done",
+            **combo.log_fields(),
+            "baseline_percent": result.baseline.percent,
+            "is_complete": result.is_complete,
+        },
+    )
+    return MaterialGamutContributionsResponse(
+        status="ok",
+        message=(
+            f"Contributions for {len(combo.dir_names)} materials "
+            f"at {result.layer_count} layers"
+        ),
+        layer_count=result.layer_count,
+        cell_size_delta_e=SRGB_COVERAGE_CELL_SIZE,
+        baseline=_coverage_value(result.baseline),
+        baseline_accuracy=_accuracy_value(result.baseline_accuracy),
+        is_complete=result.is_complete,
+        items=[
+            MaterialGamutContributionItem(
+                directory_name=combo.dir_names[item.material_index],
+                material_name=str(combo.materials[item.material_index].name),
+                coverage_without=_coverage_value(item.coverage_without),
+                drop_percent=item.drop_percent,
+                accuracy_without=_accuracy_value(item.accuracy_without),
+                largest_loss_group=item.largest_loss_group,
+                largest_loss_delta_e=item.largest_loss_delta_e,
+            )
+            for item in result.contributions
+        ],
+    )
+
+
+@router.post(
+    "/material-cache/overview",
+    dependencies=[Depends(require_local_app_origin)],
+)
+async def material_cache_overview(
+    material_directory_names: str = Form(...),
+    layer_mode: str = Form("fixed"),
+    layer_count: int | None = Form(None),
+    min_layer_count: int | None = Form(None),
+    max_layer_count: int | None = Form(None),
+    layer_height_mm: float = Form(...),
+    substrate: str = Form("white"),
+    backing_material_directory_name: str | None = Form(None),
+) -> MaterialCacheOverviewResponse:
+    """Report which caches are saved for a combination (read-only, metadata only).
+    报告组合已保存的缓存（只读，仅读取元数据）。
+    """
+    combo = _parse_material_combo(
+        material_directory_names, layer_mode, layer_count, min_layer_count,
+        max_layer_count, layer_height_mm, substrate, backing_material_directory_name,
+    )
+
+    def _describe() -> MaterialCacheOverviewResponse:
+        if combo.layer_mode == "dynamic":
+            overview = describe_dynamic_layer_caches(
+                combo.materials, int(combo.backing_index), combo.layer_height_mm,
+                combo.substrate, int(combo.min_layer_count), combo.layer_count,
+            )
+            return MaterialCacheOverviewResponse(
+                status="ok",
+                message=(
+                    "Dynamic layer cache ready"
+                    if overview.is_ready
+                    else "Dynamic layer cache not prepared"
+                ),
+                layer_mode="dynamic",
+                dynamic=_dynamic_overview_response(overview),
+            )
+        fixed = describe_fixed_layer_caches(
+            combo.materials, combo.layer_count, combo.layer_height_mm, combo.substrate
+        )
+        return MaterialCacheOverviewResponse(
+            status="ok",
+            message="Fixed layer cache overview",
+            layer_mode="fixed",
+            fixed=MaterialFixedCacheOverviewResponse(
+                exhaustive_grid_resolutions=list(fixed.exhaustive_grid_resolutions),
+                saved_runtime_budgets=list(fixed.saved_runtime_budgets),
+            ),
+        )
+
+    response: MaterialCacheOverviewResponse = await _run_material_compute(
+        _describe,
+        combo=combo,
+        failed_event="material_cache_overview_failed",
+        failed_detail=MATERIAL_GAMUT_FAILED_DETAIL,
+    )
+    log.info(
+        "Material cache overview checked",
+        extra={
+            "event": "material_cache_overview_done",
+            **combo.log_fields(),
+            "dynamic_ready": bool(response.dynamic and response.dynamic.is_ready),
+            "saved_runtime_budget_count": (
+                len(response.fixed.saved_runtime_budgets) if response.fixed else 0
+            ),
+        },
+    )
+    return response
+
+
+@router.post(
+    "/material-dynamic-cache/prepare",
+    dependencies=[Depends(require_local_app_origin)],
+)
+async def material_dynamic_cache_prepare(
+    material_directory_names: str = Form(...),
+    layer_mode: str = Form("dynamic"),
+    min_layer_count: int | None = Form(None),
+    max_layer_count: int | None = Form(None),
+    layer_height_mm: float = Form(...),
+    substrate: str = Form("white"),
+    backing_material_directory_name: str | None = Form(None),
+) -> MaterialDynamicCachePrepareResponse:
+    """Build and save every candidate a dynamic conversion needs.
+    构建并保存动态转换所需的全部候选。
+
+    Shares the global build semaphore with smart-cache builds so at most one
+    heavy build runs at a time.
+    与智能缓存构建共用全局信号量，同一时间最多运行一个重型构建。
+    """
+    _require_dynamic_layer_mode(layer_mode)
+    combo = _parse_material_combo(
+        material_directory_names, layer_mode, None, min_layer_count,
+        max_layer_count, layer_height_mm, substrate, backing_material_directory_name,
+    )
+
+    def _prepare() -> DynamicLayerCachePrepareResult:
+        return prepare_dynamic_layer_cache(
+            combo.materials, int(combo.backing_index), combo.layer_height_mm,
+            combo.substrate, int(combo.min_layer_count), combo.layer_count,
+        )
+
+    result: DynamicLayerCachePrepareResult = await _run_material_compute(
+        _prepare,
+        combo=combo,
+        failed_event="material_dynamic_cache_prepare_failed",
+        failed_detail=MATERIAL_DYNAMIC_CACHE_FAILED_DETAIL,
+        serialize_builds=True,
+    )
+    log.info(
+        "Material dynamic cache prepared",
+        extra={
+            "event": "material_dynamic_cache_prepare_done",
+            **combo.log_fields(),
+            "built": result.built,
+            "elapsed_seconds": result.elapsed_seconds,
+            "saved_layer_count": len(result.overview.saved_layer_counts),
+        },
+    )
+    return MaterialDynamicCachePrepareResponse(
+        status="ok",
+        message=(
+            f"Prepared dynamic layer cache in {result.elapsed_seconds:.1f}s"
+            if result.built
+            else "Dynamic layer cache was already prepared"
+        ),
+        built=result.built,
+        elapsed_seconds=result.elapsed_seconds,
+        dynamic=_dynamic_overview_response(result.overview),
+    )
+
+
+@router.post(
+    "/material-dynamic-cache/delete",
+    dependencies=[Depends(require_local_app_origin)],
+)
+async def material_dynamic_cache_delete(
+    material_directory_names: str = Form(...),
+    layer_mode: str = Form("dynamic"),
+    min_layer_count: int | None = Form(None),
+    max_layer_count: int | None = Form(None),
+    layer_height_mm: float = Form(...),
+    substrate: str = Form("white"),
+    backing_material_directory_name: str | None = Form(None),
+) -> MaterialDynamicCacheDeleteResponse:
+    """Delete the merged catalog and prepared per-layer data for these settings.
+    删除当前动态设置的合并目录和预构建逐层数据，保留手动智能缓存。
+    """
+    _require_dynamic_layer_mode(layer_mode)
+    combo = _parse_material_combo(
+        material_directory_names, layer_mode, None, min_layer_count,
+        max_layer_count, layer_height_mm, substrate, backing_material_directory_name,
+    )
+    deleted: bool = await _run_material_compute(
+        lambda: delete_dynamic_layer_cache(
+            combo.materials, int(combo.backing_index), combo.layer_height_mm,
+            combo.substrate, int(combo.min_layer_count), combo.layer_count,
+        ),
+        combo=combo,
+        failed_event="material_dynamic_cache_delete_failed",
+        failed_detail=MATERIAL_DYNAMIC_CACHE_FAILED_DETAIL,
+        serialize_builds=True,
+    )
+    log.info(
+        "Material dynamic cache deleted",
+        extra={
+            "event": "material_dynamic_cache_delete_done",
+            **combo.log_fields(),
+            "deleted": deleted,
+        },
+    )
+    return MaterialDynamicCacheDeleteResponse(
+        status="ok",
+        message=(
+            "Prepared dynamic layer cache deleted"
+            if deleted
+            else "No prepared dynamic layer cache found"
+        ),
+        deleted=deleted,
     )

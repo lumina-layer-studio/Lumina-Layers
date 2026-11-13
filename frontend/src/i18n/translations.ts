@@ -9,6 +9,10 @@ export const translations: Record<string, Record<"zh" | "en", string>> = {
   ...splashTranslations,
   ...projectTranslations,
   common_close: { zh: "关闭", en: "Close" },
+  converter_session_expired: {
+    zh: "会话已过期，请重新预览。图片和参数已保留。",
+    en: "The session expired. Your image and settings are preserved; run preview again.",
+  },
   cloud_library_update: { zh: "更新", en: "Update" },
   cloud_library_results: { zh: "匹配结果", en: "Matching results" },
   cloud_library_loading_index: { zh: "正在加载完整目录，搜索结果尚不完整…", en: "Loading the full catalog; search results are not complete yet…" },

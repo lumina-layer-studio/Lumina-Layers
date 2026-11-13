@@ -2424,6 +2424,30 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
       if (previewChanged && (current.sessionId || current.isLoading || current.hasManualPreview)) _get().invalidatePreviewForAutoRefresh();
     }),
 
+    expireSession: (sessionId) => {
+      const current = _get();
+      if (current.sessionId !== sessionId) return;
+      _cancelPreviewWork();
+      set({
+        ...buildPreviewSessionResetState(current, true),
+        // Downloads have their own lifetime; keep them when the preview expires.
+        downloadUrl: current.downloadUrl,
+        threemfDiskPath: current.threemfDiskPath,
+        generateWarnings: current.generateWarnings,
+        largeFormatWarnings: current.largeFormatWarnings,
+        largeFormatFailedTiles: current.largeFormatFailedTiles,
+        previewAutoRefreshPending: false,
+        isGenerating: false,
+        gradientGroups: null,
+        gradientGroupsLoading: false,
+        gradientGroupsError: null,
+        gradientGroupsSessionId: null,
+        gradientSelection: null,
+        selectedGradientRegions: [],
+        error: tRuntime("converter_session_expired"),
+      });
+    },
+
     // --- 图片 ---
     commitProjectRestore: (state) => {
       _cancelPreviewWork();

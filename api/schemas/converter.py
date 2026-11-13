@@ -188,6 +188,7 @@ class ColorReplacementItem(BaseModel):
     quantized_hex: str = Field(..., description="量化后的原色 (#rrggbb)")
     matched_hex: str = Field(..., description="LUT 匹配色 (#rrggbb)")
     replacement_hex: str = Field(..., description="替换目标色 (#rrggbb)")
+    source_scope: dict | None = Field(None, description="编辑时的压缩像素归属；旧记录可缺省")
 
 
 class VirtualMaterial(BaseModel):

@@ -162,7 +162,7 @@ export function invalidateGenerationRequests(): void {
 function generationReplacements(state: ConverterState): ColorReplacementItem[] | undefined {
   const replacements = [
     ...state.replacement_regions,
-    ...colorRemapToReplacementRegions(state.colorRemapMap, state.palette),
+    ...colorRemapToReplacementRegions(state.colorRemapMap, state.palette, state.replacement_regions),
   ];
   return replacements.length > 0 ? replacements : undefined;
 }

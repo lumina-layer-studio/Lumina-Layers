@@ -693,7 +693,7 @@ def _parse_preview_replacement_regions(
         )
     try:
         return [
-            ColorReplacementItem.model_validate(item).model_dump()
+            ColorReplacementItem.model_validate(item).model_dump(exclude_none=True)
             for item in parsed
         ]
     except ValidationError as exc:

@@ -375,6 +375,7 @@ export interface ColorReplacementItem {
   quantized_hex: string;
   matched_hex: string;
   replacement_hex: string;
+  source_scope?: { shape: number[]; bits: string } | null;
 }
 
 // ========== Palette & Height Types ==========
@@ -2110,6 +2111,7 @@ export interface ColorReplaceResponse extends DynamicMaterialResultResponse {
   preview_url: string;
   preview_3d_url?: string | null;
   replacement_count: number;
+  replacement_regions?: ColorReplacementItem[];
   can_undo?: boolean;
   can_redo?: boolean;
   /** Authoritative selection and content revision after the edit. */

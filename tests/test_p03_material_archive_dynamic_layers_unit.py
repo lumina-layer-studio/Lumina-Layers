@@ -357,7 +357,11 @@ def test_dynamic_preview_replay_applies_exact_replacements_and_merges_metadata(
     result = _run_material_archive_branch(ctx)
 
     assert len(calls) == 1
-    assert calls[0]["replacements"] == {"#0b151f": "#28323c"}
+    assert len(calls[0]["replacements"]) == 1
+    assert calls[0]["replacements"][0][0] == "#28323c"
+    np.testing.assert_array_equal(
+        calls[0]["replacements"][0][1], [[True, True], [True, False]],
+    )
     assert calls[0]["dynamic_layer_info"]["enabled"] is True
     assert result["material_dynamic_layer_info"] == merged_info
     assert result["material_solver_info"]["replacement_merge"] is True

@@ -944,6 +944,7 @@ class ColorReplaceResponse(DynamicMaterialResultResponse):
     preview_url: str
     preview_3d_url: str | None = None
     replacement_count: int
+    replacement_regions: list[dict] = Field(default_factory=list)
     can_undo: bool = False
     can_redo: bool = False
     selection: SelectionDocumentResponse | None = None

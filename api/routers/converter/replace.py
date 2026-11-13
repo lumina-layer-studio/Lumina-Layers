@@ -909,6 +909,7 @@ def _editor_commit_result(
                 "quantized_hex": str(quantized_hex),
                 "matched_hex": matched_hex,
                 "replacement_hex": replacement_hex,
+                **({"source_scope": item["source_scope"]} if item.get("source_scope") else {}),
             }
         )
     result: dict = {
@@ -1471,9 +1472,11 @@ def replace_color(
             current_regions = session_data.get("replacement_regions", [])
             if not isinstance(current_regions, list):
                 current_regions = []
+            from core.color_replay_scope import capture_color_scope
             current_regions = [*current_regions, {
                 "selected_color": request.selected_color,
                 "replacement_color": request.replacement_color,
+                "source_scope": capture_color_scope(previous_rgb, selected_rgb, cache.get("mask_solid")),
             }]
             session_data["replacement_regions"] = current_regions
             store.put(request.session_id, "replacement_regions", current_regions)
@@ -1572,6 +1575,7 @@ def replace_color(
         preview_url=f"/api/files/{preview_id}",
         preview_3d_url=glb_url,
         replacement_count=len(current_regions),
+        replacement_regions=_editor_commit_result(session_data)["replacement_regions"],
         **dynamic_material_result_from_cache(cache).model_dump(
             exclude={"operation_id", "editor_content_revision"}
         ),
@@ -4221,8 +4225,10 @@ def replace_colors_batch(
             history_checkpoint,
         )
 
+        from core.color_replay_scope import capture_color_scope
         current_regions = [
             {
+                "source_scope": capture_color_scope(source_rgb, ColorReplacementManager._hex_to_color(pair.selected_color), cache.get("mask_solid")),
                 "selected_color": pair.selected_color,
                 "replacement_color": pair.replacement_color,
             }
@@ -4326,6 +4332,7 @@ def replace_colors_batch(
         preview_url=f"/api/files/{preview_id}",
         preview_3d_url=glb_url,
         replacement_count=len(request.replacements),
+        replacement_regions=_editor_commit_result(session_data)["replacement_regions"],
         **dynamic_material_result_from_cache(cache).model_dump(
             exclude={"operation_id", "editor_content_revision"}
         ),

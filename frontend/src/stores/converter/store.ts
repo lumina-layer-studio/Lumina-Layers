@@ -319,6 +319,33 @@ function rawPreviewFailureMessage(error: unknown): string {
   return tRuntime("converter_raw_preview_failed", { error: detail });
 }
 
+async function recoverBrowserImagePreview(file: File, failedUrl: string): Promise<void> {
+  const isCurrent = (url: string | null) => {
+    const state = useConverterStore.getState();
+    return state.imageFile === file && state.imagePreviewUrl === url;
+  };
+  if (!isCurrent(failedUrl)) return;
+  try {
+    const { preview_url, width, height } = await uploadImagePreview(file);
+    if (!isCurrent(failedUrl)) return;
+    useConverterStore.setState({
+      imagePreviewUrl: preview_url,
+      ...buildImageAspectRatioState(useConverterStore.getState(), width / height),
+      error: null,
+    });
+  } catch (error) {
+    if (!isCurrent(failedUrl)) return;
+    useConverterStore.setState({
+      imagePreviewUrl: null,
+      cropModalOpen: false,
+      error: tRuntime("converter_image_preview_failed", {
+        error: visibleConverterError(error, tRuntime("api_error_http_default")),
+      }),
+    });
+  }
+  if (failedUrl.startsWith("blob:")) URL.revokeObjectURL(failedUrl);
+}
+
 function isSvgFile(file: File): boolean {
   return (
     file.type === "image/svg+xml" ||
@@ -2487,6 +2514,7 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
         const ratio = img.naturalWidth / img.naturalHeight;
         set(buildImageAspectRatioState(_get(), ratio));
       };
+      img.onerror = () => { void recoverBrowserImagePreview(file, previewUrl); };
       img.src = previewUrl;
 
       const isSvg = isSvgImageFile(file);
@@ -7418,6 +7446,7 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
             }
             set(buildImageAspectRatioState(_get(), img.naturalWidth / img.naturalHeight));
           };
+          img.onerror = () => { void recoverBrowserImagePreview(lastFile, previewUrl); };
           img.src = previewUrl;
 
           set({
@@ -7652,6 +7681,7 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
           }
           set(buildImageAspectRatioState(_get(), img.naturalWidth / img.naturalHeight));
         };
+        img.onerror = () => { void recoverBrowserImagePreview(singleFile, previewUrl); };
         img.src = previewUrl;
 
         set({
@@ -8120,7 +8150,7 @@ export const converterDocumentHistory = installConverterDocumentHistory(useConve
   const restored = useConverterStore.getState();
   const file = restored.imageFile;
   const previewUrl = restored.imagePreviewUrl;
-  if (file && sources.aspectRatio === null) {
+  if (file && (sources.aspectRatio === null || previewUrl?.startsWith("blob:"))) {
     const publishDimensions = (width: number, height: number, url?: string) => {
       const latest = useConverterStore.getState();
       if (latest.imageFile === file && latest.imagePreviewUrl === previewUrl) useConverterStore.setState({ ...buildImageAspectRatioState(latest, width / height), ...(url ? { imagePreviewUrl: url } : {}) });
@@ -8131,7 +8161,10 @@ export const converterDocumentHistory = installConverterDocumentHistory(useConve
       });
     } else if (previewUrl) {
       const image = new Image();
-      image.onload = () => publishDimensions(image.naturalWidth, image.naturalHeight);
+      image.onload = () => {
+        if (sources.aspectRatio === null) publishDimensions(image.naturalWidth, image.naturalHeight);
+      };
+      image.onerror = () => { void recoverBrowserImagePreview(file, previewUrl); };
       image.src = previewUrl;
     }
   }

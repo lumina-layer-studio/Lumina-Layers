@@ -889,7 +889,9 @@ def _resolve_replayed_color_replacement_jobs(
 ) -> list[tuple[str, np.ndarray]]:
     """Resolve edits to pixel masks without widening cleanup neighbors.
 
-    An existing matched color retains whole-color selection semantics. If
+    Captured scopes retain the original pixel ownership across material changes.
+    Legacy records lack that history: an existing matched color retains
+    whole-color selection semantics. If
     a material change removes that identity, the stable source color locates
     the affected pixels. Neighbor colors found inside that source region must
     never become whole-image replacement keys.
@@ -905,10 +907,10 @@ def _resolve_replayed_color_replacement_jobs(
         solid = np.ones(matched.shape[:2], dtype=bool)
 
     quantized = np.asarray(quantized_image)
-    if not isinstance(replacement_records, list) or quantized.shape != matched.shape:
+    if not isinstance(replacement_records, list):
         return _color_replacement_jobs(fallback, matched, solid)
 
-    pending: list[tuple[str, str, np.ndarray, np.ndarray | None]] = []
+    resolved: list[tuple[str, np.ndarray]] = []
     for item in replacement_records:
         if not isinstance(item, dict):
             continue
@@ -920,10 +922,18 @@ def _resolve_replayed_color_replacement_jobs(
             source_rgb = _hex_to_rgb_tuple(fallback_source)
         except (TypeError, ValueError):
             continue
+        if item.get("source_scope") is not None:
+            from core.color_replay_scope import decode_color_scope
+            selected = decode_color_scope(item["source_scope"], solid)
+            if np.any(selected):
+                resolved.append((replacement_hex, selected))
+            continue
+        # Legacy records did not capture ownership. Retain their historical
+        # matched/source fallback; they cannot recover a lost original scope.
         matched_mask = np.all(matched == source_rgb, axis=-1) & solid
         quantized_hex = item.get("quantized") or item.get("quantized_hex")
         source_mask = None
-        if isinstance(quantized_hex, str):
+        if isinstance(quantized_hex, str) and quantized.shape == matched.shape:
             try:
                 quantized_rgb = np.asarray(
                     _hex_to_rgb_tuple(quantized_hex),
@@ -935,21 +945,10 @@ def _resolve_replayed_color_replacement_jobs(
                 candidate = np.all(quantized == quantized_rgb, axis=-1) & solid
                 if np.any(candidate):
                     source_mask = candidate
-        pending.append((fallback_source, replacement_hex, matched_mask, source_mask))
-
-    resolved: list[tuple[str, np.ndarray]] = []
-    for old_match, replacement_hex, matched_mask, source_mask in pending:
         if source_mask is None or np.any(source_mask & matched_mask):
-            # Another saved edit with a different former match may now have
-            # collapsed into this color. Its source identity owns those pixels.
-            selected = matched_mask.copy()
-            for other_match, _, _, other_source in pending:
-                if other_match != old_match and other_source is not None:
-                    selected &= ~other_source
-        else:
-            selected = source_mask
-        if np.any(selected):
-            resolved.append((replacement_hex, selected))
+            source_mask = matched_mask
+        if np.any(source_mask):
+            resolved.append((replacement_hex, source_mask))
 
     return resolved
 

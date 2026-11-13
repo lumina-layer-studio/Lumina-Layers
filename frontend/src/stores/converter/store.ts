@@ -6925,7 +6925,7 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
         const portableProjectColors = clonePortableProjectColorState(state);
         const remapReplacementRegions = colorRemapToReplacementRegions(
           state.colorRemapMap,
-          state.palette,
+          state.palette, state.replacement_regions,
         );
         const previewReplacementRegions = [
           ...portableProjectColors.replacement_regions,

@@ -375,6 +375,7 @@ export interface ColorReplacementItem {
   quantized_hex: string;
   matched_hex: string;
   replacement_hex: string;
+  source_scope?: { shape: number[]; bits: string } | null;
 }
 
 // ========== Palette & Height Types ==========

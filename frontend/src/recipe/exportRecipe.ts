@@ -124,7 +124,7 @@ export function exportConverterRecipe(
   if (Object.keys(state.colorRemapMap).length > 0) {
     const remapRegions = colorRemapToReplacementRegions(
       state.colorRemapMap,
-      state.palette,
+      state.palette, state.replacement_regions,
     );
     mergedReplacements = [...mergedReplacements, ...remapRegions];
   }
@@ -134,6 +134,7 @@ export function exportConverterRecipe(
     quantized_hex: ensureHash(r.quantized_hex),
     matched_hex: ensureHash(r.matched_hex),
     replacement_hex: ensureHash(r.replacement_hex),
+    ...(r.source_scope ? { source_scope: r.source_scope } : {}),
   }));
 
   // Normalize free_color_set to '#' prefix

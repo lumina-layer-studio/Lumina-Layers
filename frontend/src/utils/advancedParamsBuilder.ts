@@ -382,7 +382,7 @@ function buildColorReplacement(
 ): AdvancedParamsColorReplacement {
   const liveReplacementRegions = colorRemapToReplacementRegions(
     state.colorRemapMap,
-    state.palette,
+    state.palette, state.replacement_regions,
   );
   const globalReplacementRegions = mergeGlobalReplacementRegions(
     state.replacement_regions,

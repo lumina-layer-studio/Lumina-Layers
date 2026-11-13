@@ -129,6 +129,7 @@ class TestReplaceColorsBatch:
             assert receipt.json()["editor_content_revision"] == first.json()["editor_content_revision"]
             assert receipt.json()["result"]["replacement_regions"] == [{
                 "quantized_hex": "#ff0000", "matched_hex": "#ff0000", "replacement_hex": "#0000ff",
+                "source_scope": store.get(sid)["replacement_regions"][0]["source_scope"],
             }]
             assert receipt.json()["result"]["preview_url"] == first.json()["preview_url"]
 
@@ -501,7 +502,8 @@ class TestReplaceColorsBatch:
         updated_b = store.get(sid)["preview_cache"]["matched_rgb"]
         assert np.all(updated_b[:2, :] == (255, 255, 0))
         assert store.get(sid)["replacement_regions"] == [
-            {"selected_color": "#ff0000", "replacement_color": "#ffff00"}
+            {"selected_color": "#ff0000", "replacement_color": "#ffff00",
+             "source_scope": store.get(sid)["replacement_regions"][0]["source_scope"]}
         ]
 
     def test_batch_unknown_session_returns_404(
@@ -823,3 +825,22 @@ class TestRegionReplaceBatch:
         np.testing.assert_array_equal(
             store.get(sid)["preview_cache"]["height_identity_rgb"], matched
         )
+
+
+def test_batch_receipt_scope_replays_only_original_ownership_after_material_change(red_green_canvas):
+    from core.color_replay_scope import decode_color_scope
+    from core.pipeline.s03_color_replacement import _resolve_replayed_color_replacement_jobs
+    matched, solid, quantized = red_green_canvas
+    client, sid, store = _make_client(matched, mask_solid=solid, quantized_image=quantized)
+    response = client.post("/api/convert/replace-colors-batch", json={
+        "session_id": sid, "operation_id": "capture-scope",
+        "replacements": [{"selected_color": "#ff0000", "replacement_color": "#0000ff"}],
+    })
+    assert response.status_code == 200, response.text
+    receipt = client.get(f"/api/convert/editor-commit/{sid}/capture-scope").json()["result"]
+    record = receipt["replacement_regions"][0]
+    expected = np.all(matched == (255, 0, 0), axis=-1) & solid
+    np.testing.assert_array_equal(decode_color_scope(record["source_scope"], solid), expected)
+    merged_match = np.full_like(matched, (255, 0, 0))
+    jobs = _resolve_replayed_color_replacement_jobs([record], merged_match, quantized, solid)
+    np.testing.assert_array_equal(jobs[0][1], expected)

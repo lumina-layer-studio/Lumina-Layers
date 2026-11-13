@@ -838,6 +838,7 @@ def test_batch_receipt_scope_replays_only_original_ownership_after_material_chan
     })
     assert response.status_code == 200, response.text
     receipt = client.get(f"/api/convert/editor-commit/{sid}/capture-scope").json()["result"]
+    assert response.json()["replacement_regions"] == receipt["replacement_regions"]
     record = receipt["replacement_regions"][0]
     expected = np.all(matched == (255, 0, 0), axis=-1) & solid
     np.testing.assert_array_equal(decode_color_scope(record["source_scope"], solid), expected)

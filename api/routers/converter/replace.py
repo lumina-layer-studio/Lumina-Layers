@@ -1575,6 +1575,7 @@ def replace_color(
         preview_url=f"/api/files/{preview_id}",
         preview_3d_url=glb_url,
         replacement_count=len(current_regions),
+        replacement_regions=_editor_commit_result(session_data)["replacement_regions"],
         **dynamic_material_result_from_cache(cache).model_dump(
             exclude={"operation_id", "editor_content_revision"}
         ),
@@ -4331,6 +4332,7 @@ def replace_colors_batch(
         preview_url=f"/api/files/{preview_id}",
         preview_3d_url=glb_url,
         replacement_count=len(request.replacements),
+        replacement_regions=_editor_commit_result(session_data)["replacement_regions"],
         **dynamic_material_result_from_cache(cache).model_dump(
             exclude={"operation_id", "editor_content_revision"}
         ),

@@ -1,3 +1,5 @@
+import { buildPreviewParams } from "../stores/converter/requests";
+import { DEFAULT_SETTINGS } from "../stores/settingsStore";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { converterDocumentHistory, useConverterStore } from "../stores/converter";
 import type {
@@ -626,4 +628,31 @@ describe("editor commit receipt business-state reconciliation", () => {
 
     expectPageStateUnchanged(beforeB);
   });
+});
+
+
+it("publishes normal HTTP success scope before material reset and next preview", async () => {
+  const scope = { shape: [1, 2], bits: "eJxrAAAAgQCB" };
+  seedEditorState({
+    replacement_regions: [], colorRemapMap: {}, recipe_overrides: [], regionReplacementCount: 0,
+    palette: [{ quantized_hex: "010101", matched_hex: "112233", pixel_count: 1, percentage: 50 }],
+    _pollAsyncGlb: vi.fn(),
+  });
+  mockedReplaceColorsBatch.mockResolvedValueOnce({
+    status: "ok", message: "Replaced 1 colors in batch", preview_url: "/api/files/changed.png",
+    replacement_count: 1, replacement_regions: [{ quantized_hex: "#112233", matched_hex: "#112233",
+      replacement_hex: "#ff0000", source_scope: scope }],
+    selection: document(2, 2), editor_content_revision: 2,
+  });
+  useConverterStore.getState().applyColorRemap("112233", "ff0000");
+  await vi.waitFor(() => expect(useConverterStore.getState().replacement_regions[0]?.source_scope).toEqual(scope));
+  expect(mockedGetEditorCommitStatus).not.toHaveBeenCalled();
+  useConverterStore.getState().setLutName("");
+  const after = useConverterStore.getState();
+  expect(after.sessionId).toBeNull();
+  expect(after.replacement_regions).toHaveLength(1);
+  expect(after.replacement_regions[0].source_scope).toEqual(scope);
+  const params = buildPreviewParams(after, DEFAULT_SETTINGS,
+    { source_kind: "legacy_single", lut_name: "new-lut" }, after.replacement_regions);
+  expect(JSON.parse(JSON.stringify(params)).replacement_regions[0].source_scope).toEqual(scope);
 });

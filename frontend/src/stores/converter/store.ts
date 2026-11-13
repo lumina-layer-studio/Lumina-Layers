@@ -2266,6 +2266,9 @@ async function commitColorRemap(
     const response = await apiReplaceColorsBatch(sid, pairs, previewCommit.operationId);
     if (!isCurrentReplacementPreviewCommit(getState(), previewCommit)) return;
     setState({
+      ...(response.replacement_regions ? {
+        replacement_regions: normalizeReplacementRegionsFromHistory(response.replacement_regions),
+      } : {}),
       replacePreviewLoading: false,
       previewImageUrl: normalizeResourceUrl(response.preview_url),
       previewBaseImageUrl: normalizeResourceUrl(response.preview_url),

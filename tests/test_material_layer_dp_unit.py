@@ -161,3 +161,20 @@ def test_layer_caps():
         solve_image_colors_optimal(target, PALETTE, layer_count=11, layer_height_mm=0.04)
     with pytest.raises(ValueError, match="candidate runtime"):
         suggest_colors_for_target(target[0], PALETTE, layer_count=11, layer_height_mm=0.04)
+
+
+def test_isolated_pixel_cleanup_handles_deep_stacks():
+    """8 materials x 30 layers overflows a base-M int64 stack key."""
+    from core.isolated_pixel_cleanup import cleanup_isolated_pixels
+
+    rng = np.random.default_rng(0)
+    stack_a = rng.integers(0, 8, size=30)
+    stack_b = rng.integers(0, 8, size=30)
+    stack_b[0] = 7  # ensure the max index (base 8) is present
+    material_matrix = np.tile(stack_a, (5, 5, 1)).astype(np.int32)
+    material_matrix[2, 2] = stack_b
+    rgb = np.zeros((5, 5, 3), np.uint8)
+    rgb[2, 2] = 255
+    cleaned_rgb, cleaned_mat = cleanup_isolated_pixels(material_matrix, rgb)
+    np.testing.assert_array_equal(cleaned_mat[2, 2], stack_a)
+    assert cleaned_rgb[2, 2].tolist() == [0, 0, 0]

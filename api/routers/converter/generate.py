@@ -4627,8 +4627,8 @@ async def convert_batch(
         False,
         description="启用耗材模式动态有效叠层数",
     ),
-    material_min_layer_count: int = Form(5, description="最小有效叠层数 (5-10)"),
-    material_max_layer_count: int = Form(10, description="最大有效叠层数 (5-10)"),
+    material_min_layer_count: int = Form(5, description="最小有效叠层数 (5-30)"),
+    material_max_layer_count: int = Form(10, description="最大有效叠层数 (5-30)"),
     material_delta_e00_tolerance: float = Form(
         0.5,
         description="短配方允许的 CIEDE2000 色差损失 (0-5)",

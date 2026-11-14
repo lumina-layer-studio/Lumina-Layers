@@ -62,7 +62,7 @@ describe("session API beacon close", () => {
         session_id: "session-beacon-false",
         keep_file_ids: ["download-1", "preview-1"],
       },
-      { timeout: 3_600_000 },
+      { timeout: 3_600_000, suppressErrorTicket: true },
     );
     expect(isSessionCloseRequested("session-beacon-false")).toBe(true);
   });

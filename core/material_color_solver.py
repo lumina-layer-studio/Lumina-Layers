@@ -1315,6 +1315,11 @@ def ensure_not_worse_than_smaller_N(
           wins and how often
         - ``mean_delta_e_before`` / ``mean_delta_e_after``
         - ``max_delta_e_before`` / ``max_delta_e_after``
+
+        Only ``k <= MITM_MAX_LAYER_COUNT`` is evaluated: the strict MITM
+        solver cannot enumerate deeper stacks. For ``target_layer_count``
+        above ``MITM_MAX_LAYER_COUNT + 1`` the guarantee therefore covers
+        ``k`` up to ``MITM_MAX_LAYER_COUNT`` only.
     """
     if target_layer_count > MAX_LAYER_COUNT:
         raise ValueError(
@@ -1401,7 +1406,9 @@ def ensure_not_worse_than_smaller_N(
     target_labs = rgb_to_lab(unique_colors_srgb.astype(np.uint8)).astype(np.float64)
 
     M = len(materials)
-    for k in range(int(min_layer_count), int(target_layer_count)):
+    # MITM is exact only up to MITM_MAX_LAYER_COUNT; deeper k would raise.
+    k_stop = min(int(target_layer_count), MITM_MAX_LAYER_COUNT + 1)
+    for k in range(int(min_layer_count), k_stop):
         # Guard: estimate peak memory of the MITM delta_e broadcast.
         # The solver's inner loop allocates ``delta_e`` of shape
         # ``(C, chunk, K_bot)`` float64.  ``chunk`` is derived from a

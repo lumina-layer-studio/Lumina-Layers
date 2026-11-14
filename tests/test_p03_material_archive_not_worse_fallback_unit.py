@@ -419,3 +419,62 @@ class TestP03BoundedRuntimeGuards:
         assert result["material_solver_info"]["unique_color_count"] == 0
         assert result["material_solver_info"]["cache_mode"] == "none"
         assert np.all(result["material_matrix"] == -1)
+
+
+class TestP03DeepStackCrossNBound:
+    """Two materials with white at 12 layers stay inside the MITM bound."""
+
+    def test_two_material_twelve_layer_preview_runs_cross_n_guard(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        palette = [RED, WHITE]
+        layer_count = 12
+        image_path = _write_solid_color_png(tmp_path / "pink.png", (230, 150, 150))
+        ctx = _make_ctx(image_path, layer_count=layer_count)
+        ctx["_material_params"] = palette
+
+        red_idx = palette.index(RED)
+        # Full coverage (2 ** 12 recipes) keeps the real cross-N guard enabled.
+        fake_cache = _FakeCache(
+            np.asarray([[180, 30, 25]], dtype=np.uint8),
+            np.full((1, layer_count), red_idx, dtype=np.int32),
+            np.asarray([40.0], dtype=np.float64),
+            layer_count,
+            valid_cell_count=len(palette) ** layer_count,
+        )
+        monkeypatch.setattr(
+            "core.material_lut_provider.load_solver_runtime",
+            lambda **kwargs: (fake_cache, 64),
+        )
+
+        result = _run_material_archive_branch(ctx)
+
+        fallback = result["material_solver_info"]["not_worse_fallback"]
+        assert fallback["applied"] is True
+        assert all(5 <= int(k) <= 10 for k in fallback["per_k_improved"])
+        assert result["material_matrix"].shape[-1] == layer_count
+
+
+def test_cross_n_guard_skips_layer_counts_beyond_mitm() -> None:
+    from core.material_color_solver import MITM_MAX_LAYER_COUNT
+    from core.material_lut_synthesis import ensure_not_worse_than_smaller_N
+
+    palette = [RED, WHITE]
+    targets = np.asarray([[230, 150, 150], [250, 250, 250]], dtype=np.uint8)
+    baseline = np.zeros((2, 12), dtype=np.int32)
+    _matched, recipes, delta_e, stats = ensure_not_worse_than_smaller_N(
+        targets,
+        palette,
+        np.asarray([[180, 30, 25], [180, 30, 25]], dtype=np.uint8),
+        baseline,
+        np.asarray([40.0, 60.0], dtype=np.float64),
+        target_layer_count=12,
+        layer_height_mm=DEFAULT_LAYER_HEIGHT_MM,
+        substrate="white",
+    )
+
+    assert stats["applied"] is True
+    assert stats["improved_pixels"] > 0
+    assert all(int(k) <= MITM_MAX_LAYER_COUNT for k in stats["per_k_improved"])
+    assert recipes.shape == (2, 12)
+    assert np.all(delta_e <= np.asarray([40.0, 60.0]))

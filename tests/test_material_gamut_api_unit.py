@@ -60,6 +60,16 @@ def client(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> TestClient:
         "api.routers.single_stage.load_multiple_materials",
         lambda names: [_PALETTE[name] for name in names],
     )
+    monkeypatch.setattr(
+        "api.workers.material_workbench_workers.load_multiple_materials",
+        lambda names, **_kwargs: [_PALETTE[name] for name in names],
+    )
+
+    class InlinePool:
+        async def submit(self, work, *args):
+            return work(*args)
+
+    monkeypatch.setattr("api.routers.single_stage.get_worker_pool", InlinePool)
     return TestClient(create_app())
 
 
@@ -238,7 +248,7 @@ def test_unexpected_core_failure_maps_to_500_with_structured_log(
     def explode(*_args, **_kwargs):
         raise RuntimeError("catalog storage offline")
 
-    monkeypatch.setattr("api.routers.single_stage.compute_dynamic_layer_gamut", explode)
+    monkeypatch.setattr("core.material_gamut_coverage.compute_dynamic_layer_gamut", explode)
     response = client.post(f"{_PREFIX}/material-gamut/coverage", data=_dynamic_form())
 
     assert response.status_code == 500
@@ -264,7 +274,7 @@ def test_compute_failures_use_safe_domain_error_mapping(
     def fail(*_args, **_kwargs):
         raise failure
 
-    monkeypatch.setattr("api.routers.single_stage.compute_dynamic_layer_gamut", fail)
+    monkeypatch.setattr("core.material_gamut_coverage.compute_dynamic_layer_gamut", fail)
     response = client.post(f"{_PREFIX}/material-gamut/coverage", data=_dynamic_form())
     assert response.status_code == status
     assert "private diagnostic" not in response.text
@@ -298,7 +308,7 @@ def test_failed_computation_releases_its_build_slot(client: TestClient, monkeypa
         assert not semaphore.acquire(blocking=False), "the build must hold its slot"
         raise RuntimeError("test failure")
 
-    monkeypatch.setattr("api.routers.single_stage.compute_dynamic_layer_gamut", fail)
+    monkeypatch.setattr("core.material_gamut_coverage.compute_dynamic_layer_gamut", fail)
     assert client.post(f"{_PREFIX}/material-gamut/coverage", data=_dynamic_form()).status_code == 500
     assert semaphore.acquire(blocking=False), "failed work must release its slot"
     semaphore.release()

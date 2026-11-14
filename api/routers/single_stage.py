@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 from ipaddress import ip_address
@@ -19,9 +20,9 @@ import anyio
 import numpy as np
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile
 
-from config import TEMP_DIR
+from config import MATERIALS_DIR, TEMP_DIR
 from api.colorchecker_artifacts import load_colorchecker_full_rgb, scale_corner_points
-from api.dependencies import get_file_registry, get_session_store
+from api.dependencies import get_file_registry, get_session_store, get_worker_pool
 from api.errors import to_http_exception
 from api.export_device_validation import validate_export_device_selection
 from api.file_bridge import ndarray_to_png_bytes, upload_to_ndarray, upload_to_tempfile
@@ -84,12 +85,20 @@ from api.schemas.lut import (
 )
 from api.session_store import SessionStore
 from api.structured_logging import bind_session_id, get_logger
+from api.workers.material_workbench_workers import (
+    MaterialWorkbenchParams,
+    worker_material_cache_delete,
+    worker_material_cache_prepare,
+    worker_material_gamut_contributions,
+    worker_material_gamut_coverage,
+)
 from core.material_cache import (
     ALLOWED_GRID_RESOLUTIONS,
     ALLOWED_LAYER_HEIGHTS_MM as _CACHE_ALLOWED_LAYER_HEIGHTS,  # noqa: N811
     DEFAULT_GRID_RESOLUTION,
     build_material_solver_cache,
     cache_file_path,
+    default_cache_directory,
     delete_cached_entry,
     describe_palette,
     list_cached_entries,
@@ -100,10 +109,8 @@ from core.material_cache import (
 from core.material_cache_overview import (
     DynamicLayerCacheOverview,
     DynamicLayerCachePrepareResult,
-    delete_dynamic_layer_cache,
     describe_dynamic_layer_caches,
     describe_fixed_layer_caches,
-    prepare_dynamic_layer_cache,
 )
 from core.material_cache_visualization import (
     MaterialSolverCacheDetails,
@@ -138,9 +145,6 @@ from core.material_gamut_coverage import (
     GamutCoverageResult,
     MatchAccuracy,
     SrgbCoverage,
-    compute_dynamic_layer_gamut,
-    compute_fixed_layer_gamut,
-    compute_material_contributions,
 )
 from core.material_lut_synthesis import load_multiple_materials
 from core.lut_details.identity import canonicalize_lut_manufacturer
@@ -221,6 +225,7 @@ _RUNTIME_BUILD_LOCKS_GUARD = threading.Lock()
 _RUNTIME_BUILD_LOCKS: dict[tuple[str, int, str, str, int], threading.Lock] = {}
 _RUNTIME_BUILD_GLOBAL_SEMAPHORE = threading.BoundedSemaphore(1)
 _MATERIAL_COMPUTE_QUEUE_TIMEOUT_SECONDS = 30.0
+_MATERIAL_COMPUTE_TASKS: set[asyncio.Task[Any]] = set()
 
 
 def _is_missing_stage_json_path(path: str | None) -> bool:
@@ -3420,6 +3425,22 @@ class _MaterialComboRequest:
     substrate: str
     backing_index: int | None
 
+    def worker_params(self, *, max_points: int = 8000) -> MaterialWorkbenchParams:
+        """Only file locations and scalar settings cross the process boundary."""
+        return {
+            "directory_names": list(self.dir_names),
+            "materials_dir": str(Path(MATERIALS_DIR).resolve()),
+            # Cache helpers append _solver_cache to an explicit root themselves.
+            "cache_root": str(default_cache_directory().parent.resolve()),
+            "layer_mode": self.layer_mode,
+            "layer_count": self.layer_count,
+            "min_layer_count": self.min_layer_count,
+            "backing_index": self.backing_index,
+            "layer_height_mm": self.layer_height_mm,
+            "substrate": self.substrate,
+            "max_points": max_points,
+        }
+
     @property
     def backing_dir_name(self) -> str | None:
         return None if self.backing_index is None else self.dir_names[self.backing_index]
@@ -3586,32 +3607,50 @@ def _dynamic_overview_response(
 
 
 async def _run_material_compute(
-    work: Callable[[], Any],
-    *,
+    work: Callable[..., Any],
+    *args: Any,
     combo: _MaterialComboRequest,
     failed_event: str,
     failed_detail: str,
     serialize_builds: bool = False,
 ) -> Any:
-    """Run CPU-heavy material work off the event loop with typed error mapping."""
-    def run() -> Any:
-        if serialize_builds:
-            if not _RUNTIME_BUILD_GLOBAL_SEMAPHORE.acquire(
-                timeout=_MATERIAL_COMPUTE_QUEUE_TIMEOUT_SECONDS,
-            ):
+    """Dispatch heavy work to the existing process pool; keep admission async.
+
+    Metadata-only reads use a thread. A disconnected caller cannot release
+    a build slot until its process worker actually finishes.
+    """
+    try:
+        if not serialize_builds:
+            return await anyio.to_thread.run_sync(work, *args)
+
+        semaphore = _RUNTIME_BUILD_GLOBAL_SEMAPHORE
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + _MATERIAL_COMPUTE_QUEUE_TIMEOUT_SECONDS
+        while not semaphore.acquire(blocking=False):
+            remaining = deadline - loop.time()
+            if remaining <= 0:
                 raise DynamicMaterialCandidateError(
                     "material computation queue is busy; retry after the active build",
                     layer_count=combo.layer_count,
                     phase="material_compute_queue",
                 )
-            try:
-                return work()
-            finally:
-                _RUNTIME_BUILD_GLOBAL_SEMAPHORE.release()
-        return work()
+            await asyncio.sleep(min(0.05, remaining))
 
-    try:
-        return await anyio.to_thread.run_sync(run)
+        try:
+            task = asyncio.create_task(get_worker_pool().submit(work, *args))
+        except BaseException:
+            semaphore.release()
+            raise
+        _MATERIAL_COMPUTE_TASKS.add(task)
+
+        def complete(done: asyncio.Task[Any]) -> None:
+            semaphore.release()
+            _MATERIAL_COMPUTE_TASKS.discard(done)
+            if not done.cancelled():
+                done.exception()  # Consume errors even if the requester disconnected.
+
+        task.add_done_callback(complete)
+        return await asyncio.shield(task)
     except Exception as exc:
         queue_busy = (
             isinstance(exc, DynamicMaterialCandidateError)
@@ -3663,27 +3702,9 @@ async def material_gamut_coverage(
         max_layer_count, layer_height_mm, substrate, backing_material_directory_name,
     )
 
-    def _compute() -> GamutCoverageResult:
-        if combo.layer_mode == "dynamic":
-            return compute_dynamic_layer_gamut(
-                combo.materials,
-                int(combo.backing_index),
-                combo.layer_height_mm,
-                combo.substrate,
-                int(combo.min_layer_count),
-                combo.layer_count,
-                max_points=int(max_points),
-            )
-        return compute_fixed_layer_gamut(
-            combo.materials,
-            combo.layer_count,
-            combo.layer_height_mm,
-            combo.substrate,
-            max_points=int(max_points),
-        )
-
     result: GamutCoverageResult = await _run_material_compute(
-        _compute,
+        worker_material_gamut_coverage,
+        combo.worker_params(max_points=int(max_points)),
         combo=combo,
         failed_event="material_gamut_coverage_failed",
         failed_detail=MATERIAL_GAMUT_FAILED_DETAIL,
@@ -3756,9 +3777,8 @@ async def material_gamut_contributions(
         max_layer_count, layer_height_mm, substrate, backing_material_directory_name,
     )
     result: GamutContributionResult = await _run_material_compute(
-        lambda: compute_material_contributions(
-            combo.materials, combo.layer_count, combo.layer_height_mm, combo.substrate
-        ),
+        worker_material_gamut_contributions,
+        combo.worker_params(),
         combo=combo,
         failed_event="material_gamut_contributions_failed",
         failed_detail=MATERIAL_GAMUT_FAILED_DETAIL,
@@ -3896,14 +3916,9 @@ async def material_dynamic_cache_prepare(
         max_layer_count, layer_height_mm, substrate, backing_material_directory_name,
     )
 
-    def _prepare() -> DynamicLayerCachePrepareResult:
-        return prepare_dynamic_layer_cache(
-            combo.materials, int(combo.backing_index), combo.layer_height_mm,
-            combo.substrate, int(combo.min_layer_count), combo.layer_count,
-        )
-
     result: DynamicLayerCachePrepareResult = await _run_material_compute(
-        _prepare,
+        worker_material_cache_prepare,
+        combo.worker_params(),
         combo=combo,
         failed_event="material_dynamic_cache_prepare_failed",
         failed_detail=MATERIAL_DYNAMIC_CACHE_FAILED_DETAIL,
@@ -3954,10 +3969,8 @@ async def material_dynamic_cache_delete(
         max_layer_count, layer_height_mm, substrate, backing_material_directory_name,
     )
     deleted: bool = await _run_material_compute(
-        lambda: delete_dynamic_layer_cache(
-            combo.materials, int(combo.backing_index), combo.layer_height_mm,
-            combo.substrate, int(combo.min_layer_count), combo.layer_count,
-        ),
+        worker_material_cache_delete,
+        combo.worker_params(),
         combo=combo,
         failed_event="material_dynamic_cache_delete_failed",
         failed_detail=MATERIAL_DYNAMIC_CACHE_FAILED_DETAIL,

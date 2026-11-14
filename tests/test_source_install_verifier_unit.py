@@ -11,7 +11,15 @@ import time
 import zipfile
 from pathlib import Path
 
+import psutil
 import pytest
+
+
+def _active(process: psutil.Process) -> bool:
+    try:
+        return process.is_running() and process.status() != psutil.STATUS_ZOMBIE
+    except psutil.NoSuchProcess:
+        return False
 
 
 def archive(*, triangles: bool = True, settings: bool = True) -> bytes:
@@ -42,9 +50,8 @@ def test_rejects_downloads_without_real_geometry_and_native_settings(payload: by
         verify_3mf(payload)
 
 
-@pytest.mark.skipif(os.name == "nt", reason="POSIX process-group cleanup; Windows uses taskkill /T")
+@pytest.mark.skipif(os.name == "nt", reason="POSIX signal/process-group regression")
 def test_timeout_cleanup_stops_a_backend_and_its_unresponsive_worker(tmp_path: Path) -> None:
-    import psutil
     from scripts.verify_source_install import _stop_server
 
     pid_file = tmp_path / "worker.pid"
@@ -63,16 +70,15 @@ def test_timeout_cleanup_stops_a_backend_and_its_unresponsive_worker(tmp_path: P
             time.sleep(0.02)
         assert pid_file.exists(), "Test backend never spawned its worker"
         worker_pid = int(pid_file.read_text())
+        owned_worker = psutil.Process(worker_pid)
 
         _stop_server(proc, timeout=0.1)
 
         assert proc.poll() is not None
         deadline = time.monotonic() + 5
-        while psutil.pid_exists(worker_pid) and time.monotonic() < deadline:
-            if psutil.Process(worker_pid).status() == psutil.STATUS_ZOMBIE:
-                break
+        while _active(owned_worker) and time.monotonic() < deadline:
             time.sleep(0.02)
-        assert not psutil.pid_exists(worker_pid) or psutil.Process(worker_pid).status() == psutil.STATUS_ZOMBIE
+        assert not _active(owned_worker)
     finally:
         try:
             os.killpg(proc.pid, signal.SIGKILL)
@@ -83,7 +89,6 @@ def test_timeout_cleanup_stops_a_backend_and_its_unresponsive_worker(tmp_path: P
 
 @pytest.mark.parametrize("parent_exits_first", [True, False], ids=["parent-already-exited", "parent-still-running"])
 def test_server_cleanup_keeps_an_outside_process_alive(tmp_path: Path, parent_exits_first: bool) -> None:
-    import psutil
     from scripts.verify_source_install import _server_process
 
     pid_file = tmp_path / "owned-worker.pid"
@@ -105,12 +110,6 @@ def test_server_cleanup_keeps_an_outside_process_alive(tmp_path: Path, parent_ex
     )
     owned_worker = None
 
-    def active(process: psutil.Process) -> bool:
-        try:
-            return process.is_running() and process.status() != psutil.STATUS_ZOMBIE
-        except psutil.NoSuchProcess:
-            return False
-
     try:
         with _server_process(backend, stdout=subprocess.DEVNULL) as proc:
             deadline = time.monotonic() + 10
@@ -121,17 +120,17 @@ def test_server_cleanup_keeps_an_outside_process_alive(tmp_path: Path, parent_ex
                 time.sleep(0.02)
             assert pid_file.exists(), "Backend never spawned its worker"
             owned_worker = psutil.Process(int(pid_file.read_text()))
-            assert active(owned_worker)
+            assert _active(owned_worker)
             if parent_exits_first:
                 assert proc.wait(timeout=5) == 7
         assert proc.poll() is not None
         deadline = time.monotonic() + 5
-        while active(owned_worker) and time.monotonic() < deadline:
+        while _active(owned_worker) and time.monotonic() < deadline:
             time.sleep(0.02)
-        assert not active(owned_worker)
+        assert not _active(owned_worker)
         assert outside.poll() is None
     finally:
-        if owned_worker is not None and active(owned_worker):
+        if owned_worker is not None and _active(owned_worker):
             try:
                 owned_worker.kill()
             except psutil.NoSuchProcess:

@@ -154,7 +154,7 @@ def _raise_workshop_http_error(
     event: str,
     exc: Exception,
     status_code: int,
-    detail: str,
+    detail: str | dict[str, str],
     module_id: str | None = None,
     version: str | None = None,
     log_error_message: str | None = None,
@@ -717,18 +717,36 @@ def workshop_install_registry(
             module_id=payload.module_id,
             version=payload.version,
         )
-    except httpx.TimeoutException as exc:
+    except (
+        httpx.TimeoutException,
+        httpx.NetworkError,
+        httpx.RemoteProtocolError,
+        httpx.ProxyError,
+    ) as exc:
+        timed_out = isinstance(exc, httpx.TimeoutException)
+        description = (
+            "The Registry package download timed out."
+            if timed_out
+            else "The Registry package download was interrupted."
+        )
         _raise_workshop_http_error(
             event="workshop_module_install_failed",
             exc=exc,
-            status_code=504,
-            detail=(
-                "The Registry package download timed out. "
-                "Check your network or proxy settings, then retry."
-            ),
+            status_code=504 if timed_out else 502,
+            detail={
+                "code": "registry-download-network-error",
+                "message": (
+                    f"{description} Check your connection to GitHub "
+                    "or use a network accelerator, then retry."
+                ),
+            },
             module_id=payload.module_id,
             version=payload.version,
-            log_error_message="Registry package download timed out",
+            log_error_message=(
+                "Registry package download timed out"
+                if timed_out
+                else "Registry package download interrupted"
+            ),
         )
     except (httpx.HTTPError, OSError) as exc:
         _raise_workshop_http_error(

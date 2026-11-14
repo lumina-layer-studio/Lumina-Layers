@@ -9,6 +9,7 @@ import {
 
 import {
   workshopApi,
+  workshopBackendFailure as workshopRequestFailure,
   workshopBackendApi,
   type InstalledWorkshopModule,
   type InstalledWorkshopVersion,
@@ -1017,8 +1018,13 @@ export function WorkshopPanel({
           applyMutation(result.module);
         }
         return result.module;
-      } catch {
-        setOperationError(t("workshop.manager.operationError"));
+      } catch (error: unknown) {
+        const { code } = workshopRequestFailure(error);
+        setOperationError(t(
+          code === "registry-download-network-error"
+            ? "workshop.manager.downloadNetworkError"
+            : "workshop.manager.operationError",
+        ));
         return null;
       } finally {
         setBusyModuleId(null);

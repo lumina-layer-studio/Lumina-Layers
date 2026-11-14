@@ -28,7 +28,8 @@ import math
 import os
 import time
 from copy import deepcopy
-from typing import Any
+from dataclasses import replace
+from typing import Any, TYPE_CHECKING
 
 import cv2  # noqa: F401  -- imported for side-effect parity with coordinator
 import numpy as np
@@ -39,6 +40,7 @@ from config import BedManager, PrinterConfig, normalize_nozzle_size
 from core.errors import (
     CachedPreviewAnalysisError,
 )
+from core.color_similarity import parse_hex_color, rgb_to_hex
 from core.geometry_utils import (
     create_keychain_loop,
     keychain_loop_hole_clearance,
@@ -100,7 +102,56 @@ except ImportError as exc:
 # extraction does not change observable log records (pre-existing tests +
 # log audits attach handlers to ``lumina.core.pipeline.coordinator``).
 # 日志命名空间故意继续沿用 coordinator，保证抽离后日志可观察性零变更。
+if TYPE_CHECKING:
+    from core.vector_engine import VectorAnalysis
+
 log = get_logger("core.pipeline.coordinator")
+
+
+def _prepare_vector_free_colors(
+    analysis: VectorAnalysis, free_colors: set[str] | list[str] | None,
+) -> VectorAnalysis:
+    """Assign marked optical regions their own mesh channel before extrusion.
+
+    Keep the solved analysis intact: only this export's recipes and palette
+    change. The existing layered mesher then produces disjoint volumes for
+    regular materials and user-assignable free colors, including both faces.
+    """
+    if not free_colors:
+        return analysis
+    marked = {parse_hex_color(value) for value in free_colors}
+    present = {
+        tuple(item["matched_rgb"]) for item in analysis.matched_shapes
+        if item.get("matched_rgb") is not None
+        and tuple(item["matched_rgb"]) in marked
+    }
+    if not present:
+        return analysis
+    slots = list(analysis.slot_names)
+    colors = dict(analysis.preview_colors)
+    channels: dict[tuple[int, int, int], int] = {}
+    for rgb in sorted(present):
+        index = len(slots)
+        name = f"Free_{rgb_to_hex(rgb)[1:]}"
+        slots.append(name)
+        colors[index] = colors[name] = [*rgb, 255]
+        channels[rgb] = index
+    shapes: list[dict[str, Any]] = []
+    for item in analysis.matched_shapes:
+        rgb = tuple(item["matched_rgb"]) if item.get("matched_rgb") is not None else None
+        if rgb in channels:
+            shapes.append({
+                **item,
+                "recipe": [channels[rgb] if int(channel) >= 0 else channel
+                           for channel in item["recipe"]],
+            })
+        else:
+            shapes.append(item)
+    return replace(
+        analysis, matched_shapes=shapes, slot_names=slots,
+        num_channels=len(slots), preview_colors=colors,
+    )
+
 
 # ---------------------------------------------------------------------------
 # Layer-0 (appearance face) diagnostics
@@ -2164,6 +2215,9 @@ def _run_vector_branch(ctx: dict) -> dict:
                 time.perf_counter() - recipe_override_t0
             )
 
+        # Free-color ownership must be assigned before material extrusion;
+        # adding a second mesh afterwards would duplicate the optical volume.
+        analysis = _prepare_vector_free_colors(analysis, ctx.get("free_color_set"))
         # 1b. Build 3D mesh from analysis
         build_mesh_kwargs = {
             "analysis": analysis,

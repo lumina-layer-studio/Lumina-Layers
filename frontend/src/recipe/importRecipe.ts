@@ -662,6 +662,8 @@ export function restoreConverterRecipe(
     materialDynamicLayerCountEnabled: dynamicMaterialEnabled,
     materialMinLayerCount: dynamicBounds.minimum,
     materialMaxLayerCount: dynamicBounds.maximum,
+    materialLayersUnlocked:
+      Math.max(source?.material_layer_count ?? 5, dynamicBounds.maximum) > 10,
     // Imported results are historical evidence only. Generation does not
     // consume them; the next successful preview replaces them with current
     // backend results for the imported image/material runtime.

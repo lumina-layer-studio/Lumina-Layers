@@ -186,6 +186,8 @@ export interface ConverterDocumentState {
   materialMaxLayerCount: number;
   quantize_colors: number;
   quantize_colors_unlocked: boolean;
+  /** Advanced switch: allow material layer counts above 10 (up to 30). */
+  materialLayersUnlocked: boolean;
   high_precision_3d_preview: boolean;
   enable_cleanup: boolean;
   svg_hole_compensation_enabled: boolean;
@@ -558,6 +560,7 @@ export interface ConverterActions {
   setModelMargin: (value: number | null) => void;
   setQuantizeColors: (colors: number) => void;
   setQuantizeColorsUnlocked: (unlocked: boolean) => void;
+  setMaterialLayersUnlocked: (unlocked: boolean) => void;
   setHighPrecision3dPreview: (enabled: boolean) => void;
   setEnableCleanup: (enabled: boolean) => void;
   setSvgHoleCompensationEnabled: (enabled: boolean) => void;

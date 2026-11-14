@@ -157,3 +157,44 @@ describe("AdvancedSettings — LUT-Constrained K-Means toggle", () => {
     expect(useConverterStore.getState().hue_enable).toBe(false);
   });
 });
+
+describe("AdvancedSettings — 30-layer unlock warning", () => {
+  const unlockSwitch = () => screen.getByRole("switch", { name: "解锁 30 层叠色" });
+
+  it("asks before unlocking and unlocks only on confirm", () => {
+    useConverterStore.setState({ materialLayersUnlocked: false });
+    render(<AdvancedSettings />);
+
+    fireEvent.click(unlockSwitch());
+    expect(screen.getByTestId("material-layer-unlock-dialog")).toBeInTheDocument();
+    expect(screen.getByText(/高保真和像素模式的模型固定按 0\.08 mm/)).toBeInTheDocument();
+    expect(useConverterStore.getState().materialLayersUnlocked).toBe(false);
+
+    fireEvent.click(screen.getByRole("button", { name: "解锁" }));
+    expect(useConverterStore.getState().materialLayersUnlocked).toBe(true);
+    expect(screen.queryByTestId("material-layer-unlock-dialog")).not.toBeInTheDocument();
+  });
+
+  it("stays locked when the warning is cancelled", () => {
+    useConverterStore.setState({ materialLayersUnlocked: false });
+    render(<AdvancedSettings />);
+
+    fireEvent.click(unlockSwitch());
+    fireEvent.click(screen.getByRole("button", { name: "取消" }));
+    expect(useConverterStore.getState().materialLayersUnlocked).toBe(false);
+
+    fireEvent.click(unlockSwitch());
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(useConverterStore.getState().materialLayersUnlocked).toBe(false);
+    expect(screen.queryByTestId("material-layer-unlock-dialog")).not.toBeInTheDocument();
+  });
+
+  it("locks again without asking", () => {
+    useConverterStore.setState({ materialLayersUnlocked: true });
+    render(<AdvancedSettings />);
+
+    fireEvent.click(unlockSwitch());
+    expect(screen.queryByTestId("material-layer-unlock-dialog")).not.toBeInTheDocument();
+    expect(useConverterStore.getState().materialLayersUnlocked).toBe(false);
+  });
+});

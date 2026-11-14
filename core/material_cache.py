@@ -50,7 +50,7 @@ from core.material_color_solver import (
     ALLOWED_LAYER_HEIGHTS_MM,
     DEFAULT_SUGGEST_MIN_SPACING,
     DEFAULT_SUGGEST_TOP_K,
-    MAX_LAYER_COUNT,
+    MITM_MAX_LAYER_COUNT as MAX_LAYER_COUNT,  # legacy exhaustive builder cap
     MIN_LAYER_COUNT,
     ColorSuggestion,
     MaterialParams,

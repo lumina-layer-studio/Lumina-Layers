@@ -11,9 +11,15 @@ import socket
 import subprocess
 import sys
 import zipfile
+from collections.abc import Iterator
+from contextlib import contextmanager
 from importlib import metadata
 from pathlib import Path
+from typing import IO, TYPE_CHECKING
 from xml.etree import ElementTree as ET
+
+if TYPE_CHECKING:
+    from core.workshop.backend.win_job import WindowsJob
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -36,12 +42,23 @@ def verify_3mf(payload: bytes) -> None:
             raise ValueError("Downloaded 3MF has no triangle geometry")
 
 
-def _stop_server(proc: subprocess.Popen, *, timeout: float = 10.0) -> None:
-    """Stop only this verifier's process group, including unresponsive workers."""
+def _stop_server(
+    proc: subprocess.Popen, *, timeout: float = 10.0,
+    windows_job: WindowsJob | None = None,
+) -> None:
+    """Stop only this verifier's owned backend tree, including surviving workers."""
     if os.name == "nt":
         from scripts.log_quality_check import _terminate_server_process
 
-        _terminate_server_process(proc)
+        if windows_job is None:
+            raise ValueError("Windows source verification requires an owned job")
+        try:
+            _terminate_server_process(proc)
+        finally:
+            # Parent exit does not end ownership of workers that are still in
+            # the job. The PID-based helper alone returns early in that case.
+            windows_job.terminate()
+            proc.wait(timeout=timeout)
         return
     try:
         os.killpg(proc.pid, signal.SIGTERM)
@@ -59,6 +76,48 @@ def _stop_server(proc: subprocess.Popen, *, timeout: float = 10.0) -> None:
         except ProcessLookupError:
             pass
         proc.wait(timeout=5)
+
+
+@contextmanager
+def _server_process(
+    script: Path, *, env: dict[str, str] | None = None,
+    stdout: int | IO[str] | None = None,
+) -> Iterator[subprocess.Popen]:
+    """Own the verifier's backend tree from before its first instruction."""
+    job = None
+    proc = None
+    flags = 0
+    if os.name == "nt":
+        from core.workshop.backend.win_job import CREATE_SUSPENDED, WindowsJob
+
+        job = WindowsJob()
+        flags = subprocess.CREATE_NEW_PROCESS_GROUP | CREATE_SUSPENDED
+    try:
+        proc = subprocess.Popen(
+            [sys.executable, str(script)], cwd=ROOT, env=env,
+            stdout=stdout, stderr=subprocess.STDOUT,
+            creationflags=flags, start_new_session=os.name != "nt",
+        )
+        if job is not None:
+            import psutil
+
+            try:
+                job.assign(proc.pid)
+                psutil.Process(proc.pid).resume()
+            except BaseException:
+                # It is still suspended if assignment/resume fails, so no
+                # application worker could have escaped the job.
+                proc.kill()
+                proc.wait(timeout=5)
+                raise
+        yield proc
+    finally:
+        try:
+            if proc is not None:
+                _stop_server(proc, windows_job=job)
+        finally:
+            if job is not None:
+                job.close()
 
 
 def verify_install(report_dir: Path) -> dict[str, object]:
@@ -92,13 +151,7 @@ def verify_install(report_dir: Path) -> dict[str, object]:
         LUMINA_WORKSHOP_DATA_DIR=str((report_dir / "workshop").resolve()),
     )
     with (report_dir / "backend-console.log").open("w", encoding="utf-8") as console:
-        proc = subprocess.Popen(
-            [sys.executable, "api_server.py"], cwd=ROOT, env=env,
-            stdout=console, stderr=subprocess.STDOUT,
-            creationflags=getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0) if os.name == "nt" else 0,
-            start_new_session=os.name != "nt",
-        )
-        try:
+        with _server_process(ROOT / "api_server.py", env=env, stdout=console) as proc:
             base_url = f"http://127.0.0.1:{port}"
             _wait_for_server(base_url, 90.0, proc)
             with httpx.Client(base_url=base_url, timeout=120.0, trust_env=False) as client:
@@ -116,8 +169,6 @@ def verify_install(report_dir: Path) -> dict[str, object]:
                 verify_3mf(response.content)
                 size = len(response.content)
                 (report_dir / "source-install.3mf").write_bytes(response.content)
-        finally:
-            _stop_server(proc)
     return {"python": sys.version, "dependencies": versions, "download_bytes": size}
 
 

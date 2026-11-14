@@ -79,3 +79,62 @@ def test_timeout_cleanup_stops_a_backend_and_its_unresponsive_worker(tmp_path: P
         except ProcessLookupError:
             pass
         proc.wait(timeout=5)
+
+
+@pytest.mark.parametrize("parent_exits_first", [True, False], ids=["parent-already-exited", "parent-still-running"])
+def test_server_cleanup_keeps_an_outside_process_alive(tmp_path: Path, parent_exits_first: bool) -> None:
+    import psutil
+    from scripts.verify_source_install import _server_process
+
+    pid_file = tmp_path / "owned-worker.pid"
+    worker = "import signal,time; signal.signal(signal.SIGTERM,signal.SIG_IGN); print('ready',flush=True); time.sleep(300)"
+    backend = tmp_path / "backend.py"
+    backend.write_text(
+        "import os,subprocess,sys,time\nfrom pathlib import Path\n"
+        f"worker=subprocess.Popen([sys.executable,'-c',{worker!r}],stdout=subprocess.PIPE)\n"
+        "assert worker.stdout.readline().strip()==b'ready'\n"
+        f"pending=Path({str(pid_file.with_suffix('.pending'))!r})\n"
+        f"pending.write_text(str(worker.pid)); pending.replace({str(pid_file)!r})\n"
+        + ("os._exit(7)\n" if parent_exits_first else "time.sleep(300)\n"),
+        encoding="utf-8",
+    )
+    outside = subprocess.Popen(
+        [sys.executable, "-c", "import time; time.sleep(300)"],
+        creationflags=getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0) if os.name == "nt" else 0,
+        start_new_session=os.name != "nt",
+    )
+    owned_worker = None
+
+    def active(process: psutil.Process) -> bool:
+        try:
+            return process.is_running() and process.status() != psutil.STATUS_ZOMBIE
+        except psutil.NoSuchProcess:
+            return False
+
+    try:
+        with _server_process(backend, stdout=subprocess.DEVNULL) as proc:
+            deadline = time.monotonic() + 10
+            while not pid_file.exists() and time.monotonic() < deadline:
+                if proc.poll() is not None:
+                    assert pid_file.exists(), "Backend exited before spawning its worker"
+                    break
+                time.sleep(0.02)
+            assert pid_file.exists(), "Backend never spawned its worker"
+            owned_worker = psutil.Process(int(pid_file.read_text()))
+            assert active(owned_worker)
+            if parent_exits_first:
+                assert proc.wait(timeout=5) == 7
+        assert proc.poll() is not None
+        deadline = time.monotonic() + 5
+        while active(owned_worker) and time.monotonic() < deadline:
+            time.sleep(0.02)
+        assert not active(owned_worker)
+        assert outside.poll() is None
+    finally:
+        if owned_worker is not None and active(owned_worker):
+            try:
+                owned_worker.kill()
+            except psutil.NoSuchProcess:
+                pass
+        outside.terminate()
+        outside.wait(timeout=5)

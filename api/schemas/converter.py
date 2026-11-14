@@ -32,6 +32,9 @@ MAX_FRIDGE_MAGNET_THICKNESS_MM = (
     MAX_BACKING_THICKNESS_MM - FRIDGE_MAGNET_SHELL_THICKNESS_MM
 )
 MAX_FRIDGE_MAGNETS = 20
+# Longest recipe accepted by recipe override, predict and generate requests.
+# Material-archive stacks go up to 30 colour layers.
+MAX_RECIPE_LAYER_COUNT = 30
 MAX_RELIEF_EXTRA_HEIGHT_MM = 15.0
 MAX_RELIEF_TOTAL_HEIGHT_MM = MAX_BACKING_THICKNESS_MM + MAX_RELIEF_EXTRA_HEIGHT_MM
 # Minimum accepted by API handoff workflows; ordinary converter UI keeps its
@@ -407,23 +410,27 @@ class RecipeOverrideItem(BaseModel):
     """Region-level recipe override for predictive/custom recipe workflows."""
 
     region_id: str = Field(..., description="区域 ID")
-    recipe: list[int] = Field(..., min_length=1, max_length=20, description="配方层序列")
+    recipe: list[int] = Field(
+        ..., min_length=1, max_length=MAX_RECIPE_LAYER_COUNT, description="配方层序列"
+    )
     layer_order: str = Field("Top2Bottom", description="配方层顺序")
-    color_layers: int | None = Field(None, ge=1, le=30, description="实际配方层数")
+    color_layers: int | None = Field(
+        None, ge=1, le=MAX_RECIPE_LAYER_COUNT, description="实际配方层数"
+    )
     actual_recipe_top_to_bottom: list[int] | None = Field(
         None,
         min_length=1,
-        max_length=20,
+        max_length=MAX_RECIPE_LAYER_COUNT,
         description="动态模式实际 Top-to-Bottom 配方",
     )
     print_recipe_top_to_bottom: list[int] | None = Field(
         None,
         min_length=1,
-        max_length=20,
+        max_length=MAX_RECIPE_LAYER_COUNT,
         description="动态模式补齐后的 Top-to-Bottom 打印配方",
     )
-    actual_layer_count: int | None = Field(None, ge=1, le=30)
-    padding_layer_count: int | None = Field(None, ge=0, le=30)
+    actual_layer_count: int | None = Field(None, ge=1, le=MAX_RECIPE_LAYER_COUNT)
+    padding_layer_count: int | None = Field(None, ge=0, le=MAX_RECIPE_LAYER_COUNT)
     virtual_materials: list[VirtualMaterial] | None = Field(
         default=None,
         description=(
@@ -1054,7 +1061,7 @@ class RecipePredictRequest(BaseModel):
     session_id: str = Field(..., description="Session ID")
     recipe: List[int] = Field(..., min_length=1, description="配方通道索引序列")
     layer_order: str = Field("Top2Bottom", description="配方层序")
-    color_layers: int = Field(..., ge=1, le=20, description="叠色层数")
+    color_layers: int = Field(..., ge=1, le=MAX_RECIPE_LAYER_COUNT, description="叠色层数")
     layer_height_mm: float = Field(..., gt=0.0, le=1.0, description="叠色层高 (mm)")
     virtual_materials: list[VirtualMaterial] | None = Field(
         default=None,

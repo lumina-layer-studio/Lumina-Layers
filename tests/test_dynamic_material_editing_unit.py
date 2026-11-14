@@ -1085,3 +1085,79 @@ def test_dynamic_exact_failure_keeps_artifact_cache_revisions_and_data(
     np.testing.assert_array_equal(hydrated["quantized_image"], matched)
     assert hydrated["material_dynamic_layer_info"] == dynamic_info
     assert hydrated["material_solver_info"] == solver_info
+
+
+def test_padded_thirty_layer_manual_recipe_passes_generate_request_model() -> None:
+    """A 5-layer edit in a 5..30 preview pads to 30 and must still generate."""
+    from api.routers.converter import replace
+    from api.schemas.converter import ConvertGenerateRequest
+
+    prepared = replace._prepare_dynamic_manual_recipe(
+        session_data={
+            "selected_materials": ["mat-a", "mat-b", "mat-c"],
+            "material_backing_material_index": 1,
+            "material_dynamic_layer_count_enabled": True,
+            "material_min_layer_count": 5,
+            "material_max_layer_count": 30,
+        },
+        recipe=[2, 1, 0, 2, 1],
+        layer_order="Top2Bottom",
+        color_layers=5,
+    )
+    assert len(prepared["print_recipe_top_to_bottom"]) == 30
+
+    request = ConvertGenerateRequest(
+        session_id="session",
+        lut_name="__material_archive__",
+        recipe_overrides=[
+            {
+                "region_id": "region-1",
+                "recipe": prepared["print_recipe_top_to_bottom"],
+                "layer_order": "Top2Bottom",
+                "color_layers": prepared["actual_layer_count"],
+                "actual_recipe_top_to_bottom": prepared["actual_recipe_top_to_bottom"],
+                "print_recipe_top_to_bottom": prepared["print_recipe_top_to_bottom"],
+                "actual_layer_count": prepared["actual_layer_count"],
+                "padding_layer_count": prepared["padding_layer_count"],
+            }
+        ],
+    )
+    override = request.recipe_overrides[0]
+    assert len(override.print_recipe_top_to_bottom) == 30
+    assert override.padding_layer_count == 25
+
+
+@pytest.mark.parametrize("layers", [21, 30])
+def test_predict_recipe_accepts_deep_material_recipes(layers: int) -> None:
+    """21-30 layer recipes reach the session check instead of a 422."""
+    from fastapi.testclient import TestClient
+
+    from api.app import create_app
+
+    response = TestClient(create_app()).post(
+        "/api/convert/predict-recipe",
+        json={
+            "session_id": "missing-session",
+            "recipe": [0] * layers,
+            "layer_order": "Top2Bottom",
+            "color_layers": layers,
+            "layer_height_mm": 0.04,
+        },
+    )
+    assert response.status_code != 422, response.text
+
+
+def test_recipe_contracts_reject_more_than_thirty_layers() -> None:
+    from pydantic import ValidationError
+
+    from api.schemas.converter import RecipeOverrideItem, RecipePredictRequest
+
+    with pytest.raises(ValidationError):
+        RecipePredictRequest(
+            session_id="s",
+            recipe=[0] * 31,
+            color_layers=31,
+            layer_height_mm=0.04,
+        )
+    with pytest.raises(ValidationError):
+        RecipeOverrideItem(region_id="r", recipe=[0] * 31)

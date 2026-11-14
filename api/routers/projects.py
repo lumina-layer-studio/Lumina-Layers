@@ -85,8 +85,12 @@ def capture_workflow(kind: str, session_id: str, store: SessionStore = Depends(g
 async def restore_workflow(kind: str, checkpoint: UploadFile = File(...), store: SessionStore = Depends(get_session_store), registry: FileRegistry = Depends(get_file_registry)):
     root = Path(tempfile.mkdtemp(prefix="project_workflow_", dir=TEMP_DIR))
     session_id = None
+    download_ids: list[str] = []
     try:
-        state = unpack_workflow_session(kind, await _read_resource(checkpoint), root)
+        try:
+            state = unpack_workflow_session(kind, await _read_resource(checkpoint), root)
+        except (ValueError, KeyError, OSError, zipfile.BadZipFile) as exc:
+            raise HTTPException(422, "Invalid workflow checkpoint") from exc
         session_id = store.create()
         store.register_temp_file(session_id, str(root))
         for key, value in state.items():
@@ -94,15 +98,23 @@ async def restore_workflow(kind: str, checkpoint: UploadFile = File(...), store:
         urls = {}
         for key in ("lut_path", "single_stage_stage_json_path", "stage_a_params_path"):
             if state.get(key):
-                file_id = registry.register_path(session_id, state[key])
+                path = Path(state[key])
+                # Downloads outlive the editable checkpoint and keep its saved bytes.
+                file_id = registry.register_bytes(
+                    f"project-workflow:{session_id}", path.read_bytes(), path.name,
+                    ttl_seconds=8 * 60 * 60,
+                )
+                download_ids.append(file_id)
                 urls[key] = f"/api/files/{file_id}"
         return {"session_id": session_id, "urls": urls}
-    except (ValueError, KeyError, OSError, zipfile.BadZipFile) as exc:
+    except BaseException:
+        for file_id in download_ids:
+            registry.cleanup_file(file_id)
         if session_id:
             registry.cleanup_session(session_id)
             store.close(session_id)
         shutil.rmtree(root, ignore_errors=True)
-        raise HTTPException(422, "Invalid workflow checkpoint") from exc
+        raise
 
 
 @router.post("/lut-context")

@@ -23,6 +23,7 @@ from config import (
 from core.lut_card_layout import (
     EIGHT_COLOR_FULL_TOTAL_RECIPES,
     EIGHT_COLOR_PAGE_CAPACITY,
+    LutCardLayout,
     LutCardPage,
     cell_for_row_index,
     localize_page_layout,
@@ -814,7 +815,14 @@ def manual_fix_cell(
         n = len(rgb)
         local_layout = None
         if page_layout is not None:
-            local_layout = localize_page_layout(page_layout, item_count=n)
+            if n <= page_layout.capacity:
+                local_layout = localize_page_layout(page_layout, item_count=n)
+            else:
+                local_layout = LutCardLayout(
+                    color_mode=getattr(metadata, "color_mode", "") or "",
+                    total_count=n,
+                    pages=(page_layout,),
+                )
 
         if row_index is not None:
             idx = int(row_index)
@@ -896,7 +904,8 @@ def manual_fix_cell(
         if local_layout is not None:
             page = local_layout.pages[0]
             lut_2d = np.zeros((page.data_rows, page.data_cols, 3), dtype=np.uint8)
-            lut_2d.reshape(-1, 3)[:n] = rgb[:n]
+            page_rgb = rgb[page.start_index:page.start_index + page.item_count]
+            lut_2d.reshape(-1, 3)[:len(page_rgb)] = page_rgb
         else:
             layout = resolve_lut_layout(getattr(metadata, "color_mode", "") or "", n)
             page = layout.pages[0]

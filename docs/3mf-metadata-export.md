@@ -64,23 +64,26 @@ validation stays at the existing SDK, source parser and writer boundaries.
 - **neroued-3mf** owns the one final 3MF package write.
 
 FatCat is distributed as `fatcat-metadata`, imported as `fatcat_metadata`.
-Lumina uses `fatcat-metadata==0.1.5` for H3C and the slicer profiles listed below.
+Lumina uses `fatcat-metadata==0.1.6` for H3C and the slicer profiles listed below.
+Imported templates with incomplete trailing flush pairs are completed before
+slot projection, preserving existing values and custom flush matrices.
 It preserves Windows long paths and exact machine queries, and supports explicit X2D plate head assignments.
 Lumina resolves only the selected machine's native dependencies during export.
 Maintainer builds use the public
 [`MOVIBALE/fatcat-metadata`](https://github.com/MOVIBALE/fatcat-metadata) root
-project at source revision `c94c6344c2964c3d47229d8708e6c8f5a3b49961` and pins
+project at source revision `8ab3ab05a8850738de7533de3eda5e05edd77afd` and pins
 the writer contract in
 `scripts/fatcat_packaging_contract.py`; build and installation steps are in
 [the desktop setup guide](desktop-electron.md).
 
 FatCat 发行包名为 `fatcat-metadata`，导入名为 `fatcat_metadata`。
-本体使用 `fatcat-metadata==0.1.5`，新增 H3C 并更新下列切片配置，保留 Windows 长路径支持，并用
+导入模板末尾缺失的冲刷参数对会在槽位投影前补齐，已有参数和自定义冲刷矩阵保留。
+本体使用 `fatcat-metadata==0.1.6`，新增 H3C 并更新下列切片配置，保留 Windows 长路径支持，并用
 `native_project_source` 只解析所选机型依赖。通过 `requirements.txt`
 安装 PyPI 正式 wheel。X2D 支持按耗材名称指定外置料盘。
 维护者从公开仓库
 [`MOVIBALE/fatcat-metadata`](https://github.com/MOVIBALE/fatcat-metadata) 的根项目构建，
-源码提交固定为 `c94c6344c2964c3d47229d8708e6c8f5a3b49961`，并在
+源码提交固定为 `8ab3ab05a8850738de7533de3eda5e05edd77afd`，并在
 `scripts/fatcat_packaging_contract.py` 维护 writer 合同；构建与安装步骤见
 [桌面环境指南](desktop-electron.md)。
 

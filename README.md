@@ -217,7 +217,7 @@ Open the frontend address printed by the launcher, normally `http://localhost:41
 
 Source installs do not connect to an online material library by default. Local material profiles work offline. To connect a Registry you host or are authorized to use, configure its service URL separately; see the [Registry connection guide](docs/material-registry-connection.md).
 
-Installing `requirements.txt` downloads the PyPI wheels for `fatcat-metadata==0.1.5`, `neroued-3mf==0.4.2` and `lumina-svg-core==0.3.4`. See [the native dependency guide](docs/desktop-electron.md) for supported platforms.
+Installing `requirements.txt` downloads the PyPI wheels for `fatcat-metadata==0.1.6`, `neroued-3mf==0.4.2` and `lumina-svg-core==0.3.4`. See [the native dependency guide](docs/desktop-electron.md) for supported platforms.
 
 ### Optional: desktop window
 

@@ -219,6 +219,8 @@ python start_all.py
 
 安装 `requirements.txt` 时会从 PyPI 下载 `fatcat-metadata==0.1.6`、`neroued-3mf==0.4.2` 和 `lumina-svg-core==0.3.4` 的预编译包。支持的平台见[原生依赖指南](docs/desktop-electron.md)。
 
+启动时会先检查当前 Python 环境与前端依赖；缺包、版本不匹配或原生模块无法加载时，会显示问题和对应解释器的安装命令。只想检查环境，可以运行 `python start_all.py --check-dependencies`；仅运行后端时用 `python api_server.py --check-dependencies`。更新源码后，在同一个虚拟环境中重新执行上面的 Python 和 pnpm 安装命令。
+
 ### 可选：桌面窗口
 
 完成上面的 Python 和前端依赖安装后执行：

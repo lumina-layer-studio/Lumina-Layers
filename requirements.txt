@@ -21,6 +21,7 @@ lumina-svg-core==0.3.4
 # Exact indexed triangulation for slicer-safe vector solids.
 manifold3d>=3.4.0
 # FastAPI backend dependencies
+packaging>=24.0
 fastapi
 uvicorn
 httpx

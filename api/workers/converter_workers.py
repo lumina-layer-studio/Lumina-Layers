@@ -45,6 +45,23 @@ class LargeFormatCachedAnalysisError(RuntimeError):
     """
 
 
+def worker_prepare_material_catalog(
+    names: list[str], backing_index: int, layer_height_mm: float,
+    min_layers: int, max_layers: int, materials_dir: str | None,
+) -> bool:
+    from core.material_dynamic_solver import (
+        DynamicMaterialSolveConfig, prepare_dynamic_material_catalog,
+    )
+    from core.material_lut_synthesis import load_multiple_materials
+
+    materials = load_multiple_materials(names, materials_dir=materials_dir)
+    catalog = prepare_dynamic_material_catalog(
+        materials, backing_index, layer_height_mm, "white",
+        DynamicMaterialSolveConfig(min_layers, max_layers, 0.0),
+    )
+    return catalog.cache_hit
+
+
 def _cleanup_worker_temp_paths(*paths: str | None) -> None:
     """Best-effort cleanup for worker-created temp files on local failure."""
 

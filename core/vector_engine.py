@@ -100,6 +100,7 @@ from core.svg_coordinate_domain import (
     SvgCoordinateDomain,
     project_print_regions,
     prepare_print_slabs,
+    should_mirror_vector_export,
 )
 from core.errors import CoreDependencyError
 from core.layered_coordinate_domain import (
@@ -5418,7 +5419,11 @@ class VectorProcessor:
                 "Extended models."
             )
         mirror_transform = None
-        if is_single_sided and not is_5color and not enable_relief:
+        if should_mirror_vector_export(
+            structure_mode,
+            self.color_mode,
+            enable_relief=enable_relief,
+        ):
             mirror_transform = np.array(
                 [
                     [-1.0, 0.0, 0.0, 0.0],

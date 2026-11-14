@@ -1,8 +1,10 @@
 import {
+  GLB_STATUS_TIMEOUT_MS,
   fetchLayerImages as apiFetchLayerImages,
   getGlbStatus as apiGetGlbStatus,
   rebuildVectorPreviewRenderer as apiRebuildVectorPreviewRenderer,
 } from "../../api/converter";
+import axios from "axios";
 import { postClientLog, summarizeErrorForLog } from "../../utils/clientLog";
 import { normalizeResourceUrl } from "../../utils/resourceUrl";
 import { resolveVectorPreviewRenderer } from "../../utils/vectorPreviewRenderer";
@@ -128,6 +130,22 @@ let _vectorRendererRequestSequence = 0;
 
 let _vectorRendererRequestQueue: Promise<void> = Promise.resolve();
 
+function glbPollRetryDelay(error: unknown, delayMs: number): number | null {
+  if (!axios.isAxiosError(error) || axios.isCancel(error)) return null;
+  const status = error.response?.status;
+  if (status != null && ![408, 429, 502, 503, 504].includes(status)) return null;
+  if (status == null && !["ERR_NETWORK", "ECONNRESET", "ECONNABORTED", "ETIMEDOUT"].includes(error.code ?? "")) return null;
+  const headers = error.response?.headers ?? {};
+  const value = Object.entries(headers).find(([name]) => name.toLowerCase() === "retry-after")?.[1];
+  if (value != null) {
+    const seconds = Number(value);
+    const requestedDelay = Number.isFinite(seconds) ? seconds * 1000 : Date.parse(String(value)) - Date.now();
+    // Browser timers overflow beyond a signed 32-bit delay and fire immediately.
+    if (Number.isFinite(requestedDelay)) return Math.max(delayMs, Math.min(requestedDelay, 2_147_483_647));
+  }
+  return delayMs;
+}
+
 function _startGlbStatusPolling(
   sessionId: string,
   applyGlbResult: (
@@ -138,6 +156,8 @@ function _startGlbStatusPolling(
 ): void {
   _glbPollSequence += 1;
   const mySeq = _glbPollSequence;
+  let retryDelayMs = GLB_POLL_INTERVAL_MS;
+  let retrying = false;
   const tick = async (): Promise<void> => {
     // Lost-focus guard: if a newer poll started or the user switched sessions,
     // exit silently. A local build remains pending until it completes, fails,
@@ -155,6 +175,8 @@ function _startGlbStatusPolling(
       // 网络往返后再次校验，避免把中途被覆盖的旧 URL 写进 state。
       if (_glbPollSequence !== mySeq) return;
       if (getCurrentSessionId() !== sessionId) return;
+      retryDelayMs = GLB_POLL_INTERVAL_MS;
+      retrying = false;
 
       if (status.status === "ready" && status.glb_url) {
         const normalized = normalizeResourceUrl(status.glb_url);
@@ -181,14 +203,22 @@ function _startGlbStatusPolling(
         void tick();
       }, GLB_POLL_INTERVAL_MS);
     } catch (err) {
-      // Network blip: log and stop. Next replace will kick off a fresh
-      // poll, so we'd only mask a transient error by retrying here.
-      // 网络抖动时停止，下一次 replace 会重新起轮询，无需原地重试。
-      postClientLog("converter: glb poll network error", {
-        scope: "converter",
-        phase: "glb-poll-error",
-        details: { session_id: sessionId, error: summarizeErrorForLog(err) },
-      });
+      if (_glbPollSequence !== mySeq || getCurrentSessionId() !== sessionId) return;
+      const delay = glbPollRetryDelay(err, retryDelayMs);
+      if (!retrying) {
+        postClientLog("converter: glb poll network error", {
+          scope: "converter",
+          phase: "glb-poll-error",
+          details: { session_id: sessionId, error: summarizeErrorForLog(err) },
+        });
+      }
+      // A transport interruption does not cancel the existing backend job.
+      // Keep observing it; only terminal errors or owner changes end the poll.
+      if (delay != null) {
+        retrying = true;
+        retryDelayMs = Math.min(retryDelayMs * 2, GLB_STATUS_TIMEOUT_MS);
+        window.setTimeout(() => { void tick(); }, delay);
+      }
     }
   };
 

@@ -57,6 +57,43 @@ describe("converter store cleanup behavior", () => {
     vi.useRealTimers();
   });
 
+  it("expires stale previews while preserving the source, settings and final download", async () => {
+    const useConverterStore = await loadStore();
+    const image = new File(["original source"], "source.png", { type: "image/png" });
+    useConverterStore.setState({
+      sessionId: "expired", imageFile: image, imagePreviewUrl: "blob:original",
+      target_width_mm: 121, hasManualPreview: true,
+      previewGlbUrl: "/api/files/stale-glb", modelUrl: "/api/files/stale-model",
+      previewImageUrl: "/api/files/stale-preview", previewBaseImageUrl: "/api/files/stale-base",
+      originalPreviewUrl: "/api/files/stale-original",
+      layerImages: [{ layer_index: 0, name: "L0", url: "/api/files/stale-layer" }],
+      gradientGroupsSessionId: "expired", gradientGroups: null,
+      downloadUrl: "/api/files/final-3mf", threemfDiskPath: "/output/final.3mf",
+      replacement_regions: [{ quantized_hex: "112233", matched_hex: "112233", replacement_hex: "445566" }],
+    });
+    const revision = useConverterStore.getState().previewRequestRevision;
+    useConverterStore.getState().expireSession("expired");
+    expect(useConverterStore.getState()).toMatchObject({
+      sessionId: null, imageFile: image, imagePreviewUrl: "blob:original", target_width_mm: 121,
+      previewGlbUrl: null, modelUrl: null, previewImageUrl: null, previewBaseImageUrl: null,
+      originalPreviewUrl: null, layerImages: [], gradientGroupsSessionId: null,
+      downloadUrl: "/api/files/final-3mf", threemfDiskPath: "/output/final.3mf",
+      previewAutoRefreshPending: false, hasManualPreview: false,
+      previewRequestRevision: revision + 1,
+      replacement_regions: [{ quantized_hex: "112233", matched_hex: "112233", replacement_hex: "445566" }],
+    });
+    expect(useConverterStore.getState().error).toBeTruthy();
+    expect(closeSessionMock).not.toHaveBeenCalled();
+  });
+
+  it("ignores an expiration notification for a session already replaced", async () => {
+    const useConverterStore = await loadStore();
+    useConverterStore.setState({ sessionId: "new", previewGlbUrl: "/api/files/new-glb" });
+    const before = useConverterStore.getState();
+    before.expireSession("old");
+    expect(useConverterStore.getState()).toBe(before);
+  });
+
   it("preserves layer preview files during cleanup after download", async () => {
     const useConverterStore = await loadStore();
 

@@ -515,6 +515,7 @@ export interface ConverterState extends ConverterDocumentState, ConverterSourceR
 // ========== Actions Interface ==========
 
 export interface ConverterActions {
+  expireSession: (sessionId: string) => void;
   setProjectSettings: (changes: Partial<import("./project").ProjectConverterSettings>) => void;
   /** Publish a fully prepared project without resetting/re-importing its source. */
   commitProjectRestore: (state: ConverterState) => void;

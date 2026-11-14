@@ -233,6 +233,59 @@ def test_real_preview_replace_manual_generate_and_close_download_lifecycle() -> 
                 [0] * (7 - len(manual_recipe))
             )
 
+            def reselect_manual_region() -> list[str]:
+                for operation in ("clear", "point-toggle"):
+                    state = store.get(session_id)
+                    response = client.post(
+                        "/api/convert/selection/mutate",
+                        json={
+                            "session_id": session_id,
+                            "operation": operation,
+                            "base_selection_revision": state.get("editor_selection_revision", 0),
+                            "content_revision": state.get("visible_region_cache_generation", 0),
+                            "x": 1,
+                            "y": 1,
+                        },
+                    )
+                    assert response.status_code == 200, response.text
+                return response.json()["region_ids"]
+
+            def assert_selected_recipe(ids: list[str], expected: list[int]) -> None:
+                response = client.post(
+                    "/api/convert/region-recipe",
+                    json={"session_id": session_id, "region_ids": ids},
+                )
+                assert response.status_code == 200, response.text
+                assert response.json()["recipes"][0]["recipe"] == expected
+
+            # A new gesture creates a different synthetic ID for the same
+            # pixels. Reads must retain the saved actual depth across edits
+            # and history restoration, including real backing-colour layers.
+            reselected_ids = reselect_manual_region()
+            assert reselected_ids != [region_id]
+            assert_selected_recipe(reselected_ids, manual_recipe)
+            second_recipe = [2, 1, 0, 1, 0, 0]
+            second_apply = client.post(
+                "/api/convert/apply-recipe-override",
+                json={
+                    "session_id": session_id,
+                    "region_ids": reselected_ids,
+                    "recipe": second_recipe,
+                    "layer_order": "Top2Bottom",
+                    "color_layers": len(second_recipe),
+                    "layer_height_mm": 0.08,
+                },
+            )
+            assert second_apply.status_code == 200, second_apply.text
+            for action, expected in (("undo", manual_recipe), ("redo", second_recipe)):
+                restored = client.post(
+                    "/api/convert/replacement-history",
+                    json={"session_id": session_id, "action": action},
+                )
+                assert restored.status_code == 200, restored.text
+                assert_selected_recipe(restored.json()["selection"]["region_ids"], expected)
+            assert_selected_recipe(reselect_manual_region(), second_recipe)
+
             reset_response = client.post(
                 "/api/convert/reset-replacements",
                 json={"session_id": session_id},

@@ -637,12 +637,35 @@ def print_banner(services: list[Service]) -> None:
     print(f"{_DIM}  ──────────────────────────────────────────────{_R}\n")
 
 
+def _check_dependencies(run_backend: bool, run_frontend: bool) -> bool:
+    """Check selected services before port cleanup or process creation."""
+    ready = True
+    if run_backend:
+        try:
+            result = subprocess.run(
+                [PYTHON, "api_server.py", "--check-dependencies"],
+                cwd=ROOT, timeout=60,
+            )
+            ready = result.returncode == 0
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            _err(f"Cannot check backend dependencies with {PYTHON}: {exc}")
+            ready = False
+    if run_frontend:
+        from scripts.source_dependencies import check_frontend_dependencies
+
+        for issue in check_frontend_dependencies(FRONTEND_DIR):
+            _err(issue)
+            ready = False
+    return ready
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Unified launcher for Lumina Studio")
     parser.add_argument("--backend", action="store_true", help="start only the backend")
     parser.add_argument("--frontend", action="store_true", help="start only the frontend")
     parser.add_argument("--kill", action="store_true", help="clean leftover Lumina processes and exit")
     parser.add_argument("--force", "-f", action="store_true", help="with --kill, kill any listener on Lumina ports")
+    parser.add_argument("--check-dependencies", action="store_true", help="check selected services without starting them")
     args = parser.parse_args()
 
     _enable_ansi()
@@ -655,6 +678,11 @@ def main() -> None:
         else:
             _sys("cleanup: terminating only Lumina project leftovers...")
         _clean_startup_ports(True, True, force=args.force)
+        return
+
+    if not _check_dependencies(run_backend, run_frontend):
+        raise SystemExit(1)
+    if args.check_dependencies:
         return
 
     _init_job()

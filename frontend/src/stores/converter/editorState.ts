@@ -187,6 +187,8 @@ export function normalizeReplacementRegionsFromHistory(
         quantized_hex: quantizedHex,
         matched_hex: matchedHex,
         replacement_hex: replacementHex,
+        ...('source_scope' in region && region.source_scope
+          ? { source_scope: region.source_scope as ColorReplacementItem['source_scope'] } : {}),
       },
     ];
   });
@@ -441,7 +443,7 @@ export function buildSourceChangeProjectColorState(
   const portable = clonePortableProjectColorState(state);
   const liveRemaps = colorRemapToReplacementRegions(
     state.colorRemapMap,
-    state.palette,
+    state.palette, state.replacement_regions,
   );
   return {
     ...portable,

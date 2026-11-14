@@ -123,6 +123,7 @@ export interface ConverterRecipeColorOps {
     quantized_hex: string;
     matched_hex: string;
     replacement_hex: string;
+    source_scope?: { shape: number[]; bits: string } | null;
   }>;
   free_color_set: string[];
   /** V2+: per-region custom recipe overrides (region_id, recipe, layer_order). */

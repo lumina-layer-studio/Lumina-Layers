@@ -197,8 +197,9 @@ class TestLayerOrderConversion:
                 ),
             )
 
+    @pytest.mark.parametrize("generation", [False, True], ids=["preview", "generation"])
     def test_preview_replacements_keep_pristine_rgb_recipe_and_height_identity(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, generation: bool,
     ) -> None:
         """Initial/re-preview replacements must not become reset/height identity."""
 
@@ -230,6 +231,7 @@ class TestLayerOrderConversion:
         _patch_solver_runtime(monkeypatch, fake_cache, {"runtime": 0})
 
         achieved_rgb = np.asarray([12, 34, 56], dtype=np.uint8)
+        replacement_calls = []
 
         def fake_apply(
             matched_rgb,
@@ -237,6 +239,7 @@ class TestLayerOrderConversion:
             *_args,
             **_kwargs,
         ):
+            replacement_calls.append(True)
             replaced_rgb = np.full_like(matched_rgb, achieved_rgb)
             replaced_matrix = np.full_like(material_matrix, 4)
             return replaced_rgb, replaced_matrix, 1
@@ -246,8 +249,15 @@ class TestLayerOrderConversion:
             fake_apply,
         )
 
-        result = _run_material_archive_branch(ctx)
+        if generation:
+            from core.pipeline import s02_image_processing, s03_color_replacement
 
+            ctx["material_source"] = "material_archive"
+            result = s03_color_replacement.run(s02_image_processing.run(ctx))
+        else:
+            result = _run_material_archive_branch(ctx)
+
+        assert len(replacement_calls) == 1
         assert np.all(result["matched_rgb"][result["mask_solid"]] == achieved_rgb)
         assert np.all(result["material_matrix"][result["mask_solid"]] == 4)
         assert np.all(

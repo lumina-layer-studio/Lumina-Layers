@@ -2520,19 +2520,38 @@ async def convert_generate(
     if override_material_matrix_path is not None:
         material_matrix_path = override_material_matrix_path
 
+    cached_replacements_are_final = False
+    if (
+        session_material_source == "material_archive"
+        and core_modeling_mode in {CoreModelingMode.HIGH_FIDELITY, CoreModelingMode.PIXEL}
+        and matched_rgb_path
+        and mask_solid_path
+        and material_matrix_path
+        and preview_edit_state_matches
+        and not edit_projection_required
+    ):
+        cached_replacements_are_final, _ = _preview_analysis_params_match(
+            cache=cache,
+            request=request,
+            core_modeling_mode=core_modeling_mode,
+            session_material_source=session_material_source,
+            target_width_mm=generation_analysis_target_width_mm,
+            preview_color_layers=session_data.get("color_layers", _MISSING),
+            preview_layer_height_mm=session_data.get("layer_height_mm", _MISSING),
+        )
+
     # 2b. Collect scalar parameters into a dict for the worker
     params: dict = {
         **build_generation_worker_params(request),
         "target_width_mm": request.target_width_mm,
         "modeling_mode": core_modeling_mode,
-        # Dynamic cache reuse already contains every confirmed RGB, recipe,
-        # and solver-metadata edit. Replaying its mappings in S03 would solve
-        # the same edits twice and require a target map outside S02's final-
-        # generation cache contract. Keep legacy fixed-layer replay unchanged.
-        # 动态缓存已包含确认后的最终编辑，不再重放全局替色；固定层路径保持原语义。
+        # Confirmed preview RGB and recipes already contain these edits.
+        # Replaying a portable source-color record against the edited image
+        # can select new pixels and overwrite the recipe the user approved.
         "replacement_regions": (
             None
-            if request.use_cached_matched_rgb and dynamic_material_settings[0]
+            if cached_replacements_are_final
+            or (request.use_cached_matched_rgb and dynamic_material_settings[0])
             else replacement_regions
         ),
         "recipe_overrides": (

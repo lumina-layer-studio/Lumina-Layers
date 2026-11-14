@@ -14,7 +14,17 @@ import {
   it,
   vi,
 } from "vitest";
+import { AxiosError } from "axios";
 
+vi.unmock("../i18n/context");
+const postClientLog = vi.hoisted(() => vi.fn());
+vi.mock("../utils/clientLog", async (importOriginal) => ({
+  ...await importOriginal<typeof import("../utils/clientLog")>(),
+  postClientLog,
+}));
+
+import apiClient from "../api/client";
+import { workshopApi } from "../api/workshop";
 import type {
   InstalledWorkshopModule,
   InstalledWorkshopVersion,
@@ -22,6 +32,8 @@ import type {
   WorkshopManagerApi,
 } from "../api/workshop";
 import { I18nProvider } from "../i18n/context";
+import { useActionHistoryStore } from "../stores/actionHistoryStore";
+import { useErrorTicketPromptStore } from "../stores/errorTicketPromptStore";
 import { useSettingsStore } from "../stores/settingsStore";
 import { WorkshopPanel } from "../workshop/WorkshopPanel";
 import type { ManagedWorkshopProjectStorage } from "../workshop/projectStorage";
@@ -215,10 +227,15 @@ function renderManager(
 
 describe("Workshop installable module manager", () => {
   afterEach(() => {
+    useActionHistoryStore.getState()._resetForTests();
+    useErrorTicketPromptStore.getState()._resetForTests();
     vi.useRealTimers();
   });
 
   beforeEach(() => {
+    postClientLog.mockClear();
+    useActionHistoryStore.getState()._resetForTests();
+    useErrorTicketPromptStore.getState()._resetForTests();
     localStorage.clear();
     useSettingsStore.setState({ language: "zh", theme: "light" });
     useWorkshopStore.setState({
@@ -416,6 +433,121 @@ describe("Workshop installable module manager", () => {
     vi.mocked(api.fetchCatalog).mockResolvedValue(catalog(true));
     fireEvent.click(screen.getByRole("button", { name: "重试" }));
     expect(await screen.findByText("测试模块")).toBeInTheDocument();
+  });
+
+  it.each([
+    {
+      language: "zh" as const,
+      status: 502,
+      updateLabel: "更新",
+      message: "无法从 GitHub 下载模块。请检查网络；若 GitHub 连接不稳定，可开启网络加速器后重试。现有安装和工程数据已保留。",
+      activeVersion: "当前版本 1.0.0",
+      retainedProject: "保留了本地工程",
+      stagedVersion: "待激活版本 1.1.0",
+    },
+    {
+      language: "en" as const,
+      status: 504,
+      updateLabel: "Update",
+      message: "Couldn't download the module from GitHub. Check your connection; if GitHub is unreliable, try a network accelerator, then retry. Your installed modules and projects have been kept.",
+      activeVersion: "Current version 1.0.0",
+      retainedProject: "Local projects retained",
+      stagedVersion: "Candidate version 1.1.0",
+    },
+  ])("shows GitHub recovery guidance in $language and allows an update retry", async (labels) => {
+    useSettingsStore.setState({ language: labels.language });
+    const api = { ...fakeApi(), installRegistry: workshopApi.installRegistry };
+    const storage = fakeStorage(true);
+    const originalAdapter = apiClient.defaults.adapter;
+    let connectionFailed = true;
+    apiClient.defaults.adapter = async (config) => {
+      const response = {
+        status: connectionFailed ? labels.status : 200,
+        statusText: connectionFailed ? "Download failed" : "OK",
+        data: connectionFailed
+          ? {
+              detail: {
+                code: "registry-download-network-error",
+                message: "The upstream connection ended before the package arrived.",
+              },
+            }
+          : {
+              module: installed({
+                candidate_version: "1.1.0",
+                versions: ["1.0.0", "1.1.0"],
+                version_details: [version("1.0.0"), version("1.1.0")],
+              }),
+            },
+        headers: {},
+        config,
+      };
+      if (connectionFailed) {
+        throw new AxiosError("Request failed", "ERR_BAD_RESPONSE", config, undefined, response);
+      }
+      return response;
+    };
+
+    try {
+      renderManager(api, storage);
+      fireEvent.click(await screen.findByRole("button", { name: labels.updateLabel }));
+
+      expect(await screen.findByText(labels.message)).toBeInTheDocument();
+      expect(useErrorTicketPromptStore.getState().pending).toBeNull();
+      expect(postClientLog).toHaveBeenCalledWith("api: request failed", expect.objectContaining({
+        details: expect.objectContaining({
+          url: "/workshop/v1/install/registry",
+          status_code: labels.status,
+        }),
+      }));
+      expect(useActionHistoryStore.getState().history).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          action_type: "api_error",
+          error: expect.objectContaining({ path: "/workshop/v1/install/registry", status_code: labels.status }),
+        }),
+      ]));
+      expect(screen.getByText(labels.activeVersion)).toBeInTheDocument();
+      expect(screen.getByText(labels.retainedProject)).toBeInTheDocument();
+      expect(storage.deleteModuleProjects).not.toHaveBeenCalled();
+      expect(storage.restoreSnapshot).not.toHaveBeenCalled();
+      expect(screen.getByRole("button", { name: labels.updateLabel })).toBeEnabled();
+
+      connectionFailed = false;
+      fireEvent.click(screen.getByRole("button", { name: labels.updateLabel }));
+
+      expect(await screen.findByText(labels.stagedVersion)).toBeInTheDocument();
+      expect(screen.queryByText(labels.message)).not.toBeInTheDocument();
+      expect(screen.getByText(labels.activeVersion)).toBeInTheDocument();
+      expect(screen.getByText(labels.retainedProject)).toBeInTheDocument();
+      expect(storage.deleteModuleProjects).not.toHaveBeenCalled();
+    } finally {
+      apiClient.defaults.adapter = originalAdapter;
+    }
+  });
+
+  it("keeps package-validation failures separate from GitHub connection failures", async () => {
+    const api = { ...fakeApi(), installRegistry: workshopApi.installRegistry };
+    const originalAdapter = apiClient.defaults.adapter;
+    apiClient.defaults.adapter = async (config) => {
+      throw new AxiosError("Invalid package", "ERR_BAD_RESPONSE", config, undefined, {
+        status: 502,
+        statusText: "Bad Gateway",
+        data: { detail: "The Registry package is invalid." },
+        headers: {},
+        config,
+      });
+    };
+    try {
+      renderManager(api);
+
+      fireEvent.click(await screen.findByRole("button", { name: "更新" }));
+
+      expect(await screen.findByText("模块操作失败，现有安装和工程数据未被替换。")).toBeInTheDocument();
+      expect(screen.queryByText(/网络加速器/)).not.toBeInTheDocument();
+      expect(useErrorTicketPromptStore.getState().pending).toBeNull();
+      expect(postClientLog).toHaveBeenCalledWith("api: request failed", expect.anything());
+    } finally {
+      apiClient.defaults.adapter = originalAdapter;
+    }
   });
 
   it("keeps converter recovery and explains how to install a missing recipe module", async () => {

@@ -9,6 +9,10 @@ export const translations: Record<string, Record<"zh" | "en", string>> = {
   ...splashTranslations,
   ...projectTranslations,
   common_close: { zh: "关闭", en: "Close" },
+  converter_session_expired: {
+    zh: "会话已过期，请重新预览。图片和参数已保留。",
+    en: "The session expired. Your image and settings are preserved; run preview again.",
+  },
   cloud_library_update: { zh: "更新", en: "Update" },
   cloud_library_results: { zh: "匹配结果", en: "Matching results" },
   cloud_library_loading_index: { zh: "正在加载完整目录，搜索结果尚不完整…", en: "Loading the full catalog; search results are not complete yet…" },
@@ -5960,6 +5964,10 @@ export const translations: Record<string, Record<"zh" | "en", string>> = {
     zh: "RAW 图片预览失败：{error}。请先转换为 PNG/JPG 后再试。",
     en: "RAW image preview failed: {error}. Please convert it to PNG or JPG and try again.",
   },
+  converter_image_preview_failed: {
+    zh: "图片预览失败：{error}。请转换为 PNG/JPG 后再试。",
+    en: "Image preview failed: {error}. Please convert it to PNG or JPG and try again.",
+  },
   extractor_raw_preview_failed: {
     zh: "RAW 图片预览失败：{error}。请先转换为 PNG/JPG 后再试。",
     en: "RAW image preview failed: {error}. Please convert it to PNG or JPG and try again.",
@@ -8643,6 +8651,10 @@ export const translations: Record<string, Record<"zh" | "en", string>> = {
   "workshop.manager.operationError": {
     zh: "模块操作失败，现有安装和工程数据未被替换。",
     en: "The module operation failed. Existing installation and project data were not replaced.",
+  },
+  "workshop.manager.downloadNetworkError": {
+    zh: "无法从 GitHub 下载模块。请检查网络；若 GitHub 连接不稳定，可开启网络加速器后重试。现有安装和工程数据已保留。",
+    en: "Couldn't download the module from GitHub. Check your connection; if GitHub is unreliable, try a network accelerator, then retry. Your installed modules and projects have been kept.",
   },
   "workshop.manager.recipeImportSaveError": {
     zh: "无法把分享配方交给模块；转换器内容仍然可用。",

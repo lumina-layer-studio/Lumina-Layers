@@ -751,10 +751,12 @@ export async function getGlbStatus(
 ): Promise<GlbStatusResponse> {
   const response = await apiClient.get<GlbStatusResponse>(
     `/convert/glb-status/${encodeURIComponent(sessionId)}`,
-    { timeout: 30_000 },
+    { timeout: GLB_STATUS_TIMEOUT_MS, suppressErrorTicket: true },
   );
   return response.data;
 }
+
+export const GLB_STATUS_TIMEOUT_MS = 30_000;
 
 /** Rebuild only the browser GLB renderer for an active native Vector session. */
 export async function rebuildVectorPreviewRenderer(

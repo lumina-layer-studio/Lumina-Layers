@@ -1,2 +1,4 @@
 allowBuilds:
   esbuild: true
+patchedDependencies:
+  three-stdlib@2.36.1: patches/three-stdlib@2.36.1.patch

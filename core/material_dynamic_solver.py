@@ -1371,6 +1371,16 @@ def load_or_build_persistent_dynamic_catalog(
         load_or_build_dynamic_candidate_catalog,
     )
 
+    cache_key = build_dynamic_catalog_cache_key(
+        materials,
+        backing_material_index=backing_index,
+        layer_height_mm=layer_height_mm,
+        substrate=substrate,
+        min_layer_count=config.min_layer_count,
+        max_layer_count=config.max_layer_count,
+        candidate_budget=candidate_budget,
+    )
+
     canonical_to_user = np.asarray(
         dynamic_material_canonical_order(materials),
         dtype=np.int32,
@@ -1395,23 +1405,13 @@ def load_or_build_persistent_dynamic_catalog(
             cache_root=cache_root,
         )
 
-    cache_key = build_dynamic_catalog_cache_key(
-        materials,
-        backing_material_index=backing_index,
-        layer_height_mm=layer_height_mm,
-        substrate=substrate,
-        min_layer_count=config.min_layer_count,
-        max_layer_count=config.max_layer_count,
-        candidate_budget=candidate_budget,
-    )
-
     def build_catalog() -> tuple[DynamicCandidateCatalog, int]:
         canonical_catalog, before_count, _built_layer_counts = (
             _build_dynamic_candidate_catalog_from_runtimes(
                 canonical_materials,
                 canonical_backing_index,
                 layer_height_mm,
-                substrate,
+                cache_key.substrate,
                 config,
                 production_runtime_loader,
             )
@@ -1431,6 +1431,24 @@ def load_or_build_persistent_dynamic_catalog(
         key=cache_key,
         builder=build_catalog,
         cache_root=cache_root,
+    )
+
+
+def prepare_dynamic_material_catalog(
+    materials: list[MaterialParams],
+    backing_material_index: int,
+    layer_height_mm: float,
+    substrate: str,
+    config: DynamicMaterialSolveConfig,
+    *,
+    material_candidate_budget: int = PREVIEW_SAFE_CANDIDATE_BUDGET,
+    catalog_cache_root: str | Path | None = None,
+) -> DynamicCatalogCacheResult:
+    """Prepare the converter palette using the workbench's shared catalog path."""
+    return load_or_build_persistent_dynamic_catalog(
+        materials, backing_material_index, layer_height_mm, substrate, config,
+        candidate_budget=material_candidate_budget,
+        cache_root=catalog_cache_root,
     )
 
 
@@ -1548,14 +1566,14 @@ def solve_dynamic_material_colors(
             )
         )
     else:
-        cached_catalog = load_or_build_persistent_dynamic_catalog(
+        cached_catalog = prepare_dynamic_material_catalog(
             materials,
             backing_index,
             normalized_height,
             normalized_substrate,
             config,
-            candidate_budget=candidate_budget,
-            cache_root=catalog_cache_root,
+            material_candidate_budget=candidate_budget,
+            catalog_cache_root=catalog_cache_root,
         )
         catalog = cached_catalog.catalog
         candidate_count_before_dedup = (

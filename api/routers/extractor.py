@@ -10,7 +10,7 @@ import shutil
 import tempfile
 import time
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, List, Tuple
 
 import cv2
@@ -72,7 +72,7 @@ from core.extractor import (
 )
 from core.lut_card_layout import (
     LutCardLayout,
-    LutCardPage,
+    cell_for_row_index,
     cell_from_normalized_point,
     localize_page_layout,
     overlay_bbox_for_cell,
@@ -662,23 +662,36 @@ def _resolve_session_lut_layout(
         )
         if total_count <= page_layout.capacity:
             return localize_page_layout(page_layout, item_count=total_count)
+        layout = resolve_lut_layout(color_mode, total_count)
+        page_index = min(max(_parse_page_number(page) - 1, 0), len(layout.pages) - 1)
+        # A merged LUT keeps global row indexes while showing one physical card.
+        return replace(layout, pages=(replace(layout.pages[page_index], card_index=0),))
     return resolve_lut_layout(color_mode, total_count)
 
 
-def _resolve_session_page_layout(session_data: dict | None, rgb_count: int) -> LutCardPage | None:
+def _resolve_session_lut_preview_layout(
+    session_data: dict | None,
+    rgb_count: int,
+    row_index: int | None = None,
+) -> LutCardLayout | None:
     if not session_data:
         return None
     color_mode = str(session_data.get("color_mode") or "")
     if not color_mode:
         return None
-    layout = _resolve_session_lut_layout(
+    page = str(session_data.get("page") or "Page 1")
+    if row_index is not None:
+        layout = resolve_lut_layout(color_mode, rgb_count)
+        if len(layout.pages) > 1:
+            cell = cell_for_row_index(layout, row_index)
+            page = str(cell.page_index + 1)
+    return _resolve_session_lut_layout(
         color_mode=color_mode,
         total_count=rgb_count,
-        page=str(session_data.get("page") or "Page 1"),
+        page=page,
         eight_color_full_export=bool(session_data.get("eight_color_full_export")),
         current_page=True,
     )
-    return layout.pages[0] if layout.pages else None
 
 
 def _parse_page_number(page: str, default: int = 1) -> int:
@@ -1715,10 +1728,13 @@ def extractor_manual_fix(
 
     manual_fix_start = time.perf_counter()
     try:
-        page_layout = None
+        preview_layout = None
         if lut_path:
             rgb_for_layout, _stacks_for_layout, _metadata_for_layout = LUTManager.load_lut_with_metadata(lut_path)
-            page_layout = _resolve_session_page_layout(session_data, len(rgb_for_layout))
+            preview_layout = _resolve_session_lut_preview_layout(
+                session_data, len(rgb_for_layout), row_index=request.row_index,
+            )
+        page_layout = preview_layout.pages[0] if preview_layout is not None else None
         preview_result, status_msg = manual_fix_cell(
             coord=request.cell_coord,
             row_index=request.row_index,
@@ -1746,6 +1762,8 @@ def extractor_manual_fix(
         "lut_preview.png",
         ttl_seconds=None if has_valid_session else EPHEMERAL_PREVIEW_TTL_SECONDS,
     )
+    if has_valid_session and page_layout is not None:
+        store.put(request.session_id, "page", f"Page {page_layout.page_index + 1}")
     cell_coord_row = int(request.cell_coord[0]) if request.cell_coord is not None else None
     cell_coord_col = int(request.cell_coord[1]) if request.cell_coord is not None else None
 
@@ -1767,8 +1785,8 @@ def extractor_manual_fix(
         message=status_msg or "Cell updated",
         lut_preview_url=f"/api/files/{preview_id}",
         lut_layout=(
-            localize_page_layout(page_layout, len(rgb_for_layout)).to_dict()
-            if page_layout is not None
+            preview_layout.to_dict()
+            if preview_layout is not None
             else None
         ),
     )
@@ -1796,7 +1814,7 @@ def extractor_resolve_cell(
         total_count=len(rgb),
         page=str(session_data.get("page") or "Page 1"),
         eight_color_full_export=bool(session_data.get("eight_color_full_export")),
-        current_page=True,
+        current_page=request.card_index == 0,
     )
     try:
         cell = cell_from_normalized_point(

@@ -21,15 +21,30 @@ from typing import Any
 from api.structured_logging import get_logger
 
 _log = get_logger(__name__)
+_CLEANUP_TILE_EDGE = 256
 
 
-def _encode_stacks(material_matrix, base):
-    """将 (H, W, N) 的材料矩阵编码为 (H, W) 整数矩阵。"""
+def _encode_stacks(material_matrix: np.ndarray, base: int) -> np.ndarray:
+    """Encode a tile without expanding its complete layer tensor to int64."""
     if material_matrix.ndim != 3:
         raise ValueError(f"material_matrix must be 3D, got shape={material_matrix.shape}")
     n = material_matrix.shape[2]
-    weights = np.array([base ** i for i in range(n - 1, -1, -1)], dtype=np.int64)
-    return np.sum(material_matrix.astype(np.int64) * weights, axis=2)
+    offset = max(0, -int(material_matrix.min())) if material_matrix.size else 0
+    radix = base + offset
+    if material_matrix.size and radix ** n - 1 > np.iinfo(np.int64).max:
+        # Deep recipes need exact identities without integer overflow. IDs
+        # are used only within this tile and its halo.
+        rows = np.ascontiguousarray(material_matrix).reshape(-1, n)
+        records = rows.view(np.dtype((np.void, rows.dtype.itemsize * n))).ravel()
+        _, inverse = np.unique(records, return_inverse=True)
+        return inverse.reshape(material_matrix.shape[:2])
+    encoded = np.zeros(material_matrix.shape[:2], dtype=np.int64)
+    for layer in range(n):
+        np.multiply(encoded, radix, out=encoded)
+        np.add(encoded, material_matrix[..., layer], out=encoded)
+        if offset:
+            np.add(encoded, offset, out=encoded)
+    return encoded
 
 
 def _detect_isolated(encoded):
@@ -103,7 +118,8 @@ def cleanup_isolated_pixels(
 
     Returns:
         ``(cleaned_rgb, cleaned_material_matrix)`` tuple with the same
-        shapes/dtypes as the inputs.
+        shapes/dtypes as the inputs. Inputs are never modified; if no pixels
+        need cleanup, the unchanged inputs are returned without copying.
     """
     del lut_rgb, ref_stacks  # silence unused-arg; kwargs kept for API parity
     cleaned_rgb, cleaned_mat, _cleaned_target = _cleanup_isolated_pixels(
@@ -158,28 +174,47 @@ def _cleanup_isolated_pixels(
     """Shared cleanup implementation with optional target ownership copying."""
     import time
 
-    cleaned_mat = material_matrix.copy()
-    cleaned_rgb = matched_rgb.copy()
-    cleaned_target = target_rgb_map.copy() if target_rgb_map is not None else None
+    if material_matrix.ndim != 3:
+        raise ValueError(f"material_matrix must be 3D, got shape={material_matrix.shape}")
+    cleaned_mat = material_matrix
+    cleaned_rgb = matched_rgb
+    cleaned_target = target_rgb_map
     H, W = material_matrix.shape[:2]
     total_pixels = H * W
 
-    base = int(material_matrix.max()) + 1 if material_matrix.size > 0 else 1
-    encoded = _encode_stacks(material_matrix, base)
-
     t0 = time.time()
-    iso = _detect_isolated(encoded)
-    iso_count = int(np.sum(iso))
+    base = max(1, int(material_matrix.max()) + 1) if material_matrix.size > 0 else 1
+    iso_count = 0
     replaced = 0
-    if iso_count > 0:
-        mode_sources = _find_neighbor_mode_with_source(encoded, iso)
-        for (i, j), (mode_enc, (ni, nj)) in mode_sources.items():
-            cleaned_mat[i, j] = material_matrix[ni, nj]
-            cleaned_rgb[i, j] = matched_rgb[ni, nj]
-            if cleaned_target is not None and target_rgb_map is not None:
-                cleaned_target[i, j] = target_rgb_map[ni, nj]
-            encoded[i, j] = mode_enc
-            replaced += 1
+    for y in range(0, H, _CLEANUP_TILE_EDGE):
+        for x in range(0, W, _CLEANUP_TILE_EDGE):
+            y_end, x_end = min(H, y + _CLEANUP_TILE_EDGE), min(W, x + _CLEANUP_TILE_EDGE)
+            y0, x0 = max(0, y - 1), max(0, x - 1)
+            y1, x1 = min(H, y_end + 1), min(W, x_end + 1)
+            # Every decision reads the original grid, including a one-pixel
+            # halo. Changes never cascade or depend on tile traversal order.
+            encoded = _encode_stacks(material_matrix[y0:y1, x0:x1], base)
+            iso = _detect_isolated(encoded)
+            iso[:y - y0] = False
+            iso[y_end - y0:] = False
+            iso[:, :x - x0] = False
+            iso[:, x_end - x0:] = False
+            tile_count = int(np.count_nonzero(iso))
+            iso_count += tile_count
+            if not tile_count:
+                continue
+            if cleaned_mat is material_matrix:
+                cleaned_mat = material_matrix.copy()
+                cleaned_rgb = matched_rgb.copy()
+                cleaned_target = target_rgb_map.copy() if target_rgb_map is not None else None
+            for (i, j), (_mode, (ni, nj)) in _find_neighbor_mode_with_source(encoded, iso).items():
+                dest = (i + y0, j + x0)
+                source = (ni + y0, nj + x0)
+                cleaned_mat[dest] = material_matrix[source]
+                cleaned_rgb[dest] = matched_rgb[source]
+                if cleaned_target is not None and target_rgb_map is not None:
+                    cleaned_target[dest] = target_rgb_map[source]
+                replaced += 1
     ratio = (replaced / total_pixels * 100) if total_pixels > 0 else 0.0
     extra: dict[str, Any] = {
         "event": "isolated_pixels_cleaned",

@@ -337,6 +337,10 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     parser = argparse.ArgumentParser(description="Run Lumina Studio backend.")
     parser.add_argument(
+        "--check-dependencies", action="store_true",
+        help="Check source runtime dependencies without starting the server.",
+    )
+    parser.add_argument(
         "--native-svg-self-test",
         metavar="SVG_PATH",
         help="Analyze one SVG through the required native Lumina adapter.",
@@ -391,6 +395,14 @@ def main(argv: Sequence[str] | None = None) -> int:
         _print_json(payload)
         return 0
 
+    if not getattr(sys, "frozen", False):
+        from scripts.source_dependencies import report_backend_dependencies
+
+        if not report_backend_dependencies():
+            return 1
+    if args.check_dependencies:
+        print(f"Backend dependencies OK. Python: {sys.executable}")
+        return 0
     _run_server(os.environ)
     return 0
 

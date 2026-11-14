@@ -238,6 +238,14 @@ describe("recipe/importRecipe", () => {
   });
 
   describe("restoreConverterRecipe", () => {
+    it("restores compressed color ownership with the saved project", () => {
+      const recipe = createTestRecipe();
+      const scope = { shape: [1, 2], bits: "eJxrAAAAgQCB" };
+      recipe.recipe.converter!.color_ops.replacement_regions[0].source_scope = scope;
+      const { state } = restoreConverterRecipe(JSON.parse(JSON.stringify(recipe)), LOCAL_LUTS);
+      expect(state.replacement_regions?.[0].source_scope).toEqual(scope);
+    });
+
     it("restores all converter parameters", () => {
       const recipe = createTestRecipe();
       const { state, assetFile, warnings } = restoreConverterRecipe(recipe, LOCAL_LUTS);

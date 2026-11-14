@@ -483,6 +483,7 @@ export function restoreConverterRecipe(
       quantized_hex: stripHash(r.quantized_hex),
       matched_hex: stripHash(r.matched_hex),
       replacement_hex: stripHash(r.replacement_hex),
+      ...(r.source_scope ? { source_scope: r.source_scope } : {}),
     }));
 
   const freeColorSet = new Set(

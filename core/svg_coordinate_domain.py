@@ -17,6 +17,17 @@ from shapely.geometry import GeometryCollection, MultiPolygon, Polygon
 PRINT_GRID_KEY = "svg_print_grid_mm"
 
 
+def should_mirror_vector_export(
+    structure_mode: str,
+    color_mode: str,
+    *,
+    enable_relief: bool = False,
+) -> bool:
+    """Mirror only face-down artwork, consistently for body and auxiliaries."""
+    is_single_sided = "单面" in structure_mode or "Single" in structure_mode
+    return is_single_sided and "5-Color Extended" not in color_mode and not enable_relief
+
+
 def _area_geometry(geometry: Any) -> Any:
     if isinstance(geometry, (Polygon, MultiPolygon)):
         return geometry

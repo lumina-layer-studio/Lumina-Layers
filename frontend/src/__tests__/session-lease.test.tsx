@@ -42,7 +42,7 @@ describe("useSessionLease", () => {
   });
   beforeEach(() => {
     vi.useFakeTimers();
-    vi.clearAllMocks();
+    vi.resetAllMocks();
     isSessionCloseRequestedMock.mockReturnValue(false);
   });
 
@@ -107,6 +107,48 @@ describe("useSessionLease", () => {
     });
 
     expect(heartbeatSessionMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("notifies the owner once when a session has expired", async () => {
+    heartbeatSessionMock.mockRejectedValue({ response: { status: 404 } });
+    const expired = vi.fn();
+    renderHook(() => useSessionLease("expired-session", "converter", [], expired));
+    await act(async () => { await vi.advanceTimersByTimeAsync(120_000); });
+    expect(expired).toHaveBeenCalledExactlyOnceWith("expired-session");
+    await act(async () => {
+      window.dispatchEvent(new Event("focus"));
+      await vi.advanceTimersByTimeAsync(240_000);
+    });
+    expect(expired).toHaveBeenCalledTimes(1);
+    expect(heartbeatSessionMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("checks a resumed page immediately without overlapping heartbeats", async () => {
+    let finish!: () => void;
+    heartbeatSessionMock.mockImplementationOnce(() => new Promise<void>((resolve) => { finish = resolve; }));
+    renderHook(() => useSessionLease("resumed-session"));
+    await act(async () => {
+      window.dispatchEvent(new Event("focus"));
+      window.dispatchEvent(new Event("online"));
+      await Promise.resolve();
+    });
+    expect(heartbeatSessionMock).toHaveBeenCalledOnce();
+    heartbeatSessionMock.mockResolvedValue(undefined);
+    await act(async () => { finish(); await vi.advanceTimersByTimeAsync(120_000); });
+    expect(heartbeatSessionMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not expire a replacement session after an old heartbeat completes", async () => {
+    let fail!: (reason: unknown) => void;
+    heartbeatSessionMock.mockImplementationOnce(() => new Promise<void>((_, reject) => { fail = reject; }));
+    const expired = vi.fn();
+    const { rerender } = renderHook(({ id }) => useSessionLease(id, "converter", [], expired), {
+      initialProps: { id: "old-session" },
+    });
+    await act(async () => { await vi.advanceTimersByTimeAsync(120_000); });
+    rerender({ id: "new-session" });
+    await act(async () => { fail({ response: { status: 404 } }); await Promise.resolve(); });
+    expect(expired).not.toHaveBeenCalled();
   });
 
   it("retries one transient failure promptly, then returns to the normal interval", async () => {

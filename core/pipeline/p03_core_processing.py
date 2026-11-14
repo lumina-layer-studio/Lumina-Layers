@@ -23,6 +23,7 @@ from config import (
     normalize_svg_pixels_per_mm,
 )
 from core.material_layer_fallback_policy import should_run_cross_n_fallback
+from core.pipeline.processing_ops.color_histogram import count_visible_rgb
 
 _log = get_logger(__name__)
 
@@ -296,7 +297,7 @@ def _run_material_archive_branch(ctx: dict) -> dict:
             "layer_height_mm": layer_height_mm,
             "substrate": substrate,
             "unique_color_count": int(
-                np.unique(quantized_image[mask_solid].reshape(-1, 3), axis=0).shape[0]
+                count_visible_rgb(quantized_image, mask_solid)[0].shape[0]
             )
             if np.any(mask_solid)
             else 0,
@@ -353,6 +354,7 @@ def _run_material_archive_branch(ctx: dict) -> dict:
     img = img.resize((target_w, target_h), Image.Resampling.NEAREST)
 
     img_arr = np.array(img)
+    del img
     rgb_arr = img_arr[:, :, :3]
     alpha_arr = img_arr[:, :, 3]
     mask_transparent = alpha_arr < 10
@@ -377,6 +379,7 @@ def _run_material_archive_branch(ctx: dict) -> dict:
             )
             // 255
         ).astype(np.uint8)
+        del alpha_u16, rgb_u16
 
     # ---- Load persisted solver cache early for auto dynamic range L* targets ----
     # 自动动态范围只需要已有 legacy cache 的 ``lab_centers``；不要在量化前构建
@@ -510,32 +513,26 @@ def _run_material_archive_branch(ctx: dict) -> dict:
             quantize_budget=quantize_colors_n,
         )
     elif modeling_mode_value == ModelingMode.PIXEL.value:
-        visible_rgb = rgb_arr[mask_solid].reshape(-1, 3)
-        if visible_rgb.size == 0:
+        unique_visible, _visible_counts = count_visible_rgb(rgb_arr, mask_solid)
+        if unique_visible.shape[0] <= quantize_colors_n:
             quantized_image = rgb_arr.copy()
         else:
-            unique_visible = np.unique(visible_rgb, axis=0)
-            if unique_visible.shape[0] <= quantize_colors_n:
-                quantized_image = rgb_arr.copy()
-            else:
-                # Pixel mode must not blur hard-edged source art. If the
-                # visible palette exceeds the requested budget, quantize the
-                # nearest-resized visible pixels directly. Transparent air is
-                # excluded from K-Means fitting so it cannot consume a color
-                # cluster or bias a visible cluster toward the substrate.
-                quantized_image = kmeans_quantize(
-                    rgb_arr,
-                    quantize_colors_n,
-                    mask=mask_solid,
-                )
+            # Pixel mode must not blur hard-edged source art. Transparent air
+            # is excluded from fitting so it cannot consume a color cluster.
+            quantized_image = kmeans_quantize(
+                rgb_arr,
+                quantize_colors_n,
+                mask=mask_solid,
+            )
     else:
         rgb_processed = apply_bilateral_filter(rgb_arr, 10)
         rgb_processed = apply_median_filter(rgb_processed, 0)
         quantized_image = kmeans_quantize(rgb_processed, quantize_colors_n)
-    if np.any(mask_solid):
-        unique_colors = np.unique(quantized_image[mask_solid].reshape(-1, 3), axis=0)
-    else:
-        unique_colors = np.zeros((0, 3), dtype=np.uint8)
+        del rgb_processed
+    # Source/compositing buffers are no longer needed once quantization is
+    # complete. Release them before allocating the per-pixel layer tensor.
+    del rgb_arr, img_arr, alpha_arr
+    unique_colors, pixel_counts = count_visible_rgb(quantized_image, mask_solid)
     _log.debug(
         "%d visible unique colors after quantization (svg=%s)",
         len(unique_colors),
@@ -560,21 +557,7 @@ def _run_material_archive_branch(ctx: dict) -> dict:
         backing_material_index = ctx.get("material_backing_material_index")
         if backing_material_index is None:
             backing_material_index = ctx.get("material_base_channel_idx")
-        if unique_colors.shape[0] > 0:
-            counted_colors, pixel_counts = np.unique(
-                quantized_image[mask_solid].reshape(-1, 3),
-                axis=0,
-                return_counts=True,
-            )
-        else:
-            pixel_counts = np.zeros((0,), dtype=np.int64)
         try:
-            if unique_colors.shape[0] > 0 and not np.array_equal(
-                counted_colors, unique_colors
-            ):
-                raise ValueError(
-                    "pixel-count color order does not match sorted unique colors"
-                )
             (
                 matched_rgb_unique,
                 recipes_unique,
@@ -870,10 +853,10 @@ def _run_material_archive_branch(ctx: dict) -> dict:
     from core.pipeline.s03_color_replacement import (
         _apply_dynamic_material_archive_color_replacements,
         _apply_material_archive_color_replacements,
-        _normalize_replayed_color_replacements_input,
+        _resolve_replayed_color_replacement_jobs,
     )
 
-    effective_color_replacements = _normalize_replayed_color_replacements_input(
+    effective_color_replacements = _resolve_replayed_color_replacement_jobs(
         ctx.get("replacement_regions"),
         matched_rgb,
         quantized_image,
@@ -1114,27 +1097,21 @@ def run(ctx: dict) -> dict:
     )
     if has_portable_replacements:
         from core.pipeline.s03_color_replacement import (
-            _normalize_replayed_color_replacements_input,
+            _resolve_replayed_color_replacement_jobs,
         )
-        from core.color_replacement import ColorReplacementManager
-
-        replacements = _normalize_replayed_color_replacements_input(
+        replacements = _resolve_replayed_color_replacement_jobs(
             ctx.get("replacement_regions"),
             matched_rgb,
             quantized_image,
             mask_solid,
         )
         if replacements:
-            manager = ColorReplacementManager.from_dict(replacements)
-            previous_matched_rgb = matched_rgb
-            matched_rgb = manager.apply_to_image(previous_matched_rgb)
-            for source_hex, target_hex in replacements.items():
-                source_rgb = ColorReplacementManager._hex_to_color(source_hex)
-                source_mask = np.all(previous_matched_rgb == source_rgb, axis=-1)
-                source_mask &= mask_solid
-                if not np.any(source_mask):
-                    continue
-                target_rgb = ColorReplacementManager._hex_to_color(target_hex)
+            from core.pipeline.pipeline_utils import _hex_to_rgb_tuple
+
+            matched_rgb = matched_rgb.copy()
+            for target_hex, source_mask in replacements:
+                target_rgb = _hex_to_rgb_tuple(target_hex)
+                matched_rgb[source_mask] = target_rgb
                 target_lab = processor._rgb_to_lab(
                     np.array([target_rgb], dtype=np.uint8)
                 )

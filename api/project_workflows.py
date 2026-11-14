@@ -15,6 +15,7 @@ from fastapi import HTTPException
 
 from api.dependencies import get_session_store
 from api.session_store import SessionStore
+from config import LUTMetadata
 from utils.lut_manager import LUTManager
 from core.projects.dependencies import validate_npz_budget
 
@@ -49,7 +50,13 @@ def pack_workflow_session(kind: str, session: dict) -> bytes:
     if kind not in SESSION_FIELDS:
         raise ValueError("Unsupported checkpoint workflow")
     entries: dict[str, bytes] = {}
-    fields = clean_json({key: session[key] for key in SESSION_FIELDS[kind] if key in session})
+    fields = {key: session[key] for key in SESSION_FIELDS[kind] if key in session}
+    metadata = fields.get("lut_metadata")
+    if isinstance(metadata, LUTMetadata):
+        fields["lut_metadata"] = metadata.to_dict()
+    elif metadata is not None and not isinstance(metadata, dict):
+        raise ValueError("Invalid extraction LUT metadata")
+    fields = clean_json(fields)
     files = {}
     for key in FILE_FIELDS[kind]:
         if session.get(key):
@@ -89,6 +96,14 @@ def unpack_workflow_session(kind: str, data: bytes, root: Path) -> dict:
         if not isinstance(fields, dict) or not isinstance(files, dict) or set(fields) - SESSION_FIELDS[kind] or set(files) - FILE_FIELDS[kind]:
             raise ValueError("Invalid workflow checkpoint fields")
         session = clean_json(fields)
+        metadata = session.get("lut_metadata")
+        if metadata is not None:
+            if not isinstance(metadata, dict):
+                raise ValueError("Invalid extraction LUT metadata")
+            try:
+                session["lut_metadata"] = LUTMetadata.from_dict(metadata)
+            except (TypeError, ValueError, OverflowError) as exc:
+                raise ValueError("Invalid extraction LUT metadata") from exc
         allowed = {"checkpoint.json"}
         root.mkdir(parents=True, exist_ok=True)
         for key, name in files.items():

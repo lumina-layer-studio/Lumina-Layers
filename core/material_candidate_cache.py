@@ -1201,10 +1201,13 @@ def build_material_candidate_runtime(
         ],
         "canonical_materials": describe_palette(canonical_materials),
     }
-    if selection.build_info is not None:
+    if cfg.uses_layer_dp(int(layer_count)):
         # ``layer_dp`` must equal the cache-key entry from
-        # ``_candidate_cache_parameters``; build stats live separately.
+        # ``_candidate_cache_parameters`` even when the recipe space was small
+        # enough to enumerate exactly; otherwise the saved runtime is never
+        # found again. Build stats live separately and only exist for DP runs.
         metadata["layer_dp"] = {"state_cell_lab": float(cfg.layer_dp_state_cell_lab)}
+    if selection.build_info is not None:
         metadata["layer_dp_build"] = selection.build_info
     return MaterialCandidateRuntime(
         candidate_recipes=selection.recipes,

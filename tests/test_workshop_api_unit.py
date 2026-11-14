@@ -642,10 +642,84 @@ def test_registry_install_stops_after_two_timeouts_without_installing(
         json={"module_id": "fixture.hello", "version": "1.0.0"},
     )
     assert response.status_code == 504
-    assert "timed out" in response.json()["detail"]
+    assert "timed out" in response.json()["detail"]["message"]
     assert "private download URL" not in response.text
     assert len(attempts) == 2
     assert installer.list() == ()
+
+
+@pytest.mark.parametrize(
+    "failure_type",
+    [httpx.ConnectTimeout, httpx.ReadTimeout, httpx.RemoteProtocolError],
+)
+def test_registry_network_failure_preserves_installation_and_projects_until_retry(
+    api_bundle,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    failure_type: type[httpx.TransportError],
+) -> None:
+    client, installer, original_archive, registry = api_bundle
+    install_direct(installer, original_archive)
+    original_state = installer.state_path.read_bytes()
+    original_ui = installer.version_path("fixture.hello", "1.0.0") / "ui/index.html"
+    original_ui_bytes = original_ui.read_bytes()
+    project = installer.projects_dir / "fixture.hello" / "saved-project.json"
+    project.parent.mkdir()
+    project.write_bytes(b'{"project":"keep my edits"}')
+    project_bytes = project.read_bytes()
+
+    update = write_package(tmp_path, "1.1.0")
+    package_bytes = update.read_bytes()
+    registry.index = registry_index_for(update, version="1.1.0")
+    download_dir = tmp_path / "downloads"
+    download_dir.mkdir()
+    connection_failed = True
+
+    class InterruptedStream(httpx.SyncByteStream):
+        def __iter__(self):
+            yield package_bytes[:128]
+            raise failure_type("private download URL")
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        if connection_failed:
+            if failure_type is httpx.ConnectTimeout:
+                raise failure_type("private download URL", request=request)
+            return httpx.Response(200, stream=InterruptedStream(), request=request)
+        return httpx.Response(200, content=package_bytes, request=request)
+
+    monkeypatch.setattr(release_client, "TEMP_DIR", str(download_dir))
+    monkeypatch.setattr(
+        release_client,
+        "_new_http_client",
+        lambda: httpx.Client(transport=httpx.MockTransport(handle)),
+    )
+    monkeypatch.setattr(workshop_router.time, "sleep", lambda _delay: None)
+    payload = {"module_id": "fixture.hello", "version": "1.1.0"}
+
+    failed = client.post("/api/workshop/v1/install/registry", json=payload)
+
+    expected_status = 502 if failure_type is httpx.RemoteProtocolError else 504
+    assert failed.status_code == expected_status
+    detail = failed.json()["detail"]
+    assert isinstance(detail, dict), "Transport failures need a machine-readable recovery code"
+    assert detail["code"] == "registry-download-network-error"
+    assert "GitHub" in detail["message"]
+    assert "private download URL" not in failed.text
+    assert installer.state_path.read_bytes() == original_state
+    assert original_ui.read_bytes() == original_ui_bytes
+    assert project.read_bytes() == project_bytes
+    assert list(download_dir.iterdir()) == []
+    assert not installer.version_path("fixture.hello", "1.1.0").exists()
+
+    connection_failed = False
+    recovered = client.post("/api/workshop/v1/install/registry", json=payload)
+
+    assert recovered.status_code == 200
+    assert recovered.json()["module"]["active_version"] == "1.0.0"
+    assert recovered.json()["module"]["candidate_version"] == "1.1.0"
+    assert original_ui.read_bytes() == original_ui_bytes
+    assert project.read_bytes() == project_bytes
+    assert list(download_dir.iterdir()) == []
 
 
 def test_modules_reports_storage_permission_failure_and_can_be_retried(

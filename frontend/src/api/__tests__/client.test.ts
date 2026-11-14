@@ -1,3 +1,6 @@
+import { closeSession } from "../session";
+import { getGlbStatus } from "../converter";
+import { useErrorTicketPromptStore } from "../../stores/errorTicketPromptStore";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("../../utils/clientLog", () => ({
@@ -23,6 +26,36 @@ const jsonHeaders = {
 };
 
 describe("apiClient", () => {
+  it("keeps best-effort old-session cleanup failures out of the foreground ticket prompt", async () => {
+    useErrorTicketPromptStore.getState()._resetForTests();
+    const adapter = vi.fn(async (config) => {
+      throw Object.assign(new Error("Gateway unavailable"), {
+        isAxiosError: true, code: "ERR_BAD_RESPONSE", config,
+        response: { status: 502, data: "", headers: {} },
+      });
+    });
+    apiClient.defaults.adapter = adapter;
+    await closeSession("expired-before-preview", ["completed-download"]);
+    expect(JSON.parse(adapter.mock.calls[0][0].data)).toEqual({
+      session_id: "expired-before-preview", keep_file_ids: ["completed-download"],
+    });
+    expect(useErrorTicketPromptStore.getState().pending).toBeNull();
+    expect(postClientLog).toHaveBeenCalledWith("api: request failed", expect.anything());
+  });
+
+  it("logs recoverable GLB polling failures without interrupting the user with a ticket prompt", async () => {
+    useErrorTicketPromptStore.getState()._resetForTests();
+    apiClient.defaults.adapter = async (config) => {
+      throw Object.assign(new Error("Backend unavailable"), {
+        isAxiosError: true, code: "ERR_BAD_RESPONSE", config,
+        response: { status: 502, data: "Backend unavailable", headers: {} },
+      });
+    };
+    await expect(getGlbStatus("poll-session")).rejects.toMatchObject({ response: { status: 502 } });
+    expect(useErrorTicketPromptStore.getState().pending).toBeNull();
+    expect(postClientLog).toHaveBeenCalledWith("api: request failed", expect.anything());
+  });
+
   beforeEach(() => {
     vi.clearAllMocks();
     useActionHistoryStore.getState()._resetForTests();

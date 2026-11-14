@@ -395,7 +395,8 @@ export const workshopApi: WorkshopManagerApi = {
     const response = await apiClient.post<WorkshopMutation>(
       "/workshop/v1/install/registry",
       { module_id: moduleId, version },
-      { timeout: MUTATION_TIMEOUT_MS },
+      // The manager explains install failures; retain logs without a second prompt.
+      { timeout: MUTATION_TIMEOUT_MS, suppressErrorTicket: true },
     );
     return response.data;
   },

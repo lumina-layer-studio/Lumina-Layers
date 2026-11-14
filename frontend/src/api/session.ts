@@ -35,7 +35,7 @@ export async function closeSession(
     .post(
       "/session/close",
       { session_id: sessionId, keep_file_ids: keepFileIds },
-      { timeout: 3_600_000 },
+      { timeout: 3_600_000, suppressErrorTicket: true },
     )
     .catch(() => {
       /* fire-and-forget: ignore close failures */

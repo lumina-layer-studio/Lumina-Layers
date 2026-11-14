@@ -8652,6 +8652,10 @@ export const translations: Record<string, Record<"zh" | "en", string>> = {
     zh: "模块操作失败，现有安装和工程数据未被替换。",
     en: "The module operation failed. Existing installation and project data were not replaced.",
   },
+  "workshop.manager.downloadNetworkError": {
+    zh: "无法从 GitHub 下载模块。请检查网络；若 GitHub 连接不稳定，可开启网络加速器后重试。现有安装和工程数据已保留。",
+    en: "Couldn't download the module from GitHub. Check your connection; if GitHub is unreliable, try a network accelerator, then retry. Your installed modules and projects have been kept.",
+  },
   "workshop.manager.recipeImportSaveError": {
     zh: "无法把分享配方交给模块；转换器内容仍然可用。",
     en: "The shared recipe could not be handed to the module; converter content remains available.",

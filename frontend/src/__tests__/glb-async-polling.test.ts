@@ -11,7 +11,7 @@
  * 异步 GLB 轮询的前端回归：覆盖就绪 / 失败 / 会话切换 / 新任务覆盖旧任务。
  */
 
-import { describe, expect, it, vi, beforeEach } from "vitest";
+import { afterEach, describe, expect, it, vi, beforeEach } from "vitest";
 
 const { getGlbStatusMock } = vi.hoisted(() => ({
   getGlbStatusMock: vi.fn(),
@@ -57,6 +57,11 @@ describe("converter store: async GLB polling", () => {
       previewGlbUrl: "/api/files/stale.glb",
     });
     vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.clearAllTimers();
+    vi.useRealTimers();
   });
 
   it("writes the ready glb_url into previewGlbUrl and stops polling", async () => {
@@ -234,5 +239,96 @@ describe("converter store: async GLB polling", () => {
     expect(useConverterStore.getState().previewGlbUrl).toBe(
       "/api/files/from-second-poll.glb",
     );
+  });
+
+  it("recovers the existing GLB job after transient transport failures", async () => {
+    vi.useFakeTimers();
+    getGlbStatusMock.mockReset();
+    useConverterStore.setState({ sessionId: "sid-recovery", previewGlbUrl: null });
+    const unavailable = Object.assign(new Error("Backend unavailable"), {
+      isAxiosError: true, code: "ERR_BAD_RESPONSE", response: { status: 502, headers: {} },
+    });
+    getGlbStatusMock.mockRejectedValueOnce(unavailable).mockRejectedValueOnce(unavailable)
+      .mockResolvedValueOnce({ session_id: "sid-recovery", status: "pending", job_token: "same-job", glb_url: null, error: null })
+      .mockResolvedValueOnce({ session_id: "sid-recovery", status: "ready", job_token: "same-job", glb_url: "/api/files/recovered.glb", error: null });
+    useConverterStore.getState()._pollAsyncGlb();
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(getGlbStatusMock).toHaveBeenCalledTimes(4);
+    expect(getGlbStatusMock.mock.calls.every(([sid]) => sid === "sid-recovery")).toBe(true);
+    expect(useConverterStore.getState().previewGlbUrl).toBe("/api/files/recovered.glb");
+    vi.useRealTimers();
+  });
+
+  it("honors Retry-After before polling the same job again", async () => {
+    vi.useFakeTimers();
+    getGlbStatusMock.mockReset();
+    useConverterStore.setState({ sessionId: "sid-rate-limited", previewGlbUrl: null });
+    getGlbStatusMock.mockRejectedValueOnce(Object.assign(new Error("Retry later"), {
+      isAxiosError: true, response: { status: 503, headers: { "retry-after": "3" } },
+    })).mockResolvedValueOnce({ session_id: "sid-rate-limited", status: "ready", glb_url: "/api/files/recovered.glb", error: null });
+    useConverterStore.getState()._pollAsyncGlb();
+    await vi.advanceTimersByTimeAsync(500);
+    await vi.advanceTimersByTimeAsync(2_999);
+    expect(getGlbStatusMock).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(useConverterStore.getState().previewGlbUrl).toBe("/api/files/recovered.glb");
+    vi.useRealTimers();
+  });
+
+  it("does not overflow the browser timer for a long Retry-After", async () => {
+    useConverterStore.setState({ sessionId: "sid-long-retry", previewGlbUrl: null });
+    getGlbStatusMock.mockRejectedValue(Object.assign(new Error("Retry later"), {
+      isAxiosError: true, response: { status: 503, headers: { "Retry-After": "3000000" } },
+    }));
+    useConverterStore.getState()._pollAsyncGlb();
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(getGlbStatusMock).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([404, 401, 500])("stops status polling on terminal HTTP %s", async (status) => {
+    vi.useFakeTimers();
+    getGlbStatusMock.mockReset();
+    useConverterStore.setState({ sessionId: "sid-terminal", previewGlbUrl: null });
+    getGlbStatusMock.mockRejectedValueOnce(Object.assign(new Error("Terminal error"), {
+      isAxiosError: true, response: { status, headers: {} },
+    }));
+    useConverterStore.getState()._pollAsyncGlb();
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(getGlbStatusMock).toHaveBeenCalledTimes(1);
+    vi.useRealTimers();
+  });
+
+  it("does not restart an old poll after a delayed transport error", async () => {
+    vi.useFakeTimers();
+    getGlbStatusMock.mockReset();
+    useConverterStore.setState({ sessionId: "sid-old-poll", previewGlbUrl: null });
+    let rejectOld: (error: unknown) => void = () => {};
+    getGlbStatusMock.mockImplementationOnce(() => new Promise((_, reject) => { rejectOld = reject; }));
+    useConverterStore.getState()._pollAsyncGlb();
+    await vi.advanceTimersByTimeAsync(500);
+    useConverterStore.setState({ sessionId: "sid-new-poll", previewGlbUrl: "/api/files/new.glb" });
+    rejectOld(Object.assign(new Error("late network error"), { isAxiosError: true, code: "ERR_NETWORK" }));
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(getGlbStatusMock).toHaveBeenCalledTimes(1);
+    expect(useConverterStore.getState().previewGlbUrl).toBe("/api/files/new.glb");
+    vi.useRealTimers();
+  });
+
+  it("recovers a disconnected read but does not retry a cancelled one", async () => {
+    vi.useFakeTimers();
+    getGlbStatusMock.mockReset();
+    useConverterStore.setState({ sessionId: "sid-network", previewGlbUrl: null });
+    getGlbStatusMock.mockRejectedValueOnce(Object.assign(new Error("Network Error"), {
+      isAxiosError: true, code: "ERR_NETWORK",
+    })).mockResolvedValueOnce({ session_id: "sid-network", status: "ready", glb_url: "/api/files/network.glb", error: null });
+    useConverterStore.getState()._pollAsyncGlb();
+    await vi.advanceTimersByTimeAsync(2_000);
+    expect(useConverterStore.getState().previewGlbUrl).toBe("/api/files/network.glb");
+    getGlbStatusMock.mockReset();
+    getGlbStatusMock.mockRejectedValueOnce({ isAxiosError: true, code: "ERR_CANCELED", __CANCEL__: true });
+    useConverterStore.getState()._pollAsyncGlb();
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(getGlbStatusMock).toHaveBeenCalledTimes(1);
+    vi.useRealTimers();
   });
 });

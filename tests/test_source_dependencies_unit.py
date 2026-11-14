@@ -16,21 +16,22 @@ def runtime(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
     from scripts import source_dependencies
     from scripts.fatcat_packaging_contract import (
         FATCAT_REQUIRED_DATA_FILES, FATCAT_REQUIRED_ENTRY_POINTS,
+        FATCAT_VERSION, FATCAT_WRITER_VERSION,
     )
 
     requirements = tmp_path / "requirements.txt"
     requirements.write_text(
         "--only-binary=fatcat-metadata,neroued-3mf,lumina-svg-core,neroued-vectorizer\n"
         "fastapi\nuvicorn\nnumpy\nPillow\npillow-heif>=0.18.0\nrawpy>=0.21.0\n"
-        "fatcat-metadata==0.1.5\nneroued-3mf==0.4.2\n"
+        f"fatcat-metadata=={FATCAT_VERSION}\nneroued-3mf=={FATCAT_WRITER_VERSION}\n"
         "lumina-svg-core==0.3.4\nneroued-vectorizer>=0.1.1\n",
         encoding="utf-8",
     )
     monkeypatch.setattr(source_dependencies, "REQUIREMENTS", requirements)
     versions = {
         "fastapi": "0.115.0", "uvicorn": "0.35.0", "numpy": "2.2.0",
-        "Pillow": "11.0.0", "fatcat-metadata": "0.1.5",
-        "neroued-3mf": "0.4.2", "lumina-svg-core": "0.3.4",
+        "Pillow": "11.0.0", "fatcat-metadata": FATCAT_VERSION,
+        "neroued-3mf": FATCAT_WRITER_VERSION, "lumina-svg-core": "0.3.4",
         "neroued-vectorizer": "0.1.1",
     }
 
@@ -107,11 +108,12 @@ def test_environment_markers_do_not_require_inapplicable_packages(runtime) -> No
 
 def test_old_fatcat_reports_required_and_installed_versions(runtime) -> None:
     checker, versions, _ = runtime
+    required = versions["fatcat-metadata"]
     versions["fatcat-metadata"] = "0.1.2"
 
     issues = checker.check_backend_dependencies()
 
-    assert any("fatcat-metadata" in x and "0.1.5" in x and "0.1.2" in x for x in issues)
+    assert any("fatcat-metadata" in x and required in x and "0.1.2" in x for x in issues)
 
 
 @pytest.mark.parametrize(

@@ -217,7 +217,7 @@ Open the frontend address printed by the launcher, normally `http://localhost:41
 
 Source installs do not connect to an online material library by default. Local material profiles work offline. To connect a Registry you host or are authorized to use, configure its service URL separately; see the [Registry connection guide](docs/material-registry-connection.md).
 
-Installing `requirements.txt` downloads the PyPI wheels for `fatcat-metadata==0.1.5`, `neroued-3mf==0.4.2` and `lumina-svg-core==0.3.4`. See [the native dependency guide](docs/desktop-electron.md) for supported platforms.
+Installing `requirements.txt` downloads the PyPI wheels for `fatcat-metadata==0.1.6`, `neroued-3mf==0.4.2` and `lumina-svg-core==0.3.4`. See [the native dependency guide](docs/desktop-electron.md) for supported platforms.
 
 Startup checks the selected Python environment and frontend dependencies before starting services. Missing packages, incompatible versions and native-module load failures include a repair command for that interpreter. Run `python start_all.py --check-dependencies` to check without starting, or `python api_server.py --check-dependencies` for the backend alone. After updating the source, rerun the Python and pnpm installation commands above in the same virtual environment.
 

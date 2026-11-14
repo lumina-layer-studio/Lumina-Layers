@@ -112,50 +112,12 @@ def test_installed_neroued_exposes_explicit_zero_copy_mesh_view() -> None:
     )
 
 
-def test_ci_native_wheel_bootstrap_uses_the_same_pinned_inputs() -> None:
-    action = (
-        ROOT / ".github" / "actions" / "prepare-3mf-native-wheels" / "action.yml"
-    ).read_text(encoding="utf-8")
+def test_installed_fatcat_includes_its_adapter_interfaces_and_native_data() -> None:
+    import fatcat_metadata
+    import fatcat_metadata_neroued
+    import neroued_3mf
+    from scripts.fatcat_packaging_contract import validate_fatcat_packaging_contract
 
-    assert "--get FATCAT_WRITER_SOURCE_COMMIT" in action
-    assert "--get FATCAT_WRITER_REPOSITORY" in action
-    assert "--install" in action
-    assert "scripts/build_3mf_native_wheels.py" in action
-    assert "--output-dir \"$GITHUB_WORKSPACE/wheelhouse/3mf\"" in action
-
-
-def test_ci_pins_the_fatcat_0100_source_revision() -> None:
-    action = (
-        ROOT / ".github" / "actions" / "prepare-3mf-native-wheels" / "action.yml"
-    ).read_text(encoding="utf-8")
-    assert "scripts/fatcat_packaging_contract.py" in action
-    assert "--get FATCAT_SOURCE_COMMIT" in action
-    assert "--get FATCAT_WRITER_SOURCE_COMMIT" in action
-    assert f"{FATCAT_DISTRIBUTION}=={FATCAT_VERSION}" in (
-        ROOT / "requirements.txt"
-    ).read_text(encoding="utf-8")
-
-
-def test_public_fatcat_source_builds_without_a_token() -> None:
-    action = (
-        ROOT / ".github" / "actions" / "prepare-3mf-native-wheels" / "action.yml"
-    ).read_text(encoding="utf-8")
-    build_script = (ROOT / "scripts" / "build_3mf_native_wheels.py").read_text(
-        encoding="utf-8",
-    )
-
-    assert 'git clone --no-checkout "$FATCAT_REPOSITORY"' in action
-    assert 'git clone --no-checkout "$NEROUED_REPOSITORY"' in action
-    assert "fatcat-token" not in action
-    assert "FATCAT_TOKEN" not in action
-    assert "http.extraheader" not in action
-    assert "fatcat_root / \"pyproject.toml\"" in build_script
-
-    for workflow in (
-        ROOT / ".github" / "workflows" / "layered-mesh-geometry.yml",
-        ROOT / ".github" / "workflows" / "native-svg-core.yml",
-    ):
-        text = workflow.read_text(encoding="utf-8")
-        assert "FATCAT_REPO_TOKEN" not in text
-        assert "fatcat-token:" not in text
-        assert "--secret id=fatcat_token" not in text
+    validate_fatcat_packaging_contract(fatcat_metadata, neroued_3mf)
+    assert callable(fatcat_metadata_neroued.apply_root_model_metadata)
+    assert callable(fatcat_metadata_neroued.apply_metadata_components)

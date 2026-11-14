@@ -33,6 +33,10 @@ Windows ARM、32 位或 free-threaded Python 尚无完整应用所需的 wheel �
 
 ### 使用预编译包
 
+源码启动前会检查依赖版本、原生模块、FatCat 适配器和随包数据。`python api_server.py --check-dependencies` 只检查后端；`python start_all.py --check-dependencies` 还会检查 Node.js 和已安装的 Vite。统一启动器使用它实际选中的 Python 做检查，失败时在清理端口和启动服务前退出。已有 Vite 可直接运行时，不要求 pnpm 留在 PATH 中。
+
+公开 CI 使用正式 PyPI wheel，并在 Windows、Linux、Apple Silicon Mac 的干净 Python 3.12 环境中按 README 安装、启动后端、生成 3MF，关闭源会话后再次下载并检查几何和原生配置。此检查属于源码 Nightly 必经的 Layered Mesh Geometry 工作流；维护者自行编译 SDK 的结果不代替源码安装验证。
+
 在下一节创建并激活干净的虚拟环境后，从 Lumina 仓库根目录执行：
 
 ```bash

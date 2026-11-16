@@ -990,13 +990,13 @@ async def convert_preview(
     is_dark: bool = Form(True, description="深色主题"),
     material_source: str = Form("lut", description="颜色来源: lut | material_archive"),
     selected_materials: list[str] | str | None = Form(None, description="已选耗材目录名列表"),
-    material_layer_count: int | None = Form(None, description="耗材模式叠色层数 (5-10)"),
+    material_layer_count: int | None = Form(None, description="耗材模式叠色层数 (5-30)"),
     material_dynamic_layer_count_enabled: bool = Form(
         False,
         description="启用耗材模式动态有效叠层数",
     ),
-    material_min_layer_count: int = Form(5, description="最小有效叠层数 (5-10)"),
-    material_max_layer_count: int = Form(10, description="最大有效叠层数 (5-10)"),
+    material_min_layer_count: int = Form(5, description="最小有效叠层数 (5-30)"),
+    material_max_layer_count: int = Form(10, description="最大有效叠层数 (5-30)"),
     material_delta_e00_tolerance: float = Form(
         0.5,
         description="短配方允许的 CIEDE2000 色差损失 (0-5)",

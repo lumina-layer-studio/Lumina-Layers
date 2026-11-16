@@ -96,7 +96,8 @@ from core.material_lut_synthesis import (
     load_multiple_materials,
     solve_image_colors_optimal,
 )
-from core.material_color_solver import predict_material_recipe_srgb
+from core.material_color_solver import MITM_MAX_LAYER_COUNT, predict_material_recipe_srgb
+from core.material_lut_provider import load_solver_runtime
 from core.material_dynamic_replacement import (
     rebuild_dynamic_material_after_replacement,
 )
@@ -1256,6 +1257,17 @@ def _sync_material_archive_matrix_for_diff(
             grid_resolution=grid_resolution,
         )
         _solve_path = "cache" if solver_cache is not None else "mitm"
+        if solver_cache is None and int(layer_count) > MITM_MAX_LAYER_COUNT:
+            # Deep stacks: MITM is infeasible; use the candidate runtime
+            # (layer-wise DP). 深叠层：MITM 不可行，改用候选运行时（逐层 DP）。
+            solver_cache, _actual_grid = load_solver_runtime(
+                materials=materials,
+                layer_count=layer_count,
+                layer_height_mm=layer_height_mm,
+                substrate=substrate,
+                grid_resolution=grid_resolution,
+            )
+            _solve_path = "runtime"
         if solver_cache is not None:
             resolved_rgb, recipes, _delta_e = solver_cache.lookup(target_rgbs, materials)
         else:

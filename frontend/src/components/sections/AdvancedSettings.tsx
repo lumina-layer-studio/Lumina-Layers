@@ -9,9 +9,14 @@ import Dropdown from "../ui/Dropdown";
 import { StatusBanner } from "../ui/panelPrimitives";
 import { StructureMode, ColorMode, type BackingOutput } from "../../api/types";
 import { WIKI_DOCS } from "../../utils/wikiDocs";
+import { useState } from "react";
+import MaterialLayerUnlockDialog from "./MaterialLayerUnlockDialog";
 
 export default function AdvancedSettings() {
   const { t } = useI18n();
+  // Turning the 30-layer switch on asks first; turning it off does not.
+  // 打开 30 层开关前先确认；关闭时不弹出。
+  const [confirmUnlockOpen, setConfirmUnlockOpen] = useState(false);
   const enable_cleanup = useConverterStore((s) => s.enable_cleanup);
   const separate_backing = useConverterStore((s) => s.separate_backing);
   const backingOutput = useConverterStore((s) => s.backingOutput);
@@ -36,6 +41,8 @@ export default function AdvancedSettings() {
   const setHighPrecision3dPreview = useConverterStore((s) => s.setHighPrecision3dPreview);
   const setChromaGate = useConverterStore((s) => s.setChromaGate);
   const setQuantizeColorsUnlocked = useConverterStore((s) => s.setQuantizeColorsUnlocked);
+  const materialLayersUnlocked = useConverterStore((s) => s.materialLayersUnlocked);
+  const setMaterialLayersUnlocked = useConverterStore((s) => s.setMaterialLayersUnlocked);
 
   return (
     <div className="flex flex-col gap-4">
@@ -118,6 +125,23 @@ export default function AdvancedSettings() {
         wikiPath={WIKI_DOCS.unlockQuantizeCeiling}
         checked={quantize_colors_unlocked}
         onChange={setQuantizeColorsUnlocked}
+      />
+      <Checkbox
+        label={t("adv_unlock_material_layers")}
+        tooltip={t("adv_unlock_material_layers_hint")}
+        checked={materialLayersUnlocked}
+        onChange={(checked) => {
+          if (checked) setConfirmUnlockOpen(true);
+          else setMaterialLayersUnlocked(false);
+        }}
+      />
+      <MaterialLayerUnlockDialog
+        open={confirmUnlockOpen}
+        onConfirm={() => {
+          setConfirmUnlockOpen(false);
+          setMaterialLayersUnlocked(true);
+        }}
+        onCancel={() => setConfirmUnlockOpen(false)}
       />
     </div>
   );

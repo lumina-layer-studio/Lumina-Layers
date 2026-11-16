@@ -52,7 +52,9 @@ if TYPE_CHECKING:
 
 
 MIN_DYNAMIC_LAYER_COUNT = 5
-MAX_DYNAMIC_LAYER_COUNT = 10
+MAX_DYNAMIC_LAYER_COUNT = 30
+_DYNAMIC_REFERENCE_LAYER_SPAN = 6  # 5..10
+_DYNAMIC_MIN_PER_LAYER_BUDGET = 131_072
 _NUMPY_CANDIDATE_CHUNK_SIZE = 65_536
 _MIN_PARALLEL_SEARCH_COMPARISONS = 10_000
 
@@ -769,7 +771,7 @@ def build_dynamic_candidate_catalog(
         actual_layer_counts: Actual recipe length for every source row.
             每个源行对应的实际配方层数。
         max_layer_count: Catalog maximum layer count in the inclusive range
-            ``5..10``. 目录最大层数，取值范围为 ``5..10``（含边界）。
+            ``5..30``. 目录最大层数，取值范围为 ``5..30``（含边界）。
 
     Returns:
         DynamicCandidateCatalog: Immutable catalog containing exact-RGB unique
@@ -1318,6 +1320,27 @@ def _build_dynamic_color_matches(
     return tuple(matches)
 
 
+def dynamic_per_layer_candidate_budget(
+    candidate_budget: int, layer_count_span: int
+) -> int:
+    """Return the per-layer runtime budget for a dynamic layer range.
+
+    Every layer count in the range gets its own runtime and all of them are
+    concatenated into one catalog. Ranges wider than the original ``5..10``
+    span share the total budget of six runtimes, so ``5..30`` does not need
+    about four times the memory. Ranges of up to six layer counts keep the
+    full budget.
+    """
+    budget = int(candidate_budget)
+    span = int(layer_count_span)
+    if span <= _DYNAMIC_REFERENCE_LAYER_SPAN:
+        return budget
+    return max(
+        _DYNAMIC_MIN_PER_LAYER_BUDGET,
+        budget * _DYNAMIC_REFERENCE_LAYER_SPAN // span,
+    )
+
+
 def prepare_dynamic_material_catalog(
     materials: list[MaterialParams],
     backing_material_index: int,
@@ -1355,6 +1378,10 @@ def prepare_dynamic_material_catalog(
     )
     canonical_materials = [materials[int(index)] for index in canonical_to_user]
     canonical_backing_index = int(user_to_canonical[backing_material_index])
+    per_layer_budget = dynamic_per_layer_candidate_budget(
+        material_candidate_budget,
+        config.max_layer_count - config.min_layer_count + 1,
+    )
 
     def production_runtime_loader(
         loader_materials: list[MaterialParams],
@@ -1367,7 +1394,7 @@ def prepare_dynamic_material_catalog(
             layer_count,
             loader_height,
             loader_substrate,
-            candidate_budget=material_candidate_budget,
+            candidate_budget=per_layer_budget,
             cache_root=catalog_cache_root,
         )
 

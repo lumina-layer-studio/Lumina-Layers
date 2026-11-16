@@ -5,6 +5,7 @@ import type {
   MaterialLayerBenefitScope,
 } from "../api/types";
 import type { ConverterRecipeMaterialDynamic } from "./types";
+import { MATERIAL_DYNAMIC_LAYER_COUNT_MAX } from "../stores/converter/sources";
 
 function emptyDynamicMaterialMetadata(): ConverterRecipeMaterialDynamic {
   return { recipes: [], benefit_curve: [] };
@@ -58,10 +59,10 @@ function isLayerCapOption(
   return (
     isPositiveInteger(maxEffectiveLayerCount) &&
     maxEffectiveLayerCount >= 5 &&
-    maxEffectiveLayerCount <= 10 &&
+    maxEffectiveLayerCount <= MATERIAL_DYNAMIC_LAYER_COUNT_MAX &&
     isPositiveInteger(actualLayerCount) &&
     actualLayerCount >= 5 &&
-    actualLayerCount <= 10 &&
+    actualLayerCount <= MATERIAL_DYNAMIC_LAYER_COUNT_MAX &&
     isRgbTuple(value.matched_srgb) &&
     isRecipeIndexes(actual) &&
     actual.length === actualLayerCount &&
@@ -114,7 +115,7 @@ function isDynamicMaterialRecipe(
     isRgbTuple(value.matched_srgb) &&
     isPositiveInteger(actualLayerCount) &&
     actualLayerCount >= 5 &&
-    actualLayerCount <= 10 &&
+    actualLayerCount <= MATERIAL_DYNAMIC_LAYER_COUNT_MAX &&
     isNonNegativeInteger(paddingLayerCount) &&
     actual.length === actualLayerCount &&
     printable.length ===

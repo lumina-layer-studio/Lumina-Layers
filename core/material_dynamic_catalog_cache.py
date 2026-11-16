@@ -258,8 +258,8 @@ def build_dynamic_catalog_cache_key(
     budget = int(candidate_budget)
     if not 0 <= backing_index < len(materials):
         raise ValueError("backing_material_index is outside the material palette")
-    if not 5 <= minimum <= maximum <= 10:
-        raise ValueError("dynamic layer range must satisfy 5 <= min <= max <= 10")
+    if not 5 <= minimum <= maximum <= 30:
+        raise ValueError("dynamic layer range must satisfy 5 <= min <= max <= 30")
     if budget <= 0:
         raise ValueError("candidate_budget must be positive")
     if isinstance(layer_height_mm, (bool, np.bool_)) or not isinstance(

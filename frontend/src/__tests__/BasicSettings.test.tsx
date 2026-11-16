@@ -1020,6 +1020,16 @@ describe("BasicSettings", () => {
     });
     expect(dynamicToggle).not.toBeChecked();
     expect(screen.getByRole("slider", { name: "叠色层数" })).toHaveValue("7");
+    // Locked to 10 layers until the advanced switch is turned on.
+    expect(screen.getByRole("slider", { name: "叠色层数" })).toHaveAttribute(
+      "max",
+      "10",
+    );
+    act(() => useConverterStore.getState().setMaterialLayersUnlocked(true));
+    expect(screen.getByRole("slider", { name: "叠色层数" })).toHaveAttribute(
+      "max",
+      "30",
+    );
     expect(
       screen.queryByRole("slider", { name: "最小有效叠层数" }),
     ).not.toBeInTheDocument();
@@ -1038,7 +1048,7 @@ describe("BasicSettings", () => {
     ).toHaveAttribute("step", "1");
     expect(
       screen.getByRole("slider", { name: "最大有效叠层数" }),
-    ).toHaveAttribute("max", "10");
+    ).toHaveAttribute("max", "30");
     expect(screen.queryByText(/单一层数的缓存入口已隐藏/)).not.toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: "穷举缓存…" }),

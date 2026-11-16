@@ -32,6 +32,9 @@ MAX_FRIDGE_MAGNET_THICKNESS_MM = (
     MAX_BACKING_THICKNESS_MM - FRIDGE_MAGNET_SHELL_THICKNESS_MM
 )
 MAX_FRIDGE_MAGNETS = 20
+# Longest recipe accepted by recipe override, predict and generate requests.
+# Material-archive stacks go up to 30 colour layers.
+MAX_RECIPE_LAYER_COUNT = 30
 MAX_RELIEF_EXTRA_HEIGHT_MM = 15.0
 MAX_RELIEF_TOTAL_HEIGHT_MM = MAX_BACKING_THICKNESS_MM + MAX_RELIEF_EXTRA_HEIGHT_MM
 # Minimum accepted by API handoff workflows; ordinary converter UI keeps its
@@ -341,7 +344,7 @@ class ConvertPreviewRequest(LutSourceSelection, SvgHoleCompensationOptions):
     )
     color_mode: ColorMode = Field(ColorMode.FOUR_COLOR_RYBW, description="颜色模式")
     modeling_mode: ModelingMode = Field(ModelingMode.HIGH_FIDELITY, description="建模模式")
-    color_layers: Optional[int] = Field(None, ge=1, le=20, description="叠色层数")
+    color_layers: Optional[int] = Field(None, ge=1, le=30, description="叠色层数")
     layer_height_mm: Optional[float] = Field(None, gt=0.0, le=1.0, description="叠色层高 (mm)")
     model_enable: bool = Field(False, description="启用模型辅助匹配")
     model_only: bool = Field(False, description="仅使用模型匹配，跳过 DB 匹配")
@@ -368,8 +371,8 @@ class ConvertPreviewRequest(LutSourceSelection, SvgHoleCompensationOptions):
         False,
         description="启用耗材模式动态有效叠层数",
     )
-    material_min_layer_count: int = Field(5, ge=5, le=10, description="最小有效叠层数")
-    material_max_layer_count: int = Field(10, ge=5, le=10, description="最大有效叠层数")
+    material_min_layer_count: int = Field(5, ge=5, le=30, description="最小有效叠层数")
+    material_max_layer_count: int = Field(10, ge=5, le=30, description="最大有效叠层数")
     material_delta_e00_tolerance: float = Field(
         0.5,
         ge=0.0,
@@ -407,23 +410,27 @@ class RecipeOverrideItem(BaseModel):
     """Region-level recipe override for predictive/custom recipe workflows."""
 
     region_id: str = Field(..., description="区域 ID")
-    recipe: list[int] = Field(..., min_length=1, max_length=20, description="配方层序列")
+    recipe: list[int] = Field(
+        ..., min_length=1, max_length=MAX_RECIPE_LAYER_COUNT, description="配方层序列"
+    )
     layer_order: str = Field("Top2Bottom", description="配方层顺序")
-    color_layers: int | None = Field(None, ge=1, le=20, description="实际配方层数")
+    color_layers: int | None = Field(
+        None, ge=1, le=MAX_RECIPE_LAYER_COUNT, description="实际配方层数"
+    )
     actual_recipe_top_to_bottom: list[int] | None = Field(
         None,
         min_length=1,
-        max_length=20,
+        max_length=MAX_RECIPE_LAYER_COUNT,
         description="动态模式实际 Top-to-Bottom 配方",
     )
     print_recipe_top_to_bottom: list[int] | None = Field(
         None,
         min_length=1,
-        max_length=20,
+        max_length=MAX_RECIPE_LAYER_COUNT,
         description="动态模式补齐后的 Top-to-Bottom 打印配方",
     )
-    actual_layer_count: int | None = Field(None, ge=1, le=20)
-    padding_layer_count: int | None = Field(None, ge=0, le=20)
+    actual_layer_count: int | None = Field(None, ge=1, le=MAX_RECIPE_LAYER_COUNT)
+    padding_layer_count: int | None = Field(None, ge=0, le=MAX_RECIPE_LAYER_COUNT)
     virtual_materials: list[VirtualMaterial] | None = Field(
         default=None,
         description=(
@@ -549,7 +556,7 @@ class ConvertGenerateRequest(LutSourceSelection, SvgHoleCompensationOptions):
     structure_mode: StructureMode = Field(StructureMode.DOUBLE_SIDED, description="打印结构模式")
     color_mode: ColorMode = Field(ColorMode.FOUR_COLOR_RYBW, description="颜色模式")
     modeling_mode: ModelingMode = Field(ModelingMode.HIGH_FIDELITY, description="建模模式")
-    color_layers: Optional[int] = Field(None, ge=1, le=20, description="叠色层数")
+    color_layers: Optional[int] = Field(None, ge=1, le=30, description="叠色层数")
     layer_height_mm: Optional[float] = Field(None, gt=0.0, le=1.0, description="叠色层高 (mm)")
     model_enable: bool = Field(False, description="启用模型辅助匹配")
     model_only: bool = Field(False, description="仅使用模型匹配，跳过 DB 匹配")
@@ -574,8 +581,8 @@ class ConvertGenerateRequest(LutSourceSelection, SvgHoleCompensationOptions):
         False,
         description="启用耗材模式动态有效叠层数",
     )
-    material_min_layer_count: int = Field(5, ge=5, le=10, description="最小有效叠层数")
-    material_max_layer_count: int = Field(10, ge=5, le=10, description="最大有效叠层数")
+    material_min_layer_count: int = Field(5, ge=5, le=30, description="最小有效叠层数")
+    material_max_layer_count: int = Field(10, ge=5, le=30, description="最大有效叠层数")
     material_delta_e00_tolerance: float = Field(
         0.5,
         ge=0.0,
@@ -1054,7 +1061,7 @@ class RecipePredictRequest(BaseModel):
     session_id: str = Field(..., description="Session ID")
     recipe: List[int] = Field(..., min_length=1, description="配方通道索引序列")
     layer_order: str = Field("Top2Bottom", description="配方层序")
-    color_layers: int = Field(..., ge=1, le=20, description="叠色层数")
+    color_layers: int = Field(..., ge=1, le=MAX_RECIPE_LAYER_COUNT, description="叠色层数")
     layer_height_mm: float = Field(..., gt=0.0, le=1.0, description="叠色层高 (mm)")
     virtual_materials: list[VirtualMaterial] | None = Field(
         default=None,

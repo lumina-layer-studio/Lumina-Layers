@@ -51,10 +51,9 @@ import ExtractorPanel from "./components/ExtractorPanel";
 import ColorcheckerConfirmDialogExtractor from "./components/ColorcheckerConfirmDialog";
 import GradientCardGeneratePanel from "./components/GradientCardGeneratePanel";
 import GradientCardExtractPanel from "./components/GradientCardExtractPanel";
-import MaterialCloudSyncPanel from "./components/MaterialCloudSyncPanel";
+import ResourceCatalogPanel from "./components/ResourceCatalogPanel";
 import MaterialLibraryPanel from "./components/MaterialLibraryPanel";
 import MaterialRecipeQueryPanel from "./components/MaterialRecipeQueryPanel";
-import LutCloudSyncPanel from "./components/LutCloudSyncPanel";
 import LutLibraryPanel from "./components/LutLibraryPanel";
 import LutComparePanel from "./components/LutComparePanel";
 import LutManagerPanel from "./components/LutManagerPanel";
@@ -558,7 +557,7 @@ function AppContent({ connected }: { connected: boolean | null }) {
         {activeTab === 'gradient-card-generate' && <GradientCardGeneratePanel />}
         {activeTab === 'gradient-card-extract' && <GradientCardExtractPanel />}
         {activeTab === 'material-library' && <MaterialLibraryPanel />}
-        {activeTab === 'material-cloud-sync' && <MaterialCloudSyncPanel />}
+        {activeTab === 'material-cloud-sync' && <ResourceCatalogPanel kind="materials" />}
         {activeTab === 'material-recipe' && <MaterialRecipeQueryPanel />}
 
         {activeTab === 'extractor' && (
@@ -572,7 +571,7 @@ function AppContent({ connected }: { connected: boolean | null }) {
 
         {activeTab === 'lut-library' && <LutLibraryPanel />}
         {activeTab === 'lut-manager' && <LutManagerPanel />}
-        {activeTab === 'lut-cloud-sync' && <LutCloudSyncPanel />}
+        {activeTab === 'lut-cloud-sync' && <ResourceCatalogPanel kind="luts" />}
         {activeTab === 'lut-details' && <LutDetailsPanel />}
         {activeTab === 'lut-compare' && <LutComparePanel />}
         {activeTab === 'five-color' && (

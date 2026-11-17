@@ -86,7 +86,13 @@ class LutSourceCatalogResponse(BaseModel):
     """
 
     legacy_groups: list[LutCatalogGroup] = Field(default_factory=list, description="经典 LUT 分组")
+    legacy_aliases: dict[str, str] = Field(default_factory=dict)
     native_brand_groups: list[NativeBrandCatalogGroup] = Field(default_factory=list, description="原生品牌分组")
+
+
+class LocalLutVersion(BaseModel):
+    current: bool
+    installed_at: str | None = None
 
 
 class LutDetailsCatalogItem(BaseModel):
@@ -95,6 +101,7 @@ class LutDetailsCatalogItem(BaseModel):
     """
 
     name: str = Field(..., description="LUT 详情显示名称")
+    display: dict[str, Any] | None = None
     path: str = Field(..., description="公开引用（非本机文件系统路径）")
     color_mode: str = Field(..., description="颜色模式")
     source_kind: str = Field("legacy_lookup", description="来源类型")
@@ -105,6 +112,7 @@ class LutDetailsCatalogItem(BaseModel):
     material_source: str = Field(..., description="材质解析来源")
     search_tokens: list[str] = Field(default_factory=list, description="预计算搜索 token")
     revision: str = Field("", description="目录读取代次，更新时重新加载详情")
+    local_version: LocalLutVersion | None = None
 
 
 class LutDetailsCatalogGroup(BaseModel):

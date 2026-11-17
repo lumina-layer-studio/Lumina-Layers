@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import apiClient from "../api/client";
-import { fetchLutCatalog, fetchLutDetails, fetchLutDetailsCatalog } from "../api/lut";
+import { fetchCloudLutPreviews, fetchLutCatalog, fetchLutDetails, fetchLutDetailsCatalog } from "../api/lut";
 
 vi.mock("../api/client", () => ({
   default: {
@@ -12,7 +12,64 @@ vi.mock("../api/client", () => ({
 const mockGet = vi.mocked(apiClient.get);
 
 beforeEach(() => {
-  vi.clearAllMocks();
+  vi.resetAllMocks();
+});
+
+describe("cloud LUT preview requests", () => {
+  it.each([24, 25, 27, 28, 49])("loads all %i visible previews within the server's 24-ID limit", async (count) => {
+    const ids = Array.from({ length: count }, (_, i) => `lut_${i}`);
+    const signal = new AbortController().signal;
+    mockGet.mockImplementation(async (_url, config) => {
+      const requested = (config!.params as URLSearchParams).getAll("lut_id");
+      if (requested.length > 24) throw new Error("HTTP 422: at most 24 LUT IDs");
+      return { data: { source_scope: "public", previews: requested.map((lut_id) => ({ lut_id })) } };
+    });
+
+    const result = await fetchCloudLutPreviews(ids, ["official", "community"], signal);
+
+    expect(result.source_scope).toBe("public");
+    expect(result.previews.map((row) => row.lut_id)).toEqual(ids);
+    expect(mockGet).toHaveBeenCalledTimes(Math.ceil(count / 24));
+    for (const [url, config] of mockGet.mock.calls) {
+      expect(url).toBe("/lut-registry/previews");
+      expect((config!.params as URLSearchParams).getAll("channel")).toEqual(["official", "community"]);
+      expect(config).toMatchObject({ signal, suppressErrorTicket: true });
+    }
+    expect(apiClient.post).not.toHaveBeenCalled();
+  });
+
+  it("does not combine batches from different registry scopes", async () => {
+    mockGet.mockResolvedValueOnce({ data: { source_scope: "public", previews: [] } })
+      .mockResolvedValueOnce({ data: { source_scope: "private", previews: [] } });
+    await expect(fetchCloudLutPreviews(
+      Array.from({ length: 25 }, (_, i) => `lut_${i}`), ["official"], new AbortController().signal,
+    )).rejects.toThrow(/source/i);
+  });
+
+  it("stops queuing batches when a page change cancels the request", async () => {
+    const controller = new AbortController();
+    mockGet.mockImplementationOnce(async () => {
+      controller.abort();
+      return { data: { source_scope: "public", previews: [] } };
+    });
+    await expect(fetchCloudLutPreviews(
+      Array.from({ length: 25 }, (_, i) => `lut_${i}`), ["official"], controller.signal,
+    )).rejects.toMatchObject({ name: "AbortError" });
+    expect(mockGet).toHaveBeenCalledTimes(1);
+  });
+
+  it("leaves a failed later batch retryable and returns every preview after retry", async () => {
+    const ids = Array.from({ length: 25 }, (_, i) => `lut_${i}`);
+    const signal = new AbortController().signal;
+    mockGet.mockResolvedValueOnce({ data: { source_scope: "public", previews: ids.slice(0, 24).map((lut_id) => ({ lut_id })) } })
+      .mockRejectedValueOnce(new Error("offline"));
+    await expect(fetchCloudLutPreviews(ids, ["official"], signal)).rejects.toThrow("offline");
+    mockGet.mockImplementation(async (_url, config) => ({
+      data: { source_scope: "public", previews: (config!.params as URLSearchParams).getAll("lut_id").map((lut_id) => ({ lut_id })) },
+    }));
+    const result = await fetchCloudLutPreviews(ids, ["official"], signal);
+    expect(result.previews.map((row) => row.lut_id)).toEqual(ids);
+  });
 });
 
 describe("lut details api", () => {

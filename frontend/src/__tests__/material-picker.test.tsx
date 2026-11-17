@@ -3,6 +3,7 @@
  * 耗材选择弹窗与选择持久化测试。
  */
 import { useState } from "react";
+import "./communityTestMocks";
 import {
   fireEvent,
   render,
@@ -15,6 +16,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SavedMaterialLibraryItem } from "../api/types";
 import MaterialPickerDialog from "../components/ui/MaterialPickerDialog";
 import { useConverterStore } from "../stores/converter";
+import * as communityApi from "../api/community";
+import * as communityAccounts from "../api/contributions";
+import { useCommunityStore } from "../stores/communityStore";
+import { ResourceActivityActions } from "../components/ui/ResourceActivity";
 
 function makeMaterial(
   overrides: Partial<SavedMaterialLibraryItem> & {
@@ -120,6 +125,85 @@ function renderPicker(
 const cardGrid = () => screen.getByTestId("material-picker-card-grid");
 
 describe("MaterialPickerDialog", () => {
+  it("sorts through the shared menu and Escape closes only the menu", () => {
+    const materials = SINGLE_TYPE_MATERIALS.map((material, index) => ({
+      ...material, usage_last_used_at: index === 1 ? "2026-11-16T00:00:00Z" : null,
+    }));
+    const { props } = renderPicker({ materials });
+    const sort = screen.getByRole("combobox", { name: "排序" });
+    fireEvent.click(sort);
+    expect(screen.getByRole("listbox", { name: "排序" })).toBeInTheDocument();
+    fireEvent.keyDown(sort, { key: "End" });
+    fireEvent.keyDown(sort, { key: "Enter" });
+    expect(sort).toHaveTextContent("最近使用");
+    expect(within(cardGrid()).getAllByRole("article")[0]).toHaveTextContent("Yellow PLA");
+    fireEvent.click(sort);
+    fireEvent.keyDown(sort, { key: "Escape" });
+    expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
+    expect(sort).toHaveFocus();
+    expect(props.onCancel).not.toHaveBeenCalled();
+  });
+
+  it("filters and resets brands through the narrow-window menu", () => {
+    renderPicker();
+    const brand = screen.getByRole("combobox", { name: "品牌" });
+    fireEvent.click(brand);
+    fireEvent.click(screen.getByRole("option", { name: "JAYO (2)" }));
+    expect(cardGrid()).toHaveTextContent("Red PLA");
+    expect(cardGrid()).not.toHaveTextContent("Blue PLA");
+    fireEvent.click(brand);
+    fireEvent.click(screen.getByRole("option", { name: "全部品牌 (3)" }));
+    expect(cardGrid()).toHaveTextContent("Blue PLA");
+  });
+
+  it("uses the same account favorite as the cloud card without changing the material selection", async () => {
+    const connection = { state: "connected" as const, subject: "maker", web_url: "http://localhost:8018" };
+    const ref = { resource_id: "mat-red", revision_id: "rev-red", content_hash: "red" };
+    const stats = { ...ref, likes: 0, saves: 1, downloads: 0, liked: false, saved: true, downloaded: false, revisions: [ref] };
+    vi.mocked(communityAccounts.getContributionConnection).mockResolvedValue(connection);
+    vi.mocked(communityApi.fetchLocalResourceReferences).mockResolvedValue({ "JAYO/red-pla": ref });
+    vi.mocked(communityApi.fetchMyResourceActivity).mockResolvedValue({ items: [stats], subject: "maker" });
+    vi.mocked(communityApi.fetchResourceStats).mockResolvedValue({ items: [stats], subject: "maker" });
+    vi.mocked(communityApi.setResourceActivity).mockResolvedValue({ item: { ...stats, saved: false, saves: 0 }, subject: "maker" });
+    useCommunityStore.getState().acceptConnection(connection);
+    const { props } = renderPicker({ initialSelected: ["JAYO/red-pla"] });
+    render(<ResourceActivityActions kind="materials" resource={ref} />);
+    await waitFor(() => expect(screen.getAllByRole("button", { name: "取消账号收藏" })).toHaveLength(2));
+    fireEvent.click(screen.getByRole("tab", { name: "我的收藏" }));
+    expect(cardGrid()).toHaveTextContent("Red PLA");
+    expect(cardGrid()).not.toHaveTextContent("Yellow PLA");
+    fireEvent.click(within(cardGrid()).getByRole("button", { name: "取消账号收藏" }));
+    await waitFor(() => expect(screen.queryByTestId("material-picker-card-grid")).not.toBeInTheDocument());
+    expect(screen.getByRole("button", { name: "收藏到账号" })).toHaveAttribute("aria-pressed", "false");
+    fireEvent.click(screen.getByRole("button", { name: "完成" }));
+    expect(props.onConfirm).toHaveBeenCalledWith(["JAYO/red-pla"]);
+  });
+
+  it("finds any market name or product code and confirms the archive directory", () => {
+    const material = makeMaterial({
+      brand: "赛纳", material_name: "作者原名", directory_name: "opaque/directory-42",
+      display: { market_names: { CN: "深红 PETG", INTL: "Garnet PETG" }, aliases: ["Pomegranate"], sku: "SN-0042" },
+    });
+    const { props } = renderPicker({ materials: [material] });
+    for (const query of ["Garnet PETG", "Pomegranate", "SN-0042", "作者原名"]) {
+      fireEvent.change(screen.getByTestId("material-picker-search-input"), { target: { value: query } });
+      expect(within(cardGrid()).getByText("深红 PETG")).toBeInTheDocument();
+      expect(cardGrid()).not.toHaveTextContent("作者原名");
+    }
+    fireEvent.click(within(cardGrid()).getByRole("button", { name: "选择 深红 PETG" }));
+    fireEvent.click(screen.getByRole("button", { name: "完成" }));
+    expect(props.onConfirm).toHaveBeenCalledWith(["opaque/directory-42"]);
+  });
+  it("accepts a resolved initial directory while loading without resetting an edited draft", () => {
+    const { rerender, props } = renderPicker({ initialSelected: ["old-flat-name"] });
+    rerender(<MaterialPickerDialog {...props} initialSelected={["JAYO/red-pla"]} />);
+    fireEvent.click(screen.getByRole("button", { name: "完成" }));
+    expect(props.onConfirm).toHaveBeenLastCalledWith(["JAYO/red-pla"]);
+    fireEvent.click(screen.getByRole("button", { name: "选择 Yellow PLA" }));
+    rerender(<MaterialPickerDialog {...props} initialSelected={["JAYO/red-pla"]} />);
+    fireEvent.click(screen.getByRole("button", { name: "完成" }));
+    expect(props.onConfirm).toHaveBeenLastCalledWith(["JAYO/red-pla", "jayo/yellow-pla"]);
+  });
   beforeEach(() => {
     localStorage.clear();
   });
@@ -139,7 +223,7 @@ describe("MaterialPickerDialog", () => {
     expect(
       screen.getByRole("dialog", { name: "选择耗材" }),
     ).toHaveAttribute("aria-modal", "true");
-    expect(screen.getByRole("tab", { name: "收藏" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "本机常用" })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: "全部" })).toHaveAttribute(
       "aria-selected",
       "true",
@@ -243,11 +327,11 @@ describe("MaterialPickerDialog", () => {
     });
 
     fireEvent.click(
-      screen.getByRole("button", { name: "收藏 Red PLA（Alice）" }),
+      screen.getByRole("button", { name: "设为本机常用 · Red PLA（Alice）" }),
     );
 
     expect(
-      screen.getByRole("button", { name: "取消收藏 Red PLA（Alice）" }),
+      screen.getByRole("button", { name: "取消本机常用 · Red PLA（Alice）" }),
     ).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: "选择 Red PLA" }),
@@ -574,7 +658,7 @@ describe("MaterialPickerDialog", () => {
       onConfirm,
     });
 
-    fireEvent.click(screen.getByRole("tab", { name: "收藏" }));
+    fireEvent.click(screen.getByRole("tab", { name: "本机常用" }));
     const favoriteCard = screen.getByTestId("material-picker-product-card");
     expect(within(favoriteCard).queryByText("Alice")).not.toBeInTheDocument();
     expect(within(favoriteCard).getByText("Bob")).toBeInTheDocument();
@@ -644,22 +728,22 @@ describe("MaterialPickerDialog", () => {
     );
     fireEvent.click(
       within(redCard!).getByRole("button", {
-        name: "收藏 PLA Basic Red（Alice）",
+        name: "设为本机常用 · PLA Basic Red（Alice）",
       }),
     );
     fireEvent.click(
       within(redCard!).getByRole("button", {
-        name: "收藏 PLA Basic Red（Bob）",
+        name: "设为本机常用 · PLA Basic Red（Bob）",
       }),
     );
 
-    fireEvent.click(screen.getByRole("tab", { name: "收藏" }));
+    fireEvent.click(screen.getByRole("tab", { name: "本机常用" }));
     const favoriteCard = screen.getByTestId("material-picker-product-card");
     expect(within(favoriteCard).getByText("Alice")).toBeInTheDocument();
     expect(within(favoriteCard).getByText("Bob")).toBeInTheDocument();
     expect(
       within(favoriteCard).getAllByRole("button", {
-        name: /取消收藏 PLA Basic Red/,
+        name: /取消本机常用 · PLA Basic Red/,
       }),
     ).toHaveLength(2);
 

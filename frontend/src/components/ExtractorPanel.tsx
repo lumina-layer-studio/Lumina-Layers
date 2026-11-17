@@ -14,6 +14,8 @@ import Dropdown from "./ui/Dropdown";
 import Slider from "./ui/Slider";
 import Checkbox from "./ui/Checkbox";
 import Button from "./ui/Button";
+import CalibrationResourceReturn from "./ui/CalibrationResourceReturn";
+import { ExtractedLutContribution } from "./ResourceContribution";
 import { ChevronDown, ChevronLeft, ChevronRight, ChevronUp } from "./ui/icons";
 import ImageUpload from "./ui/ImageUpload";
 import Switch from "./ui/Switch";
@@ -181,6 +183,7 @@ export default function ExtractorPanel() {
     isLoading,
     error,
     lut_download_url,
+    session_id,
     manualFixError,
     page1Extracted,
     page2Extracted,
@@ -876,6 +879,8 @@ export default function ExtractorPanel() {
             {t("ext_palette_confirmed")}
           </StatusBanner>
         )}
+        <CalibrationResourceReturn family="luts" resource={paletteConfirmed ? session_id : null} />
+        {paletteConfirmed && session_id && <ExtractedLutContribution key={`${session_id}-${lut_download_url}`} sessionId={session_id} />}
 
         {lut_download_url && (
           <section className={`${sectionCardClass} flex flex-col gap-2`}>

@@ -189,6 +189,25 @@ def test_catalog_indexer_infers_vendor_from_one_level_vendor_folder(tmp_path: Pa
     assert item.material_type == "PLA"
 
 
+def test_cloud_migration_keeps_manufacturer_and_material_identity(tmp_path: Path) -> None:
+    alias_path = tmp_path / "aliases.json"
+    _write_alias_config(alias_path)
+    cloud = tmp_path / "shared/Cloud_sync"
+    _write_lut_json(cloud / "Bambulab/PETG/folder.json")
+    _write_lut_json(cloud / "Custom/Bambulab&PLA&RYBW&custom.json")
+    _write_lut_json(cloud / "_revisions/abc/Bambulab&PLA&RYBW&revision.json")
+    catalog = LutCatalogIndexer(
+        preset_dir=tmp_path / "empty-presets",
+        additional_roots=(("Cloud", cloud),),
+        alias_resolver=AliasResolver.from_file(alias_path), parser=LutParser(),
+    ).build_catalog()
+    assert [group.manufacturer for group in catalog.groups] == ["Bambu Lab"]
+    items = {item.name: item for item in catalog.groups[0].items}
+    assert items["Cloud - Bambulab - PETG - folder"].material_type == "PETG"
+    assert items["Cloud - Custom - Bambulab&PLA&RYBW&custom"].material_type == "PLA"
+    assert items["Cloud - _revisions - abc - Bambulab&PLA&RYBW&revision"].material_type == "PLA"
+
+
 def test_catalog_indexer_does_not_treat_hyphenated_vendor_file_as_material_pair(tmp_path: Path) -> None:
     alias_path = tmp_path / "lut_details_aliases.json"
     preset_dir = tmp_path / "lut-preset"

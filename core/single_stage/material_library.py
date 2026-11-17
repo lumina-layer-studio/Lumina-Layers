@@ -12,6 +12,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Sequence
 
+from core.filament_display import filament_display
 from . import (
     material_files,
     material_package,
@@ -215,6 +216,11 @@ def _saved_material_library_item_from_archive(
     )
     usage_payload = material_files._load_usage_payload(material_dir)
     return {
+        "display": {
+            **filament_display(archive_payload),
+            **filament_display(archive_payload.get("display")),
+            **material_runs.measured_gradient_preview(archive_payload),
+        } or None,
         "material_name": material_name,
         "directory_name": relative_directory_name,
         "brand": brand_value,
@@ -722,6 +728,7 @@ def import_saved_stage_a_material_archives(
     materials_dir: str | None = None,
     selected_material_id: str | None = None,
     selected_revision_id: str | None = None,
+    selected_display: dict[str, Any] | None = None,
 ) -> MaterialArchiveImportResult:
     """Import one ZIP file containing one or more saved Stage A material archives.
     导入一个包含一个或多个已保存 Stage A 耗材档案的 ZIP 文件。
@@ -763,6 +770,8 @@ def import_saved_stage_a_material_archives(
             ):
                 manifest_root = extract_root
         bundle_manifest = material_package._load_material_bundle_manifest(manifest_root)
+        if selected_material_id and bundle_manifest is None:
+            raise ValueError("A selected material revision requires a versioned material bundle manifest")
         manifest = material_package._load_material_export_manifest(manifest_root)
         material_root = (
             extracted_root / "materials"
@@ -785,6 +794,8 @@ def import_saved_stage_a_material_archives(
                         or raw_revision_id != selected_revision_id
                     ):
                         continue
+                    if selected_package_found:
+                        raise ValueError("Selected material revision is duplicated in the bundle")
                     selected_package_found = True
                 material_package._verify_material_bundle_package(
                     extracted_root=manifest_root,
@@ -844,6 +855,7 @@ def import_saved_stage_a_material_archives(
                 if package is not None and material_sync._installed_material_bundle_revision_path(
                     target_root=target_root,
                     package=package,
+                    include_revision_history=bool(selected_material_id),
                 ) is not None:
                     continue
                 material_archive_path = staged_material_dir / "material.json"
@@ -891,6 +903,8 @@ def import_saved_stage_a_material_archives(
                     raise
                 created_material_dirs.append(destination_dir)
                 if package is not None:
+                    if selected_material_id and selected_display:
+                        package = {**package, "display": {**filament_display(package.get("display")), **filament_display(selected_display)}}
                     installed_packages.append((package, destination_dir))
                 imported_materials.append(
                     _material_summary_from_saved_archive(
@@ -961,7 +975,19 @@ def list_saved_stage_a_material_archives(
         content_hash = material_package._local_material_content_hash(material_dir, archive_payload)
         if content_hash:
             item["content_hash"] = content_hash
-        item.update(sync_metadata_by_directory.get(item["directory_name"], {}))
+        metadata = sync_metadata_by_directory.get(item["directory_name"])
+        if metadata:
+            indexed = dict(metadata)
+            display = indexed.pop("display", None)
+            display_hash = indexed.pop("display_hash", None)
+            item.update(indexed)
+            # A locally renamed or recalibrated archive keeps its own display information.
+            if display and content_hash and display_hash == content_hash:
+                local_display = item.get("display") or {}
+                item["display"] = {**local_display, **display}
+                local_swatches = local_display.get("preview_swatches")
+                if isinstance(local_swatches, dict) and local_swatches.get("source") == "measured":
+                    item["display"]["preview_swatches"] = local_swatches
         items.append(item)
     material_registry_client._apply_official_registry_metadata(items)
     material_files._store_material_library_cache(target_root, items)

@@ -5,9 +5,11 @@ import { CSS } from "@dnd-kit/utilities";
 import { useI18n } from "../../i18n/context";
 import { tRuntime } from "../../i18n/runtime";
 import { HeaderTooltip } from "./HeaderTooltip";
+import { LibraryBrandLogo } from "./LibraryDetails";
 
 interface LibraryBrandHeaderProps {
   label: string;
+  logo?: string;
   count: number;
   countLabel?: string;
   testIdPrefix?: string;
@@ -19,7 +21,7 @@ interface LibraryBrandHeaderProps {
   dragging?: boolean;
 }
 
-export function LibraryBrandHeader({ label, count, countLabel, testIdPrefix = "material-library", collapsed, pinned, onToggle, onPin, onMove, dragging = false }: LibraryBrandHeaderProps) {
+export function LibraryBrandHeader({ label, logo, count, countLabel, testIdPrefix = "material-library", collapsed, pinned, onToggle, onPin, onMove, dragging = false }: LibraryBrandHeaderProps) {
   const { t } = useI18n();
   const preview = !onToggle;
   return (
@@ -36,6 +38,7 @@ export function LibraryBrandHeader({ label, count, countLabel, testIdPrefix = "m
         }}
         className="material-library-group flex min-w-0 flex-1 cursor-grab items-center justify-between gap-3 rounded-lg px-2 py-2 text-left active:cursor-grabbing">
         <span className="flex min-w-0 flex-wrap items-center gap-3">
+          <LibraryBrandLogo logo={logo} />
           <span className="truncate text-sm font-semibold text-slate-600 dark:text-slate-300">{label}</span>
           <span className="rounded-full border border-slate-200/80 px-2 py-0.5 text-xs font-semibold text-slate-500 dark:border-slate-700/80 dark:text-slate-400">{countLabel ?? tRuntime("mat_gradient_library_brand_count", { count })}</span>
         </span>

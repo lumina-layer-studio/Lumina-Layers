@@ -1,5 +1,7 @@
 import type { SavedMaterialLibraryItem } from "../../api/types";
 import { favoriteKeyForMaterial } from "../../utils/materialPickerPreferences";
+import { filamentMatches, type FilamentIdentity } from "../../utils/filamentIdentity";
+import { savedMaterialIdentity } from "../../utils/libraryFilamentIdentity";
 
 export type MaterialTypeFilter =
   | "favorites"
@@ -24,6 +26,7 @@ export type MaterialBrandOption = {
   key: string;
   label: string;
   count: number;
+  logo?: string;
 };
 
 const ALL_BRANDS_KEY = "all";
@@ -55,6 +58,7 @@ export function normalizeMaterialBrandKey(brand: string | null | undefined): str
 export function buildBrandOptions(
   materials: SavedMaterialLibraryItem[],
   labels: { all: string; unassigned: string },
+  identities?: ReadonlyMap<string, FilamentIdentity>,
 ): MaterialBrandOption[] {
   const grouped = new Map<string, MaterialBrandOption>();
   for (const material of materials) {
@@ -69,7 +73,8 @@ export function buildBrandOptions(
       label:
         key === UNASSIGNED_BRAND_KEY
           ? labels.unassigned
-          : material.brand?.normalize("NFKC").trim() || labels.unassigned,
+          : identities?.get(material.directory_name)?.brand || material.brand?.normalize("NFKC").trim() || labels.unassigned,
+      logo: identities?.get(material.directory_name)?.logo,
       count: 1,
     });
   }
@@ -144,25 +149,6 @@ export function buildMaterialProductGroups(
   }));
 }
 
-function profileMatchesQuery(
-  profile: SavedMaterialLibraryItem,
-  query: string,
-): boolean {
-  if (!query) return true;
-  const searchable = [
-    profile.material_name,
-    profile.directory_name,
-    profile.brand,
-    resolvedMaterialType(profile),
-    profile.contributor_name,
-  ]
-    .filter((value): value is string => typeof value === "string")
-    .join(" ")
-    .normalize("NFKC")
-    .toLocaleLowerCase();
-  return searchable.includes(query);
-}
-
 function groupDisplayProfiles(
   group: MaterialProductGroup,
 ): SavedMaterialLibraryItem[] {
@@ -178,8 +164,9 @@ function groupMostRecentTimestamp(group: MaterialProductGroup): number {
   return latest;
 }
 
-function groupName(group: MaterialProductGroup): string {
-  return groupDisplayProfiles(group)[0]?.material_name ?? group.key;
+function groupName(group: MaterialProductGroup, identities?: ReadonlyMap<string, FilamentIdentity>): string {
+  const profile = groupDisplayProfiles(group)[0];
+  return identities?.get(profile.directory_name)?.name ?? profile.material_name;
 }
 
 export function filterMaterialGroups(
@@ -190,6 +177,7 @@ export function filterMaterialGroups(
     brandKey: string;
     favoriteKeys: Set<string>;
     sort: MaterialPickerSort;
+    identities?: ReadonlyMap<string, FilamentIdentity>;
   },
 ): MaterialProductGroup[] {
   const normalizedQuery = filters.query
@@ -225,7 +213,7 @@ export function filterMaterialGroups(
     if (
       normalizedQuery &&
       !candidateProfiles.some((profile) =>
-        profileMatchesQuery(profile, normalizedQuery),
+        filamentMatches(normalizedQuery, (filters.identities?.get(profile.directory_name) ?? savedMaterialIdentity(profile, "en")).searchText),
       )
     ) {
       continue;
@@ -246,7 +234,7 @@ export function filterMaterialGroups(
         groupMostRecentTimestamp(right) - groupMostRecentTimestamp(left);
       if (recentOrder !== 0) return recentOrder;
     }
-    return groupName(left).localeCompare(groupName(right), undefined, {
+    return groupName(left, filters.identities).localeCompare(groupName(right, filters.identities), undefined, {
       sensitivity: "base",
       numeric: true,
     });

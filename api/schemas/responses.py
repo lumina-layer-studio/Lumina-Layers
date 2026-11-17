@@ -302,6 +302,7 @@ class GradientCardMaterialSaveResponse(BaseModel):
     material_file_url: str
     stage_a_params_url: str
     material_summary: SavedMaterialSummaryResponse
+    contribution: dict[str, Any] | None = None
 
 
 class GradientCardMaterialDeleteResponse(BaseModel):
@@ -344,6 +345,7 @@ class SavedMaterialLibraryItemResponse(BaseModel):
     """
 
     material_name: str
+    display: dict[str, Any] | None = None
     directory_name: str
     brand: str | None = None
     material_type: str | None = None
@@ -433,6 +435,7 @@ class MaterialSyncStatusResponse(BaseModel):
 
     status: str
     message: str
+    source_scope: str | None = None
     schema_version: str
     index_state: Literal["missing", "ready", "invalid"]
     last_sync_at: str | None = None
@@ -451,6 +454,7 @@ class MaterialSyncInstallResponse(BaseModel):
     message: str
     installed_count: int
     installed_materials: list[SavedMaterialSummaryResponse] = Field(default_factory=list)
+    activity_recorded: bool | None = None
 
 
 class MaterialSyncRefreshFailureResponse(BaseModel):
@@ -526,6 +530,9 @@ class MaterialRegistryCatalogResponse(BaseModel):
     """
 
     schema_version: str
+    source_scope: str | None = None
+    cached: bool = False
+    fetched_at: str | None = None
     channels: list[str] = Field(default_factory=list)
     count: int
     total_count: int | None = None
@@ -1101,6 +1108,7 @@ class LutInfo(BaseModel):
 class LUTListResponse(BaseModel):
     """LUT 列表响应。"""
 
+    legacy_aliases: dict[str, str] = Field(default_factory=dict)
     luts: list[LutInfo]
 
 

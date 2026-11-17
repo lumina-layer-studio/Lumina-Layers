@@ -15,6 +15,8 @@ import {
 } from "./ui/panelPrimitives";
 import HelpDot from "./ui/HelpDot";
 import { WIKI_DOCS } from "../utils/wikiDocs";
+import { useWidgetStore } from "../stores/widgetStore";
+import { useSingleStageStore } from "../stores/singleStageStore";
 
 const singleStageLayerHeightOptions = [0.04, 0.08, 0.1].map((value) => ({
   label: `${value.toFixed(2)} mm`,
@@ -24,6 +26,7 @@ const singleStageLayerHeightOptions = [0.04, 0.08, 0.1].map((value) => ({
 export default function GradientCardGeneratePanel() {
   const { t } = useI18n();
   const workspace = useWorkspaceMode();
+  const { materialName, materialBrand, setMaterialName, setMaterialBrand } = useSingleStageStore();
   const [linkError, setLinkError] = useState(false);
   const handleModelLink = (event: MouseEvent<HTMLAnchorElement>) => {
     const openModel = (window as Window & {
@@ -74,6 +77,16 @@ export default function GradientCardGeneratePanel() {
             </div>
 
             <div className="flex flex-col gap-4 flex-1">
+              <label className="flex flex-col gap-2 text-sm text-slate-700 dark:text-slate-200">
+                {t("mat_gradient_material_name_label")}
+                <input value={materialName} onChange={(event) => setMaterialName(event.target.value)}
+                  placeholder={t("material_guide_name_placeholder")} className={workstationInputClass} />
+              </label>
+              <label className="flex flex-col gap-2 text-sm text-slate-700 dark:text-slate-200">
+                {t("mat_gradient_brand_label")}
+                <input value={materialBrand} onChange={(event) => setMaterialBrand(event.target.value)}
+                  placeholder={t("mat_gradient_brand_placeholder")} className={workstationInputClass} />
+              </label>
               <Dropdown
                 label={t("cal_single_stage_layer_height_label")}
                 tooltip={t("mat_gradient_generate_section_desc")}
@@ -205,6 +218,8 @@ export default function GradientCardGeneratePanel() {
                     <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
                     {t("mat_gradient_download_btn")}
                   </a>
+                  <Button label={t("material_guide_next_extract")}
+                    onClick={() => useWidgetStore.getState().setActiveTab("gradient-card-extract")} />
                 </div>
               </section>
             )}

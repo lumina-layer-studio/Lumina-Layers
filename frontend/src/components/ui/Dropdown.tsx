@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { cx, workstationFieldLabelClass, workstationInputClass } from "./panelPrimitives";
+import { CheckIcon, ChevronDownIcon } from "@heroicons/react/20/solid";
+import { catalogFilterMenuClass, catalogFilterOptionClass, catalogFilterTriggerClass, cx, workstationFieldLabelClass, workstationInputClass } from "./panelPrimitives";
 import HelpDot from "./HelpDot";
 import type { WikiDocPath } from "../../utils/wikiDocs";
 import { bindVerticalWheelScrollChain } from "../../utils/wheelScrollChain";
@@ -26,7 +27,7 @@ interface DropdownProps {
   disabled?: boolean;
   placeholder?: string;
   labelAccessory?: ReactNode;
-  variant?: "field" | "inline";
+  variant?: "field" | "inline" | "filter";
   /** Optional hint text; renders a HelpDot after the label (ignored if labelAccessory is set). */
   tooltip?: string;
   /** Optional matching article in the public Lumina Wiki. */
@@ -48,12 +49,13 @@ export default function Dropdown({
 }: DropdownProps) {
   const [open, setOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(-1);
-  const [menuPos, setMenuPos] = useState<{ top: number; left: number; width: number } | null>(null);
+  const [menuPos, setMenuPos] = useState<{ top: number; left: number; width: number; maxHeight: number } | null>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const listboxId = useId();
   const isGroupedMode = groupedOptions !== undefined;
   const isInline = variant === "inline";
+  const isFilter = variant === "filter";
   const optionGroups = useMemo(() => {
     const groups = groupedOptions !== undefined
       ? groupedOptions.filter((group) => group.options.length > 0)
@@ -89,7 +91,7 @@ export default function Dropdown({
     const maxMenuHeight = 288; // max-h-72 = 18rem = 288px
     // 估算实际菜单高度：每项约 44px（py-2.5 + leading-6），分组标题约 32px。
     // 选项少时远小于 maxMenuHeight，避免仅因未到 288px 就误判向上展开。
-    const ITEM_HEIGHT = flatOptions.some(option => option.description) ? 80 : 44;
+    const ITEM_HEIGHT = flatOptions.some(option => option.description) ? 80 : isFilter ? 36 : 44;
     const GROUP_HEADER_HEIGHT = 32;
     const MENU_PADDING = 16;
     const estimatedMenuHeight = Math.min(
@@ -100,7 +102,7 @@ export default function Dropdown({
     );
     // 菜单宽度贴合触发器，避免在窄侧栏里被强制撑到最小宽度而溢出卡片边界。
     const maxWidth = window.innerWidth - viewportPadding * 2;
-    const nextWidth = Math.min(isInline ? Math.max(rect.width, 280) : rect.width, maxWidth);
+    const nextWidth = Math.min(isFilter ? Math.max(rect.width, 220) : isInline ? Math.max(rect.width, 280) : rect.width, maxWidth);
     const nextLeft = Math.min(
       Math.max(rect.left, viewportPadding),
       window.innerWidth - viewportPadding - nextWidth,
@@ -117,8 +119,9 @@ export default function Dropdown({
       top: shouldOpenUpward ? rect.top - upwardHeight - 6 : rect.bottom + 6,
       left: nextLeft,
       width: nextWidth,
+      maxHeight: Math.max(0, Math.min(maxMenuHeight, (shouldOpenUpward ? spaceAbove : spaceBelow) - 6)),
     });
-  }, [flatOptions, visibleHeaderCount, isInline]);
+  }, [flatOptions, visibleHeaderCount, isInline, isFilter]);
 
   useEffect(() => {
     if (!open) return;
@@ -215,8 +218,8 @@ export default function Dropdown({
   const showPlaceholder = !selectedOption && !!placeholder;
 
   return (
-    <div className="flex min-w-0 flex-col gap-1.5">
-      {!isInline && (labelAccessory || tooltip ? (
+    <div className="flex min-w-0 max-w-full flex-col gap-1.5">
+      {!isInline && !isFilter && (labelAccessory || tooltip ? (
         <div className="flex items-center gap-2">
           <label className={workstationFieldLabelClass}>{label}</label>
           {labelAccessory ?? <HelpDot title={label} description={tooltip ?? ""} wikiPath={wikiPath} ariaLabel={tooltip} />}
@@ -233,16 +236,17 @@ export default function Dropdown({
         aria-haspopup="listbox"
         aria-activedescendant={activeOption ? `${listboxId}-option-${activeOption.index}` : undefined}
         aria-label={label}
+        data-active={isFilter && open ? "true" : undefined}
         disabled={disabled}
         onClick={handleToggle}
         onKeyDown={handleKeyDown}
         onBlur={() => setOpen(false)}
         className={cx(
-          isInline
+          isFilter ? catalogFilterTriggerClass : isInline
             ? "min-h-8 rounded-md px-1 py-1 text-xs text-slate-600 outline-none transition-colors hover:bg-slate-100 focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)] dark:text-slate-300 dark:hover:bg-slate-800/60"
             : workstationInputClass,
           "flex w-full min-w-0 items-center justify-between overflow-hidden text-left",
-          isInline ? "gap-1.5" : "gap-3 py-2",
+          isInline || isFilter ? "gap-1.5" : "gap-3 py-2",
           showPlaceholder && "text-slate-400 dark:text-slate-500",
         )}
       >
@@ -252,7 +256,7 @@ export default function Dropdown({
           </span>
         )}
         {isInline && <span className="shrink-0 text-slate-400 dark:text-slate-500">{label}:</span>}
-        <span className={cx("block min-w-0 flex-1 truncate leading-6", isInline ? "text-xs" : "text-sm")}>{triggerLabel}</span>
+        <span className={cx("block min-w-0 flex-1 truncate", isFilter ? "text-xs leading-4" : isInline ? "text-xs leading-6" : "text-sm leading-6")}>{triggerLabel}</span>
         <span
           aria-hidden="true"
           className={cx(
@@ -260,16 +264,16 @@ export default function Dropdown({
             open && "rotate-180"
           )}
         >
-          <svg className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+          {isFilter ? <ChevronDownIcon className="h-4 w-4" /> : <svg className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
             <path d="M5.23 7.21a.75.75 0 011.06.02L10 11.17l3.71-3.94a.75.75 0 111.1 1.02l-4.25 4.52a.75.75 0 01-1.1 0L5.21 8.25a.75.75 0 01.02-1.04z" />
-          </svg>
+          </svg>}
         </span>
       </button>
 
       {open && menuPos && createPortal(
         <div
           ref={menuRef}
-          className="z-[10010] overflow-hidden rounded-xl border border-slate-200/85 bg-slate-100/96 shadow-[var(--shadow-control)] backdrop-blur-xl dark:border-slate-700/85 dark:bg-slate-950/96"
+          className={catalogFilterMenuClass}
           style={{
             position: "fixed",
             top: `${menuPos.top}px`,
@@ -282,6 +286,7 @@ export default function Dropdown({
             role="listbox"
             aria-label={label}
             className="dock-scrollbar max-h-72 overflow-y-auto p-2"
+            style={{ maxHeight: menuPos.maxHeight }}
           >
             {optionGroups.map((group) => (
               <div key={group.label || "__flat__"} className="min-w-0">
@@ -303,10 +308,8 @@ export default function Dropdown({
                       onMouseDown={(event) => event.preventDefault()}
                       onClick={() => handleSelect(opt.value)}
                       className={cx(
-                        "flex min-h-11 w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-sm leading-6 transition-colors duration-150",
-                        isSelected
-                          ? "bg-blue-50 text-blue-700 dark:bg-blue-500/15 dark:text-blue-200"
-                          : "text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-900",
+                        isFilter ? catalogFilterOptionClass : "flex min-h-11 w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-sm leading-6 transition-colors duration-150",
+                        isSelected ? "bg-[var(--surface-well)] font-medium" : "hover:bg-[var(--surface-well)]",
                         opt.index === activeIndex && "bg-[var(--surface-well)] ring-2 ring-inset ring-[var(--focus-ring)]",
                       )}
                     >
@@ -319,6 +322,7 @@ export default function Dropdown({
                         <span className="block break-all">{opt.label}</span>
                         {opt.description && <span className="mt-1 block text-[11px] leading-relaxed text-slate-500 dark:text-slate-400">{opt.description}</span>}
                       </span>
+                      <CheckIcon aria-hidden="true" className={cx("h-4 w-4 shrink-0", !isSelected && "invisible")} />
                     </button>
                   );
                 })}

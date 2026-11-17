@@ -73,8 +73,8 @@ const PRIMARY_TAB_ICONS: Record<PrimaryTabId, React.ReactNode> = {
 
 const PRIMARY_TAB_LIST: { id: PrimaryTabId; titleKey: string }[] = [
   { id: 'converter', titleKey: 'tab.converter' },
-  { id: 'lut-management', titleKey: 'tab.lutManagement' },
   { id: 'material-management', titleKey: 'tab.materialManagement' },
+  { id: 'lut-management', titleKey: 'tab.lutManagement' },
   { id: 'vectorizer', titleKey: 'tab.vectorizer' },
   { id: 'workshop', titleKey: 'tab.workshop' },
   { id: 'settings', titleKey: 'tab.settings' },
@@ -120,6 +120,7 @@ export default function TabNavBar({ activeTab, onTabChange, onIndicatorAnimation
         return (
           <button
             key={id}
+            aria-label={t(titleKey)}
             data-testid={`tab-${id}`}
             data-tutorial={`nav-${id}`}
             onClick={() => {

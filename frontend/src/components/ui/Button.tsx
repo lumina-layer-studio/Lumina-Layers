@@ -41,7 +41,7 @@ export default function Button({
   variant = "secondary",
   size = "md",
   tone = "default",
-  active = false,
+  active,
   className,
   title,
   icon,

@@ -41,21 +41,18 @@ _MODES: dict[str, _ModeConfig] = {
     "4color_rybw": _ModeConfig(
         mode_key="4color_rybw",
         color_mode="4-Color (RYBW)",
-        lut_path=Path("lut-preset") / "Custom" / "Bambulab&PLA&RYBW&红-黄-蓝-白.npy",
+        lut_path=Path("tests/fixtures/lut_regression") / "Bambulab&PLA&RYBW&红-黄-蓝-白.npy",
     ),
     "6color_rybw": _ModeConfig(
         mode_key="6color_rybw",
         color_mode="6-Color",
-        lut_path=Path("lut-preset")
-        / "Aliz"
-        / "PLA"
-        / "6色"
+        lut_path=Path("tests/fixtures/frozen_assets/luts/6c")
         / "Aliz&PLA&RYBW&红-蓝-黄-绿-白-黑&20260211.npy",
     ),
     "5color_ext": _ModeConfig(
         mode_key="5color_ext",
         color_mode="5-Color Extended",
-        lut_path=Path("lut-preset") / "Custom" / "Bambulab&PLA&RYBW&红-黄-蓝-白.npy",
+        lut_path=Path("tests/fixtures/lut_regression") / "Bambulab&PLA&RYBW&红-黄-蓝-白.npy",
     ),
 }
 
@@ -358,7 +355,7 @@ def _run_mode(
     if not lut_abs.exists():
         raise FileNotFoundError(
             f"LUT file for mode '{mode_config.mode_key}' was not found: {lut_abs}. "
-            "Verify the repo checkout includes the configured lut-preset file."
+            "Verify the checkout includes the fixed test LUT fixture."
         )
 
     LOGGER.info("%s: analyze start", mode_config.mode_key)

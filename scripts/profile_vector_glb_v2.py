@@ -15,7 +15,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-DEFAULT_LUT_PATH = "lut-preset/彩多屋/4色/RYBW/lumina_lut.json"
+DEFAULT_LUT_PATH = "tests/fixtures/lut_regression/彩多屋/4色/RYBW/lumina_lut.json"
 
 
 def _run_once(svg_path: Path, kernel: str, *, lut_path: Path) -> dict[str, object]:

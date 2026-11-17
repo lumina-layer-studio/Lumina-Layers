@@ -14,16 +14,17 @@ export interface MaterialRegistryCatalogQuery {
   limit?: number;
   offset?: number;
   q?: string;
+  refresh?: boolean;
 }
 
 /**
  * Fetch local material sync-index status.
  * 获取本地耗材同步索引状态。
  */
-export async function fetchMaterialSyncStatus(): Promise<MaterialSyncStatusResponse> {
+export async function fetchMaterialSyncStatus(signal?: AbortSignal): Promise<MaterialSyncStatusResponse> {
   const response = await apiClient.get<MaterialSyncStatusResponse>(
     "/material-sync/status",
-    { timeout: MATERIAL_SYNC_READ_TIMEOUT_MS },
+    { timeout: MATERIAL_SYNC_READ_TIMEOUT_MS, signal },
   );
   return response.data;
 }
@@ -49,11 +50,13 @@ export async function refreshMaterialSyncFromRegistry(): Promise<MaterialSyncRef
  */
 export async function fetchMaterialRegistryCatalog(
   query: MaterialRegistryCatalogQuery = {},
+  signal?: AbortSignal,
 ): Promise<MaterialRegistryCatalogResponse> {
   const response = await apiClient.get<MaterialRegistryCatalogResponse>(
     "/material-sync/catalog",
     {
       params: query,
+      signal,
       timeout: MATERIAL_SYNC_READ_TIMEOUT_MS,
     },
   );
@@ -74,6 +77,7 @@ export async function installMaterialRegistryCatalogEntry(
       revision_id: entry.revision_id,
       package_url: entry.package_url,
       package_sha256: entry.package_sha256,
+      ...(entry.account_id ? { account_id: entry.account_id } : {}),
     },
     {
       timeout: 3_600_000,

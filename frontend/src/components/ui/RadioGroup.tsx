@@ -23,6 +23,15 @@ interface RadioGroupProps {
   wikiPath?: WikiDocPath;
 }
 
+export function RadioIndicator({ checked }: { checked: boolean }) {
+  return <span aria-hidden="true" className={cx(
+    "flex h-5 w-5 shrink-0 items-center justify-center rounded-full border transition-colors duration-200 peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-[var(--focus-ring)]",
+    checked ? "border-blue-500 bg-blue-500" : "border-slate-300/80 bg-white dark:border-slate-600/80 dark:bg-slate-800",
+  )}>
+    <span className={cx("h-2.5 w-2.5 rounded-full", checked ? "bg-white" : "bg-transparent")} />
+  </span>;
+}
+
 export default function RadioGroup({
   label,
   value,
@@ -68,24 +77,9 @@ export default function RadioGroup({
                 checked={isActive}
                 disabled={isDisabled}
                 onChange={() => onChange(opt.value)}
-                className="sr-only"
+                className="peer sr-only"
               />
-              <span
-                aria-hidden="true"
-                className={cx(
-                  "flex h-5 w-5 shrink-0 items-center justify-center rounded-full border transition-all duration-200",
-                  isActive
-                    ? "border-blue-500 bg-blue-500"
-                    : "border-slate-300/80 bg-white dark:border-slate-600/80 dark:bg-slate-800"
-                )}
-              >
-                <span
-                  className={cx(
-                    "h-2.5 w-2.5 rounded-full transition-all duration-200",
-                    isActive ? "bg-white" : "bg-transparent"
-                  )}
-                />
-              </span>
+              <RadioIndicator checked={isActive} />
               <span className="min-w-0 break-words font-medium text-slate-700 dark:text-slate-200">{opt.label}</span>
             </label>
           );

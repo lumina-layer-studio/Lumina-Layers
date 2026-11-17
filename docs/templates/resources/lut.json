@@ -1,0 +1,27 @@
+{
+  "display": {
+    "name": null,
+    "description": null,
+    "filaments": [
+      {
+        "slot": 0,
+        "material_id": null,
+        "revision_id": null,
+        "brand": null,
+        "material_name": null,
+        "material_type": null,
+        "series": null,
+        "color_name": null,
+        "color_code": null,
+        "color_hex": null,
+        "purchase_links": [
+          {
+            "market": "CN",
+            "label": null,
+            "url": null
+          }
+        ]
+      }
+    ]
+  }
+}

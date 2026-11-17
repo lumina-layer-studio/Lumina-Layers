@@ -166,9 +166,7 @@ class TestLUTManager:
 
     def test_biqu_6color_npy_metadata_preserves_channel_order(self):
         biqu_path = os.path.join(
-            "lut-preset",
-            "BIQU",
-            "必趣&PLAGO&6色RYBWGK.npy",
+            "tests", "fixtures", "lut_regression", "必趣&PLAGO&6色RYBWGK.npy",
         )
 
         loaded_rgb, stacks, metadata = LUTManager.load_lut_with_metadata(biqu_path)
@@ -189,9 +187,7 @@ class TestLUTManager:
         from core.pipeline import p01_preview_validation
 
         biqu_path = os.path.join(
-            "lut-preset",
-            "BIQU",
-            "必趣&PLAGO&6色RYBWGK.npy",
+            "tests", "fixtures", "lut_regression", "必趣&PLAGO&6色RYBWGK.npy",
         )
         ctx = {
             "image_path": "dummy.png",

@@ -1,7 +1,12 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import "./communityTestMocks";
 import { TUTORIAL_STEPS } from "../data/tutorialSteps";
 import { useTutorialStore } from "../stores/tutorialStore";
 import { useWidgetStore } from "../stores/widgetStore";
+import { useSingleStageStore } from "../stores/singleStageStore";
+import { useExtractorStore } from "../stores/extractorStore";
+import { discardResourceCalibration, useMaterialTrialStore } from "../stores/converter/resourceSelection";
+import { useMaterialGuideStore } from "../stores/materialGuideStore";
 import TutorialTour from "../components/tutorial/TutorialTour";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import BasicSettings from "../components/sections/BasicSettings";
@@ -11,6 +16,7 @@ import { DEFAULT_SETTINGS, useSettingsStore } from "../stores/settingsStore";
 import * as converterApi from "../api/converter";
 import * as lutApi from "../api/lut";
 import * as extractorApi from "../api/extractor";
+import * as materialSyncApi from "../api/materialSync";
 import {
   ColorMode as ColorModeEnum,
   StructureMode as StructureModeEnum,
@@ -27,8 +33,13 @@ vi.mock("../api/lut", async () => {
     fetchLutInfo: vi.fn(),
     fetchLutCatalog: vi.fn(),
     fetchLutDetailsCatalog: vi.fn(),
+    fetchCloudLutRegistryStatus: vi.fn(),
+    fetchCloudLutRegistryCatalog: vi.fn(),
+    installCloudLut: vi.fn(),
   };
 });
+
+vi.mock("../api/materialSync", () => ({ fetchMaterialSyncStatus: vi.fn(), fetchMaterialRegistryCatalog: vi.fn(), installMaterialRegistryCatalogEntry: vi.fn(), rollbackMaterialSyncRevision: vi.fn() }));
 
 vi.mock("../api/converter", async () => {
   const actual = await vi.importActual<typeof import("../api/converter")>(
@@ -37,6 +48,7 @@ vi.mock("../api/converter", async () => {
   return {
     ...actual,
     fetchLutList: vi.fn(),
+    uploadLut: vi.fn(),
     uploadModelSurface: vi.fn(),
   };
 });
@@ -48,6 +60,7 @@ vi.mock("../api/extractor", async () => {
   return {
     ...actual,
     listGradientCardMaterials: vi.fn(),
+    installExtractedLut: vi.fn(),
   };
 });
 
@@ -133,6 +146,9 @@ function makeLegacyCatalogGroups(): LutDetailsCatalogGroup[] {
 
 // Reset store to a clean state before each test
 beforeEach(() => {
+  localStorage.removeItem("lumina.material-archive-guide.dismissed.v1");
+  useMaterialGuideStore.setState({ requested: false });
+  useMaterialTrialStore.setState({ backup: null });
   vi.clearAllMocks();
   vi.mocked(converterApi.fetchLutList).mockResolvedValue({
     luts: [
@@ -187,6 +203,7 @@ beforeEach(() => {
     cropModalOpen: false,
     isCropping: false,
     lut_name: "",
+    lut_names: [],
     lutList: [],
     lutListFull: [
       {
@@ -216,8 +233,10 @@ beforeEach(() => {
       },
     ],
     lutListLoading: false,
+    lutListError: null,
     legacyCatalogGroups: makeLegacyCatalogGroups(),
     legacyCatalogLoading: false,
+    legacyCatalogError: null,
     selectedLegacyManufacturer: "",
     nativeBrandGroups: [],
     nativeBrandGroupsLoading: false,
@@ -261,6 +280,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  discardResourceCalibration();
   vi.useRealTimers();
   vi.restoreAllMocks();
 });
@@ -308,6 +328,235 @@ function isMultipleOfStep(value: number, step: number): boolean {
 }
 
 describe("BasicSettings", () => {
+  it("returns a saved calibration to the original material draft after navigation and keeps mixed-type confirmation", async () => {
+    const old = { ...makeMaterial("old", "Old PLA"), material_type: "PLA" };
+    const draft = { ...makeMaterial("draft", "Draft PLA"), material_type: "PLA" };
+    const added = { ...makeMaterial("calibrated", "New PETG"), material_type: "PETG" };
+    const imageFile = new File(["image"], "kept.png", { type: "image/png" });
+    useConverterStore.setState({ source_version: "material", selectedMaterialDirNames: ["old"], imageFile, target_width_mm: 137 });
+    vi.mocked(extractorApi.listGradientCardMaterials).mockResolvedValue({ status: "ok", message: "ok", materials: [old, draft] });
+    const converter = render(<BasicSettings />);
+    fireEvent.click(screen.getByTestId("material-picker-trigger"));
+    fireEvent.click(await screen.findByRole("button", { name: "选择 Draft PLA" }));
+    fireEvent.click(screen.getByRole("button", { name: "自己校准" }));
+    expect(useWidgetStore.getState().activeTab).toBe("gradient-card-generate");
+    converter.unmount();
+    const GradientCardExtractPanel = (await import("../components/GradientCardExtractPanel")).default;
+    useSingleStageStore.setState({ savedMaterialSummary: null });
+    const extraction = render(<GradientCardExtractPanel />);
+    expect(screen.queryByRole("button", { name: "加入当前配色" })).not.toBeInTheDocument();
+    vi.mocked(extractorApi.listGradientCardMaterials).mockResolvedValue({ status: "ok", message: "ok", materials: [old, draft, added] });
+    act(() => useSingleStageStore.setState({ savedMaterialSummary: { directory_name: "calibrated", material_name: "New PETG" }, saveSuccess: "Saved" }));
+    fireEvent.click(screen.getByRole("button", { name: "加入当前配色" }));
+    extraction.unmount();
+    render(<BasicSettings />);
+    await screen.findByRole("button", { name: "取消选择 New PETG" });
+    expect(screen.getByRole("button", { name: "取消选择 Draft PLA" })).toBeInTheDocument();
+    expect(useConverterStore.getState().selectedMaterialDirNames).toEqual(["old"]);
+    fireEvent.click(screen.getByRole("button", { name: "完成" }));
+    expect(screen.getByRole("alertdialog", { name: "确认混合耗材类型？" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "仍然使用" }));
+    expect(useConverterStore.getState()).toMatchObject({ selectedMaterialDirNames: ["old", "draft", "calibrated"], imageFile, target_width_mm: 137 });
+  });
+
+  it("installs a confirmed LUT calibration and reopens the preserved draft for compatibility confirmation", async () => {
+    const groups = makeLegacyCatalogGroups();
+    groups[0].items[1].compatibility_key = groups[0].items[0].compatibility_key;
+    useConverterStore.setState({ source_version: "legacy", legacyCatalogGroups: groups, selectedLegacyManufacturer: "Brand A", lut_names: ["Brand A - A4"], lut_name: "Brand A - A4", target_width_mm: 137 });
+    const converter = render(<BasicSettings />);
+    fireEvent.click(screen.getByTestId("lut-picker-trigger"));
+    fireEvent.click(screen.getByRole("checkbox", { name: /A 4C Alt/ }));
+    fireEvent.click(screen.getByRole("button", { name: "自己校准" }));
+    converter.unmount();
+    const ExtractorPanel = (await import("../components/ExtractorPanel")).default;
+    useExtractorStore.setState({ session_id: "confirmed-calibration", paletteConfirmed: false, defaultPalette: [], lut_download_url: "/old-unconfirmed-snapshot.npy" });
+    const extraction = render(<ExtractorPanel />);
+    expect(screen.queryByRole("button", { name: "用于当前任务" })).not.toBeInTheDocument();
+    act(() => useExtractorStore.setState({ paletteConfirmed: true }));
+    const added = { name: "Brand A - Calibrated", path: "lut-ref/calibrated.npy", color_mode: ColorModeEnum.EIGHT_COLOR };
+    groups[0].items.push({ ...groups[0].items[2], name: "Calibrated LUT", path: added.path });
+    vi.mocked(extractorApi.installExtractedLut).mockResolvedValue({ name: added.name });
+    vi.mocked(lutApi.fetchLutCatalog).mockResolvedValue({ legacy_groups: [{ manufacturer: "Brand A", items: [...useConverterStore.getState().lutListFull, added] }], native_brand_groups: [] } as never);
+    vi.mocked(lutApi.fetchLutDetailsCatalog).mockResolvedValue({ groups });
+    fireEvent.click(screen.getByRole("button", { name: "用于当前任务" }));
+    await waitFor(() => expect(useWidgetStore.getState().activeTab).toBe("converter"));
+    expect(extractorApi.installExtractedLut).toHaveBeenCalledWith("confirmed-calibration");
+    expect(converterApi.uploadLut).not.toHaveBeenCalled();
+    extraction.unmount();
+    render(<BasicSettings />);
+    await waitFor(() => expect(screen.getByRole("checkbox", { name: /Calibrated LUT/ })).toHaveAttribute("aria-checked", "true"));
+    expect(screen.getByRole("checkbox", { name: /A 4C Alt/ })).toHaveAttribute("aria-checked", "true");
+    expect(screen.getByRole("button", { name: "确认" })).toBeDisabled();
+    expect(useConverterStore.getState()).toMatchObject({ lut_names: ["Brand A - A4"], color_mode: ColorModeEnum.FOUR_COLOR_RYBW, target_width_mm: 137 });
+    fireEvent.click(screen.getAllByRole("checkbox").find((option) => within(option).queryByText("A 4C"))!);
+    fireEvent.click(screen.getByRole("checkbox", { name: /A 4C Alt/ }));
+    fireEvent.click(screen.getByRole("button", { name: `使用 ${ColorModeEnum.EIGHT_COLOR} 模式` }));
+    expect(useConverterStore.getState().lut_names).toEqual([added.name]);
+    expect(useConverterStore.getState().color_mode).toBe(ColorModeEnum.EIGHT_COLOR);
+  });
+
+  it("traps Tab and Escape in public material history before returning to its picker", async () => {
+    vi.mocked(extractorApi.listGradientCardMaterials).mockResolvedValue({ status: "ok", message: "ok", materials: [makeMaterial("old", "Old PLA")] });
+    vi.mocked(materialSyncApi.fetchMaterialSyncStatus).mockResolvedValue({ status: "ok", message: "ok", schema_version: "1.0", index_state: "ready", last_sync_at: null, registries: {}, installed_count: 1, local_overrides_count: 0, installed: [{ material_id: "old", revision_id: "r2", content_hash: "sha256:abc", channel: "official", source: "package", local_directory: "old", display_name: "Old PLA", display_brand: "", local_exists: true, material_file_exists: true, available_revisions: ["r1", "r2"] }] });
+    vi.mocked(materialSyncApi.fetchMaterialRegistryCatalog).mockResolvedValue({ schema_version: "1.0", channels: ["official"], count: 0, total_count: 0, offset: 0, limit: 24, materials: [] });
+    useConverterStore.setState({ source_version: "material", selectedMaterialDirNames: ["old"] });
+    render(<BasicSettings />);
+    fireEvent.click(screen.getByTestId("material-picker-trigger"));
+    await screen.findByRole("button", { name: "取消选择 Old PLA" });
+    fireEvent.click(screen.getByRole("button", { name: "去公开库查找" }));
+    await waitFor(() => expect(screen.getByRole("searchbox")).toHaveFocus());
+    const historyTrigger = screen.getByRole("button", { name: "本地历史版本" });
+    historyTrigger.focus();
+    fireEvent.click(historyTrigger);
+    const history = screen.getByRole("dialog", { name: "本地历史版本" });
+    const close = within(history).getAllByRole("button", { name: "关闭" })[0];
+    expect(close).toHaveFocus();
+    fireEvent.click(within(history).getByRole("radio"));
+    const restore = within(history).getByRole("button", { name: "恢复所选版本" });
+    restore.focus();
+    fireEvent.keyDown(restore, { key: "Tab" });
+    expect(close).toHaveFocus();
+    fireEvent.keyDown(close, { key: "Tab", shiftKey: true });
+    expect(restore).toHaveFocus();
+    const revision = within(history).getByRole("radio");
+    revision.focus();
+    const normalTab = new KeyboardEvent("keydown", { key: "Tab", bubbles: true, cancelable: true });
+    revision.dispatchEvent(normalTab);
+    expect(normalTab.defaultPrevented).toBe(false);
+    expect(revision).toHaveFocus();
+    fireEvent.keyDown(revision, { key: "Escape" });
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "本地历史版本" })).not.toBeInTheDocument());
+    expect(historyTrigger).toHaveFocus();
+    expect(screen.getByRole("button", { name: "返回本地选择" })).toBeInTheDocument();
+    fireEvent.keyDown(historyTrigger, { key: "Escape" });
+    expect(screen.queryByRole("button", { name: "返回本地选择" })).not.toBeInTheDocument();
+    expect(screen.getByTestId("material-picker-dialog")).toBeInTheDocument();
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(screen.queryByTestId("material-picker-dialog")).not.toBeInTheDocument();
+  });
+
+  it.each(["unchanged", "image", "session"])("imports a local LUT without closing or applying the picker; context=%s", async (change) => {
+    const groups = makeLegacyCatalogGroups();
+    groups[0].items[1].compatibility_key = groups[0].items[0].compatibility_key;
+    const added = { name: "Brand A - Imported", path: "lut-ref/imported.npy", color_mode: ColorModeEnum.FOUR_COLOR_RYBW };
+    const refreshedGroups = groups.map((group) => ({ ...group, items: [...group.items] }));
+    refreshedGroups[0].items.push({ ...groups[0].items[0], name: "Imported LUT", path: added.path });
+    const imageFile = new File(["image"], "kept.png", { type: "image/png" });
+    const nextImage = new File(["new"], "new.png", { type: "image/png" });
+    useConverterStore.setState({ source_version: "legacy", legacyCatalogGroups: groups, selectedLegacyManufacturer: "Brand A", lut_names: ["Brand A - A4"], lut_name: "Brand A - A4", imageFile, target_width_mm: 137 });
+    vi.mocked(lutApi.fetchLutCatalog).mockResolvedValue({ legacy_groups: [{ manufacturer: "Brand A", items: [...useConverterStore.getState().lutListFull, added] }], native_brand_groups: [] } as never);
+    vi.mocked(lutApi.fetchLutDetailsCatalog).mockResolvedValue({ groups: refreshedGroups });
+    let finish!: (value: Awaited<ReturnType<typeof converterApi.uploadLut>>) => void;
+    vi.mocked(converterApi.uploadLut).mockReturnValueOnce(new Promise((resolve) => { finish = resolve; }));
+    render(<BasicSettings />);
+    fireEvent.click(screen.getByTestId("lut-picker-trigger"));
+    fireEvent.click(screen.getByRole("checkbox", { name: /A 4C Alt/ }));
+    fireEvent.click(screen.getByRole("button", { name: "+ 上传" }));
+    expect(screen.getByTestId("lut-picker-dialog")).toBeInTheDocument();
+    const input = document.querySelector('input[accept=".npy,.json,.npz,.msgpack"]') as HTMLInputElement;
+    fireEvent.change(input, { target: { files: [new File(["lut"], "local.npy")] } });
+    expect(screen.getByRole("button", { name: "+ 上传" })).toBeDisabled();
+    if (change === "image") act(() => useConverterStore.getState().setImageFile(nextImage));
+    if (change === "session") act(() => useConverterStore.setState({ sessionId: "new-session" }));
+    await act(async () => { finish({ status: "ok", message: "Imported", name: added.name }); });
+    const imported = await screen.findByRole("checkbox", { name: /Imported LUT/ });
+    expect(imported).toHaveAttribute("aria-checked", "false");
+    expect(screen.getByRole("checkbox", { name: /A 4C Alt/ })).toHaveAttribute("aria-checked", "true");
+    expect(useConverterStore.getState()).toMatchObject({ lut_names: ["Brand A - A4"], color_mode: ColorModeEnum.FOUR_COLOR_RYBW, target_width_mm: 137 });
+    fireEvent.click(imported);
+    if (change === "unchanged") {
+      fireEvent.click(screen.getByRole("button", { name: "确认" }));
+      expect(useConverterStore.getState().lut_names).toEqual(["Brand A - A4", "Brand A - A4 Alt", added.name]);
+      expect(useConverterStore.getState().imageFile).toBe(imageFile);
+    } else {
+      expect(screen.getByRole("button", { name: "确认" })).toBeDisabled();
+      expect(screen.getByText(/当前图片或颜色模式已改变/)).toBeInTheDocument();
+      if (change === "image") expect(useConverterStore.getState().imageFile).toBe(nextImage);
+      else expect(useConverterStore.getState().sessionId).toBe("new-session");
+    }
+  });
+
+  it("imports from an empty LUT picker, keeps an upload error visible, and requires confirmation of a new color mode", async () => {
+    useConverterStore.setState({ lutList: [], lutListFull: [], legacyCatalogGroups: [], selectedLegacyManufacturer: "", lut_names: [], lut_name: "" });
+    vi.mocked(converterApi.fetchLutList).mockResolvedValue({ luts: [] });
+    vi.mocked(lutApi.fetchLutDetailsCatalog).mockResolvedValue({ groups: [] });
+    vi.mocked(converterApi.uploadLut).mockRejectedValueOnce(new Error("Invalid local LUT"));
+    render(<BasicSettings />);
+    await waitFor(() => expect(screen.getByTestId("lut-picker-trigger")).not.toBeDisabled());
+    fireEvent.click(screen.getByTestId("lut-picker-trigger"));
+    fireEvent.click(await screen.findByRole("button", { name: "导入本地文件" }));
+    const input = document.querySelector('input[accept=".npy,.json,.npz,.msgpack"]') as HTMLInputElement;
+    fireEvent.change(input, { target: { files: [new File(["bad"], "bad.npy")] } });
+    await screen.findByText("Invalid local LUT");
+    expect(screen.getByTestId("resource-library-empty")).toBeInTheDocument();
+    const added = { name: "Brand A - A8", path: "lut-ref/fp-a8.npy", color_mode: ColorModeEnum.EIGHT_COLOR };
+    vi.mocked(converterApi.uploadLut).mockResolvedValue({ status: "ok", message: "Imported", name: added.name });
+    vi.mocked(lutApi.fetchLutCatalog).mockResolvedValue({ legacy_groups: [{ manufacturer: "Brand A", items: [added] }], native_brand_groups: [] } as never);
+    vi.mocked(lutApi.fetchLutDetailsCatalog).mockResolvedValue({ groups: [{ manufacturer: "Brand A", items: [makeLegacyCatalogGroups()[0].items[2]] }] });
+    fireEvent.change(input, { target: { files: [new File(["valid"], "valid.npy")] } });
+    fireEvent.click(await screen.findByTestId("lut-picker-brand-option-Brand A"));
+    expect(useConverterStore.getState()).toMatchObject({ lut_names: [], lut_name: "", color_mode: ColorModeEnum.FOUR_COLOR_RYBW });
+    fireEvent.click(screen.getByRole("checkbox", { name: /A 8C/ }));
+    fireEvent.click(screen.getByRole("button", { name: `使用 ${ColorModeEnum.EIGHT_COLOR} 模式` }));
+    expect(useConverterStore.getState()).toMatchObject({ lut_names: [added.name], color_mode: ColorModeEnum.EIGHT_COLOR });
+  });
+  it("installs a public material inside the picker and appends it without losing the task", async () => {
+    const old = { ...makeMaterial("old", "Old PLA"), material_type: "PLA" };
+    const added = { ...makeMaterial("added", "Added PLA"), material_type: "PLA" };
+    const imageFile = new File(["image"], "kept.png", { type: "image/png" });
+    vi.mocked(extractorApi.listGradientCardMaterials).mockResolvedValue({ status: "ok", message: "ok", materials: [old] });
+    vi.mocked(materialSyncApi.fetchMaterialSyncStatus).mockResolvedValue({ status: "ok", message: "ok", schema_version: "1.0", index_state: "ready", last_sync_at: null, registries: {}, installed_count: 0, installed: [], local_overrides_count: 0 });
+    vi.mocked(materialSyncApi.fetchMaterialRegistryCatalog).mockResolvedValue({ schema_version: "1.0", channels: ["official"], count: 1, total_count: 1, offset: 0, limit: 24, materials: [{ material_id: "added", revision_id: "r1", content_hash: "sha256:abc", local_directory: "added", display: { material_name: "Added PLA" }, compatibility: {}, channel: "official", visibility: "official", package_url: "/added.zip", package_sha256: "a".repeat(64), package_bytes: 123 }] });
+    vi.mocked(materialSyncApi.installMaterialRegistryCatalogEntry).mockImplementation(async () => {
+      vi.mocked(extractorApi.listGradientCardMaterials).mockResolvedValue({ status: "ok", message: "ok", materials: [old, added] });
+      return { status: "ok", message: "Installed", installed_count: 1, installed_materials: [] };
+    });
+    useConverterStore.setState({ source_version: "material", selectedMaterialDirNames: ["old"], imageFile, target_width_mm: 137 });
+    render(<BasicSettings />);
+    fireEvent.click(screen.getByTestId("material-picker-trigger"));
+    await screen.findByRole("button", { name: "取消选择 Old PLA" });
+    fireEvent.click(screen.getByRole("button", { name: "去公开库查找" }));
+    fireEvent.click(await screen.findByRole("button", { name: "下载到本地" }));
+    await waitFor(() => expect(extractorApi.listGradientCardMaterials).toHaveBeenCalledTimes(2));
+    fireEvent.click(screen.getByRole("button", { name: "返回本地选择" }));
+    fireEvent.click(await screen.findByRole("button", { name: "选择 Added PLA" }));
+    fireEvent.click(screen.getByRole("button", { name: "完成" }));
+    expect(useConverterStore.getState()).toMatchObject({ selectedMaterialDirNames: ["old", "added"], imageFile, target_width_mm: 137 });
+  });
+
+  it.each([false, true])("downloads a public LUT without auto-applying it; changed task=%s", async (changeTask) => {
+    const groups = makeLegacyCatalogGroups();
+    groups[0].items.push({ ...groups[0].items[0], name: "Added LUT", path: "lut-ref/added.npy" });
+    const imageFile = new File(["image"], "kept.png", { type: "image/png" });
+    const nextImage = new File(["new"], "new.png", { type: "image/png" });
+    const newLut = { name: "Brand A - Added", path: "lut-ref/added.npy", color_mode: ColorModeEnum.FOUR_COLOR_RYBW };
+    const entry = { lut_id: "added", revision_id: "r1", content_hash: "a", package_url: "/added.zip", package_sha256: "a".repeat(64), package_bytes: 123, local_path: "added.npy", display: { name: "Public LUT" }, compatibility: { color_mode: ColorModeEnum.FOUR_COLOR_RYBW } };
+    vi.mocked(lutApi.fetchCloudLutRegistryStatus).mockResolvedValue({ configured: true, base_url: "https://example.test", channels: ["official"], installed_count: 0 });
+    vi.mocked(lutApi.fetchCloudLutRegistryCatalog).mockResolvedValue({ configured: true, channels: ["official"], total: 1, items: [entry] });
+    vi.mocked(lutApi.fetchLutCatalog).mockResolvedValue({ legacy_groups: [{ manufacturer: "Brand A", items: [...useConverterStore.getState().lutListFull, newLut] }], native_brand_groups: [] } as never);
+    vi.mocked(lutApi.fetchLutDetailsCatalog).mockResolvedValue({ groups });
+    let finish!: (value: Awaited<ReturnType<typeof lutApi.installCloudLut>>) => void;
+    vi.mocked(lutApi.installCloudLut).mockReturnValueOnce(new Promise((resolve) => { finish = resolve; }));
+    useConverterStore.setState({ source_version: "legacy", selectedLegacyManufacturer: "Brand A", lut_names: ["Brand A - A4"], lut_name: "Brand A - A4", imageFile, target_width_mm: 137 });
+    render(<BasicSettings />);
+    fireEvent.click(screen.getByTestId("lut-picker-trigger"));
+    fireEvent.click(screen.getByRole("button", { name: "去公开库查找" }));
+    fireEvent.click(await screen.findByRole("button", { name: "下载到本地" }));
+    if (changeTask) act(() => useConverterStore.getState().setImageFile(nextImage));
+    await act(async () => { finish({ ...entry, installed_path: "Cloud/added.npy" }); });
+    await waitFor(() => expect(useConverterStore.getState().lutListFull.some((item) => item.name === newLut.name)).toBe(true));
+    expect(useConverterStore.getState().lut_names).toEqual(["Brand A - A4"]);
+    fireEvent.click(screen.getByRole("button", { name: "返回本地选择" }));
+    fireEvent.click(await screen.findByRole("checkbox", { name: /Added LUT/ }));
+    if (changeTask) {
+      expect(screen.getByRole("button", { name: "确认" })).toBeDisabled();
+      expect(screen.getByText(/当前图片或颜色模式已改变/)).toBeInTheDocument();
+      expect(useConverterStore.getState().imageFile).toBe(nextImage);
+    } else {
+      fireEvent.click(screen.getByRole("button", { name: "确认" }));
+      expect(useConverterStore.getState()).toMatchObject({ lut_names: ["Brand A - A4", "Brand A - Added"], imageFile, target_width_mm: 137 });
+    }
+  });
   it.each([
     [2, "宽度", "500", "250"],
     [0.5, "高度", "150", "300"],
@@ -485,6 +734,25 @@ describe("BasicSettings", () => {
     render(<BasicSettings />);
 
     expect(screen.getByText("3×3 = 9 (100×20mm)")).toBeInTheDocument();
+  });
+
+  it("accepts an empty LUT library as a successful read and guides the user to their first LUT", async () => {
+    vi.useFakeTimers();
+    vi.mocked(converterApi.fetchLutList).mockResolvedValue({ luts: [] });
+    vi.mocked(lutApi.fetchLutDetailsCatalog).mockResolvedValue({ groups: [] });
+    useConverterStore.setState({ source_version: "legacy", lut_name: "", lut_names: [], lutList: [],
+      lutListFull: [], legacyCatalogGroups: [], selectedLegacyManufacturer: "" });
+    try {
+      render(<BasicSettings />);
+      await act(async () => { await vi.advanceTimersByTimeAsync(6_000); });
+      expect(screen.getByTestId("lut-picker-trigger")).toHaveTextContent("本地还没有 LUT，查找第一份");
+      expect(converterApi.fetchLutList).toHaveBeenCalledTimes(1);
+      expect(lutApi.fetchLutDetailsCatalog).toHaveBeenCalledTimes(1);
+      fireEvent.click(screen.getByTestId("lut-picker-trigger"));
+      expect(screen.getByRole("button", { name: "去云端找 LUT" })).toBeEnabled();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("backs off failed startup LUT loads instead of retrying immediately", async () => {
@@ -869,6 +1137,37 @@ describe("BasicSettings", () => {
     expect(screen.getByTestId("lut-picker-trigger")).toBeInTheDocument();
     expect(screen.getByText("选择LUT")).toBeInTheDocument();
   });
+  it("lets a LUT user cancel a material trial without changing the current task", async () => {
+    useConverterStore.setState({ lut_name: "Brand A - A4", lut_names: ["Brand A - A4"] });
+    render(<BasicSettings />);
+    fireEvent.click(screen.getByRole("button", { name: "试试耗材档案配色" }));
+    fireEvent.click(screen.getByRole("button", { name: "查找我的耗材" }));
+    await screen.findByTestId("material-picker-dialog");
+    await waitFor(() => expect(extractorApi.listGradientCardMaterials).toHaveBeenCalled());
+    expect(screen.getByTestId("material-picker-search-input")).toHaveValue("Brand A");
+    fireEvent.click(within(screen.getByTestId("material-picker-dialog")).getByRole("button", { name: "关闭" }));
+    expect(useConverterStore.getState()).toMatchObject({ source_version: "legacy", lut_names: ["Brand A - A4"] });
+  });
+  it("confirms a material trial before switching and previews the original image", async () => {
+    const preview = vi.spyOn(useConverterStore.getState(), "submitPreview").mockResolvedValue();
+    const file = new File(["image"], "image.png", { type: "image/png" });
+    useConverterStore.setState({ imageFile: file, selectedMaterialDirNames: [] });
+    vi.mocked(extractorApi.listGradientCardMaterials).mockResolvedValue({
+      status: "success", message: "ok", materials: [{
+        material_name: "Trial Red", directory_name: "trial/red", estimated_rgb: [200, 40, 40],
+        brand: "Trial", material_type: "PLA", layer_height_mm: 0.08,
+      } as SavedMaterialLibraryItem],
+    });
+    render(<BasicSettings />);
+    fireEvent.click(screen.getByRole("button", { name: "试试耗材档案配色" }));
+    fireEvent.click(screen.getByRole("button", { name: "查找我的耗材" }));
+    fireEvent.click(await screen.findByRole("button", { name: "选择 Trial Red" }));
+    expect(useConverterStore.getState().source_version).toBe("legacy");
+    fireEvent.click(screen.getByRole("button", { name: "使用这些耗材预览" }));
+    await waitFor(() => expect(preview).toHaveBeenCalledOnce());
+    expect(useConverterStore.getState()).toMatchObject({ source_version: "material", imageFile: file, selectedMaterialDirNames: ["trial/red"] });
+    expect(screen.queryByTestId("material-picker-dialog")).not.toBeInTheDocument();
+  });
 
   it("keeps a Snapmaker LUT independent from the configured Bambu printer", async () => {
     const snapmakerGroup: LutDetailsCatalogGroup = {
@@ -926,7 +1225,7 @@ describe("BasicSettings", () => {
     fireEvent.click(screen.getByTestId("lut-picker-trigger"));
     // Brand sidebar opens inside the dialog; click snapmaker brand
     const dialog = screen.getByRole("dialog");
-    fireEvent.click(within(dialog).getByRole("button", { name: "snapmaker" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "快造" }));
 
     await waitFor(() => {
       expect(useConverterStore.getState().selectedLegacyManufacturer)
@@ -1267,7 +1566,7 @@ describe("BasicSettings", () => {
       await screen.findByTestId("material-picker-load-error"),
     ).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "重试" }));
+    fireEvent.click(within(screen.getByTestId("material-picker-load-error")).getByRole("button", { name: "重试" }));
 
     await waitFor(() => {
       expect(extractorApi.listGradientCardMaterials).toHaveBeenCalledTimes(2);
@@ -1290,7 +1589,7 @@ describe("BasicSettings", () => {
     render(<BasicSettings />);
 
     fireEvent.click(screen.getByTestId("material-picker-trigger"));
-    await screen.findByText("Karvax PLA 耀石黑");
+    await screen.findByRole("button", { name: /选择.*耀石黑/ });
 
     act(() => {
       useConverterStore.getState().importRecipeState(
@@ -1354,19 +1653,23 @@ describe("BasicSettings", () => {
 
     fireEvent.click(fourColor!);
     fireEvent.click(eightColor!);
-    // Confirm selection
+    // Different modes remain visible for browsing, but cannot be applied together.
+    expect(within(dialog).getByRole("button", { name: "确认" })).toBeDisabled();
+    expect(within(dialog).getByText(/颜色模式或通道不兼容/)).toBeInTheDocument();
+    expect(useConverterStore.getState().lut_names).toEqual([]);
+    fireEvent.click(eightColor!);
     fireEvent.click(within(dialog).getByRole("button", { name: "确认" }));
-
-    await waitFor(() => {
-      expect(useConverterStore.getState().lut_names).toEqual([
-        "Brand A - A4",
-        "Brand A - A8",
-      ]);
-    });
+    expect(useConverterStore.getState().lut_names).toEqual(["Brand A - A4"]);
   });
 
   it("applies cross-brand LUTs together and leaves applied selection intact on cancel", async () => {
+    // Cross-brand selection is valid when palette/channel compatibility matches.
+    const groups = makeLegacyCatalogGroups();
+    groups[1].items[0].color_mode = ColorModeEnum.FOUR_COLOR_RYBW;
+    groups[1].items[0].compatibility_key = groups[0].items[0].compatibility_key;
     useConverterStore.setState({
+      legacyCatalogGroups: groups,
+      lutListFull: useConverterStore.getState().lutListFull.map((item) => item.name === "Brand B - BW" ? { ...item, color_mode: ColorModeEnum.FOUR_COLOR_RYBW } : item),
       lut_name: "Brand A - A4",
       lut_names: ["Brand A - A4"],
       selectedLegacyManufacturer: "Brand A",

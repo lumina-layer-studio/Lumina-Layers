@@ -18,6 +18,9 @@ from typing import Any, Sequence
 from urllib.parse import urljoin, urlsplit
 
 from api.structured_logging import get_logger
+from core.filament_display import catalog_thumbnail_metadata
+from core.public_resources import PUBLIC_REGISTRY_URL, material_registry_url, registry_read_token, is_static_catalog
+from core.registry_catalog_cache import CatalogAccessDenied, CatalogSnapshot, catalog_source_scope
 from core.registry_transport import (
     fallback_base,
     fetch_catalog,
@@ -162,7 +165,7 @@ def _normalize_material_registry_url(registry_url: str | None) -> str:
     raw_url = str(
         registry_url
         if registry_url is not None
-        else os.environ.get("LUMINA_MATERIAL_REGISTRY_URL", "")
+        else material_registry_url()
     ).strip()
     if not raw_url:
         raise ValueError("Material registry URL is not configured")
@@ -171,9 +174,13 @@ def _normalize_material_registry_url(registry_url: str | None) -> str:
     return raw_url.rstrip("/")
 
 
-def _normalize_material_registry_channels(channels: Sequence[str] | None) -> list[str]:
+def _normalize_material_registry_channels(
+    channels: Sequence[str] | None, *, registry_url: str | None = None,
+) -> list[str]:
     if channels is None:
-        raw_channels = os.environ.get("LUMINA_MATERIAL_REGISTRY_CHANNELS", "official")
+        source = registry_url or material_registry_url()
+        defaults = "official,community" if source == PUBLIC_REGISTRY_URL or is_static_catalog(source) else "official"
+        raw_channels = defaults if is_static_catalog(source) else os.environ.get("LUMINA_MATERIAL_REGISTRY_CHANNELS", defaults)
         candidates = re.split(r"[,;\s]+", raw_channels)
     else:
         candidates = [str(channel) for channel in channels]
@@ -187,6 +194,16 @@ def _normalize_material_registry_channels(channels: Sequence[str] | None) -> lis
         if channel not in normalized:
             normalized.append(channel)
     return normalized or ["official"]
+
+
+def configured_material_catalog_scope() -> str:
+    """Identify the current read scope even if the registry is unreachable."""
+    try:
+        source = _normalize_material_registry_url(None)
+        channels = _normalize_material_registry_channels(None, registry_url=source)
+    except ValueError:
+        return catalog_source_scope("", [], None)
+    return catalog_source_scope(source, channels, registry_read_token("MATERIAL", source))
 
 
 def _sha256_hex_from_catalog(value: Any) -> str:
@@ -210,7 +227,7 @@ def _material_registry_catalog_entries(payload: Any) -> list[dict[str, Any]]:
     for entry in entries:
         if not isinstance(entry, dict):
             raise ValueError("Material registry catalog contains invalid entry")
-        normalized_entries.append(entry)
+        normalized_entries.append(catalog_thumbnail_metadata(entry))
     return normalized_entries
 
 
@@ -235,6 +252,8 @@ def _material_registry_package_url(registry_url: str, raw_package_url: Any) -> s
     if not package_url:
         raise ValueError("Material registry catalog entry is missing package_url")
     resolved_url = urljoin(f"{registry_url}/", package_url)
+    if is_static_catalog(registry_url):
+        return map_package_url(package_url, registry_url, registry_url)
     if not resolved_url.startswith(("http://", "https://")):
         raise ValueError("Material registry package_url must be http:// or https://")
     if _material_registry_url_origin_key(resolved_url) != _material_registry_url_origin_key(
@@ -307,7 +326,7 @@ def _download_material_registry_package_to_tempfile(
     registry_url: str | None = None,
     channels: Sequence[str] | None = None,
 ) -> Path:
-    primary = str(registry_url or os.environ.get("LUMINA_MATERIAL_REGISTRY_URL", "")).rstrip("/")
+    primary = str(registry_url if registry_url is not None else material_registry_url()).rstrip("/")
     fallback = fallback_base(primary, "MATERIAL")
     try:
         backup_package = map_package_url(package_url, primary, fallback) if fallback else None
@@ -607,7 +626,7 @@ def list_material_registry_catalog(
     import httpx
 
     normalized_registry_url = _normalize_material_registry_url(registry_url)
-    normalized_channels = _normalize_material_registry_channels(channels)
+    normalized_channels = _normalize_material_registry_channels(channels, registry_url=normalized_registry_url)
     normalized_limit, normalized_offset = _normalize_material_registry_catalog_pagination(
         limit=limit,
         offset=offset,
@@ -616,7 +635,7 @@ def list_material_registry_catalog(
     auth_token = str(
         token
         if token is not None
-        else os.environ.get("LUMINA_MATERIAL_REGISTRY_TOKEN", "")
+        else registry_read_token("MATERIAL", normalized_registry_url)
     ).strip()
     if use_cache:
         cached_catalog = _cached_material_registry_remote_catalog(
@@ -643,36 +662,6 @@ def list_material_registry_catalog(
             if cached_full_catalog is not None:
                 return _page_material_registry_catalog(
                     cached_full_catalog,
-                    limit=normalized_limit,
-                    offset=normalized_offset,
-                )
-        if normalized_query:
-            cached_unfiltered_catalog = _cached_material_registry_remote_catalog(
-                registry_url=normalized_registry_url,
-                channels=normalized_channels,
-                token=auth_token,
-                transport=transport,
-                limit=None,
-                offset=0,
-                query="",
-            )
-            if cached_unfiltered_catalog is not None:
-                filtered_catalog = _filter_material_registry_catalog(
-                    cached_unfiltered_catalog,
-                    query=normalized_query,
-                )
-                _store_material_registry_remote_catalog_cache(
-                    registry_url=normalized_registry_url,
-                    channels=normalized_channels,
-                    token=auth_token,
-                    transport=transport,
-                    limit=None,
-                    offset=0,
-                    query=normalized_query,
-                    payload=filtered_catalog,
-                )
-                return _page_material_registry_catalog(
-                    filtered_catalog,
                     limit=normalized_limit,
                     offset=normalized_offset,
                 )
@@ -704,6 +693,27 @@ def list_material_registry_catalog(
     if normalized_limit is not None:
         catalog_params.append(("limit", normalized_limit))
 
+    cache_dir = Path(material_files.MATERIALS_DIR) / "_sync/catalogs" if transport is None else None
+
+    def offline_full_page() -> httpx.Response | None:
+        """A complete public snapshot can also satisfy a new page or search."""
+        if cache_dir is None:
+            return None
+        full_params = [("channel", channel) for channel in normalized_channels]
+        full_response = CatalogSnapshot(cache_dir, normalized_registry_url, "/materials/catalog", full_params).response(offline=True)
+        if full_response is None:
+            return None
+        payload = full_response.json()
+        entries = _material_registry_catalog_entries(payload)
+        if isinstance(payload, dict) and (payload.get("offset", 0) != 0 or payload.get("total_count", len(entries)) != len(entries)):
+            return None  # A capped server response is not a complete catalog.
+        full_catalog = {"schema_version": payload.get("schema_version", "1.0") if isinstance(payload, dict) else "1.0",
+                        "channels": normalized_channels, "materials": entries, "count": len(entries),
+                        "total_count": len(entries), "offset": 0, "limit": None}
+        page = _page_material_registry_catalog(_filter_material_registry_catalog(full_catalog, query=normalized_query),
+                                               limit=normalized_limit, offset=normalized_offset)
+        return httpx.Response(200, json=page, headers=full_response.headers, request=full_response.request)
+
     with httpx.Client(**client_kwargs) as client:
         try:
             catalog_response = fetch_catalog(
@@ -711,12 +721,16 @@ def list_material_registry_catalog(
                 suffix="/materials/catalog", channels=normalized_channels,
                 params=catalog_params,
                 headers=headers,
+                cache_dir=cache_dir, offline_fallback=offline_full_page,
+                force_refresh=not use_cache,
             )
             _reject_material_registry_catalog_redirect(catalog_response)
             catalog_response.raise_for_status()
             catalog_payload = catalog_response.json()
             catalog_entries = _material_registry_catalog_entries(catalog_payload)
         except httpx.HTTPError as exc:
+            if isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code in {401, 403}:
+                raise CatalogAccessDenied(exc.response.status_code) from exc
             raise RuntimeError("Material registry catalog request failed") from exc
         except ValueError as exc:
             raise ValueError("Material registry catalog response is invalid") from exc
@@ -729,16 +743,20 @@ def list_material_registry_catalog(
             or "limit" in catalog_payload
         )
     )
+    source_scope = catalog_source_scope(normalized_registry_url, normalized_channels, auth_token)
     if remote_has_pagination:
         paged_entries = catalog_entries
         total_count = int(catalog_payload.get("total_count") or len(catalog_entries))
-        response_offset = int(catalog_payload.get("offset") or normalized_offset)
+        response_offset = int(catalog_payload.get("offset", normalized_offset))
         response_limit = (
             None
             if catalog_payload.get("limit") is None
             else int(catalog_payload.get("limit"))
         )
         catalog = {
+            "source_scope": source_scope,
+            "cached": catalog_response.headers.get("x-lumina-catalog-cached") == "true",
+            "fetched_at": catalog_response.headers.get("x-lumina-catalog-fetched-at"),
             "schema_version": str(
                 catalog_payload.get("schema_version")
                 if isinstance(catalog_payload, dict)
@@ -752,7 +770,7 @@ def list_material_registry_catalog(
             "limit": response_limit,
             "materials": paged_entries,
         }
-        if use_cache:
+        if use_cache and (normalized_limit is not None or normalized_offset or total_count == len(paged_entries)):
             _store_material_registry_remote_catalog_cache(
                 registry_url=normalized_registry_url,
                 channels=normalized_channels,
@@ -766,6 +784,9 @@ def list_material_registry_catalog(
         return material_files._json_clone(catalog)
 
     full_catalog = {
+        "source_scope": source_scope,
+        "cached": catalog_response.headers.get("x-lumina-catalog-cached") == "true",
+        "fetched_at": catalog_response.headers.get("x-lumina-catalog-fetched-at"),
         "schema_version": str(
             catalog_payload.get("schema_version")
             if isinstance(catalog_payload, dict)
@@ -812,6 +833,7 @@ def install_material_registry_package(
     materials_dir: str | None = None,
     timeout_s: float | None = None,
     transport: Any = None,
+    display: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Install one selected Registry package into the local material library.
     将用户选择的单个 Registry 耗材包安装到本地耗材库。
@@ -833,7 +855,7 @@ def install_material_registry_package(
     auth_token = str(
         token
         if token is not None
-        else os.environ.get("LUMINA_MATERIAL_REGISTRY_TOKEN", "")
+        else registry_read_token("MATERIAL", normalized_registry_url)
     ).strip()
     if timeout_s is None:
         raw_timeout = os.environ.get("LUMINA_MATERIAL_REGISTRY_TIMEOUT_S", "30")
@@ -873,6 +895,7 @@ def install_material_registry_package(
                 materials_dir=str(target_root),
                 selected_material_id=material_id,
                 selected_revision_id=revision_id,
+                selected_display=display,
             )
         finally:
             try:
@@ -910,11 +933,11 @@ def refresh_material_sync_from_registry(
     import httpx
 
     normalized_registry_url = _normalize_material_registry_url(registry_url)
-    normalized_channels = _normalize_material_registry_channels(channels)
+    normalized_channels = _normalize_material_registry_channels(channels, registry_url=normalized_registry_url)
     auth_token = str(
         token
         if token is not None
-        else os.environ.get("LUMINA_MATERIAL_REGISTRY_TOKEN", "")
+        else registry_read_token("MATERIAL", normalized_registry_url)
     ).strip()
     if timeout_s is None:
         raw_timeout = os.environ.get("LUMINA_MATERIAL_REGISTRY_TIMEOUT_S", "30")
@@ -1128,6 +1151,7 @@ def refresh_material_sync_from_registry(
                             materials_dir=str(target_root),
                             selected_material_id=material_id,
                             selected_revision_id=revision_id,
+                            selected_display=entry.get("display"),
                         )
                     finally:
                         try:

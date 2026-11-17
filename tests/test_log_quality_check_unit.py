@@ -1082,7 +1082,8 @@ def test_default_workflow_lut_names_exist_in_catalog() -> None:
         log_quality_check.FIVE_COLOR_EXT_LUT_NAME,
     ]
 
-    missing = [name for name in lut_names if LUTManager.get_lut_path(name) is None]
+    with log_quality_check.isolated_workflow_resources():
+        missing = [name for name in lut_names if LUTManager.get_lut_path(name) is None]
 
     assert missing == []
 

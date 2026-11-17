@@ -83,6 +83,7 @@ class UserSettings(BaseModel):
     """User settings persisted in user_settings.json."""
 
     language: Literal["zh", "en"] = "zh"
+    filament_market: Literal["auto", "CN", "INTL"] = "auto"
     theme: Literal["light", "dark"] = "light"
     last_lut: str = ""
     last_modeling_mode: str = "high-fidelity"

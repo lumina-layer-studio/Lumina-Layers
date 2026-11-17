@@ -1,4 +1,6 @@
 import DisclosureChevron from "./ui/DisclosureChevron";
+import CommunityAccountSetting from "./CommunityAccount";
+import ResourceSourceSetting from "./ResourceSourceSetting";
 /**
  * SettingsPanel - System settings page.
  * 系统设置页面，包含切片软件设置和缓存清理功能。
@@ -18,6 +20,7 @@ import {
   SVG_PIXELS_PER_MM_MIN,
   SVG_PIXELS_PER_MM_STEP,
   SOLVER_CACHE_GRID_RESOLUTIONS,
+  isFilamentMarket,
   resolveBuildPlateSelection,
   useSettingsStore,
   type NozzleSize,
@@ -134,6 +137,8 @@ export default function SettingsPanel() {
   const printerModel = useSettingsStore((s) => s.printerModel);
   const language = useSettingsStore((s) => s.language);
   const setLanguage = useSettingsStore((s) => s.setLanguage);
+  const filamentMarket = useSettingsStore((s) => s.filamentMarket);
+  const setFilamentMarket = useSettingsStore((s) => s.setFilamentMarket);
   const setPrinterModel = useSettingsStore((s) => s.setPrinterModel);
   const slicerSoftware = useSettingsStore((s) => s.slicerSoftware);
   const setSlicerSoftware = useSettingsStore((s) => s.setSlicerSoftware);
@@ -920,7 +925,19 @@ export default function SettingsPanel() {
                   }}
                 />
               </div>
+              <Dropdown
+                label={t("settings.filament_market")}
+                value={filamentMarket}
+                options={[
+                  { value: "auto", label: t("settings.filament_market_auto") },
+                  { value: "CN", label: t("settings.filament_market_cn") },
+                  { value: "INTL", label: t("settings.filament_market_international") },
+                ]}
+                onChange={(value) => { if (isFilamentMarket(value)) setFilamentMarket(value); }}
+              />
               <InterfaceScaleSetting />
+              <CommunityAccountSetting />
+              <ResourceSourceSetting />
               <div
                 data-testid="settings-completion-notifications-section"
                 className="flex flex-col gap-4 border-t panel-divider pt-5"

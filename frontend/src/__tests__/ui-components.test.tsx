@@ -201,7 +201,7 @@ describe("Selection controls", () => {
     fireEvent.click(screen.getByRole("combobox"));
     const listbox = screen.getByRole("listbox");
     expect(listbox).toHaveClass("dock-scrollbar");
-    expect(listbox.parentElement).toHaveClass("rounded-xl");
+    expect(listbox.parentElement).toHaveClass("rounded-[10px]");
     expect(listbox.parentElement).toHaveClass("overflow-hidden");
   });
 

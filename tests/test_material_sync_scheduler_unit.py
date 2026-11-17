@@ -13,10 +13,11 @@ from api.material_sync_scheduler import (
 )
 
 
-def test_material_sync_auto_refresh_is_disabled_by_default(monkeypatch) -> None:
+def test_material_sync_auto_refresh_is_disabled_by_explicit_empty_url(monkeypatch) -> None:
     monkeypatch.delenv("LUMINA_MATERIAL_SYNC_STARTUP_REFRESH", raising=False)
     monkeypatch.delenv("LUMINA_MATERIAL_SYNC_REFRESH_INTERVAL_S", raising=False)
-    monkeypatch.delenv("LUMINA_MATERIAL_REGISTRY_URL", raising=False)
+    monkeypatch.setenv("LUMINA_MATERIAL_REGISTRY_URL", "")
+    monkeypatch.setenv("LUMINA_LUT_REGISTRY_URL", "")
 
     async def _run() -> None:
         tasks = start_material_sync_auto_refresh_tasks()
@@ -83,7 +84,7 @@ def test_material_sync_refresh_lock_skips_overlapping_registry_refresh(monkeypat
         }
 
     monkeypatch.setattr(
-        "api.material_sync_scheduler.refresh_material_sync_from_registry",
+        "api.material_sync_scheduler._check_resource_catalogs",
         _blocking_refresh,
         raising=False,
     )
@@ -112,7 +113,7 @@ def test_material_sync_interval_refresh_schedules_repeated_refresh(monkeypatch) 
         calls.append(reason)
         return {"installed_count": 0, "skipped_count": 0, "failed_count": 0}
 
-    monkeypatch.delenv("LUMINA_MATERIAL_SYNC_STARTUP_REFRESH", raising=False)
+    monkeypatch.setenv("LUMINA_MATERIAL_SYNC_STARTUP_REFRESH", "0")
     monkeypatch.setenv("LUMINA_MATERIAL_SYNC_REFRESH_INTERVAL_S", "0.01")
     monkeypatch.setattr(
         "api.material_sync_scheduler.run_material_sync_refresh_once",
@@ -132,22 +133,17 @@ def test_material_sync_interval_refresh_schedules_repeated_refresh(monkeypatch) 
     asyncio.run(_run())
 
 
-def test_material_sync_refresh_once_uses_installing_registry_refresh(monkeypatch) -> None:
-    def _forbidden_catalog_refresh() -> dict[str, Any]:
-        raise AssertionError("auto refresh must not only load catalog")
+def test_material_sync_refresh_once_checks_catalog_without_install(monkeypatch) -> None:
+    monkeypatch.setenv("LUMINA_MATERIAL_REGISTRY_URL", "https://catalog.test/api")
+    def _catalog_refresh(**kwargs) -> dict[str, Any]:
+        return {"materials": [{"material_id": "public"}], "total_count": 1}
 
     def _registry_refresh() -> dict[str, Any]:
-        return {
-            "checked_count": 1,
-            "installed_count": 1,
-            "skipped_count": 0,
-            "failed_count": 0,
-            "channels": ["official"],
-        }
+        raise AssertionError("background checks must never install packages")
 
     monkeypatch.setattr(
         "api.material_sync_scheduler.list_material_registry_catalog",
-        _forbidden_catalog_refresh,
+        _catalog_refresh,
         raising=False,
     )
     monkeypatch.setattr(
@@ -155,12 +151,14 @@ def test_material_sync_refresh_once_uses_installing_registry_refresh(monkeypatch
         _registry_refresh,
         raising=False,
     )
+    monkeypatch.setenv("LUMINA_LUT_REGISTRY_URL", "")
 
     async def _run() -> None:
         result = await run_material_sync_refresh_once(reason="startup")
 
         assert result is not None
-        assert result["installed_count"] == 1
+        assert result["installed_count"] == 0
+        assert result["checked_count"] == 1
 
     asyncio.run(_run())
 
@@ -170,7 +168,7 @@ def test_material_sync_refresh_returns_none_when_registry_refresh_fails(monkeypa
         raise RuntimeError("registry unavailable")
 
     monkeypatch.setattr(
-        "api.material_sync_scheduler.refresh_material_sync_from_registry",
+        "api.material_sync_scheduler._check_resource_catalogs",
         _failing_refresh,
         raising=False,
     )

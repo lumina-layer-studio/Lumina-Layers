@@ -1,6 +1,6 @@
 # Lumina 云端耗材与 LUT Registry 交接文档
 
-本文保留 Registry 的历史兼容记录，并提供自建或已获授权服务的配置与运维参考。源码安装默认不连接在线耗材库；本文中的域名均为不可用的示例，不提供官方耗材库的真实地址或访问凭证。
+本文保留 Registry 的历史兼容记录，并提供自建服务的配置与运维参考。当前源码和打包版默认匿名读取公开镜像，目录检查与安装已经分开；最新行为见[公开资源与离线使用](public-resources.md)。下文运维示例不代表公开镜像提供登录、上传或管理接口。
 
 ## 历史兼容记录
 
@@ -25,7 +25,7 @@
 
 | 仓库 | 职责 | 当前说明 |
 | --- | --- | --- |
-| `Lumina-studio` | 客户端和主应用集成 | 读取 Registry catalog，安装云端耗材/LUT 到本地。 |
+| `Lumina-Layers` | 客户端和主应用集成 | 读取 Registry catalog，安装云端耗材/LUT 到本地。 |
 | `Lumina-materials` | 内容源 | 维护耗材 package、LUT 源文件、LUT package 和去重报告。 |
 | `Lumina-material-registry` | Registry 服务端 | 提供 catalog、upload、approve、download、unpublish 等 API。 |
 
@@ -49,7 +49,7 @@ official,community
 
 ## Lumina Studio 连接配置
 
-默认保持 `LUMINA_MATERIAL_REGISTRY_URL` 为空，不会启动云端耗材同步。需要连接自备或获授权的耗材库时，再显式配置：
+未设置 URL 时使用公开默认源；显式空字符串关闭读取。需要连接自建服务器时配置：
 
 ```powershell
 $env:LUMINA_MATERIAL_REGISTRY_URL = "https://registry.example.invalid/api/material-registry/v1"

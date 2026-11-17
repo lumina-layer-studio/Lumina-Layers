@@ -2,6 +2,8 @@
 
 本文说明 Lumina Studio 的 LUT 云库 v1 行为，以及主转换流程如何从旧的 LUT 合并入口转为同组多选 LUT。本文只描述公开客户端行为，不包含真实 token、服务器私有路径或私有部署配置。
 
+源码默认读取 GitHub 静态目录，打包版读取发行层配置的官方实时库，浏览目录不会自动安装。已有目录可离线查看，界面会标明缓存；未下载内容仍需联网。[资源分发](resource-distribution.md)说明来源与官方服务权益边界；[公开资源与离线使用](public-resources.md)说明固定版本离线包、首次初始化和显式恢复。
+
 ## 与耗材云库的关系
 
 Lumina 的云端资料库有两条并列能力：
@@ -20,7 +22,16 @@ LUT 云库 v1 采用 catalog/install 模式：
 3. 后端使用本机配置的 Registry URL、频道和 token 重新拉取 catalog，匹配同一个 `lut_id/revision_id` 后才下载 package。
 4. 安装后的 LUT 文件写入本地 `lut-preset/Cloud/...`。
 5. 本地同步索引写入 `lut-preset/_sync/luts/index.json`，记录已安装 LUT 的 revision、hash、安装时间和来源信息。
-6. `GET /api/lut-registry/status` 返回本机是否已配置云库、当前频道、同步安装数量和本地 LUT 数量。
+6. `GET /api/lut-registry/status` 返回本机是否已配置云库、当前频道、同步安装数量、本地 LUT 数量，以及 `history` 本地版本记录。
+7. `POST /api/lut-registry/restore` 接收 `lut_id`、`revision_id`，验证本机对应文件的内容后切换本地版本记录，不要求登录或联网，不增加下载人数。
+
+目录的 `local_state` 区分 `not_installed`（未下载）、`installed`（本地当前版本）、`local_available`（相同内容在本地，或已保留的历史版本）、`update_available`（同一资源有不同内容尚未下载）、`local_missing`（安装文件缺失）、`local_modified`（安装文件被修改）。仅路径或名称相同不认定为同一资源的更新。版本差异不等于可靠的发布时间先后，界面使用“与本地当前版本不同”。
+
+索引以 `current_revisions` 记录每个 LUT 的本地当前修订；没有该字段的旧索引按本地最后安装记录读取，无须首次启动改写文件。`history` 逐资源给出名称、当前修订和各修订的本地安装时间、可恢复性、有效本地相对路径。恢复入口全局可用，目录断网或条目已不在远端时仍能访问本地记录。
+
+不同内容安装到独立的修订路径，已有项目和转换选择继续引用原文件。恢复只切换本地记录，不自动替换已选 LUT；从转换选择器选择需要的文件才能更改当前转换。文件被修改时重新下载会另存原始内容，保留用户编辑的文件。缺失或内容校验失败的版本不能直接恢复。
+
+同一 LUT 有多个本地修订时，`GET /api/lut/details/catalog` 为有效文件附带 `local_version`（`current` 与 `installed_at`）。本地库和图像转换选择器据此显示本地当前版本／历史版本及安装时间，恢复后刷新标识。单修订条目不增加版本行。
 
 v1 的 LUT 包约束是“一包一 LUT”：一个云端 package 只安装一个 LUT 文件，支持的本地 LUT 扩展名沿用现有 LUT 系统，例如 `.json`、`.npy`、`.npz`、`.msgpack`。安装逻辑会验证 package hash、内容 hash、包大小、`Content-Length`、ZIP 解压前文件大小、同源 package URL、本地目标路径和 LUT 内容可加载性，避免把不可用文件写入本地 LUT 库。
 
@@ -40,7 +51,7 @@ $env:LUMINA_LUT_REGISTRY_TOKEN = "<LUMINA_REGISTRY_TOKEN>"
 
 普通公开频道通常不需要 token。只有私有频道、上传、审批或维护者操作才需要 Bearer token。公开文档、issue、PR 和日志中只能写 `<LUMINA_REGISTRY_TOKEN>` 这类占位符，不要写真实 token。
 
-如果没有单独配置 `LUMINA_LUT_REGISTRY_URL`，客户端会尝试使用 `LUMINA_MATERIAL_REGISTRY_URL`；频道和 token 也有对应的 `LUMINA_MATERIAL_REGISTRY_CHANNELS`、`LUMINA_MATERIAL_REGISTRY_TOKEN` 回退。这样可以让同一 Registry 服务同时承载耗材云库和 LUT 云库，但两条能力仍然是独立数据线。
+如果没有单独配置 `LUMINA_LUT_REGISTRY_URL`，客户端使用耗材读取地址，未设置两者时使用公开默认源。显式空 URL 关闭对应读取。自建服务同一地址可共用材料只读 token；LUT 指向另一地址时必须显式提供对应 token，不转发原服务器凭据。
 
 ## 同组多选 LUT 主流程
 

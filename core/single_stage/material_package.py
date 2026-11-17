@@ -11,6 +11,7 @@ import zipfile
 from pathlib import Path, PureWindowsPath
 from typing import Any
 
+from core.filament_display import filament_display
 from . import material_files
 
 DEFAULT_MATERIAL_PACKAGE_MAX_ARCHIVE_BYTES = 100 * 1024 * 1024
@@ -179,11 +180,13 @@ def _material_package_identity(
 def _display_payload_from_material_archive(
     archive_payload: dict[str, Any],
     relative_directory_name: str,
-) -> dict[str, str]:
+) -> dict[str, Any]:
     path_parts = Path(relative_directory_name).parts
     fallback_brand = path_parts[0] if len(path_parts) > 1 else ""
     fallback_name = path_parts[-1] if path_parts else relative_directory_name
     display: dict[str, Any] = {
+        **filament_display(archive_payload),
+        **filament_display(archive_payload.get("display")),
         "brand": str(archive_payload.get("brand") or fallback_brand),
         "material_name": str(archive_payload.get("material_name") or fallback_name),
     }

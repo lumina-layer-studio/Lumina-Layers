@@ -29,6 +29,7 @@ import uuid
 import zipfile
 from collections import Counter
 from collections.abc import Callable, Mapping, MutableMapping, Sequence
+from contextlib import contextmanager
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -126,17 +127,17 @@ DEFAULT_PORT = 18000
 DEFAULT_TIMEOUT_SECONDS = 120.0
 DEFAULT_SERVER_START_TIMEOUT_SECONDS = 30.0
 DEFAULT_LUT_STEM = "Aliz&PLA&4色RYBW&20260211"
-DEFAULT_LUT_NAME = f"Aliz - PLA - 4色 - {DEFAULT_LUT_STEM}"
+DEFAULT_LUT_NAME = f"Custom - {DEFAULT_LUT_STEM}"
 DEFAULT_COLOR_MODE = "4-Color (RYBW)"
 BW_COLOR_MODE = "BW (Black & White)"
 BW_LUT_STEM = "Bambulab&PLA&BW&白-黑"
 BW_LUT_NAME = f"Custom - {BW_LUT_STEM}"
 EIGHT_COLOR_MODE = "8-Color Max"
-EIGHT_COLOR_LUT_STEM = "Aliz&8色PLA"
-EIGHT_COLOR_LUT_NAME = f"Aliz - PLA - {EIGHT_COLOR_LUT_STEM}"
+EIGHT_COLOR_LUT_STEM = "Aliz&PLA&8色红-黄-蓝-品红-青-白-绿-黑&20260213"
+EIGHT_COLOR_LUT_NAME = f"Custom - {EIGHT_COLOR_LUT_STEM}"
 FIVE_COLOR_EXT_MODE = "5-Color Extended"
 FIVE_COLOR_EXT_LUT_STEM = "Aliz&PETG&5color&红-黄-蓝-白-黑-20260304"
-FIVE_COLOR_EXT_LUT_NAME = f"Aliz - PETG - 5色 - {FIVE_COLOR_EXT_LUT_STEM}"
+FIVE_COLOR_EXT_LUT_NAME = f"Custom - {FIVE_COLOR_EXT_LUT_STEM}"
 DEFAULT_MODELING_MODE = "high-fidelity"
 VECTOR_MODELING_MODE = "vector"
 FIXTURE_IMAGE = REPO_ROOT / "tests" / "fixtures" / "frozen_assets" / "images" / "logo.png"
@@ -353,6 +354,42 @@ def _build_fast_mode_app():
     app.include_router(calibration_router)
     app.include_router(five_color_router)
     return app
+
+
+@contextmanager
+def isolated_workflow_resources():
+    """Run checks with frozen fixtures, independent of the user's resource library."""
+    from unittest.mock import patch
+    from utils.lut_manager import LUTManager
+
+    fixtures = REPO_ROOT / "tests/fixtures"
+    sources = [
+        fixtures / "frozen_assets/luts/4c" / f"{DEFAULT_LUT_STEM}.npy",
+        fixtures / "frozen_assets/luts/2c" / f"{BW_LUT_STEM}.npy",
+        fixtures / "frozen_assets/luts/8c" / f"{EIGHT_COLOR_LUT_STEM}.npy",
+        fixtures / "lut_regression/Aliz/PETG/5色" / f"{FIVE_COLOR_EXT_LUT_STEM}.npy",
+    ]
+    with tempfile.TemporaryDirectory(prefix="lumina_log_resources_") as temporary:
+        root = Path(temporary)
+        custom = root / "Custom"
+        custom.mkdir()
+        for source in sources:
+            shutil.copyfile(source, custom / source.name)
+        with patch.dict(os.environ, {
+            "LUMINA_CUSTOM_LUT_DIR": str(custom),
+            "LUMINA_CLOUD_LUT_DIR": str(root / "Cloud"),
+            "LUMINA_MATERIALS_DIR": str(root / "materials"),
+            "LUMINA_SETTINGS_PATH": str(root / "user_settings.json"),
+            "LUMINA_MATERIALS_SEED_PATH": str(root / "no-material-seed.zip"),
+            "LUMINA_LUTS_SEED_PATH": str(root / "no-lut-seed.zip"),
+            "LUMINA_MATERIAL_SYNC_STARTUP_REFRESH": "0",
+            "LUMINA_MATERIAL_SYNC_REFRESH_INTERVAL_S": "0",
+        }):
+            LUTManager.invalidate_preset_cache()
+            try:
+                yield
+            finally:
+                LUTManager.invalidate_preset_cache()
 
 
 def run_fast_mode(temp_log_path: Path, workflow: list[str]) -> dict[str, Any]:
@@ -1024,15 +1061,16 @@ def main(argv: Sequence[str] | None = None) -> int:
         if log_path.exists():
             log_path.unlink()
 
-        if mode == "fast":
-            audit_result = run_fast_mode(log_path, workflow)
-        else:
-            audit_result = run_full_mode(
-                log_path,
-                workflow,
-                port=args.port,
-                timeout=args.timeout,
-            )
+        with isolated_workflow_resources():
+            if mode == "fast":
+                audit_result = run_fast_mode(log_path, workflow)
+            else:
+                audit_result = run_full_mode(
+                    log_path,
+                    workflow,
+                    port=args.port,
+                    timeout=args.timeout,
+                )
 
         report = build_quality_report(
             mode=mode,

@@ -218,6 +218,7 @@ function SubTabButton({
   return (
     <button
       role="tab"
+      aria-label={label}
       aria-selected={isActive}
       data-testid={testId}
       onClick={onSelect}

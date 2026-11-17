@@ -952,9 +952,7 @@ def main() -> None:
         type=Path,
         default=(
             REPO_ROOT
-            / "lut-preset"
-            / "bambulab"
-            / "bambulab_pla_basic_rybw.npy"
+            / "tests/fixtures/lut_regression/Bambulab&PLA&RYBW&红-黄-蓝-白.npy"
         ),
     )
     parser.add_argument("--target-width-mm", type=float, default=111.0)

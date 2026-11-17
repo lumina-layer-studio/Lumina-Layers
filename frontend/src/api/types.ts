@@ -594,6 +594,7 @@ export interface ModelSurfaceSelectResponse {
 
 export interface LutListResponse {
   luts: LutInfo[];
+  legacy_aliases?: Record<string, string>;
 }
 
 export interface LutInfo {
@@ -633,11 +634,13 @@ export interface NativeBrandGroup {
 
 export interface LutCatalogResponse {
   legacy_groups: LutCatalogGroup[];
+  legacy_aliases?: Record<string, string>;
   native_brand_groups: NativeBrandGroup[];
 }
 
 export interface LutDetailsCatalogItem {
   name: string;
+  display?: Record<string, unknown> | null;
   path: string;
   color_mode: string;
   source_kind: string;
@@ -648,6 +651,12 @@ export interface LutDetailsCatalogItem {
   material_source: string;
   search_tokens: string[];
   revision?: string;
+  local_version?: LocalLutVersion | null;
+}
+
+export interface LocalLutVersion {
+  current: boolean;
+  installed_at?: string | null;
 }
 
 export interface LutDetailsCatalogGroup {
@@ -660,6 +669,7 @@ export interface LutDetailsCatalogResponse {
 }
 
 export interface CloudLutRegistryCatalogRequest {
+  refresh?: boolean;
   channels?: string[];
   limit?: number;
   offset?: number;
@@ -673,7 +683,7 @@ export interface CloudLutRegistryCatalogItem {
   package_sha256: string;
   package_bytes: number;
   local_path: string;
-  local_state?: "not_installed" | "installed" | "local_available" | string;
+  local_state?: "not_installed" | "installed" | "local_available" | "update_available" | "local_missing" | "local_modified" | string;
   local_exists?: boolean;
   local_match_path?: string | null;
   installed_path?: string;
@@ -685,6 +695,9 @@ export interface CloudLutRegistryCatalogItem {
 }
 
 export interface CloudLutRegistryCatalogResponse {
+  source_scope?: string | null;
+  cached?: boolean;
+  fetched_at?: string | null;
   configured: boolean;
   channels: string[];
   items: CloudLutRegistryCatalogItem[];
@@ -692,18 +705,21 @@ export interface CloudLutRegistryCatalogResponse {
 }
 
 export interface CloudLutInstallRecord extends CloudLutRegistryCatalogItem {
+  activity_recorded?: boolean | null;
   installed_path: string;
   installed_at?: string;
   source_url?: string;
 }
 
 export interface CloudLutInstallRequest {
+  account_id?: string;
   lut_id: string;
   revision_id: string;
   channels?: string[];
 }
 
 export interface CloudLutRegistryStatusResponse {
+  source_scope?: string | null;
   configured: boolean;
   base_url: string | null;
   channels: string[];
@@ -712,6 +728,19 @@ export interface CloudLutRegistryStatusResponse {
   synced_count?: number;
   local_luts?: Array<Record<string, unknown>>;
   installed?: Array<Record<string, unknown>>;
+  history?: LocalResourceHistory[];
+}
+
+export interface LocalResourceHistory {
+  resource_id: string;
+  name: string;
+  current_revision: string;
+  revisions: Array<{
+    revision_id: string;
+    installed_at?: string | null;
+    available?: boolean;
+    local_path?: string | null;
+  }>;
 }
 
 export interface BedSizeItem {
@@ -1095,6 +1124,7 @@ export interface GradientCardMaterialSaveResponse {
   material_file_url: string;
   stage_a_params_url: string;
   material_summary: SavedMaterialSummary;
+  contribution?: { id?: string; state: string; reason?: string } | null;
 }
 
 export interface GradientCardMaterialDeleteResponse {
@@ -1127,6 +1157,7 @@ export interface SavedMaterialVerificationHistoryItem {
 
 export interface SavedMaterialLibraryItem {
   material_name: string;
+  display?: Record<string, unknown> | null;
   directory_name: string;
   brand?: string | null;
   material_type?: string | null;
@@ -1224,6 +1255,7 @@ export interface MaterialSyncInstalledEntry {
 export interface MaterialSyncStatusResponse {
   status: string;
   message: string;
+  source_scope?: string | null;
   schema_version: string;
   index_state: "missing" | "ready" | "invalid";
   last_sync_at?: string | null;
@@ -1290,6 +1322,9 @@ export interface MaterialRegistryCardMetadata {
 }
 
 export interface MaterialRegistryCatalogResponse {
+  source_scope?: string | null;
+  cached?: boolean;
+  fetched_at?: string | null;
   schema_version: string;
   channels: string[];
   count: number;
@@ -1300,6 +1335,7 @@ export interface MaterialRegistryCatalogResponse {
 }
 
 export interface MaterialRegistryInstallRequest {
+  account_id?: string;
   material_id: string;
   revision_id: string;
   package_url: string;
@@ -1307,6 +1343,7 @@ export interface MaterialRegistryInstallRequest {
 }
 
 export interface MaterialSyncInstallResponse {
+  activity_recorded?: boolean | null;
   status: string;
   message: string;
   installed_count: number;
@@ -2324,6 +2361,7 @@ export interface PrinterListResponse {
 // ========== Settings Models ==========
 
 export interface UserSettings {
+  filament_market?: "auto" | "CN" | "INTL";
   conversion_preferences?: import("../stores/conversionPreferences").ConversionPreferences | null;
   custom_3mf_template_id?: string | null;
   language: "zh" | "en";

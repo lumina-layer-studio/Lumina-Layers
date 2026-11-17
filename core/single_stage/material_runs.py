@@ -9,7 +9,9 @@ from typing import Any
 
 import numpy as np
 
+from core.filament_display import preview_step_indices
 from . import material_calibration, material_files
+from .kit import SINGLE_STAGE_SPEC, SingleStageSpec
 
 
 def _extract_stage_a_vectors(
@@ -145,6 +147,59 @@ def _normalize_fit_samples_payload(value: Any) -> dict[str, Any] | None:
         "white_linear": white_linear,
         "black_linear": black_linear,
     }
+
+
+def _printed_board_thickness(archive: dict[str, Any]) -> float | None:
+    source = archive.get("source")
+    manifest = source.get("kit_manifest") if isinstance(source, dict) else None
+    spec = manifest.get("spec") if isinstance(manifest, dict) else None
+    if not isinstance(spec, dict):
+        return None
+    height, base, steps = (spec.get(key) for key in ("layer_height_mm", "base_mm", "max_step_layers"))
+    short_edge = SINGLE_STAGE_SPEC.board_height_mm
+    if not (
+        type(height) in (int, float) and 0 < height <= short_edge
+        and type(base) in (int, float) and 0 <= base <= short_edge
+        and type(steps) is int and steps > 0
+    ):
+        return None
+    kit = SingleStageSpec(layer_height_mm=height, base_mm=base, max_step_layers=steps)
+    try:
+        depth = (kit.base_layers + kit.max_step_layers) * kit.layer_height_mm
+    except OverflowError:
+        return None
+    return round(depth, 4) if 0 < depth <= short_edge else None
+
+
+def measured_gradient_preview(archive: dict[str, Any]) -> dict[str, Any]:
+    """Project one saved calibration capture's paired observations into a thumbnail."""
+    summary = archive.get("material_summary")
+    runs = archive.get("verification_runs")
+    candidates = [summary.get("fit_samples")] if isinstance(summary, dict) else []
+    if isinstance(runs, list):
+        candidates.extend(run.get("samples") for run in reversed(runs) if isinstance(run, dict))
+    for candidate in candidates:
+        samples = _normalize_fit_samples_payload(candidate)
+        if samples is None:
+            continue
+        thickness = np.asarray(samples["thickness_mm"])
+        observations = np.asarray([samples["black_linear"], samples["white_linear"]])
+        if (
+            not np.isfinite(thickness).all() or (thickness < 0).any()
+            or not np.isfinite(observations).all() or (observations < 0).any() or (observations > 1).any()
+        ):
+            continue
+        _, ordered = np.unique(thickness, return_index=True)
+        if len(ordered) < 2:
+            continue
+        indices = ordered[preview_step_indices(len(ordered))]
+        colors = material_calibration._linear_to_srgb_uint8(observations[:, indices])
+        swatches = {"source": "measured", "black": colors[0].tolist(), "white": colors[1].tolist()}
+        depth = _printed_board_thickness(archive)
+        if depth is not None:
+            swatches["board_thickness_mm"] = depth
+        return {"preview_swatches": swatches}
+    return {}
 
 
 def _load_existing_verification_runs(

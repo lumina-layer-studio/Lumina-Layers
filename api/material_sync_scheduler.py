@@ -11,7 +11,9 @@ from contextlib import suppress
 from typing import Any
 
 from api.structured_logging import get_logger
-from core.single_stage import refresh_material_sync_from_registry
+from core.public_resources import material_registry_url, lut_registry_url
+from core.single_stage import list_material_registry_catalog
+from api.services.lut_registry_sync import fetch_remote_catalog
 
 log = get_logger(__name__)
 
@@ -22,7 +24,21 @@ _REFRESH_LOCK = threading.Lock()
 
 
 def _material_registry_url_configured() -> bool:
-    return bool(os.environ.get("LUMINA_MATERIAL_REGISTRY_URL", "").strip())
+    return bool(material_registry_url() or lut_registry_url())
+
+
+def _check_resource_catalogs() -> dict[str, Any]:
+    """Refresh catalog caches; package installation remains an explicit action."""
+    catalogs: dict[str, Any] = {}
+    if material_registry_url():
+        catalogs["materials"] = list_material_registry_catalog(use_cache=False)
+    if lut_registry_url():
+        catalogs["luts"] = fetch_remote_catalog()
+    return {
+        "checked_count": sum(int(value.get("total_count", value.get("total", value.get("count", 0)))) for value in catalogs.values()),
+        "installed_count": 0,
+        "catalogs": catalogs,
+    }
 
 
 def material_sync_startup_refresh_enabled() -> bool:
@@ -61,8 +77,8 @@ def material_sync_refresh_interval_s() -> float:
 
 
 async def run_material_sync_refresh_once(*, reason: str) -> dict[str, Any] | None:
-    """Run one non-overlapping material Registry package refresh.
-    执行一次不会重叠的耗材 Registry 包同步刷新。
+    """Run one non-overlapping public resource catalog check.
+    只刷新公开目录，不自动安装资源包。
 
     Args:
         reason: Operational reason, for example ``startup`` or ``scheduled``.
@@ -84,7 +100,7 @@ async def run_material_sync_refresh_once(*, reason: str) -> dict[str, Any] | Non
         return None
 
     try:
-        result = await asyncio.to_thread(refresh_material_sync_from_registry)
+        result = await asyncio.to_thread(_check_resource_catalogs)
     except (OSError, RuntimeError, TypeError, ValueError) as exc:
         log.warning(
             "Material sync auto refresh failed",

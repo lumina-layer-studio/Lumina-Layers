@@ -1,7 +1,12 @@
 import { useState } from "react";
+import "./communityTestMocks";
 import { describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, within, waitFor } from "@testing-library/react";
 import LegacyLutSelector from "../components/sections/LegacyLutSelector";
+import * as communityApi from "../api/community";
+import * as communityAccounts from "../api/contributions";
+import { useCommunityStore } from "../stores/communityStore";
+import { ResourceActivityActions } from "../components/ui/ResourceActivity";
 
 const labels = {
   manufacturer: "Brand",
@@ -68,6 +73,97 @@ function renderSelector(overrides = {}) {
 }
 
 describe("LegacyLutSelector", () => {
+  it("keeps version labels when forwarding local LUT choices into the conversion picker", async () => {
+    const versions = [
+      { value: "a4", label: "Same LUT", brand: "Brand A", mode: "4-Color", localVersion: { current: true } },
+      { value: "b4", label: "Same LUT", brand: "Brand A", mode: "4-Color", localVersion: { current: false, installed_at: "2026-11-01T03:00:00Z" } },
+    ];
+    renderSelector({ allLutOptions: versions, groupedLutOptions: [{ label: "4-Color", options: versions }] });
+    fireEvent.click(screen.getByTestId("lut-picker-trigger"));
+    const dialog = screen.getByRole("dialog", { name: "Choose LUT" });
+    expect(within(dialog).getByText("本地当前版本")).toBeInTheDocument();
+    expect(within(dialog).getByText("历史版本")).toBeInTheDocument();
+    fireEvent.change(within(dialog).getByRole("searchbox"), { target: { value: "Same LUT" } });
+    expect(within(dialog).getByText("本地当前版本")).toBeInTheDocument();
+    expect(within(dialog).getByText("历史版本")).toBeInTheDocument();
+  });
+
+  it("shares account favorites across brands and cloud cards without changing selected LUTs", async () => {
+    const connection = { state: "connected" as const, subject: "maker", web_url: "http://localhost:8018" };
+    const ref = { resource_id: "lut-b", revision_id: "rev-b", content_hash: "b4" };
+    const stats = { ...ref, likes: 0, saves: 1, downloads: 0, liked: false, saved: true, downloaded: false, revisions: [ref] };
+    vi.mocked(communityAccounts.getContributionConnection).mockResolvedValue(connection);
+    vi.mocked(communityApi.fetchLocalResourceReferences).mockResolvedValue({ b4: ref });
+    vi.mocked(communityApi.fetchMyResourceActivity).mockResolvedValue({ items: [stats], subject: "maker" });
+    vi.mocked(communityApi.fetchResourceStats).mockResolvedValue({ items: [stats], subject: "maker" });
+    vi.mocked(communityApi.setResourceActivity).mockResolvedValue({ item: { ...stats, saved: false, saves: 0 }, subject: "maker" });
+    useCommunityStore.getState().acceptConnection(connection);
+    const confirm = vi.fn();
+    renderSelector({ onLutSelectionChange: confirm,
+      allLutOptions: [
+        { value: "a4", label: "A 4C", brand: "Brand A", mode: "4-Color" },
+        { value: "b4", label: "B 4C", brand: "Brand B", mode: "4-Color" },
+      ],
+    });
+    render(<ResourceActivityActions kind="luts" resource={ref} />);
+    fireEvent.click(screen.getByTestId("lut-picker-trigger"));
+    await waitFor(() => expect(screen.getAllByRole("button", { name: "取消账号收藏" })).toHaveLength(2));
+    fireEvent.click(screen.getByRole("combobox", { name: "账号资源筛选" }));
+    fireEvent.click(screen.getByRole("option", { name: "我的收藏" }));
+    const dialog = screen.getByRole("dialog", { name: "Choose LUT" });
+    expect(within(dialog).getByRole("checkbox", { name: /B 4C/ })).toBeVisible();
+    expect(within(dialog).queryByRole("checkbox", { name: /A 4C/ })).not.toBeInTheDocument();
+    fireEvent.click(within(dialog).getByRole("button", { name: "取消账号收藏" }));
+    await waitFor(() => expect(within(dialog).queryByRole("checkbox", { name: /B 4C/ })).not.toBeInTheDocument());
+    expect(screen.getByRole("button", { name: "收藏到账号" })).toHaveAttribute("aria-pressed", "false");
+    fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
+    expect(confirm).toHaveBeenCalledWith(["a4"]);
+  });
+
+  it("searches international names and SKU without changing the staged LUT value", () => {
+    const confirm = vi.fn();
+    renderSelector({
+      lutName: "",
+      groupedLutOptions: [{ label: "4-Color", options: [{ value: "archive/path-key", label: "作者色表", brand: "赛纳",
+        display: { market_names: { CN: "深红色表", INTL: "Garnet LUT" }, sku: "SN-L07" } }] }],
+      onLutSelectionChange: confirm,
+    });
+    fireEvent.click(screen.getByTestId("lut-picker-trigger"));
+    for (const query of ["Garnet LUT", "SN-L07", "作者色表"]) {
+      fireEvent.change(screen.getByRole("searchbox"), { target: { value: query } });
+      expect(screen.getByRole("checkbox", { name: /深红色表/ })).not.toHaveTextContent("作者色表");
+    }
+    fireEvent.click(screen.getByRole("checkbox", { name: /深红色表/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
+    expect(confirm).toHaveBeenCalledWith(["archive/path-key"]);
+  });
+
+  it("can find and select a SKU before choosing its manufacturer", () => {
+    const confirm = vi.fn();
+    renderSelector({ manufacturer: "", lutName: "", groupedLutOptions: [], onLutSelectionChange: confirm,
+      allLutOptions: [{ value: "stable/path", label: "原始色表", brand: "赛纳", mode: "4-Color",
+        display: { localized_names: { zh: "深红色表" }, sku: "SN-404" } }] });
+    fireEvent.click(screen.getByTestId("lut-picker-trigger"));
+    fireEvent.change(screen.getByRole("searchbox"), { target: { value: "SN-404" } });
+    const result = screen.getByRole("checkbox", { name: /深红色表/ });
+    expect(result).toHaveTextContent("赛纳");
+    fireEvent.click(result);
+    fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
+    expect(confirm).toHaveBeenCalledWith(["stable/path"]);
+  });
+  it("keeps selected LUTs staged when returning from the public library", () => {
+    renderSelector();
+    fireEvent.click(screen.getByTestId("lut-picker-trigger"));
+    fireEvent.click(screen.getByRole("checkbox", { name: /B 4C/ }));
+    fireEvent.change(screen.getByRole("searchbox"), { target: { value: "4C" } });
+    fireEvent.click(screen.getByRole("button", { name: "去公开库查找" }));
+    expect(screen.getByRole("searchbox")).toHaveValue("4C");
+    fireEvent.change(screen.getByRole("searchbox"), { target: { value: "4" } });
+    fireEvent.click(screen.getByRole("button", { name: "返回本地选择" }));
+    expect(screen.getByRole("searchbox")).toHaveValue("4");
+    expect(screen.getByRole("checkbox", { name: /A 4C/ })).toHaveAttribute("aria-checked", "true");
+    expect(screen.getByRole("checkbox", { name: /B 4C/ })).toHaveAttribute("aria-checked", "true");
+  });
   it("keeps refresh inside the picker dialog", () => {
     const onRefresh = vi.fn();
     renderSelector({ onRefresh });
@@ -289,3 +385,4 @@ describe("LegacyLutSelector", () => {
     expect(liveRegion!.textContent).toMatch(/2/);
   });
 });
+import "./communityTestMocks";

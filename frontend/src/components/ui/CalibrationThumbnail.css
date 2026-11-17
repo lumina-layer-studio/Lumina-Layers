@@ -1,0 +1,120 @@
+.calibration-plane {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  transition: transform 150ms cubic-bezier(.2, .7, .3, 1);
+}
+
+.calibration-plane.is-tilting {
+  transform-style: preserve-3d;
+  transition: transform 75ms cubic-bezier(.2, .75, .3, 1);
+}
+
+.calibration-deck-button {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.calibration-deck-button:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+/* Keep the exchange on a child plane so it never replaces the pointer tilt. */
+.calibration-deck-card {
+  --deck-front: translate3d(-3%, 3%, 0) scale(.94);
+  --deck-back: translate3d(4%, -4%, -1px) rotate(4deg) scale(.9);
+  position: absolute;
+  inset: 0;
+  transform-style: preserve-3d;
+}
+
+.calibration-deck-card.is-front { z-index: 2; transform: var(--deck-front); }
+.calibration-deck-card.is-back { z-index: 1; transform: var(--deck-back); }
+.calibration-deck-card.is-swapping {
+  animation-duration: var(--calibration-swap-duration);
+  animation-timing-function: cubic-bezier(.25, .7, .25, 1);
+  animation-fill-mode: both;
+}
+.calibration-deck-card.is-front.is-swapping { animation-name: calibration-card-to-front; }
+.calibration-deck-card.is-back.is-swapping { animation-name: calibration-card-to-back; }
+
+@keyframes calibration-card-to-front {
+  0% { z-index: 1; transform: var(--deck-back); }
+  45% { z-index: 1; transform: translate3d(12%, -5%, -1px) rotate(5deg) scale(.9); }
+  55% { z-index: 2; transform: translate3d(12%, -5%, 0) rotate(5deg) scale(.9); }
+  100% { z-index: 2; transform: var(--deck-front); }
+}
+
+@keyframes calibration-card-to-back {
+  0% { z-index: 2; transform: var(--deck-front); }
+  45% { z-index: 2; transform: translate3d(-28%, 6%, 1px) rotate(-8deg) scale(.94); }
+  55% { z-index: 1; transform: translate3d(-28%, 6%, -1px) rotate(-8deg) scale(.94); }
+  100% { z-index: 1; transform: var(--deck-back); }
+}
+
+.calibration-edge-frame {
+  --long-edge: #44474a;
+  --short-edge: #54575a;
+  position: absolute;
+  transform-style: preserve-3d;
+}
+
+.calibration-edge-frame.is-white {
+  --long-edge: #aaaead;
+  --short-edge: #c2c5c1;
+}
+
+.calibration-edge-frame > i {
+  position: absolute;
+  transform-origin: 0 0;
+}
+
+/* Each wall starts at its face's edge and extends back along the Z axis. */
+.calibration-edge-left, .calibration-edge-right {
+  top: 0;
+  width: var(--edge-width);
+  height: 100%;
+  background: var(--long-edge);
+  transform: rotateY(90deg);
+}
+
+.calibration-edge-top, .calibration-edge-bottom {
+  left: 0;
+  width: 100%;
+  height: var(--edge-height);
+  background: var(--short-edge);
+  transform: rotateX(-90deg);
+}
+
+.calibration-edge-left { left: 0; }
+.calibration-edge-right { left: 100%; }
+.calibration-edge-top { top: 0; }
+.calibration-edge-bottom { top: 100%; }
+
+.calibration-page-options {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  border-radius: 7px;
+  background: var(--surface-well);
+  padding: 2px;
+  color: var(--surface-text-muted);
+}
+.calibration-page-options button {
+  min-height: 24px;
+  padding: 2px 5px;
+  border-radius: 5px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+.calibration-page-options button:focus-visible { outline: 2px solid var(--focus-ring); }
+.calibration-page-options button:disabled { opacity: .45; }

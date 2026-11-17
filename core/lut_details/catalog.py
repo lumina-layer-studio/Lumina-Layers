@@ -9,7 +9,10 @@ import glob
 from pathlib import Path
 import re
 import time
+from typing import Any
 
+from core.filament_display import filament_display
+from core.lut_board_preview import lut_board_preview
 from core.lut_details.aliases import AliasResolver, normalize_lookup_token
 from core.lut_details.parser import LutParser, ParsedLut
 
@@ -47,6 +50,7 @@ class LutCatalogItemSummary:
     material_source: str
     search_tokens: tuple[str, ...]
     revision: str = ""
+    display: dict[str, Any] | None = None
 
 
 @dataclass(frozen=True)
@@ -164,6 +168,10 @@ class LutCatalogIndexer:
                 material_source=identity.material_source,
                 search_tokens=tuple(tokens),
                 revision=revision,
+                display={
+                    **filament_display(parsed.raw_metadata), **filament_display(parsed.raw_metadata.get("display")),
+                    **lut_board_preview(parsed.rgb, parsed.color_mode, parsed.raw_metadata),
+                } or None,
             )
             grouped.setdefault(identity.manufacturer, []).append(item)
 
@@ -297,7 +305,7 @@ class LutCatalogIndexer:
         return stem
 
     def _infer_from_folder(self, path: Path) -> tuple[str, str]:
-        rel_parts = self._virtual_relative_parts(path)
+        rel_parts = self._identity_relative_parts(path)
         if len(rel_parts) < 2 or rel_parts[0] == "Custom":
             return "", ""
         vendor = str(rel_parts[0])
@@ -307,6 +315,15 @@ class LutCatalogIndexer:
             if second.casefold() not in _MODE_FOLDER_TOKENS:
                 material = second
         return vendor, material
+
+    def _identity_relative_parts(self, path: Path) -> tuple[str, ...]:
+        parts = self._virtual_relative_parts(path)
+        # Cloud and revision directories describe storage, not manufacturers.
+        if parts and parts[0] == "Cloud":
+            parts = parts[1:]
+        if parts and parts[0] == "_revisions":
+            return (path.name,)
+        return parts
 
     def _infer_from_filename(self, path: Path) -> tuple[str, str]:
         parts = path.stem.split("&")
@@ -323,7 +340,7 @@ class LutCatalogIndexer:
         material = self._infer_material_from_stem(path.stem)
         underscore_parts = [part.strip() for part in Path(path).stem.split("_") if part.strip()]
         if len(underscore_parts) >= 2 and material:
-            rel_parts = self._virtual_relative_parts(path)
+            rel_parts = self._identity_relative_parts(path)
             if (
                 len(rel_parts) >= 2
                 and rel_parts[0] != "Custom"

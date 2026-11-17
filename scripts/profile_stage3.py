@@ -30,7 +30,7 @@ BASELINE_JSON = ARTIFACTS_DIR / "perf_baseline.json"
 LATEST_JSON = ARTIFACTS_DIR / "perf_latest.json"
 BASELINE_MD = ROOT / "docs" / "perf_baseline.md"
 
-DEFAULT_LUT = ROOT / "lut-preset" / "Custom" / "lumina_lut.json"
+DEFAULT_LUT = ROOT / "tests/fixtures/lut_regression" / "Custom" / "lumina_lut.json"
 DEFAULT_IMAGE = ROOT / "TCT.jpg"
 
 WARN_THRESHOLD_PCT = 15

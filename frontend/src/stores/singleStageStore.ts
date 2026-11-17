@@ -105,6 +105,7 @@ interface SingleStageState {
   isSaving: boolean;
   saveError: string | null;
   saveSuccess: string | null;
+  savedContribution?: { id?: string; state: string } | null;
   materialFileUrl: string | null;
   savedStageAParamsUrl: string | null;
   savedMaterialSummary: SavedMaterialSummary | null;
@@ -418,6 +419,7 @@ const RESULT_RESET_STATE = {
   isSaving: false,
   saveError: null,
   saveSuccess: null,
+  savedContribution: null,
   materialFileUrl: null,
   savedStageAParamsUrl: null,
   savedMaterialSummary: null,
@@ -479,6 +481,7 @@ const DEFAULT_STATE: SingleStageState = {
   isSaving: false,
   saveError: null,
   saveSuccess: null,
+  savedContribution: null,
   materialFileUrl: null,
   savedStageAParamsUrl: null,
   savedMaterialSummary: null,
@@ -1593,6 +1596,7 @@ export const useSingleStageStore = create<
         materialFileUrl: null,
         savedStageAParamsUrl: null,
         savedMaterialSummary: null,
+        savedContribution: null,
         isExtracting: false,
       });
     } catch (err) {
@@ -1637,7 +1641,7 @@ export const useSingleStageStore = create<
       return;
     }
 
-    set({ isSaving: true, saveError: null, saveSuccess: null });
+    set({ isSaving: true, saveError: null, saveSuccess: null, savedContribution: null });
     try {
       const response = await saveGradientCardMaterial({
         sessionId: state.sessionId,
@@ -1664,6 +1668,8 @@ export const useSingleStageStore = create<
           newVerificationCount,
         ),
         saveSuccess: successMessage,
+        savedContribution: response.contribution,
+        saveError: response.contribution?.state === "needs_attention" ? tRuntime("contribution_snapshot_failed") : null,
         isSaving: false,
       });
     } catch (err) {

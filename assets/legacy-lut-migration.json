@@ -1,0 +1,341 @@
+{
+  "schema_version": 1,
+  "source_commit": "1308c06fc69915e11ead7dbefa0c1e7da11504d0",
+  "luts": [
+    {
+      "path": "Aliz/PETG/5色/Aliz&PETG&5color&红-黄-蓝-白-黑-20260304.npy",
+      "name": "Aliz - PETG - 5色 - Aliz&PETG&5color&红-黄-蓝-白-黑-20260304",
+      "sha256": "be97ab7e1a2b5245dd8c679f2e5e68c0de9169ce473b6182f58828d3d0c2512f"
+    },
+    {
+      "path": "Aliz/PETG/Aliz&4色PETG&CMYW.npy",
+      "name": "Aliz - PETG - Aliz&4色PETG&CMYW",
+      "sha256": "1b400e87813e51ee5a4cbb8919a7c027e2025b868fc7a9b335b0122375132559"
+    },
+    {
+      "path": "Aliz/PETG/Aliz&4色PETG&RYBW.npy",
+      "name": "Aliz - PETG - Aliz&4色PETG&RYBW",
+      "sha256": "2866d3cb6d59455009c69a40145d0005f390a52923cfc5e44c6776e30db46c60"
+    },
+    {
+      "path": "Aliz/PETG/Aliz&6色PETG&CMYWGK.npy",
+      "name": "Aliz - PETG - Aliz&6色PETG&CMYWGK",
+      "sha256": "a7b65f6d80ebaec4dc42f675f944e11b7bce5f688cddfa1c0b2e422e600bcd12"
+    },
+    {
+      "path": "Aliz/PETG/Aliz&6色PETG&RYBWGK.npy",
+      "name": "Aliz - PETG - Aliz&6色PETG&RYBWGK",
+      "sha256": "71b04e0049f5b95ad6ecbd4cfef07479e0d36cb9da70ed4fcac651d1a7d73739"
+    },
+    {
+      "path": "Aliz/PETG/Aliz&8色PETG.npy",
+      "name": "Aliz - PETG - Aliz&8色PETG",
+      "sha256": "da0a7f54bb91fe92a20c8d8802f45cc6b0e15169a2258cc2be0a048e8374dc2b"
+    },
+    {
+      "path": "Aliz/PLA/4色/Aliz&PLA&4色CMYW&20260223.npy",
+      "name": "Aliz - PLA - 4色 - Aliz&PLA&4色CMYW&20260223",
+      "sha256": "5fb0811a4d7704bded353563efb01c387aa8d2788c004d9dd33218389b98ce65"
+    },
+    {
+      "path": "Aliz/PLA/4色/Aliz&PLA&4色RYBW&20260211.npy",
+      "name": "Aliz - PLA - 4色 - Aliz&PLA&4色RYBW&20260211",
+      "sha256": "1c076fc40c894ca396349af5d2509db8d3128780ffc64905d432de0d140f64fa"
+    },
+    {
+      "path": "Aliz/PLA/6色/Aliz&PLA&CMYW&品红-青-黄-绿-白-黑&20260223.npy",
+      "name": "Aliz - PLA - 6色 - Aliz&PLA&CMYW&品红-青-黄-绿-白-黑&20260223",
+      "sha256": "f2826ba5b04e84de7626264b41193f817156524b63281eb32ce9e76c3d7d81a9"
+    },
+    {
+      "path": "Aliz/PLA/6色/Aliz&PLA&RYBW&红-蓝-黄-绿-白-黑&20260211.npy",
+      "name": "Aliz - PLA - 6色 - Aliz&PLA&RYBW&红-蓝-黄-绿-白-黑&20260211",
+      "sha256": "06f3da68833d8fa5e734bff5251ca193359b3302e7ef3766915912ce4075a3e7"
+    },
+    {
+      "path": "Aliz/PLA/Aliz&4色PLA&CMYW.npy",
+      "name": "Aliz - PLA - Aliz&4色PLA&CMYW",
+      "sha256": "0e15c0250bce71caf72e15924ae7937cfc9717b8e07019a6bcce7a95420922fd"
+    },
+    {
+      "path": "Aliz/PLA/Aliz&4色PLA&RYBW.npy",
+      "name": "Aliz - PLA - Aliz&4色PLA&RYBW",
+      "sha256": "907f245d647749ab2de1574605f14963e0413d437aa431bd73af918f2ff6608e"
+    },
+    {
+      "path": "Aliz/PLA/Aliz&6色PLA&CMYWGK.npy",
+      "name": "Aliz - PLA - Aliz&6色PLA&CMYWGK",
+      "sha256": "d0d82914b5900770bfa51d6f3e2245acd9bf46b7fbf751de1a9eea36e2ce26a0"
+    },
+    {
+      "path": "Aliz/PLA/Aliz&6色PLA&RYBWGK.npy",
+      "name": "Aliz - PLA - Aliz&6色PLA&RYBWGK",
+      "sha256": "076f804d7a91b37579393395d978378c1b16a8c4c1dc75ab305cdac4e39ef2e0"
+    },
+    {
+      "path": "Aliz/PLA/Aliz&8色PLA.npy",
+      "name": "Aliz - PLA - Aliz&8色PLA",
+      "sha256": "fd95c5a48d86baaf2a8c5327cb54d62d50714442e3c177f48617eb5330324cd8"
+    },
+    {
+      "path": "BIQU/必趣&PLAGO&2色BW.npy",
+      "name": "BIQU - 必趣&PLAGO&2色BW",
+      "sha256": "81042d279a99fffaab86e740fe7d07b42e37035c18e6346c35cbe953eae739e1"
+    },
+    {
+      "path": "BIQU/必趣&PLAGO&4色RYBW.npy",
+      "name": "BIQU - 必趣&PLAGO&4色RYBW",
+      "sha256": "d5de555d89ac60029b7659d895013c78ef8b01320006e3581b44b29035615855"
+    },
+    {
+      "path": "BIQU/必趣&PLAGO&6色RYBWGK.npy",
+      "name": "BIQU - 必趣&PLAGO&6色RYBWGK",
+      "sha256": "d88779a0184eb1f542232cba261ed3b929fc67e689ce5b28ae2fc547818e60fc"
+    },
+    {
+      "path": "CooBeen/RYBW-CooBeen PETG.npy",
+      "name": "CooBeen - RYBW-CooBeen PETG",
+      "sha256": "aa0873db537b5807bda23a17f0a15cbcc70e7cbf11fda60dc53c0cb7936a269f"
+    },
+    {
+      "path": "Creality/RYBW-Creality Hyper PLA.npy",
+      "name": "Creality - RYBW-Creality Hyper PLA",
+      "sha256": "55a5997db187108e1cd6d07620e18bb90fe030eed917e571e51aa465dbee0f33"
+    },
+    {
+      "path": "Custom/Bambulab&PLA&8色&红-品红-青-蓝-黄-白-绿-黑.npy",
+      "name": "Custom - Bambulab&PLA&8色&红-品红-青-蓝-黄-白-绿-黑",
+      "sha256": "280c6134b3c471380116c97a3bc60ad3a78470c70b1369aefae7c9d29022ae37"
+    },
+    {
+      "path": "Custom/Bambulab&PLA&BW&白-黑.npy",
+      "name": "Custom - Bambulab&PLA&BW&白-黑",
+      "sha256": "5be77143e238d33500bc9e7118f2a52bdf73bc2fa8a1ce52590a6ec08c001b18"
+    },
+    {
+      "path": "Custom/Bambulab&PLA&CMYW&青-品红-黄-绿-白-黑.npy",
+      "name": "Custom - Bambulab&PLA&CMYW&青-品红-黄-绿-白-黑",
+      "sha256": "1951d641863be3a4aaf6144b98957aeeb58986e85e84a07db79ed5fccdc3e728"
+    },
+    {
+      "path": "Custom/Bambulab&PLA&RYBW&红-黄-蓝-白.npy",
+      "name": "Custom - Bambulab&PLA&RYBW&红-黄-蓝-白",
+      "sha256": "65878b7302d3bdd5ebbea0a710cd5124fc0b58e6aa118a3f1db7cd761e1e742e"
+    },
+    {
+      "path": "Custom/CMYK.json",
+      "name": "Custom - CMYK",
+      "sha256": "9158ad43dea4b136fe45e1516ac6666f6b7396e528bdad423e1ea483367a91d5"
+    },
+    {
+      "path": "Custom/Merged_8-Color+6-Color+BW+4-Color_20260227_222117.npz",
+      "name": "Custom - Merged_8-Color+6-Color+BW+4-Color_20260227_222117",
+      "sha256": "5903012ed494b00cffffb81550a4f11c4efde33500f00797b4967b3cecd274e7"
+    },
+    {
+      "path": "Custom/Merged_8-Color+BW+6-Color+4-Color_20260305_213304.npz",
+      "name": "Custom - Merged_8-Color+BW+6-Color+4-Color_20260305_213304",
+      "sha256": "5903012ed494b00cffffb81550a4f11c4efde33500f00797b4967b3cecd274e7"
+    },
+    {
+      "path": "Custom/Merged_Aliz_PETG_keyed_20260315_111137.json",
+      "name": "Custom - Merged_Aliz_PETG_keyed_20260315_111137",
+      "sha256": "d96278c44d80baf6156f7e76389d74576bb7a12c9c880c43cfcdea8d4c90f9c5"
+    },
+    {
+      "path": "Custom/Merged_Aliz_PETG_keyed_20260315_111137.npz",
+      "name": "Custom - Merged_Aliz_PETG_keyed_20260315_111137",
+      "sha256": "bc794066dae5ddb72e804c95be129b09c1b07e619fab597696ba09f0ef799d99"
+    },
+    {
+      "path": "Custom/WJXCPLA6C.json",
+      "name": "Custom - WJXCPLA6C",
+      "sha256": "16a60f165331d2f663e65cefe091c7802f7caf96881bac66c0f1a7e2dac98c71"
+    },
+    {
+      "path": "Custom/lumina_lut.json",
+      "name": "Custom - lumina_lut",
+      "sha256": "bad3054b481f4cf55920bf9d1f81836bc674c954806d80876efefcbb12035987"
+    },
+    {
+      "path": "Elegoo/Elegoo_pla_RYBW.npy",
+      "name": "Elegoo - Elegoo_pla_RYBW",
+      "sha256": "65878b7302d3bdd5ebbea0a710cd5124fc0b58e6aa118a3f1db7cd761e1e742e"
+    },
+    {
+      "path": "Jayo/Jayo&OW_PLA+_RYBW.npy",
+      "name": "Jayo - Jayo&OW_PLA+_RYBW",
+      "sha256": "8f97c4b8d48d30c73a533eb1e610e24e5b6acf8470a5c489352326471dafe907"
+    },
+    {
+      "path": "R3D/R3DPLA青春版RYBW-PLA哑光中国红-PLA哑光黄-PLA哑光宝石蓝-PLA哑光白.npy",
+      "name": "R3D - R3DPLA青春版RYBW-PLA哑光中国红-PLA哑光黄-PLA哑光宝石蓝-PLA哑光白",
+      "sha256": "431173b662d0001181b5aae353298b5fbc368bd46e2af90d838729a30b815ddc"
+    },
+    {
+      "path": "WJXCPLA6C.json",
+      "name": "WJXCPLA6C",
+      "sha256": "56beaba2e07ca266ab035220830186a6a6e1162577d4deba9cff2ec01c8d43c6"
+    },
+    {
+      "path": "XYD小明/PLA/4色/XYD&PLA&CMYW&青-品红-黄-白.json",
+      "name": "XYD小明 - PLA - 4色 - XYD&PLA&CMYW&青-品红-黄-白",
+      "sha256": "44d62ff79efa742ed8b5ecc6eb89a505725a08d059d69019678e1aa7458f0da9"
+    },
+    {
+      "path": "XYD小明/PLA/4色/XYD&PLA&RYBW&红-蓝-黄-白.json",
+      "name": "XYD小明 - PLA - 4色 - XYD&PLA&RYBW&红-蓝-黄-白",
+      "sha256": "2e0cb27019a8f0a27bbb876de1b143e36ed6f8761977e942e2a0bbc5c4f8c33d"
+    },
+    {
+      "path": "XYD小明/PLA/6色/XYD&PLA&CMYW&青-品红-黄-绿-白-黑.json",
+      "name": "XYD小明 - PLA - 6色 - XYD&PLA&CMYW&青-品红-黄-绿-白-黑",
+      "sha256": "84cd24566f8af12a4704ebab46517c4c0259468d8a63c13d5726c4d482b9aa57"
+    },
+    {
+      "path": "XYD小明/PLA/6色/XYD&PLA&RYBW&红-蓝-黄-绿-白-黑.json",
+      "name": "XYD小明 - PLA - 6色 - XYD&PLA&RYBW&红-蓝-黄-绿-白-黑",
+      "sha256": "8fabe1716ed5e731345282a74a12050aaa62100249b5a35bbbdc66f3af3f0490"
+    },
+    {
+      "path": "XYD小明/PLA/8色/XYD&PLA&8色&红-品红-青-蓝-黄-白-绿-黑.json",
+      "name": "XYD小明 - PLA - 8色 - XYD&PLA&8色&红-品红-青-蓝-黄-白-绿-黑",
+      "sha256": "68894a97fca21b28fcd66a7b074de6487fa08ac877cbafbe1c12d5a2817d51cd"
+    },
+    {
+      "path": "bambulab/bambulab_pla_basic_cmyw.npy",
+      "name": "bambulab - bambulab_pla_basic_cmyw",
+      "sha256": "950e1008523bb2906869cdd75bbf0199cf79b4322e9319713a974798177f7309"
+    },
+    {
+      "path": "bambulab/bambulab_pla_basic_cmyw_new.npy",
+      "name": "bambulab - bambulab_pla_basic_cmyw_new",
+      "sha256": "dbab37fa329a69b70a29098fe2eb8317c42c9bb5dc1250446d23779dd5f162f4"
+    },
+    {
+      "path": "bambulab/bambulab_pla_basic_rybw.npy",
+      "name": "bambulab - bambulab_pla_basic_rybw",
+      "sha256": "85da7d479e906afb42626abced9f76e1e7c9bffe9bb3f778959a4b224d6df1aa"
+    },
+    {
+      "path": "snapmaker/快造&2色PLA&BW.npy",
+      "name": "snapmaker - 快造&2色PLA&BW",
+      "sha256": "8ecb1db58aaace2ba321d3ecae9097be9016d2fed92b2948499fcd4cb8dfeb95"
+    },
+    {
+      "path": "snapmaker/快造&4色PLA&B(蓝)MYW.npy",
+      "name": "snapmaker - 快造&4色PLA&B(蓝)MYW",
+      "sha256": "397438e5c19c391605c5138f7c7680a7a3ef5f05295d016fc089642a35287c94"
+    },
+    {
+      "path": "snapmaker/快造&4色PLA&RYBW.npy",
+      "name": "snapmaker - 快造&4色PLA&RYBW",
+      "sha256": "84c22018a5bb4030dcff8a2ae4ebcf1559d069fe205205222a8b0d2b6a73a607"
+    },
+    {
+      "path": "天瑞/天瑞-PETG-ECO-NGYX-RYBW.npy",
+      "name": "天瑞 - 天瑞-PETG-ECO-NGYX-RYBW",
+      "sha256": "8922dc2c72a98bf5c1231b0b3677a543b684afc21d3be1f1df5ffc67b5d79061"
+    },
+    {
+      "path": "彩多屋/4色/CMYK/lumina_lut.json",
+      "name": "彩多屋 - 4色 - CMYK - lumina_lut",
+      "sha256": "8a9a281c9d054a617ee01d2f8a8a5d96b39e9c415259375e5a274a16f197f6f3"
+    },
+    {
+      "path": "彩多屋/4色/RYBW/lumina_lut.json",
+      "name": "彩多屋 - 4色 - RYBW - lumina_lut",
+      "sha256": "c8e967e09e00b9f4f1960382a93cd7a4e7f31e6385a1d981c831abd2457d46e9"
+    },
+    {
+      "path": "彩多屋/6色/CMYKGK/lumina_lut.json",
+      "name": "彩多屋 - 6色 - CMYKGK - lumina_lut",
+      "sha256": "39059e81cd20224cab25b104daa49bc15d8a865e37e5583485f9edaac10acfdf"
+    },
+    {
+      "path": "彩多屋/6色/RYBWGK/lumina_lut.json",
+      "name": "彩多屋 - 6色 - RYBWGK - lumina_lut",
+      "sha256": "e912abe85ad690ac89835f5f37a277948b76447a8448eee62bdde272fc616eb0"
+    },
+    {
+      "path": "彩多屋/lumina_lut.json",
+      "name": "彩多屋 - lumina_lut",
+      "sha256": "32895bb22f255a11544099bb66d80e391d5ef6a98bdc5488f94829b83f0a553b"
+    },
+    {
+      "path": "瑞贝思/瑞贝思&2色&PLA&黑白&20260401.json",
+      "name": "瑞贝思 - 瑞贝思&2色&PLA&黑白&20260401",
+      "sha256": "fa3a2ea9cdcd0a71f17adf3f6bb793a995f6909a657eb16af5b6c3c96886d9cb"
+    },
+    {
+      "path": "瑞贝思/瑞贝思&4色&PLA&红黄蓝白&20260401.json",
+      "name": "瑞贝思 - 瑞贝思&4色&PLA&红黄蓝白&20260401",
+      "sha256": "973a6a4d73d2d7e3792938797d65699a6305cb54a7487e2c7c785ae267b069a5"
+    },
+    {
+      "path": "瑞贝思/瑞贝思&6色&PLA&红黄蓝白黑绿&20260401.json",
+      "name": "瑞贝思 - 瑞贝思&6色&PLA&红黄蓝白黑绿&20260401",
+      "sha256": "9e96c7f656971fb6a98f56de050542834147510749012c043914c1b3b6b3b995"
+    },
+    {
+      "path": "瑞贝思/瑞贝思&Merged_6-Color+BW+4-Color_20260401_141859.json",
+      "name": "瑞贝思 - 瑞贝思&Merged_6-Color+BW+4-Color_20260401_141859",
+      "sha256": "92136958ae83091931ef22175319351ed3ecbb7a0a0fd2c32ca188c28737c879"
+    },
+    {
+      "path": "精亮/精亮&PLA4色&RYBW.npy",
+      "name": "精亮 - 精亮&PLA4色&RYBW",
+      "sha256": "b96e3ec053bdba225824e32752a7899863d94ab93cf37157008c3f4796bc8628"
+    },
+    {
+      "path": "精亮/精亮&PLA6色&黑 白 黄 绿 红 蓝.npy",
+      "name": "精亮 - 精亮&PLA6色&黑 白 黄 绿 红 蓝",
+      "sha256": "512d76403ef678fc31a5c7f04df27479fd710a3e1bee184eed25f2b59c229d70"
+    },
+    {
+      "path": "精亮/精亮&PLA8色.npy",
+      "name": "精亮 - 精亮&PLA8色",
+      "sha256": "ab5596d5a2adaba92665538238ed6b0c2d2d9f6cf61629e49ce9aad8336e9eff"
+    },
+    {
+      "path": "赛纳/赛纳&2色PLA&BW-白-黑.npy",
+      "name": "赛纳 - 赛纳&2色PLA&BW-白-黑",
+      "sha256": "ed9de8ccb5516b38b0ab6a8516e65e5f494023d2cf8c365068e7032303547ce7"
+    },
+    {
+      "path": "赛纳/赛纳&4色PETG&CMYW-品红-青-黄-白.npy",
+      "name": "赛纳 - 赛纳&4色PETG&CMYW-品红-青-黄-白",
+      "sha256": "f77eb89fcd9c47a91f9075e760c507ac828186ff9fc4fbc5635a055fad1d0fdb"
+    },
+    {
+      "path": "赛纳/赛纳&4色PLA&CMYW-品红-青-黄-白.npy",
+      "name": "赛纳 - 赛纳&4色PLA&CMYW-品红-青-黄-白",
+      "sha256": "4a6939312c1381c4bbc5047d702c8f98a103bb852f439ce60e8d873f14cfab6c"
+    },
+    {
+      "path": "赛纳/赛纳&4色PLA&RYBW-红-黄-蓝-白.npy",
+      "name": "赛纳 - 赛纳&4色PLA&RYBW-红-黄-蓝-白",
+      "sha256": "db7299ee015adbd58b3938e4ba95cd46d3b38874ca186edf92a553357f5c0477"
+    },
+    {
+      "path": "赛纳/赛纳&6色PLA&CMYWGK-品红-青-黄-白-绿-黑.npy",
+      "name": "赛纳 - 赛纳&6色PLA&CMYWGK-品红-青-黄-白-绿-黑",
+      "sha256": "81ae4747c2469900ef722702e5ca9ff446ea63069fa6cb0bd2dc2661439af430"
+    },
+    {
+      "path": "赛纳/赛纳&6色PLA&RYBWGK-红-黄-蓝-白-绿-黑.npy",
+      "name": "赛纳 - 赛纳&6色PLA&RYBWGK-红-黄-蓝-白-绿-黑",
+      "sha256": "6beb20cf90fff7315f7950d566d3085dc76346278149a5653ea26c4843b27c76"
+    },
+    {
+      "path": "赛纳/赛纳&8色PLA-红-黄-蓝-品红-青-白-绿-黑.npy",
+      "name": "赛纳 - 赛纳&8色PLA-红-黄-蓝-品红-青-白-绿-黑",
+      "sha256": "b64e17232ba5fa59cf633ff60283a581aeb53315642fa95a847fb27ba73a68a5"
+    },
+    {
+      "path": "通用LUT[有色差]RYBW General for personal use.npy",
+      "name": "通用LUT[有色差]RYBW General for personal use",
+      "sha256": "65878b7302d3bdd5ebbea0a710cd5124fc0b58e6aa118a3f1db7cd761e1e742e"
+    }
+  ]
+}

@@ -253,6 +253,7 @@ class MaterialRegistryInstallRequest(BaseModel):
     package_sha256: str = Field(..., description="Expected ZIP SHA-256.")
     material_id: str = Field(..., description="Stable material identity.")
     revision_id: str = Field(..., description="Selected material revision.")
+    account_id: str | None = Field(default=None, max_length=200)
 
     @field_validator("package_url", "package_sha256", "material_id", "revision_id")
     @classmethod

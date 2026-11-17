@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import zipfile
+import shutil
 from pathlib import Path
 
 import pytest
@@ -149,6 +150,59 @@ def test_material_seed_rejects_sha256_mismatch(
 
     with pytest.raises(ValueError, match="sha256 mismatch"):
         install_material_seed_if_needed(materials_dir=str(tmp_path / "materials"))
+
+
+def test_seed_does_not_return_after_user_deletes_library(monkeypatch, tmp_path):
+    seed = tmp_path / "seed.zip"
+    _write_seed_archive(seed)
+    monkeypatch.setenv("LUMINA_MATERIALS_SEED_PATH", str(seed))
+    root = tmp_path / "materials"
+    assert install_material_seed_if_needed(materials_dir=str(root))["installed_count"] == 1
+    shutil.rmtree(root / "SeedBrand")
+    assert install_material_seed_if_needed(materials_dir=str(root)) is None
+    assert not (root / "SeedBrand").exists()
+
+
+def test_existing_library_is_remembered_after_user_deletes_it(monkeypatch, tmp_path):
+    seed = tmp_path / "seed.zip"
+    _write_seed_archive(seed)
+    monkeypatch.setenv("LUMINA_MATERIALS_SEED_PATH", str(seed))
+    root = tmp_path / "materials"
+    material = root / "personal" / "material.json"
+    material.parent.mkdir(parents=True)
+    material.write_text("{}", encoding="utf-8")
+    assert install_material_seed_if_needed(materials_dir=str(root)) is None
+    shutil.rmtree(material.parent)
+    assert install_material_seed_if_needed(materials_dir=str(root)) is None
+
+
+def test_explicit_restore_is_idempotent_and_keeps_personal_changes(monkeypatch, tmp_path):
+    from api.material_seed import restore_material_seed
+    seed = tmp_path / "seed.zip"
+    _write_seed_archive(seed)
+    monkeypatch.setenv("LUMINA_MATERIALS_SEED_PATH", str(seed))
+    root = tmp_path / "materials"
+    install_material_seed_if_needed(materials_dir=str(root))
+    assert restore_material_seed(materials_dir=str(root))["installed_count"] == 0
+    personal = root / "SeedBrand/seed-pla/material.json"
+    payload = json.loads(personal.read_text())
+    payload["material_name"] = "My modified filament"
+    personal.write_text(json.dumps(payload), encoding="utf-8")
+    before = personal.read_bytes()
+    restore_material_seed(materials_dir=str(root))
+    assert personal.read_bytes() == before
+
+
+def test_failed_seed_can_retry_after_correcting_hash(monkeypatch, tmp_path):
+    seed = tmp_path / "seed.zip"
+    expected = _write_seed_archive(seed)
+    monkeypatch.setenv("LUMINA_MATERIALS_SEED_PATH", str(seed))
+    monkeypatch.setenv("LUMINA_MATERIALS_SEED_SHA256", "0" * 64)
+    root = tmp_path / "materials"
+    with pytest.raises(ValueError):
+        install_material_seed_if_needed(materials_dir=str(root))
+    monkeypatch.setenv("LUMINA_MATERIALS_SEED_SHA256", expected)
+    assert install_material_seed_if_needed(materials_dir=str(root))["installed_count"] == 1
 
 
 def test_material_bundle_accepts_resolved_directory_alias(tmp_path: Path) -> None:

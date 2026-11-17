@@ -692,9 +692,7 @@ def test_worker_generates_native_vector_surface_3mf_without_board_or_margin_stre
     plate.export(model_path)
     lut_path = (
         Path(__file__).resolve().parents[1]
-        / "lut-preset"
-        / "赛纳"
-        / "赛纳&8色PLA-红-黄-蓝-品红-青-白-绿-黑.npy"
+        / "tests/fixtures/lut_regression/赛纳&8色PLA-红-黄-蓝-品红-青-白-绿-黑.npy"
     )
 
     from api.workers.converter_workers import worker_generate_model_surface_overlay
@@ -828,9 +826,7 @@ def test_worker_preserves_surface_under_transparent_png(tmp_path):
     trimesh.creation.box(extents=(20.0, 10.0, 2.0)).export(model_path)
     lut_path = (
         Path(__file__).resolve().parents[1]
-        / "lut-preset"
-        / "snapmaker"
-        / "快造&4色PLA&RYBW.npy"
+        / "tests/fixtures/lut_regression/快造&4色PLA&RYBW.npy"
     )
 
     from api.workers.converter_workers import worker_generate_model_surface_overlay

@@ -1,4 +1,11 @@
-import { LibraryIdentity, LibraryFields } from "./ui/LibraryDetails";
+import { LibraryIdentity, LibraryFields, LibraryCardIdentity } from "./ui/LibraryDetails";
+import ResourceDetailsPanel from "./ui/ResourceDetailsPanel";
+import { resourceColorMode } from "../utils/resourcePresentation";
+import CalibrationThumbnail from "./ui/CalibrationThumbnail";
+import ResourceContribution from "./ResourceContribution";
+import { useFilamentMarket } from "../hooks/useFilamentMarket";
+import { filamentMatches } from "../utils/filamentIdentity";
+import { localLutIdentity, lutGroupBrand } from "../utils/libraryFilamentIdentity";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent } from "react";
 import { motion } from "framer-motion";
@@ -15,7 +22,11 @@ import { useI18n } from "../i18n/context";
 import { tRuntime } from "../i18n/runtime";
 import { useLutDetailsStore } from "../stores/lutDetailsStore";
 import { useWidgetStore } from "../stores/widgetStore";
+import { useResourceStore } from "../stores/resourceStore";
 import Button from "./ui/Button";
+import MaterialArchiveGuide from "./ui/MaterialArchiveGuide";
+import ResourceLibraryEmpty from "./ui/ResourceLibraryEmpty";
+import TransientBanner from "./ui/TransientBanner";
 import CloseButton from "./ui/CloseButton";
 import {
   StatusBanner,
@@ -33,7 +44,7 @@ const flattenCatalog = (groups: LutDetailsCatalogGroup[]): LutDetailsCatalogItem
 const normalizedText = (value: string): string =>
   value.toLowerCase().replace(/[\s\-_&/\\]+/g, "");
 
-const itemMatchesQuery = (item: LutDetailsCatalogItem, query: string): boolean => {
+const itemMatchesQuery = (item: LutDetailsCatalogItem, query: string, identityTerms: string): boolean => {
   const terms = query.trim().split(/\s+/).map(normalizedText).filter(Boolean);
   if (terms.length === 0) {
     return true;
@@ -47,7 +58,7 @@ const itemMatchesQuery = (item: LutDetailsCatalogItem, query: string): boolean =
     item.path,
     ...item.search_tokens,
   ].map(normalizedText);
-  return terms.every((term) => tokens.some((token) => token.includes(term)));
+  return terms.every((term) => tokens.some((token) => token.includes(term)) || filamentMatches(term, identityTerms));
 };
 
 const groupItems = (
@@ -71,7 +82,8 @@ const groupItems = (
 };
 
 export default function LutLibraryPanel() {
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
+  const market = useFilamentMarket();
   const uploadInputRef = useRef<HTMLInputElement | null>(null);
   const setActiveTab = useWidgetStore((state) => state.setActiveTab);
   const [catalog, setCatalog] = useState<LutDetailsCatalogGroup[]>([]);
@@ -86,10 +98,10 @@ export default function LutLibraryPanel() {
     setError(null);
     try {
       const response = await fetchLutDetailsCatalog();
+      useResourceStore.getState().observeLibrary("luts", flattenCatalog(response.groups).length);
       setCatalog(response.groups ?? []);
       return response.groups ?? [];
     } catch (err) {
-      setCatalog([]);
       setError(apiErrorToVisibleMessage(err, t("lut_library_load_failed")));
       return [];
     } finally {
@@ -102,9 +114,14 @@ export default function LutLibraryPanel() {
   }, [refreshCatalog]);
 
   const allItems = useMemo(() => flattenCatalog(catalog), [catalog]);
+  const identities = useMemo(() => new Map(allItems.map((item) =>
+    [item.path, localLutIdentity(item.manufacturer, item.name, lang, item.display, market)])), [allItems, lang, market]);
+  const groupBrands = useMemo(() => new Map(groupItems(allItems, t("lut_library_unknown")).map((group) => [
+    group.manufacturer, lutGroupBrand(group.manufacturer, group.items.map((item) => identities.get(item.path)!), lang, market),
+  ])), [allItems, identities, lang, market, t]);
   const filteredItems = useMemo(
-    () => allItems.filter((item) => itemMatchesQuery(item, query)),
-    [allItems, query],
+    () => allItems.filter((item) => itemMatchesQuery(item, query, identities.get(item.path)!.searchText)),
+    [allItems, identities, query],
   );
   const groupedItems = useMemo(
     () => groupItems(filteredItems, t("lut_library_unknown")),
@@ -171,6 +188,7 @@ export default function LutLibraryPanel() {
     if (selectedPath) closeRef.current?.focus({ preventScroll: window.innerWidth >= 1024 });
   }, [selectedPath]);
   const selected = allItems.find((item) => item.path === selectedPath);
+  const selectedIdentity = selected && identities.get(selected.path);
   const sortedGroups = useMemo(() => [...groupedItems].sort((a, b) => {
     const rank = (key: string) => { const index = order.indexOf(key); return index < 0 ? order.length : index; };
     return rank(a.manufacturer) - rank(b.manufacturer);
@@ -204,6 +222,7 @@ export default function LutLibraryPanel() {
           <p aria-live="polite" className="shrink-0 text-xs text-slate-500 dark:text-slate-400">{tRuntime("lut_library_inventory_summary", { count: filteredItems.length, brands: sortedGroups.length })}</p>
         </div>
         <div className="flex flex-wrap justify-end gap-3">
+          <ResourceContribution kind="luts" />
           <Button label={t(hasExpanded ? "mat_gradient_library_collapse_all" : "mat_gradient_library_expand_all")} disabled={sortedGroups.length === 0}
             onClick={() => { const keys = sortedGroups.map((group) => group.manufacturer); if (query.trim()) setSearchCollapsed(hasExpanded ? keys : []); else setExpanded(hasExpanded ? [] : keys); }} />
           <Button label={t("lut_library_upload_btn")} onClick={() => uploadInputRef.current?.click()} loading={isUploading} disabled={isRefreshing} />
@@ -213,47 +232,66 @@ export default function LutLibraryPanel() {
       </div>
       <div ref={scrollRef} data-testid="lut-library-scroll-content" onScroll={(event) => setScrolled(event.currentTarget.scrollTop > 1)}
         className="flex min-h-0 flex-1 flex-col gap-5 overflow-auto overscroll-y-contain px-3 py-4 sm:px-5">
-        {success && <StatusBanner data-testid="lut-library-success" tone="success">{success}</StatusBanner>}
+        <TransientBanner data-testid="lut-library-success" message={success} onDismiss={() => setSuccess(null)} />
+        <MaterialArchiveGuide compact />
         {error && <StatusBanner data-testid="lut-library-error" tone="error">{error}</StatusBanner>}
         {isLoading ? <p className="py-12 text-center text-sm text-slate-500">{t("lut_library_loading")}</p> : (
-          <div className={`grid items-start gap-5 ${selected ? "lg:grid-cols-[minmax(0,1fr)_22rem]" : ""}`}>
-            {selected && <section data-testid="lut-library-details" aria-label={t("lut_library_details_btn")}
+          <div className="resource-detail-layout grid items-start gap-5">
+            <ResourceDetailsPanel open={!!selected && !!selectedIdentity} data-testid="lut-library-details" aria-label={t("lut_library_details_btn")}
               onKeyDown={(event) => { if (event.key === "Escape") { event.stopPropagation(); closeDetails(); } }}
               className={`${cardPadClass} relative order-first min-w-0 lg:sticky lg:top-0 lg:order-last lg:col-start-2 lg:row-start-1 lg:max-h-[calc(100vh-12rem)] lg:overflow-y-auto lg:overscroll-y-contain`}>
-              <div className="absolute right-4 top-3"><CloseButton ref={closeRef} label={t("mat_gradient_library_history_close_btn")} onClick={closeDetails} /></div>
-              <div className="grid gap-5">
-                <LibraryIdentity name={selected.name} subtitle={[selected.manufacturer, selected.material_type].filter(Boolean).join(" · ")} />
-                <LibraryFields rows={[{ label: t("lut_library_color_mode_label"), value: selected.color_mode || t("lut_library_unknown") }]} />
-                <LibraryFields rows={[{ label: t("lut_library_path_label"), value: selected.path, multiline: true }]} />
-                <Button label={t("lut_library_analyze_btn")} onClick={() => void openDetails(selected)} className="w-full" />
-              </div>
-            </section>}
+              <div className="absolute right-4 top-4"><CloseButton ref={closeRef} label={t("mat_gradient_library_history_close_btn")} onClick={closeDetails} /></div>
+              {selected && selectedIdentity && <div className="grid gap-4">
+                <LibraryIdentity {...selectedIdentity} subtitle={[selectedIdentity.brand, selected.material_type || selectedIdentity.materialType].filter(Boolean).join(" · ")}
+                  thumbnail={{ kind: "luts", resourceKey: selected.path, name: selected.name, mode: selected.color_mode, display: selected.display }} />
+                <div className="border-t panel-divider pt-3.5">
+                  <LibraryFields rows={[
+                    { label: t("lut_library_color_mode_label"), value: resourceColorMode(selected.color_mode, lang) || t("lut_library_unknown") },
+                    { label: t("lut_library_path_label"), value: selected.path, multiline: true },
+                  ]} />
+                </div>
+                <div className="grid gap-2 border-t panel-divider pt-3.5">
+                  <Button label={t("lut_library_analyze_btn")} onClick={() => void openDetails(selected)} className="w-full" />
+                  <ResourceContribution kind="luts" resourceKey={selected.name}
+                    initialDisplay={{ brand: selected.manufacturer, material_type: selected.material_type, ...selected.display }} />
+                </div>
+              </div>}
+            </ResourceDetailsPanel>
             <DndContext sensors={sensors} collisionDetection={closestCenter} modifiers={[restrictToVerticalAxis]}
               onDragStart={({ active }) => setDragged(String(active.id))} onDragCancel={() => setDragged(null)}
               onDragEnd={({ active, over }) => { if (over) move(String(active.id), String(over.id)); setDragged(null); }}>
               <SortableContext items={sortedGroups.map((group) => group.manufacturer)} strategy={verticalListSortingStrategy}>
                 <div className="grid min-w-0 gap-6">
-                  {sortedGroups.length === 0 && <p data-testid="lut-library-empty" className="py-12 text-center text-sm text-slate-500">{t("lut_library_empty")}</p>}
+                  {allItems.length === 0 && !error && <ResourceLibraryEmpty kind="luts" onBrowse={(source) => {
+                    useResourceStore.getState().setCatalogSource("luts", source);
+                    setActiveTab("lut-cloud-sync");
+                  }} onImport={() => uploadInputRef.current?.click()} onCalibrate={() => setActiveTab("calibration")} />}
+                  {allItems.length > 0 && sortedGroups.length === 0 && <p data-testid="lut-library-no-match" role="status" className="py-12 text-center text-sm text-slate-500">{t("resources_no_matches")}</p>}
                   {sortedGroups.map((group, index) => <SortableLibraryBrand key={group.manufacturer} testIdPrefix="lut-library" groupKey={group.manufacturer} brand={group.manufacturer}
-                    label={group.manufacturer} count={group.items.length} countLabel={tRuntime("lut_library_group_count", { count: group.items.length })}
+                    label={groupBrands.get(group.manufacturer)?.brand || group.manufacturer} logo={groupBrands.get(group.manufacturer)?.logo}
+                    count={group.items.length} countLabel={tRuntime("lut_library_group_count", { count: group.items.length })}
                     collapsed={!isExpanded(group.manufacturer)} pinned={pinned.includes(group.manufacturer)} onToggle={() => toggle(group.manufacturer)}
                     onPin={() => { setPinned((previous) => previous.includes(group.manufacturer) ? previous.filter((key) => key !== group.manufacturer) : [...previous, group.manufacturer]); if (!pinned.includes(group.manufacturer)) setExpanded((previous) => [...new Set([...previous, group.manufacturer])]); }}
                     onMove={(direction) => { const target = sortedGroups[index + direction]; if (target) move(group.manufacturer, target.manufacturer); }}>
                     {isExpanded(group.manufacturer) && <div className="grid auto-rows-fr items-stretch gap-4 [grid-template-columns:repeat(auto-fill,min(100%,15rem))]">
-                      {group.items.map((item) => <button key={item.path} type="button" data-testid="lut-library-card" aria-expanded={selectedPath === item.path}
-                        onClick={(event) => { triggerRef.current = event.currentTarget; setSelectedPath(item.path); }}
-                        className={`${cardPadClass} material-library-card min-w-0 text-left transition-colors`}>
-                        <span className="material-library-card-name block break-words text-sm font-semibold">{item.name}</span>
-                        <span className="material-library-card-meta mt-2 block text-xs">{item.material_type || t("lut_library_unknown")}</span>
-                        <span className="material-library-card-meta mt-1 block text-xs">{item.color_mode || t("lut_library_unknown")}</span>
-                      </button>)}
+                      {group.items.map((item) => {
+                        const identity = identities.get(item.path)!;
+                        return <button key={item.path} type="button" data-testid="lut-library-card" aria-expanded={selectedPath === item.path}
+                        onClick={(event) => { triggerRef.current = event.currentTarget; if (selectedPath === item.path) closeDetails(); else setSelectedPath(item.path); }}
+                        className={`${cardPadClass} material-library-card flex min-w-0 items-start gap-4 text-left transition-colors`}>
+                        <CalibrationThumbnail kind="luts" name={item.name} mode={item.color_mode} display={item.display} />
+                        <LibraryCardIdentity {...identity} subtitle={[identity.brand, item.material_type || identity.materialType].filter(Boolean).join(" · ")}
+                          thumbnail={{ kind: "luts", name: item.name, mode: item.color_mode, display: item.display }}
+                          metric={resourceColorMode(item.color_mode, lang) || undefined} localVersion={item.local_version} />
+                      </button>; })}
                     </div>}
                   </SortableLibraryBrand>)}
                 </div>
               </SortableContext>
               {createPortal(<DragOverlay dropAnimation={null}>{dragged && (() => {
                 const group = sortedGroups.find((entry) => entry.manufacturer === dragged);
-                return group ? <div aria-hidden="true" className="rounded-lg bg-slate-100 shadow-lg ring-1 ring-slate-300 dark:bg-slate-800 dark:ring-slate-600"><LibraryBrandHeader label={dragged} count={group.items.length} countLabel={tRuntime("lut_library_group_count", { count: group.items.length })} collapsed={!isExpanded(dragged)} pinned={pinned.includes(dragged)} /></div> : null;
+                const identity = groupBrands.get(dragged);
+                return group ? <div aria-hidden="true" className="rounded-lg bg-slate-100 shadow-lg ring-1 ring-slate-300 dark:bg-slate-800 dark:ring-slate-600"><LibraryBrandHeader label={identity?.brand || dragged} logo={identity?.logo} count={group.items.length} countLabel={tRuntime("lut_library_group_count", { count: group.items.length })} collapsed={!isExpanded(dragged)} pinned={pinned.includes(dragged)} /></div> : null;
               })()}</DragOverlay>, document.body)}
             </DndContext>
           </div>

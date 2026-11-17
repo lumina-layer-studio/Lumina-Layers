@@ -704,9 +704,7 @@ def _generate_artifacts(output_dir: Path) -> dict[str, Any]:
     )
     lut_path = (
         REPO_ROOT
-        / "lut-preset"
-        / "bambulab"
-        / "bambulab_pla_basic_rybw.npy"
+        / "tests/fixtures/lut_regression/Bambulab&PLA&RYBW&红-黄-蓝-白.npy"
     )
     processor = VectorProcessor(str(lut_path), "4-Color (RYBW)")
     _VECTOR_PARSE_CLIP_CACHE.clear()

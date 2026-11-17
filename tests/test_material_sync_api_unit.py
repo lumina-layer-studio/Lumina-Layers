@@ -782,7 +782,7 @@ def test_material_sync_refresh_requires_registry_url(
 ) -> None:
     materials_root = tmp_path / "materials"
     monkeypatch.setattr("core.single_stage.material_files.MATERIALS_DIR", str(materials_root))
-    monkeypatch.delenv("LUMINA_MATERIAL_REGISTRY_URL", raising=False)
+    monkeypatch.setenv("LUMINA_MATERIAL_REGISTRY_URL", "")
 
     response = _client().post("/api/material-sync/refresh")
 
@@ -793,7 +793,7 @@ def test_material_sync_refresh_requires_registry_url(
 def test_material_sync_catalog_requires_registry_url_keeps_offline_detail(
     monkeypatch,
 ) -> None:
-    monkeypatch.delenv("LUMINA_MATERIAL_REGISTRY_URL", raising=False)
+    monkeypatch.setenv("LUMINA_MATERIAL_REGISTRY_URL", "")
 
     response = _client().get("/api/material-sync/catalog")
 
@@ -924,7 +924,7 @@ def test_material_sync_install_from_registry_invalid_channel_returns_safe_detail
 def test_material_sync_install_from_registry_requires_registry_url_keeps_offline_detail(
     monkeypatch,
 ) -> None:
-    monkeypatch.delenv("LUMINA_MATERIAL_REGISTRY_URL", raising=False)
+    monkeypatch.setenv("LUMINA_MATERIAL_REGISTRY_URL", "")
 
     response = _client().post(
         "/api/material-sync/install-from-registry",
@@ -1094,6 +1094,21 @@ def test_material_sync_refresh_endpoint_hides_package_failure_paths(
     assert failure_logs
     assert failure_logs[0].error_type == "ValueError"
     assert str(temp_root) in failure_logs[0].error_message
+
+
+def test_material_catalog_explicit_refresh_invalidates_cached_directory(monkeypatch) -> None:
+    from api.routers import material_sync
+    from unittest.mock import Mock
+
+    invalidate = Mock()
+    monkeypatch.setattr(material_sync, "invalidate_material_registry_remote_catalog_cache", invalidate)
+    fetch = Mock(return_value={"schema_version": "1.0", "channels": ["official"],
+                              "count": 0, "total_count": 0, "offset": 0, "limit": 24, "materials": []})
+    monkeypatch.setattr(material_sync, "list_material_registry_catalog", fetch)
+    response = _client().get("/api/material-sync/catalog", params={"refresh": "true", "limit": 24})
+    assert response.status_code == 200
+    invalidate.assert_called_once()
+    assert fetch.call_args.kwargs["use_cache"] is False
 
 
 def test_material_sync_catalog_endpoint_returns_remote_catalog_without_installing(
@@ -1412,6 +1427,33 @@ def test_list_material_registry_catalog_requests_remote_search() -> None:
     assert catalog["materials"][0]["material_id"] == "mat_petg"
 
 
+def test_catalog_preserves_registry_only_keyword_after_a_full_metadata_read() -> None:
+    calls: list[str | None] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        query = request.url.params.get("q")
+        calls.append(query)
+        items = [{"material_id": "mat_1", "revision_id": "rev_1", "display": {"name": "Opaque title"}}]
+        return httpx.Response(200, json={"materials": items, "offset": 0, "total_count": 1})
+
+    transport = httpx.MockTransport(handler)
+    source = "https://search-index.test/v1"
+    list_material_registry_catalog(registry_url=source, transport=transport)
+    result = list_material_registry_catalog(registry_url=source, transport=transport, query="translated keyword", limit=24)
+    assert calls == [None, "translated keyword"]
+    assert [item["material_id"] for item in result["materials"]] == ["mat_1"]
+
+
+@pytest.mark.parametrize("denied", [401, 403])
+def test_material_catalog_route_forwards_denied_access(monkeypatch, denied: int) -> None:
+    transport = httpx.MockTransport(lambda _: httpx.Response(denied))
+    monkeypatch.setattr(
+        "api.routers.material_sync.list_material_registry_catalog",
+        lambda **kwargs: list_material_registry_catalog(registry_url="https://private.test/v1", transport=transport, **kwargs),
+    )
+    assert _client().get("/api/material-sync/catalog").status_code == denied
+
+
 def test_list_material_registry_catalog_rejects_cross_origin_redirect() -> None:
     requested_urls: list[str] = []
 
@@ -1541,8 +1583,8 @@ def test_list_material_registry_catalog_filters_legacy_remote_search_locally() -
 def test_material_sync_install_from_registry_endpoint_installs_selected_package(
     monkeypatch,
 ) -> None:
-    def _fake_list_material_registry_catalog() -> dict[str, object]:
-        return {
+    def _fake_list_material_registry_catalog(*, limit: int | None = None, offset: int = 0) -> dict[str, object]:
+        catalog = {
             "schema_version": "1.0",
             "channels": ["official"],
             "count": 1,
@@ -1562,6 +1604,12 @@ def test_material_sync_install_from_registry_endpoint_installs_selected_package(
                 }
             ],
         }
+        # A capped registry can serve the selected revision after its default page.
+        if offset == 0:
+            return {**catalog, "source_scope": "test", "offset": 0, "total_count": 2,
+                    "materials": [{"material_id": "unrelated", "revision_id": "older"}]}
+        assert (offset, limit) == (1, 500)
+        return {**catalog, "source_scope": "test", "offset": offset, "total_count": 2}
 
     def _fake_install_material_registry_package(
         *,
@@ -1569,7 +1617,9 @@ def test_material_sync_install_from_registry_endpoint_installs_selected_package(
         package_sha256: str,
         material_id: str,
         revision_id: str,
+        display: dict[str, object],
     ) -> dict[str, object]:
+        assert display == {"brand": "BrandA", "material_name": "PLA Basic"}
         assert package_url == "/v1/packages/material_package.zip"
         assert package_sha256 == "a" * 64
         assert material_id == "mat_cloud_test"
@@ -1888,9 +1938,10 @@ def test_material_sync_install_from_registry_rejects_missing_catalog_entry_witho
 
 
 def test_install_material_registry_package_imports_only_selected_material(
-    tmp_path: Path,
+    tmp_path: Path, monkeypatch,
 ) -> None:
     materials_root = tmp_path / "materials"
+    monkeypatch.setenv("LUMINA_MATERIAL_REGISTRY_URL", "")
     package_path = tmp_path / "multi_material_package.zip"
     package_info = _write_v2_multi_material_package(package_path)
     package_bytes = package_path.read_bytes()
@@ -1906,6 +1957,7 @@ def test_install_material_registry_package_imports_only_selected_material(
         package_sha256=package_info["package_sha256"],
         material_id=package_info["selected_material_id"],
         revision_id=package_info["selected_revision_id"],
+        display={"market_names": {"INTL": "Selected International"}, "sku": "OLD-101"},
         materials_dir=str(materials_root),
         transport=httpx.MockTransport(_handler),
     )
@@ -1914,6 +1966,10 @@ def test_install_material_registry_package_imports_only_selected_material(
     assert result["installed_materials"][0]["directory_name"] == "BrandA/pla-selected"
     assert (materials_root / "BrandA" / "pla-selected" / "material.json").is_file()
     assert (materials_root / "BrandA" / "pla-other" / "material.json").exists() is False
+    [local] = material_library.list_saved_stage_a_material_archives(materials_dir=str(materials_root))
+    assert local["display"]["market_names"] == {"INTL": "Selected International"}
+    assert local["display"]["sku"] == "OLD-101"
+    assert local["sync_material_id"] == package_info["selected_material_id"]
 
 
 def test_refresh_material_sync_from_registry_imports_only_catalog_revision(

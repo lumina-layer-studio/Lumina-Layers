@@ -396,6 +396,20 @@ describe("SettingsPanel information architecture", () => {
       .getByRole("combobox")).toHaveTextContent("English");
   });
 
+  it("remembers the market on the spool independently of the interface language", () => {
+    useSettingsStore.getState().setFilamentMarket("auto");
+    useSettingsStore.getState().setLanguage("zh");
+    renderPanel();
+    const navigation = screen.getByRole("navigation", { name: "设置分类" });
+    fireEvent.click(within(navigation).getByRole("button", { name: /常规/ }));
+    const market = screen.getByRole("combobox", { name: "耗材包装名称" });
+    expect(market).toHaveTextContent("跟随界面语言");
+    fireEvent.click(market);
+    fireEvent.click(screen.getByRole("option", { name: "国际包装" }));
+    expect(useSettingsStore.getState()).toMatchObject({ language: "zh", filamentMarket: "INTL" });
+    expect(JSON.parse(localStorage.getItem("lumina-settings")!).state.filamentMarket).toBe("INTL");
+  });
+
   it("offers the centered or left top navigation choice under General", () => {
     renderPanel();
 

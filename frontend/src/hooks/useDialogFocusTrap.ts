@@ -19,7 +19,11 @@ export interface DialogFocusTrapOptions {
 }
 
 function listFocusable(container: HTMLElement): HTMLElement[] {
-  return Array.from(container.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR));
+  return Array.from(container.querySelectorAll<HTMLElement>(`${FOCUSABLE_SELECTOR}, summary`)).filter(element => {
+    if (element.closest("[inert], [hidden]")) return false;
+    const folded = element.closest("details:not([open])");
+    return !folded || folded.querySelector(":scope > summary")?.contains(element);
+  });
 }
 
 /**

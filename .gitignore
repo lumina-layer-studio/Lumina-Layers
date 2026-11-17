@@ -237,6 +237,9 @@ output/models/
 
 # 本地个人设置 (包含上次选择的 LUT 路径)
 user_settings.json
+resource-sources.json
+/data/*.sqlite3
+/data/*.sqlite3-*
 
 # 批量生成产生的压缩包
 outputs/*.zip
@@ -338,6 +341,13 @@ lut-preset/Custom/synthetic_lut*.json
 # Cloud LUT registry local install/runtime sync outputs
 lut-preset/Cloud/
 lut-preset/_sync/luts/
+
+# Writable resource libraries and reproducible offline downloads
+/lut-preset/*
+!/lut-preset/README.md
+/resources/materials/
+/resources/luts/
+/resources/resource-release.json
 
 # Cascade per-round working files (historical prompts / PR bodies / patches)
 # Tracked: progress/governance-roadmap.md, progress/round-17-onwards-master-plan.md

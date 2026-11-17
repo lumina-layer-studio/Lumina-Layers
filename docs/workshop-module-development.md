@@ -305,6 +305,35 @@ Registry 收录时还会绑定 GitHub 仓库、Release tag、字节数、包摘�
 主仓库提供的最小 fixture 用于验证宿主契约；模块自己的识别、编辑、渲染和迁移测试
 仍留在独立仓库。
 
+## 模块后端（Workshop API 1.1.0）
+
+需要本机 Python 处理的模块声明 manifest v2 后端；公开契约见 SDK 仓库
+`docs/backend-protocol.md`（SDK 1.1.0 尚未发布，宿主仍锁定 SDK 1.0.1，后端 RPC 契约
+由宿主侧 `frontend/src/workshop/contracts.ts` 承接，与此前支持 1.0.2 扩展的方式相同）。
+
+宿主行为：
+
+- 安装只暂存代码；授权前只解析声明与 `pylock.toml`，不执行模块代码。管理界面展示
+  来源、审核等级（官方 / 签名 `reviews-v1.json` 中按包摘要列出的已审核社区版本 /
+  未审核）、声明的能力、预计新增与已共享的依赖/模型/Python 运行时。未审核代码需要
+  用户勾选风险确认；声明不受系统强制限制，本机进程模式不是沙箱。
+- 准备是可取消的后台任务：托管 Python → 按锁内容区分的环境（相同锁共用，冲突版本
+  各自独立，大文件经 `runtime/store` 按 SHA-256 硬链接共享）→ 模型下载校验 → 后端
+  自检。失败或取消会撤销本次新增内容；只有准备成功的版本才能激活。
+- 任务归宿主：落盘于 `runtime/tasks/<模块>/<任务>/`，切页、关闭 iframe 或停止后端都
+  不取消任务；取消先协作、宽限期后终止整棵进程树（Windows Job Object；POSIX 进程组
+  与进程树）。停用、卸载、退出程序会结束该模块的任务和进程。空闲（默认 5 分钟，模块
+  界面打开时延长）后释放进程。
+- 卸载默认保留工程、原图副本与结果，可分别选择删除；可选保留已下载模型。无人引用的
+  环境、共享文件、Python 运行时与下载缓存按引用回收；结果在卸载报告的“已清理 / 仍共享
+  / 已保留 / 未能删除”中列出。已完成任务数据默认保留 14 天，可在“存储”页删除。
+
+开发与离线验证可用的宿主环境变量：`LUMINA_WORKSHOP_UV`（uv 路径）、
+`LUMINA_WORKSHOP_PYTHON`（显式解释器，宿主不会安装或删除它）、
+`LUMINA_WORKSHOP_WHEELHOUSE`（按文件名提供本地 wheel，仍按锁中哈希校验）、
+`LUMINA_WORKSHOP_OFFLINE=1`、`LUMINA_WORKSHOP_WHEEL_MIRROR` 与
+`LUMINA_WORKSHOP_PYTHON_MIRROR`（仅 HTTPS 镜像）。
+
 ## 发布前检查
 
 ```bash

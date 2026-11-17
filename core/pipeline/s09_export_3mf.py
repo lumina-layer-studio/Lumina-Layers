@@ -214,6 +214,7 @@ def run(ctx: dict) -> dict:
             project_slot_names=slot_names,
             material_types=ctx.get("material_types"),
             backing_output=ctx.get("backing_output", "same_project"),
+            external_spool_material=ctx.get("external_spool_material"),
             native_filament_profiles=ctx.get("native_filament_profiles"),
             settings=print_settings,
             color_mode=color_mode,

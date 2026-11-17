@@ -14,7 +14,7 @@ import type {
  * The user's mental model is: "I picked a region, I picked a colour,
  * now repaint that one region." The classic ``select-all`` branch of
  * ``confirmReplacement`` however applies a whole-image ``hex → hex``
- * remap via ``POST /api/convert/replace-color`` — that's the "replace
+ * remap via ``POST /api/convert/replace-colors-batch`` — that's the "replace
  * cyan band → every skin pixel turns red" regression we are pinning
  * here. ``confirmReplacement`` must detect ``gradientSelection.kind ===
  * 'region'`` and route to the spatial ``applyGradientRegionPixelReplace``
@@ -31,7 +31,7 @@ vi.mock("../api/converter", () => ({
   fetchLutColors: vi.fn(),
   cropImage: vi.fn(),
   convertBatch: vi.fn(),
-  replaceColor: vi.fn(),
+  replaceColorsBatch: vi.fn(),
   applyRecipeOverride: vi.fn(),
   colorHighlight: vi.fn(),
   detectRegion: vi.fn(),
@@ -49,10 +49,10 @@ vi.mock("../api/converter", () => ({
   fetchMaterialColorSuggestions: vi.fn(),
 }));
 
-import { regionReplace, replaceColor, mutateEditorSelection } from "../api/converter";
+import { regionReplace, replaceColorsBatch, mutateEditorSelection } from "../api/converter";
 
 const mockRegionReplace = vi.mocked(regionReplace);
-const mockReplaceColor = vi.mocked(replaceColor);
+const mockReplaceColorsBatch = vi.mocked(replaceColorsBatch);
 const mockMutateEditorSelection = vi.mocked(mutateEditorSelection);
 
 function deferred<T>() {
@@ -107,9 +107,9 @@ describe("confirmReplacement · gradient-region scope", () => {
 
     await useConverterStore.getState().confirmReplacement();
 
-    // Must call /region-replace with the gradient scope — not /replace-color.
-    // 必须调 /region-replace 带 scope，不能调 /replace-color。
-    expect(mockReplaceColor).not.toHaveBeenCalled();
+    // Must call /region-replace with the gradient scope — not /replace-colors-batch.
+    // 必须调 /region-replace 带 scope，不能调 /replace-colors-batch。
+    expect(mockReplaceColorsBatch).not.toHaveBeenCalled();
     expect(mockRegionReplace).toHaveBeenCalledTimes(1);
     expect(mockRegionReplace).toHaveBeenCalledWith(
       "sess-confirm",
@@ -147,7 +147,7 @@ describe("confirmReplacement · gradient-region scope", () => {
     // Sanity: users who never touched the Gradient Groups panel still
     // get the original whole-image remap behaviour — this path is the
     // one we must not regress.
-    // gradientSelection 为空时走原 select-all → /replace-color 路径。
+    // gradientSelection 为空时走原 select-all → /replace-colors-batch 路径。
     seedStore({
       gradientSelection: null,
       pendingReplacement: {
@@ -164,13 +164,15 @@ describe("confirmReplacement · gradient-region scope", () => {
       preview_url: "/api/files/preview-after.png",
       replacement_count: 1,
     };
-    mockReplaceColor.mockResolvedValue(response);
+    mockReplaceColorsBatch.mockResolvedValue(response);
 
     await useConverterStore.getState().confirmReplacement();
 
     expect(mockRegionReplace).not.toHaveBeenCalled();
-    // colorRemapMap gets the hex pair written via applyColorRemap.
-    // 单色 select-all 会乐观写入 colorRemapMap。
+    await vi.waitFor(() => expect(useConverterStore.getState().previewImageUrl).toBe(response.preview_url));
+    expect(mockReplaceColorsBatch).toHaveBeenCalledWith("sess-confirm", [
+      { selectedColor: "#aabbcc", replacementColor: "#ff0000" },
+    ], expect.any(String));
     expect(useConverterStore.getState().colorRemapMap).toMatchObject({
       aabbcc: "ff0000",
     });
@@ -198,7 +200,7 @@ describe("confirmReplacement · gradient-region scope", () => {
 
     await useConverterStore.getState().confirmReplacement();
 
-    expect(mockReplaceColor).not.toHaveBeenCalled();
+    expect(mockReplaceColorsBatch).not.toHaveBeenCalled();
     expect(mockRegionReplace).toHaveBeenCalledTimes(1);
     expect(mockRegionReplace).toHaveBeenCalledWith(
       "sess-confirm",
@@ -385,7 +387,7 @@ describe("confirmReplacement · gradient-region scope", () => {
       selectionResponse.resolve(empty);
       await Promise.all([selection, replacement]);
       expect(mockRegionReplace).not.toHaveBeenCalled();
-      expect(mockReplaceColor).not.toHaveBeenCalled();
+      expect(mockReplaceColorsBatch).not.toHaveBeenCalled();
       expect(useConverterStore.getState()).toMatchObject({
         colorRemapMap: {}, regionReplacementCount: 0, error: null,
       });

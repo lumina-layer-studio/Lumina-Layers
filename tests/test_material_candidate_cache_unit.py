@@ -982,3 +982,50 @@ def test_load_candidate_runtime_returns_none_when_absent_or_palette_mismatch(
         )
         is None
     )
+
+
+@pytest.mark.parametrize("layer_count", [10, 11])
+def test_exact_enumeration_runtime_reloads_after_save(
+    tmp_path: Path, layer_count: int
+) -> None:
+    """Two materials fit the 8192 budget exactly at 10 and 11 layers.
+
+    The 11-layer key carries the layer-wise DP identity even though the
+    recipe space is enumerated exactly; save, load and status must agree.
+    """
+    from core.material_candidate_cache import (
+        load_material_candidate_runtime,
+        load_material_candidate_runtime_metadata,
+        save_material_candidate_runtime,
+    )
+
+    palette = _palette(2)
+    budget = 8192
+    config = MaterialCandidateCacheConfig.persisted_for_budget(budget)
+    runtime = build_material_candidate_runtime(
+        materials=palette,
+        layer_count=layer_count,
+        layer_height_mm=0.08,
+        substrate="white",
+        config=config,
+    )
+    assert runtime.valid_cell_count == 2 ** layer_count
+    assert "layer_dp_build" not in runtime.metadata
+
+    npz_path = save_material_candidate_runtime(runtime, cache_root=tmp_path)
+    lookup = dict(
+        layer_count=layer_count,
+        layer_height_mm=0.08,
+        substrate="white",
+        candidate_budget=budget,
+        cache_root=tmp_path,
+    )
+    loaded = load_material_candidate_runtime(palette, **lookup)
+    entry = load_material_candidate_runtime_metadata(palette, **lookup)
+
+    assert npz_path.exists()
+    assert loaded is not None
+    np.testing.assert_array_equal(loaded.candidate_recipes, runtime.candidate_recipes)
+    assert entry is not None
+    assert entry.cache_file_path == npz_path
+    assert save_material_candidate_runtime(runtime, cache_root=tmp_path) == npz_path

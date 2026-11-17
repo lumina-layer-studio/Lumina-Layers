@@ -31,6 +31,7 @@ from core.lut_board_preview import published_lut_board
 from core.registry_catalog_cache import catalog_source_scope
 from core.public_resources import is_static_catalog, lut_registry_url, registry_read_token
 from core.registry_transport import (
+    RegistryCatalogNotFoundError,
     fallback_base,
     fetch_catalog,
     map_package_url,
@@ -494,6 +495,12 @@ def fetch_remote_catalog(
             cache_dir=cache_dir, offline_fallback=offline_full_page if preview_ids is None else None,
             force_refresh=refresh,
         )
+    except RegistryCatalogNotFoundError as exc:
+        raise LutRegistryRemoteError(
+            "LUT Registry catalog endpoint was not found (HTTP 404). "
+            "Check LUMINA_LUT_REGISTRY_URL, or LUMINA_MATERIAL_REGISTRY_URL "
+            "when inherited, and use a Registry service that provides /luts/catalog."
+        ) from exc
     except httpx.HTTPError as exc:
         if isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code in {401, 403}:
             raise LutRegistryRemoteError(

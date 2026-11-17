@@ -2422,21 +2422,24 @@ describe("native bundle converter flow", () => {
   );
 
   const generatedGeometryEnabledDuringGenerationCases: Array<
-    [string, Record<string, unknown>, Record<string, unknown>]
+    [string, Record<string, unknown>, () => void, string | null]
   > = [
     [
       "raster relief",
       { modeling_mode: ModelingMode.HIGH_FIDELITY },
-      {
+      () => useConverterStore.setState({
         enable_relief: true,
         autoHeightMode: "darker-higher",
         color_height_map: { "111111": 0.5 },
-      },
+      }),
+      "/api/files/old-flat-model.3mf",
     ],
     [
       "raster coating",
       { modeling_mode: ModelingMode.HIGH_FIDELITY },
-      { enable_coating: true, coating_height_mm: 0.6 },
+      // Coating changes the export material slots, so the old download is stale too.
+      () => useConverterStore.getState().setEnableCoating(true),
+      null,
     ],
     [
       "Vector model surface",
@@ -2446,18 +2449,19 @@ describe("native bundle converter flow", () => {
         }),
         modeling_mode: ModelingMode.VECTOR,
       },
-      {
+      () => useConverterStore.setState({
         modelSurfaceEnabled: true,
         modelSurfaceModelFileId: "surface-model-id",
         modelSurfaceSelection: { face_indices: [1] },
         modelSurfaceFootprint: { width_mm: 111, height_mm: 241 },
-      },
+      }),
+      "/api/files/old-flat-model.3mf",
     ],
   ];
 
   it.each(generatedGeometryEnabledDuringGenerationCases)(
     "does not display an old flat GLB after enabling %s during generation",
-    async (_label, initialOverrides, enabledOverrides) => {
+    async (_label, initialOverrides, enable, expectedDownload) => {
       const generation = deferred<{
         status: string;
         message: string;
@@ -2474,7 +2478,7 @@ describe("native bundle converter flow", () => {
       const submitGenerate = useConverterStore.getState().submitGenerate();
       await vi.waitFor(() => expect(mocks.convertGenerate).toHaveBeenCalledOnce());
 
-      useConverterStore.setState(enabledOverrides as never);
+      enable();
       generation.resolve({
         status: "ok",
         message: "Old flat model generated",
@@ -2485,9 +2489,7 @@ describe("native bundle converter flow", () => {
 
       expect(useConverterStore.getState().modelUrl).toBeNull();
       expect(useConverterStore.getState().previewGlbUrl).toBeNull();
-      expect(useConverterStore.getState().downloadUrl).toBe(
-        "/api/files/old-flat-model.3mf",
-      );
+      expect(useConverterStore.getState().downloadUrl).toBe(expectedDownload);
     },
   );
 

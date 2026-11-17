@@ -10,6 +10,7 @@ import {
   useConverterStore,
 } from "../stores/converter";
 import { useSettingsStore } from "../stores/settingsStore";
+import { externalSpoolMaterial } from "../stores/converter/nativeMaterialSelection";
 import { useSingleStageStore } from "../stores/singleStageStore";
 import { useExtractorStore } from "../stores/extractorStore";
 import { useCalibrationStore } from "../stores/calibrationStore";
@@ -195,6 +196,7 @@ export function collectBugReportContext(): BugReportContextPayload {
   // "converter" 时直接读 converter store；单阶段工作流不维护这两个字段，
   // 回落到 settings 偏好以保持向后兼容。
   const isConverterActive = widget.activeTab === "converter";
+  const spool = isConverterActive ? externalSpoolMaterial(converter, settings) : undefined;
   const isWorkshopActive = widget.activeTab === "workshop";
   const sourceVersion = isConverterActive ? converter.source_version ?? null : null;
   const isMaterialSource = sourceVersion === "material";
@@ -237,6 +239,7 @@ export function collectBugReportContext(): BugReportContextPayload {
     nozzle_size: settings.nozzleSize,
     device_profile_id: settings.deviceProfileId,
     build_plate_id: settings.buildPlateId,
+    ...(spool ? { external_spool_material: spool } : {}),
     custom_3mf_template_id: settings.custom3mfTemplateId,
     color_mode: colorMode,
     lut_name: lutName,
@@ -278,6 +281,7 @@ export function collectBugReportContext(): BugReportContextPayload {
     ),
     active_final_artifact_ref: deriveFinalArtifact(isConverterActive),
     advanced_params: buildAdvancedParams(converter, widget.activeTab, {
+      externalSpoolMaterial: spool,
       maxBytes: Number.POSITIVE_INFINITY,
       svgPixelsPerMm: settings.svgPixelsPerMm,
       materialDeltaE00Tolerance: settings.materialDeltaE00Tolerance,

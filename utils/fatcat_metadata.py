@@ -64,6 +64,7 @@ class ProjectLayout(TypedDict):
     tower_infill_spacing_ratio: float
     uses_rib_wall: bool
     tower_rib_width: float
+    nozzle_change_volume: NotRequired[float]
     tower_extra_rib_length: float
     extruder_count: int
     filament_change_volume: float
@@ -184,6 +185,7 @@ class ModelPlateInput(TypedDict):
     plater_id: NotRequired[str]
     plater_name: NotRequired[str]
     locked: NotRequired[bool]
+    filament_maps: NotRequired[list[int]]
 
 
 class MergedModelInput(TypedDict):
@@ -290,6 +292,26 @@ _PLATE_UIDS = {
     "textured-cool-plate": "plate:textured-cool",
     "supertack-plate": "plate:supertack",
 }
+
+
+def external_spool_filament_map(
+    material: str, slot_names: Sequence[str], *, slicer_id: str, machine_uid: str,
+    source_slot_indices: Mapping[str, int] | None = None,
+) -> list[int]:
+    """Assign X2D heads by exact exported material name and final slot order.
+
+    独立背板会裁剪槽位，已在全局调色板确认的外置材料可以不出现在该盘。
+    """
+    from core.errors import ExternalSpoolSelectionError
+
+    if (slicer_id, machine_uid) != ("BambuStudio", "bambu-lab:x2d"):
+        raise ExternalSpoolSelectionError("External spool selection requires the built-in Bambu Studio X2D profile.")
+    matches = slot_names.count(material)
+    if matches > 1:
+        raise ExternalSpoolSelectionError(f"External spool material {material!r} matches multiple exported slots.")
+    if not matches and material not in (source_slot_indices or {}):
+        raise ExternalSpoolSelectionError(f"External spool material {material!r} is missing from the exported palette.")
+    return [2 if name == material else 1 for name in slot_names]
 
 
 def native_build_plate_uid(build_plate_id: str) -> str:
@@ -1049,12 +1071,14 @@ def _read_source_metadata_parts(
     package: zipfile.ZipFile,
     *,
     target: MetadataTarget | SourceMaterialTarget | None = None,
+    source_model_xml: str | None = None,
 ) -> tuple[dict[str, Any], dict[str, bytes]]:
     """Decode source metadata once and retain its bytes for geometry assembly."""
     members = set(package.namelist())
     if target is None:
         common_paths = template_import_parts("BambuStudio")
         source = detect_template_source(
+            source_model_xml if source_model_xml is not None else
             package.read(common_paths["source_model"]).decode("utf-8")
             if common_paths["source_model"] in members else None,
             package.read(common_paths["slice_info"]).decode("utf-8")
@@ -1066,7 +1090,9 @@ def _read_source_metadata_parts(
         )
     paths = template_import_parts(target.slicer_id)
     parts = {
-        role: package.read(paths[role])
+        role: (source_model_xml.encode("utf-8")
+               if role == "source_model" and source_model_xml is not None
+               else package.read(paths[role]))
         for role in (
             "project_settings", "model_settings", "source_model",
             "slice_info", "wipe_tower_placement",

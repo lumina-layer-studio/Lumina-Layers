@@ -18,7 +18,7 @@ async function until(check) {
   }
 }
 
-async function fixture(t, platform, mode = "healthy", prepareUserData = () => {}, pythonPaths = null) {
+async function fixture(t, platform, mode = "healthy", prepareUserData = () => {}, { pythonPaths, argv = ["electron"] } = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "lumina-source-desktop-"));
   prepareUserData(root);
   const windows = [], children = [], dialogs = [], errors = [], commands = [], signals = [];
@@ -32,7 +32,7 @@ async function fixture(t, platform, mode = "healthy", prepareUserData = () => {}
   const event = () => ({ defaultPrevented: false, preventDefault() { this.defaultPrevented = true; } });
   const app = new EventEmitter();
   Object.assign(app, {
-    getPath: () => root, requestSingleInstanceLock: () => true,
+    getPath: () => root, requestSingleInstanceLock(data) { this.lockData = data; return true; },
     whenReady: () => Promise.resolve(), getVersion: () => "2.0.0", setName() {}, setAboutPanelOptions() {},
     quit() {
       const before = event();
@@ -156,7 +156,7 @@ async function fixture(t, platform, mode = "healthy", prepareUserData = () => {}
     __dirname: path.dirname(mainPath), console: { log() {} }, URL, Response, Headers,
     setTimeout(callback, delay) { const timer = setTimeout(callback, delay); timers.add(timer); return timer; },
     clearTimeout,
-    process: { platform, env: { LUMINA_MATERIAL_REGISTRY_URL: "https://custom.example/materials" },
+    process: { platform, argv, env: { LUMINA_MATERIAL_REGISTRY_URL: "https://custom.example/materials" },
       kill(pid, signal) { signals.push({ pid, signal }); } },
   }, { filename: mainPath });
   await until(() => healthCallback || app.quitted);
@@ -181,6 +181,30 @@ async function fixture(t, platform, mode = "healthy", prepareUserData = () => {}
   };
 }
 
+test('an existing Studio opens the requested file once when Electron groups switches before their values', async t => {
+  const primary = await fixture(t, 'darwin');
+  await primary.healthy();
+  const file = path.join(path.dirname(primary.portStatePath), 'Mosaic example.lum');
+  const bytes = Buffer.from([0x50, 0x4b, 0x03, 0x04]);
+  fs.writeFileSync(file, bytes);
+  const id = 'second-project';
+  const secondary = await fixture(t, 'darwin', 'healthy', undefined, {
+    argv: ['electron', '--open-project', file, '--project-request-id', id],
+  });
+  const contents = primary.mainWindow().webContents;
+  const opened = [];
+  contents.send = (channel, value) => { if (channel === 'project-open') opened.push(value); };
+  await primary.ipcHandlers.get('projects-ready')({ sender: contents, senderFrame: contents.mainFrame });
+  const forwarded = ['electron', '--open-project', '--project-request-id', '--original-process-start-time=42', file, id];
+  primary.app.emit('second-instance', {}, forwarded, path.dirname(file), secondary.app.lockData);
+  await until(() => opened.length);
+  assert.equal(opened.length, 1);
+  assert.equal(opened[0].state, 'opening', opened[0].error);
+  assert.equal(opened[0].requestId, id);
+  assert.equal(opened[0].result.path, file);
+  assert.deepEqual(opened[0].result.bytes, bytes);
+});
+
 test('macOS installs a menu during startup and accepts state only from its trusted main frame', async t => {
   const f = await fixture(t, 'darwin');
   const item = id => f.menu().flatMap(entry => entry.submenu).find(entry => entry.id === id);
@@ -195,8 +219,64 @@ test('macOS installs a menu during startup and accepts state only from its trust
   contents.emit('did-start-navigation', {}, 'http://127.0.0.1:4174/', false, false);
   assert.equal(item('settings').enabled, true);
   contents.emit('did-start-navigation', {}, 'http://127.0.0.1:4174/', false, true);
+  assert.equal(item('settings').enabled, true, 'a canceled unload keeps the live menu');
+  contents.emit('did-navigate', {}, 'http://127.0.0.1:4174/');
   assert.equal(item('settings').enabled, false);
 });
+
+for (const platform of ['darwin', 'win32', 'linux']) {
+test(`a dirty renderer reload on ${platform} waits for save/discard and cancellation keeps the page`, async t => {
+  const f = await fixture(t, platform);
+  await f.healthy();
+  const contents = f.mainWindow().webContents;
+  const sender = { sender: contents, senderFrame: contents.mainFrame };
+  const sent = [];
+  contents.send = (...args) => sent.push(args);
+  let reloads = 0;
+  contents.reload = () => { reloads++; };
+  await f.ipcHandlers.get('projects-ready')(sender);
+  await f.ipcHandlers.get('projects-dirty')(sender, true);
+  const blocked = { preventDefault: () => assert.fail('the unapproved navigation must stay blocked') };
+  contents.emit('will-prevent-unload', blocked);
+  assert.equal(reloads, 0);
+  await f.ipcHandlers.get('projects-close-answer')(sender, sent.at(-1)[1], false);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(reloads, 0);
+  contents.emit('will-prevent-unload', blocked);
+  await f.ipcHandlers.get('projects-close-answer')(sender, sent.at(-1)[1], true);
+  await until(() => reloads === 1);
+  let allowed = false;
+  contents.emit('will-prevent-unload', { preventDefault() { allowed = true; } });
+  assert.equal(allowed, true);
+});
+
+test(`a dirty project on ${platform} owns the close decision and cancels duplicate requests`, async t => {
+  const f = await fixture(t, platform);
+  await f.healthy();
+  const window = f.mainWindow();
+  const contents = window.webContents;
+  const sender = { sender: contents, senderFrame: contents.mainFrame };
+  const sent = [];
+  contents.send = (...args) => sent.push(args);
+  await f.ipcHandlers.get('projects-ready')(sender);
+  await f.ipcHandlers.get('projects-dirty')(sender, true);
+  window.close();
+  window.close();
+  assert.equal(sent.filter(([channel]) => channel === 'project-close-request').length, 1);
+  assert.equal(f.dialogs.length, 0);
+  assert.equal(window.isDestroyed(), false);
+  await f.ipcHandlers.get('projects-close-answer')(sender, sent.at(-1)[1], false);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(f.app.quitted, undefined);
+  assert.equal(window.isDestroyed(), false);
+  window.close();
+  await f.ipcHandlers.get('projects-dirty')(sender, false);
+  await f.ipcHandlers.get('projects-close-answer')(sender, sent.at(-1)[1], true);
+  await until(() => f.app.quitted);
+  assert.equal(window.isDestroyed(), true);
+  assert.equal(f.dialogs.length, 0, 'saving before close does not ask for a second quit confirmation');
+});
+}
 
 test("win32 window buttons stay visible but subdued while a modal is open", async t => {
   const f = await fixture(t, "win32");
@@ -220,11 +300,11 @@ test("win32 window buttons stay visible but subdued while a modal is open", asyn
   ]);
 });
 
-for (const platform of ["win32", "darwin"]) {
+for (const platform of ["win32", "darwin", "linux"]) {
   test(`source desktop on ${platform} uses the project Python 3.12 environment before PATH`, async t => {
     const python = path.join(path.dirname(mainPath), "..", ".venv312",
       ...(platform === "win32" ? ["Scripts", "python.exe"] : ["bin", "python"]));
-    const f = await fixture(t, platform, "healthy", () => {}, [python]);
+    const f = await fixture(t, platform, "healthy", undefined, { pythonPaths: [python] });
     assert.equal(f.children[0].command, python);
     await f.healthy();
     assert.equal(f.errors.length, 0);
@@ -246,12 +326,14 @@ for (const platform of ["win32", "darwin"]) {
     assert.equal(f.mainWindow().visible, true);
     f.ipcMain.emit("set-language", {}, "en");
     f.mainWindow().close();
+    await until(() => f.dialogs.length === 1);
     assert.deepEqual(Array.from(f.dialogs[0].options.buttons), ["Cancel", "Quit"]);
     f.dialogs[0].resolve({ response: 0 });
     await new Promise(resolve => setImmediate(resolve));
     assert.equal(f.mainWindow().isDestroyed(), false);
     assert.equal(f.app.quitted, undefined);
     f.mainWindow().close();
+    await until(() => f.dialogs.length === 2);
     f.dialogs[1].resolve({ response: 1 });
     await until(() => f.app.quitted);
     assert.equal(f.mainWindow().isDestroyed(), true);

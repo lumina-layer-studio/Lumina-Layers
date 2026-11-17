@@ -1,8 +1,9 @@
 import type {
+  HostWorkshopRpcMethod,
   WorkshopPermissionName,
-  WorkshopRpcMethod,
 } from "../contracts";
 import {
+  isWorkshopBackendRpcMethod,
   isWorkshopPermissionName,
 } from "../contracts";
 
@@ -21,9 +22,17 @@ export const METHOD_PERMISSION = {
   "status.diagnostics": null,
   "lifecycle.ready": null,
 } as const satisfies Record<
-  WorkshopRpcMethod,
+  Exclude<HostWorkshopRpcMethod, `backend.${string}`>,
   WorkshopPermissionName | null
 >;
+
+export interface WorkshopMethodEligibility {
+  /**
+   * The exact module version declares a backend (manifest v2). Consent and
+   * Registry state are enforced again by the backend API on every call.
+   */
+  backend: boolean;
+}
 
 export function normalizeWorkshopPermissions(
   values: ReadonlySet<string>,
@@ -39,15 +48,22 @@ export function normalizeWorkshopPermissions(
 }
 
 export function requiredPermission(
-  method: WorkshopRpcMethod,
+  method: HostWorkshopRpcMethod,
 ): WorkshopPermissionName | null {
+  if (isWorkshopBackendRpcMethod(method)) {
+    return null;
+  }
   return METHOD_PERMISSION[method];
 }
 
 export function hasMethodPermission(
   permissions: ReadonlySet<WorkshopPermissionName>,
-  method: WorkshopRpcMethod,
+  method: HostWorkshopRpcMethod,
+  eligibility: WorkshopMethodEligibility = { backend: false },
 ): boolean {
+  if (isWorkshopBackendRpcMethod(method)) {
+    return eligibility.backend;
+  }
   const required = requiredPermission(method);
   return required === null || permissions.has(required);
 }

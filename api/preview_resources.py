@@ -23,6 +23,7 @@ from api.colorchecker_artifacts import (
 )
 from api.file_registry import FileRegistry
 from api.structured_logging import get_logger
+from core.preview_sizing import preview_dimensions as _preview_dimensions
 from config import (
     COLORCHECKER_TEMP_TTL_SECONDS,
     IMAGE_PREVIEW_JPEG_QUALITY,
@@ -163,14 +164,7 @@ async def save_upload_to_tempfile(file: UploadFile) -> str:
 
 def preview_dimensions(width: int, height: int) -> tuple[int, int]:
     """Return bounded preview dimensions for a full-size image."""
-    max_edge = int(IMAGE_PREVIEW_MAX_EDGE)
-    if max_edge <= 0 or max(width, height) <= max_edge:
-        return int(width), int(height)
-    scale = max_edge / float(max(width, height))
-    return (
-        max(1, int(round(width * scale))),
-        max(1, int(round(height * scale))),
-    )
+    return _preview_dimensions(width, height, max_edge=IMAGE_PREVIEW_MAX_EDGE)
 
 
 def resize_bgr_for_preview(image_bgr: np.ndarray) -> np.ndarray:

@@ -4,6 +4,7 @@ import * as THREE from "three";
 import { MOUSE } from "three";
 import { useConverterStore } from "../stores/converter";
 import { useSettingsStore } from "../stores/settingsStore";
+import { captureProjectSettings } from "../stores/converter/project";
 import {
   captureSceneTransitionSnapshot,
   clearSceneTransitionSnapshot,
@@ -276,6 +277,7 @@ beforeEach(() => {
     clearGltf.mockClear();
     failedModelUrls.clear();
     clearSceneTransitionSnapshot();
+    useConverterStore.setState({ projectSettings: null });
     capturedCanvasProps = {};
     capturedOrbitControlsProps = {};
     capturedInteractiveViewerProps = null;
@@ -337,8 +339,7 @@ beforeEach(() => {
   });
 
   describe("static frame on tab return", () => {
-    function seedSnapshot() {
-      const settings = useSettingsStore.getState();
+    function seedSnapshot(settings = useSettingsStore.getState()) {
       const key = getSceneTransitionKey(useConverterStore.getState(), [
         settings.theme, settings.deviceProfileId, settings.buildPlateId,
         settings.slicerSoftware, null,
@@ -351,6 +352,27 @@ beforeEach(() => {
         target: new THREE.Vector3(), minDistance: 1, maxDistance: 1000, update: () => {},
       });
     }
+
+    it("uses the project's plate appearance for the saved frame and invalidates it when that plate changes", () => {
+      const context = vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockImplementation(
+        (() => ({ drawImage: vi.fn() })) as unknown as HTMLCanvasElement["getContext"],
+      );
+      const bounds = vi.spyOn(HTMLDivElement.prototype, "getBoundingClientRect")
+        .mockReturnValue({ width: 800, height: 600 } as DOMRect);
+      try {
+        const projectSettings = { ...captureProjectSettings(useSettingsStore.getState()), deviceProfileId: "project-printer", buildPlateId: "project-plate" };
+        useConverterStore.setState({ projectSettings });
+        seedSnapshot({ ...useSettingsStore.getState(), ...projectSettings });
+        const { unmount } = render(<Scene3D />);
+        expect(screen.getByTestId("scene3d-transition-snapshot")).toBeInTheDocument();
+        act(() => { useConverterStore.setState({ projectSettings: { ...projectSettings, buildPlateId: "other-plate" } }); });
+        expect(screen.queryByTestId("scene3d-transition-snapshot")).toBeNull();
+        unmount();
+      } finally {
+        context.mockRestore();
+        bounds.mockRestore();
+      }
+    });
 
     it("keeps the static frame without a WebGL canvas until navigation completes", () => {
       const context = vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockImplementation(

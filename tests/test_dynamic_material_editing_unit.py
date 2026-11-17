@@ -523,6 +523,7 @@ def test_region_read_uses_saved_actual_recipe_with_real_backing_layers() -> None
         },
         cache={"material_dynamic_layer_info": {"colors": []}},
         region_id="region-1",
+        region_mask=np.ones((1, 1), dtype=bool),
         print_recipe_top_to_bottom=print_recipe,
     )
 
@@ -554,6 +555,7 @@ def test_region_read_rejects_non_backing_print_tail() -> None:
             },
             cache={"material_dynamic_layer_info": {"colors": []}},
             region_id="region-1",
+            region_mask=np.ones((1, 1), dtype=bool),
             print_recipe_top_to_bottom=invalid_print,
         )
 
@@ -574,10 +576,97 @@ def test_region_read_rejects_missing_dynamic_actual_metadata() -> None:
             },
             cache={"material_dynamic_layer_info": {"colors": []}},
             region_id="region-1",
+            region_mask=np.ones((1, 1), dtype=bool),
             print_recipe_top_to_bottom=[2, 1, 0, 1, 1, 1, 1],
         )
 
     assert exc_info.value.status_code == 409
+
+
+@pytest.mark.parametrize("packed", [False, True])
+@pytest.mark.parametrize(
+    ("selected_pixels", "latest_pixels", "expected_count"),
+    [
+        ([False, True, False], [False, False, True], 6),
+        ([False, True, False], [False, True, False], 7),
+        ([True, False, False], [False, False, True], 8),
+        ([True, True, False], [False, False, True], 8),
+    ],
+    ids=["reselected", "overlapping-edit", "same-stack-elsewhere", "mixed-selection"],
+)
+def test_dynamic_region_read_follows_sampled_pixel_ownership(
+    packed: bool,
+    selected_pixels: list[bool],
+    latest_pixels: list[bool],
+    expected_count: int,
+) -> None:
+    """Identical padded stacks can have different manual and automatic depths."""
+    from api.selection_state import pack_applied_region_mask
+
+    app = create_app()
+    store = SessionStore(ttl=1800)
+    app.dependency_overrides[get_session_store] = lambda: store
+    session_id = store.create()
+    print_recipe = [0, 0, 0, 12, 0, 12, 0, 0, 0, 0]
+
+    def entry(count: int, region_id: str) -> dict:
+        return {
+            "region_id": region_id,
+            "actual_recipe_top_to_bottom": print_recipe[:count],
+            "print_recipe_top_to_bottom": print_recipe,
+            "actual_layer_count": count,
+            "padding_layer_count": 10 - count,
+        }
+
+    masks = {
+        "__editor_selection__:2": np.array([[False, True, False]]),
+        "__editor_selection__:3": np.array([latest_pixels]),
+    }
+    values = {
+        "material_min_layer_count": 5,
+        "material_max_layer_count": 10,
+        "material_dynamic_layer_count_enabled": True,
+        "selected_materials": [f"material-{index}" for index in range(17)],
+        "material_backing_material_index": 0,
+        "recipe_overrides": [
+            entry(6, "__editor_selection__:2"),
+            entry(7, "__editor_selection__:3"),
+        ],
+        "recipe_override_applied_masks": {
+            key: pack_applied_region_mask(mask) if packed else mask
+            for key, mask in masks.items()
+        },
+        "selected_region_masks": {
+            "__editor_selection__:31": np.array([selected_pixels]),
+        },
+        "preview_cache": {
+            "material_matrix": np.tile(print_recipe, (1, 3, 1)),
+            "material_dynamic_layer_info": {"colors": [entry(8, "automatic")]},
+        },
+    }
+    for key, value in values.items():
+        store.put(session_id, key, value)
+    try:
+        with TestClient(app) as client:
+            for order in ("Top2Bottom", "Bottom2Top"):
+                response = client.post(
+                    "/api/convert/region-recipe",
+                    json={
+                        "session_id": session_id,
+                        "region_ids": ["__editor_selection__:31"],
+                        "layer_order": order,
+                    },
+                )
+                assert response.status_code == 200, response.text
+                recipe = response.json()["recipes"][0]
+                expected = print_recipe[:expected_count]
+                if order == "Bottom2Top":
+                    expected = expected[::-1]
+                assert recipe["recipe"] == expected
+                assert recipe["color_layers"] == expected_count
+    finally:
+        store.clear_all()
+        app.dependency_overrides.clear()
 
 
 def test_automatic_sync_resolves_and_rebuilds_complete_target_set() -> None:
@@ -996,3 +1085,79 @@ def test_dynamic_exact_failure_keeps_artifact_cache_revisions_and_data(
     np.testing.assert_array_equal(hydrated["quantized_image"], matched)
     assert hydrated["material_dynamic_layer_info"] == dynamic_info
     assert hydrated["material_solver_info"] == solver_info
+
+
+def test_padded_thirty_layer_manual_recipe_passes_generate_request_model() -> None:
+    """A 5-layer edit in a 5..30 preview pads to 30 and must still generate."""
+    from api.routers.converter import replace
+    from api.schemas.converter import ConvertGenerateRequest
+
+    prepared = replace._prepare_dynamic_manual_recipe(
+        session_data={
+            "selected_materials": ["mat-a", "mat-b", "mat-c"],
+            "material_backing_material_index": 1,
+            "material_dynamic_layer_count_enabled": True,
+            "material_min_layer_count": 5,
+            "material_max_layer_count": 30,
+        },
+        recipe=[2, 1, 0, 2, 1],
+        layer_order="Top2Bottom",
+        color_layers=5,
+    )
+    assert len(prepared["print_recipe_top_to_bottom"]) == 30
+
+    request = ConvertGenerateRequest(
+        session_id="session",
+        lut_name="__material_archive__",
+        recipe_overrides=[
+            {
+                "region_id": "region-1",
+                "recipe": prepared["print_recipe_top_to_bottom"],
+                "layer_order": "Top2Bottom",
+                "color_layers": prepared["actual_layer_count"],
+                "actual_recipe_top_to_bottom": prepared["actual_recipe_top_to_bottom"],
+                "print_recipe_top_to_bottom": prepared["print_recipe_top_to_bottom"],
+                "actual_layer_count": prepared["actual_layer_count"],
+                "padding_layer_count": prepared["padding_layer_count"],
+            }
+        ],
+    )
+    override = request.recipe_overrides[0]
+    assert len(override.print_recipe_top_to_bottom) == 30
+    assert override.padding_layer_count == 25
+
+
+@pytest.mark.parametrize("layers", [21, 30])
+def test_predict_recipe_accepts_deep_material_recipes(layers: int) -> None:
+    """21-30 layer recipes reach the session check instead of a 422."""
+    from fastapi.testclient import TestClient
+
+    from api.app import create_app
+
+    response = TestClient(create_app()).post(
+        "/api/convert/predict-recipe",
+        json={
+            "session_id": "missing-session",
+            "recipe": [0] * layers,
+            "layer_order": "Top2Bottom",
+            "color_layers": layers,
+            "layer_height_mm": 0.04,
+        },
+    )
+    assert response.status_code != 422, response.text
+
+
+def test_recipe_contracts_reject_more_than_thirty_layers() -> None:
+    from pydantic import ValidationError
+
+    from api.schemas.converter import RecipeOverrideItem, RecipePredictRequest
+
+    with pytest.raises(ValidationError):
+        RecipePredictRequest(
+            session_id="s",
+            recipe=[0] * 31,
+            color_layers=31,
+            layer_height_mm=0.04,
+        )
+    with pytest.raises(ValidationError):
+        RecipeOverrideItem(region_id="r", recipe=[0] * 31)

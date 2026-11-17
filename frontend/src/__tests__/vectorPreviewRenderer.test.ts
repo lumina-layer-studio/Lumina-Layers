@@ -23,7 +23,7 @@ vi.mock("../utils/clientLog", () => ({
 
 import { ModelingMode } from "../api/types";
 import { useVectorPreviewRenderer } from "../hooks/useVectorPreviewRenderer";
-import { DEFAULT_STATE, useConverterStore } from "../stores/converter";
+import { converterDocumentHistory, DEFAULT_STATE, useConverterStore } from "../stores/converter";
 import { DEFAULT_SETTINGS, useSettingsStore } from "../stores/settingsStore";
 
 function deferred<T>() {
@@ -47,13 +47,14 @@ function seedEligibleSession() {
     previewImageUrl: "/api/files/preview.png",
     previewBaseImageUrl: "/api/files/preview-clean.png",
     previewGlbUrl: "/api/files/current.glb",
-    adjustmentHistory: [{ id: "edit-kept" }] as never,
     modelSurfaceEnabled: false,
     largeFormatEnabled: false,
     batchPreviewItems: [],
     _pollAsyncGlb: pollAsyncGlb,
     submitPreview,
   } as never);
+  converterDocumentHistory.reset();
+  useConverterStore.getState().setTargetWidthMm(useConverterStore.getState().target_width_mm + 1);
   return { pollAsyncGlb, submitPreview };
 }
 
@@ -80,6 +81,8 @@ describe("useVectorPreviewRenderer", () => {
 
   it("switches renderer in place without rebuilding the preview session", async () => {
     const { pollAsyncGlb, submitPreview } = seedEligibleSession();
+    const historyBefore = converterDocumentHistory.store.getState();
+    expect(historyBefore.canUndo).toBe(true);
     renderHook(() => useVectorPreviewRenderer());
 
     act(() => {
@@ -96,9 +99,7 @@ describe("useVectorPreviewRenderer", () => {
       previewBaseImageUrl: "/api/files/preview-clean.png",
       previewGlbUrl: "/api/files/current.glb",
     });
-    expect(useConverterStore.getState().adjustmentHistory).toEqual([
-      { id: "edit-kept" },
-    ]);
+    expect(converterDocumentHistory.store.getState()).toMatchObject({ position: historyBefore.position, canUndo: true });
   });
 
   it("accepts only the final response during rapid on-off-on changes", async () => {

@@ -184,7 +184,8 @@ def test_bambu_machine_thumbnails_use_antialiased_transparent_artwork() -> None:
                 }
                 partial_alpha_pixels = sum(alpha.histogram()[1:255])
 
-            assert min(width, height) >= 240, str(machine["thumbnail"])
+            # Official H3C artwork is 180px; preserve it without artificial upscaling.
+            assert min(width, height) >= 180, str(machine["thumbnail"])
             assert corner_alpha == {0}, str(machine["thumbnail"])
             assert partial_alpha_pixels >= 256, str(machine["thumbnail"])
 

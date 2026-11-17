@@ -182,7 +182,7 @@ def _apply_material_archive_branch(
         return "error"
 
     try:
-        materials = load_materials(selected_materials)
+        materials = load_materials(selected_materials, **({"materials_dir": ctx["materials_dir"]} if ctx.get("materials_dir") else {}))
     except (FileNotFoundError, ValueError) as exc:
         ctx["error"] = f"[ERROR] Failed to load materials: {exc}"
         return "error"

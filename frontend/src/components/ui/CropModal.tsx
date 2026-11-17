@@ -51,15 +51,18 @@ const ASPECT_RATIO_PRESETS: AspectRatioPreset[] = [
 
 // ========== Component ==========
 
-export function CropModal({
-  open,
+export function CropModal({ open, ...props }: CropModalProps) {
+  return open ? <CropModalContent key={props.imageSrc} {...props} /> : null;
+}
+
+function CropModalContent({
   imageSrc,
   onConfirm,
   onUseOriginal,
   onClose,
   isLoading = false,
   allowCrop = true,
-}: CropModalProps) {
+}: Omit<CropModalProps, "open">) {
   const { t } = useI18n();
   const cropperRef = useRef<ReactCropperElement>(null);
   const cropAreaRef = useRef<HTMLDivElement>(null);
@@ -74,12 +77,8 @@ export function CropModal({
   const [cropW, setCropW] = useState(0);
   const [cropH, setCropH] = useState(0);
   const [rotation, setRotation] = useState<0 | ImageRotationDegrees>(0);
-
-  useEffect(() => {
-    if (!open) return;
-    setRotation(0);
-    setActiveRatio(NaN);
-  }, [open, imageSrc]);
+  const [isReady, setIsReady] = useState(false);
+  const controlsDisabled = isLoading || !isReady;
 
   // Track whether manual input is in progress to avoid feedback loops
   const isManualInputRef = useRef(false);
@@ -87,8 +86,6 @@ export function CropModal({
   // ---------- Focus trap & Escape ----------
 
   useEffect(() => {
-    if (!open) return;
-
     previousFocusRef.current = document.activeElement as HTMLElement | null;
     // Focus the modal container after mount
     const timer = setTimeout(() => {
@@ -99,11 +96,9 @@ export function CropModal({
       clearTimeout(timer);
       previousFocusRef.current?.focus();
     };
-  }, [open]);
+  }, []);
 
   useEffect(() => {
-    if (!open) return;
-
     function handleKeyDown(e: KeyboardEvent) {
       if (e.key === "Escape") {
         e.preventDefault();
@@ -137,13 +132,13 @@ export function CropModal({
 
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [open, onClose]);
+  }, [onClose]);
 
   // ---------- Cropper callbacks ----------
 
   useEffect(() => {
     const area = cropAreaRef.current;
-    if (!open || !area) return;
+    if (controlsDisabled || !area) return;
     const handleWheel = (event: WheelEvent) => {
       const cropper = cropperRef.current?.cropper;
       if (!cropper) return;
@@ -161,7 +156,7 @@ export function CropModal({
     };
     area.addEventListener("wheel", handleWheel, { passive: false });
     return () => area.removeEventListener("wheel", handleWheel);
-  }, [open]);
+  }, [controlsDisabled]);
 
   const handleCropEvent = useCallback(() => {
     if (isManualInputRef.current) return;
@@ -180,6 +175,7 @@ export function CropModal({
     if (!cropper) return;
 
     const imgData = cropper.getImageData();
+    if (!(imgData.naturalWidth > 0) || !(imgData.naturalHeight > 0)) return;
     setNaturalWidth(imgData.naturalWidth);
     setNaturalHeight(imgData.naturalHeight);
 
@@ -188,22 +184,24 @@ export function CropModal({
     setCropY(data.y);
     setCropW(data.width);
     setCropH(data.height);
+    setIsReady(true);
   }, []);
 
   // ---------- Aspect ratio ----------
 
   const handleAspectRatioChange = useCallback((value: number) => {
+    if (controlsDisabled) return;
     setActiveRatio(value);
     const cropper = cropperRef.current?.cropper;
     if (!cropper) return;
     cropper.setAspectRatio(value);
-  }, []);
+  }, [controlsDisabled]);
 
   // ---------- Manual coordinate input ----------
 
   const handleRotate = (delta: number) => {
     const cropper = cropperRef.current?.cropper;
-    if (!cropper || isLoading) return;
+    if (!cropper || controlsDisabled) return;
     const next = ((rotation + delta + 360) % 360) as 0 | ImageRotationDegrees;
     // Refit the selection to the rotated image instead of clipping its edges.
     cropper.clear();
@@ -226,6 +224,7 @@ export function CropModal({
 
   const syncManualInput = useCallback(
     (field: "x" | "y" | "width" | "height", raw: string) => {
+      if (controlsDisabled) return;
       const num = parseInt(raw, 10);
       if (isNaN(num) || num < 0) return;
 
@@ -247,12 +246,13 @@ export function CropModal({
 
       isManualInputRef.current = false;
     },
-    []
+    [controlsDisabled]
   );
 
   // ---------- Confirm ----------
 
   const handleConfirm = useCallback(() => {
+    if (controlsDisabled) return;
     const cropper = cropperRef.current?.cropper;
     if (!cropper) return;
 
@@ -264,11 +264,9 @@ export function CropModal({
       height: data.height,
       rotation,
     });
-  }, [onConfirm, rotation]);
+  }, [controlsDisabled, onConfirm, rotation]);
 
   // ---------- Render ----------
-
-  if (!open) return null;
 
   return createPortal(
     <div
@@ -326,10 +324,10 @@ export function CropModal({
         <div className="flex flex-wrap gap-2 px-4 py-2">
           <Button label={t("crop_modal_rotate_left")} variant="secondary" size="sm"
             leadingIcon={<ArrowUturnLeftIcon className="size-4" />}
-            onClick={() => handleRotate(-90)} disabled={isLoading} />
+            onClick={() => handleRotate(-90)} disabled={controlsDisabled} />
           <Button label={t("crop_modal_rotate_right")} variant="secondary" size="sm"
             leadingIcon={<ArrowUturnRightIcon className="size-4" />}
-            onClick={() => handleRotate(90)} disabled={isLoading} />
+            onClick={() => handleRotate(90)} disabled={controlsDisabled} />
         </div>
         {!allowCrop && <p className="px-4 py-2 text-sm text-slate-500 dark:text-slate-400">{t("crop_modal_svg_rotation_only")}</p>}
         {allowCrop && <div className="flex flex-wrap gap-1.5 px-4 py-2">
@@ -344,7 +342,7 @@ export function CropModal({
                 variant="ghost"
                 size="sm"
                 active={isActive}
-                disabled={isLoading}
+                disabled={controlsDisabled}
                 onClick={() => handleAspectRatioChange(preset.value)}
               />
             );
@@ -369,7 +367,7 @@ export function CropModal({
                 type="number"
                 min={0}
                 value={item.value}
-                disabled={isLoading}
+                disabled={controlsDisabled}
                 onChange={(e) => syncManualInput(item.field, e.target.value)}
                 className={cx(compactFieldClass, "py-1 text-xs")}
               />
@@ -389,6 +387,7 @@ export function CropModal({
             label={t("crop_modal_confirm")}
             onClick={handleConfirm}
             loading={isLoading}
+            disabled={controlsDisabled}
             variant="primary"
           />
         </div>

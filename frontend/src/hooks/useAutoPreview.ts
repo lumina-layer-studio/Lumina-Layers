@@ -9,6 +9,7 @@ import {
   useConverterStore,
 } from "../stores/converter";
 import { useSettingsStore } from "../stores/settingsStore";
+import { resolveConverterSettings } from "../stores/converter/project";
 
 type AutoPreviewSnapshot = {
   imageFile: File;
@@ -132,14 +133,11 @@ export function useAutoPreview(): void {
       state.largeFormatEnabled,
     ]),
   );
-  const settingsKey = useSettingsStore((state) =>
-    JSON.stringify([
-      state.svgPixelsPerMm,
-      state.theme,
-      state.enableSolverCacheGridSelection,
-      state.solverCacheGridResolution,
-    ]),
-  );
+  const projectSettings = useConverterStore((state) => state.projectSettings);
+  const settingsKey = useSettingsStore((state) => {
+    const settings = resolveConverterSettings({ projectSettings }, state);
+    return JSON.stringify([settings.svgPixelsPerMm, settings.theme, settings.enableSolverCacheGridSelection, settings.solverCacheGridResolution]);
+  });
 
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastTriggeredRef = useRef<AutoPreviewSnapshot | null>(null);
@@ -187,7 +185,7 @@ export function useAutoPreview(): void {
             ) {
               return;
             }
-            const settings = useSettingsStore.getState();
+            const settings = resolveConverterSettings(scheduledState, useSettingsStore.getState());
             const gridResolution = settings.enableSolverCacheGridSelection
               ? settings.solverCacheGridResolution
               : undefined;

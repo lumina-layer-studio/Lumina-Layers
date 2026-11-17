@@ -296,7 +296,7 @@ def resolve_machine_build_plates(
         "off",
     }
     if (
-        slicer_id in {"ElegooSlicer", "AnycubicSlicerNext", "FlashStudio"}
+        slicer_id in {"ElegooSlicer", "AnycubicSlicerNext"}
         and multi_bed_disabled
     ):
         return [], ""
@@ -331,6 +331,12 @@ def resolve_machine_build_plates(
         settings.get("default_bed_type") or settings.get("curr_bed_type"),
         slicer_id=slicer_id,
     )
+    if slicer_id == "FlashStudio" and multi_bed_disabled:
+        # Flash's fixed-bed GUI uses High Temp Plate (enum 3) if the
+        # machine defines no default. It does not offer the other plates.
+        fixed_value = configured_default or _canonical_plate_value("3", slicer_id=slicer_id)
+        fixed = next((spec for spec in supported if spec.project_value == fixed_value), None)
+        return ([fixed.id], fixed.id) if fixed else ([], "")
     default = next(
         (spec for spec in supported if spec.project_value == configured_default),
         None,

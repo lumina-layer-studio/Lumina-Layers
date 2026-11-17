@@ -483,6 +483,7 @@ export function restoreConverterRecipe(
       quantized_hex: stripHash(r.quantized_hex),
       matched_hex: stripHash(r.matched_hex),
       replacement_hex: stripHash(r.replacement_hex),
+      ...(r.source_scope ? { source_scope: r.source_scope } : {}),
     }));
 
   const freeColorSet = new Set(
@@ -661,6 +662,8 @@ export function restoreConverterRecipe(
     materialDynamicLayerCountEnabled: dynamicMaterialEnabled,
     materialMinLayerCount: dynamicBounds.minimum,
     materialMaxLayerCount: dynamicBounds.maximum,
+    materialLayersUnlocked:
+      Math.max(source?.material_layer_count ?? 5, dynamicBounds.maximum) > 10,
     // Imported results are historical evidence only. Generation does not
     // consume them; the next successful preview replaces them with current
     // backend results for the imported image/material runtime.

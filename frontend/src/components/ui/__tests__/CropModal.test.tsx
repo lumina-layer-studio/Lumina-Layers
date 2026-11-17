@@ -1,8 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import { CropModal } from "../CropModal";
 
 const cropper = vi.hoisted(() => ({
+  getImageData: vi.fn(() => ({ naturalWidth: 120, naturalHeight: 80 })),
   getData: vi.fn(() => ({ x: 10, y: 20, width: 120, height: 80 })),
   rotateTo: vi.fn(),
   clear: vi.fn(),
@@ -12,18 +13,69 @@ const cropper = vi.hoisted(() => ({
   zoomTo: vi.fn(),
   setCanvasData: vi.fn(),
   setData: vi.fn(),
+  setAspectRatio: vi.fn(),
+}));
+const lifecycle = vi.hoisted(() => ({
+  autoReady: true,
+  ready: undefined as (() => void) | undefined,
 }));
 
 vi.mock("react-cropper", async () => {
-  const { forwardRef, useImperativeHandle } = await import("react");
-  return { default: forwardRef(function MockCropper(_, ref) {
+  const { forwardRef, useEffect, useImperativeHandle } = await import("react");
+  return { default: forwardRef(function MockCropper({ ready }: { ready: () => void }, ref) {
     useImperativeHandle(ref, () => ({ cropper }));
+    useEffect(() => {
+      lifecycle.ready = ready;
+      if (lifecycle.autoReady) ready();
+    }, [ready]);
     return <div data-testid="cropper-surface" />;
   }) };
 });
 
 describe("CropModal rotation drafts", () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    lifecycle.autoReady = true;
+    lifecycle.ready = undefined;
+  });
+
+  it("waits for image readiness before allowing rotation, crop edits and confirmation", () => {
+    lifecycle.autoReady = false;
+    const onConfirm = vi.fn();
+    render(<CropModal open imageSrc="blob:loading" onConfirm={onConfirm} onClose={vi.fn()} onUseOriginal={vi.fn()} />);
+    const rotate = screen.getByRole("button", { name: "向右旋转 90°" });
+    expect(rotate).toBeDisabled();
+    expect(screen.getByRole("button", { name: "应用更改" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "1:1" })).toBeDisabled();
+    for (const input of screen.getAllByRole("spinbutton")) expect(input).toBeDisabled();
+    fireEvent.click(rotate);
+    fireEvent.wheel(screen.getByTestId("cropper-surface"), { deltaY: -100 });
+    expect(cropper.rotateTo).not.toHaveBeenCalled();
+    expect(cropper.zoomTo).not.toHaveBeenCalled();
+    expect(onConfirm).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: "取消" })).toBeEnabled();
+    act(() => lifecycle.ready?.());
+    expect(rotate).toBeEnabled();
+    fireEvent.click(rotate);
+    expect(cropper.rotateTo).toHaveBeenLastCalledWith(90);
+  });
+
+  it("waits for the replacement image and ignores readiness from the previous image", () => {
+    const props = { onConfirm: vi.fn(), onClose: vi.fn(), onUseOriginal: vi.fn() };
+    const view = render(<CropModal {...props} open imageSrc="blob:first" />);
+    const firstReady = lifecycle.ready;
+    expect(screen.getByRole("button", { name: "向右旋转 90°" })).toBeEnabled();
+    lifecycle.autoReady = false;
+    view.rerender(<CropModal {...props} open imageSrc="blob:second" />);
+    expect(screen.getByRole("button", { name: "向右旋转 90°" })).toBeDisabled();
+    act(() => firstReady?.());
+    expect(screen.getByRole("button", { name: "向右旋转 90°" })).toBeDisabled();
+    act(() => lifecycle.ready?.());
+    expect(screen.getByRole("button", { name: "向右旋转 90°" })).toBeEnabled();
+    view.rerender(<CropModal {...props} open={false} imageSrc="blob:second" />);
+    view.rerender(<CropModal {...props} open imageSrc="blob:second" />);
+    expect(screen.getByRole("button", { name: "向右旋转 90°" })).toBeDisabled();
+  });
 
   it("zooms smoothly around the pointer and prevents page scrolling", () => {
     render(<CropModal open imageSrc="blob:test" onConfirm={vi.fn()} onClose={vi.fn()} onUseOriginal={vi.fn()} />);

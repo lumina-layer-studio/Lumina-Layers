@@ -69,3 +69,8 @@ const localStorageMock = (function () {
   };
 })();
 Object.defineProperty(window, 'localStorage', { value: localStorageMock });
+// jsdom exposes dialog elements but does not implement their browser methods.
+Object.defineProperties(HTMLDialogElement.prototype, {
+  showModal: { configurable: true, value(this: HTMLDialogElement) { this.open = true; } },
+  close: { configurable: true, value(this: HTMLDialogElement) { this.open = false; this.dispatchEvent(new Event("close")); } },
+});

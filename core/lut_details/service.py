@@ -155,6 +155,10 @@ class LutDetailService:
         path = self._indexer.find_path_by_name(lut_name)
         if path is None:
             raise KeyError(lut_name)
+        return self.get_lut_details_from_path(lut_name, path)
+
+    def get_lut_details_from_path(self, lut_name: str, path: Path) -> LutDetails:
+        """Build details for a validated project-local source using the same parser."""
         parsed = self._parser.parse(name=lut_name, path=path)
         identity = self._indexer.resolve_identity(path, parsed)
         return self._build_details(parsed, identity)

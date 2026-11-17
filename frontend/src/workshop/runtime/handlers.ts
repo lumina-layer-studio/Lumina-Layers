@@ -1,4 +1,10 @@
 import type {
+  WorkshopBackendApi,
+  WorkshopBackendTaskResponse,
+} from "../../api/workshop";
+import type {
+  WorkshopBackendSubmitRequest,
+  WorkshopBackendTask,
   WorkshopImageHandoff,
   WorkshopProjectRecord as SdkWorkshopProjectRecord,
   WorkshopUiState,
@@ -22,6 +28,122 @@ interface CreateManagerHandlersOptions {
   locale(): "zh-CN" | "en-US";
   theme(): "light" | "dark";
   onDiagnostics(summary: WorkshopDiagnosticSummary | null): void;
+  /** Host-owned backend task API; absent hosts reject backend methods. */
+  backend?: WorkshopBackendApi;
+}
+
+interface BackendTaskIdPayload {
+  taskId: string;
+}
+
+interface BackendOutputPayload {
+  taskId: string;
+  name: string;
+}
+
+/** Map one host task to the public RPC shape (camelCase, no paths). */
+export function publicBackendTask(
+  task: WorkshopBackendTaskResponse,
+): WorkshopBackendTask {
+  return {
+    taskId: task.task_id,
+    moduleVersion: task.module_version,
+    operation: task.operation,
+    status: task.status,
+    progress: task.progress,
+    error: task.error,
+    outputs: task.outputs.map((output) => ({
+      name: output.name,
+      fileName: output.file_name,
+      mimeType: output.mime_type,
+      bytes: output.size_bytes,
+    })),
+    variant: task.variant,
+    createdAt: task.created_at,
+    updatedAt: task.updated_at,
+    finishedAt: task.finished_at,
+  };
+}
+
+/**
+ * Backend RPC handlers. Tasks belong to the host: closing the frame aborts
+ * only the frame's waits, never a submitted task, so these handlers ignore
+ * the request abort signal and never call cancel on their own.
+ * 后端任务归宿主所有：关闭模块页面只结束前端等待，不会取消已提交的任务。
+ */
+export function createWorkshopBackendHandlers(
+  backend: WorkshopBackendApi,
+): WorkshopRpcHandlers {
+  const operationTask = async (
+    context: WorkshopRpcHandlerContext,
+    taskId: string,
+  ): Promise<WorkshopBackendTaskResponse> => {
+    const task = await backend.task(context.identity.moduleId, taskId);
+    if (task.kind !== "operation") {
+      throw new Error("Workshop backend task is not available to modules.");
+    }
+    return task;
+  };
+  return {
+    "backend.status": async (_payload, context) => {
+      const status = await backend.status(
+        context.identity.moduleId,
+        context.identity.moduleVersion,
+      );
+      return {
+        prepared: status.preparation === "prepared",
+        authorized: status.authorization !== "required",
+        state: status.runtime.state,
+        acceleration: status.acceleration,
+        variant: status.runtime.variant,
+      };
+    },
+    "backend.submit": async (payload, context) => {
+      const request = payload as WorkshopBackendSubmitRequest;
+      return publicBackendTask(
+        await backend.submit(
+          context.identity.moduleId,
+          context.identity.moduleVersion,
+          request,
+        ),
+      );
+    },
+    "backend.get": async (payload, context) =>
+      publicBackendTask(
+        await operationTask(context, (payload as BackendTaskIdPayload).taskId),
+      ),
+    "backend.list": async (_payload, context) =>
+      (await backend.tasks(context.identity.moduleId))
+        .filter((task) => task.kind === "operation")
+        .slice(0, 100)
+        .map(publicBackendTask),
+    "backend.cancel": async (payload, context) => {
+      const { taskId } = payload as BackendTaskIdPayload;
+      await operationTask(context, taskId);
+      return publicBackendTask(
+        await backend.cancel(context.identity.moduleId, taskId),
+      );
+    },
+    "backend.readOutput": async (payload, context) => {
+      const { taskId, name } = payload as BackendOutputPayload;
+      const task = await operationTask(context, taskId);
+      const output = task.outputs.find((item) => item.name === name);
+      if (output === undefined) {
+        throw new Error("Workshop backend output does not exist.");
+      }
+      return {
+        name: output.name,
+        fileName: output.file_name,
+        mimeType: output.mime_type,
+        bytes: await backend.output(context.identity.moduleId, taskId, name),
+      };
+    },
+    "backend.remove": async (payload, context) => {
+      const { taskId } = payload as BackendTaskIdPayload;
+      await operationTask(context, taskId);
+      await backend.remove(context.identity.moduleId, taskId);
+    },
+  };
 }
 
 interface ProjectSavePayload {
@@ -234,6 +356,10 @@ export function createWorkshopManagerHandlers(
     },
 
     "lifecycle.ready": () => undefined,
+
+    ...(options.backend === undefined
+      ? {}
+      : createWorkshopBackendHandlers(options.backend)),
   };
 }
 

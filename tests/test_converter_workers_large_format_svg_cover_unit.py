@@ -68,12 +68,15 @@ def _capture_worker_warnings(caplog):
     """
 
     target_logger = logging.getLogger("lumina.api.workers.converter_workers")
+    previous_propagate = target_logger.propagate
+    target_logger.propagate = False
     target_logger.addHandler(caplog.handler)
     caplog.set_level(logging.WARNING, logger="lumina.api.workers.converter_workers")
     try:
         yield
     finally:
         target_logger.removeHandler(caplog.handler)
+        target_logger.propagate = previous_propagate
 
 
 def _make_tile(
@@ -117,7 +120,7 @@ class _FakeVectorProcessor:
 
     def analyze_svg(self, **_kwargs):
         return SimpleNamespace(
-            num_layers=5, slot_names=["Slot1"], scale_factor=1.0, matched_shapes=[]
+            num_layers=5, slot_names=["Slot1"], scale_factor=1.0, matched_shapes=[], preview_colors={0: [255, 0, 0, 255]}
         )
 
     def build_mesh(self, **_kwargs):

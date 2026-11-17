@@ -3,6 +3,7 @@ import { buildLayerImagesSourceKey, CONVERTER_ERROR_KEYS, resolveConverterSource
 import Button from "../ui/Button"
 import Checkbox from "../ui/Checkbox"
 import { useSettingsStore } from "../../stores/settingsStore"
+import { supportsExternalSpool } from "../../stores/converter/nativeMaterialSelection"
 import { cardDividerClass } from "../ui/panelPrimitives"
 import BatchResultSummary from "../ui/BatchResultSummary"
 import LayerMaskViewerDialog from "../ui/LayerMaskViewerDialog"
@@ -10,69 +11,15 @@ import BedSizeSelector from "./BedSizeSelector"
 import SlicerSelector from "./SlicerSelector"
 import { StatusBanner } from "../ui/panelPrimitives"
 import { useI18n } from "../../i18n/context"
+import { useProjectExportStore } from "../../project/generationExport"
 import { useWorkspaceMode } from "../../hooks/useWorkspaceMode"
-import { apiErrorToVisibleMessage } from "../../api/client"
-import {
-  exportShareCard,
-  exportSidecar,
-  MODEL_SURFACE_RECIPE_EXPORT_UNAVAILABLE_ERROR,
-} from "../../recipe/importFlow"
 
 const EMPTY_LAYER_IMAGES: { layer_index: number; name: string; url: string }[] = []
-const EXPORT_NO_IMAGE_MESSAGE = "No image file loaded"
-const EXPORT_NO_PREVIEW_MESSAGE = "No preview available — please generate a preview first"
-const EXPORT_PREVIEW_LOAD_MESSAGE = "Failed to load preview image for cover"
-const GENERIC_HTTP_STATUS_ERROR_RE =
-  /(?:Request failed with status code|HTTP(?:\s+error)?|status(?:\s+code)?)\s*\d{3}\b/i
-
-function hasApiErrorResponse(error: unknown): boolean {
-  return Boolean(error && typeof error === "object" && "response" in error)
-}
-
-function shouldUseApiErrorLanguage(error: unknown): boolean {
-  if (hasApiErrorResponse(error)) {
-    return true
-  }
-  const message = error instanceof Error ? error.message.trim() : ""
-  return GENERIC_HTTP_STATUS_ERROR_RE.test(message)
-}
-
-/** Compact stroke icons for the ghost action row. 幽灵操作行的线性图标。 */
-function DownloadIcon() {
-  return (
-    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" />
-      <polyline points="7 10 12 15 17 10" />
-      <line x1="12" y1="15" x2="12" y2="3" />
-    </svg>
-  )
-}
-
-function resolveRecipeExportError(error: unknown, t: (key: string) => string): string {
-  if (error instanceof Error) {
-    if (error.message === 'file_save_failed' || error.message === 'file_save_too_large') return t(error.message)
-    if (error.message === EXPORT_NO_IMAGE_MESSAGE) {
-      return t("recipe_export_error_no_image")
-    }
-    if (error.message === EXPORT_NO_PREVIEW_MESSAGE) {
-      return t("recipe_export_error_no_preview")
-    }
-    if (error.message === EXPORT_PREVIEW_LOAD_MESSAGE) {
-      return t("recipe_export_error_preview_load")
-    }
-    if (error.message === MODEL_SURFACE_RECIPE_EXPORT_UNAVAILABLE_ERROR) {
-      return t("recipe_export_model_surface_unavailable")
-    }
-  }
-  if (shouldUseApiErrorLanguage(error)) {
-    return apiErrorToVisibleMessage(error, t("recipe_export_error_unknown"))
-  }
-  return t("recipe_export_error_unknown")
-}
 
 export default function ActionBar() {
   const { t } = useI18n()
   const workspace = useWorkspaceMode()
+  const embedProject = useProjectExportStore((state) => state.embed)
   const [zoomedLayerIdx, setZoomedLayerIdx] = useState<number | null>(null)
   const fetchedLayerSourceRef = useRef<string | null>(null)
 
@@ -103,6 +50,8 @@ export default function ActionBar() {
   const puzzleOverlayUrl = useConverterStore((s) => s.puzzleOverlayUrl)
   const submitPreview = useConverterStore((s) => s.submitPreview)
   const openNativeMaterialSelection = useConverterStore((s) => s.openNativeMaterialSelection)
+  const projectSettings = useConverterStore((s) => s.projectSettings)
+  const hasExternalSpool = useSettingsStore((defaults) => supportsExternalSpool(projectSettings ?? defaults))
   const nativeMaterialSelectionLoading = useConverterStore((s) => s.nativeMaterialSelectionLoading)
   const submitFullPipeline = useConverterStore((s) => s.submitFullPipeline)
   const threemfDiskPath = useConverterStore((s) => s.threemfDiskPath)
@@ -158,10 +107,6 @@ export default function ActionBar() {
       legacyCatalogGroups,
     ],
   )
-
-  const [isExporting, setIsExporting] = useState(false)
-  const [exportError, setExportError] = useState<string | null>(null)
-  const [exportNotice, setExportNotice] = useState<string | null>(null)
 
   const canSubmit = !!imageFile && sourceSelection.isReady
   const largeFormatModelSurfaceConflict = largeFormatEnabled && modelSurfaceEnabled
@@ -260,9 +205,18 @@ export default function ActionBar() {
               label={t("action_batch_generate")}
               variant="primary"
               onClick={() => void submitBatch()}
-              disabled={!canBatchSubmit || batchLoading}
+              disabled={!canBatchSubmit || batchLoading || nativeMaterialSelectionLoading}
               loading={batchLoading}
             />
+            {hasExternalSpool && (
+              <Button
+                label={t("native_material_edit_button")}
+                variant="secondary"
+                onClick={() => void openNativeMaterialSelection()}
+                disabled={!sourceSelection.isReady || isGenerating || batchLoading}
+                loading={nativeMaterialSelectionLoading}
+              />
+            )}
           </div>
 
           {batchResult && <BatchResultSummary result={batchResult} />}
@@ -329,61 +283,6 @@ export default function ActionBar() {
               loading={nativeMaterialSelectionLoading}
               className="w-full min-h-9 px-4 py-2"
             />
-            {hasPreview && (
-              <>
-                <div className={cardDividerClass} aria-hidden="true" />
-                <div className="flex gap-2">
-                  <Button
-                    label={isExporting ? t("recipe_export_loading") : t("recipe_export_btn")}
-                    variant="secondary"
-                    onClick={() => {
-                      setIsExporting(true)
-                      setExportError(null)
-                      exportShareCard()
-                        .then((outcome) => setExportNotice(outcome === 'canceled' ? null : t(outcome === 'saved' ? 'file_save_saved' : 'file_save_download_started')))
-                        .catch((err: unknown) => {
-                          setExportError(resolveRecipeExportError(err, t))
-                        })
-                        .finally(() => setIsExporting(false))
-                    }}
-                    disabled={isExporting || modelSurfaceEnabled || isLoading || replacePreviewLoading}
-                    loading={isExporting}
-                    leadingIcon={<DownloadIcon />}
-                    title={modelSurfaceEnabled ? t("recipe_export_model_surface_unavailable") : undefined}
-                    className="flex-1"
-                  />
-                  <Button
-                    label={t("recipe_export_sidecar_btn")}
-                    variant="secondary"
-                    onClick={() => {
-                      setIsExporting(true)
-                      setExportError(null)
-                      exportSidecar()
-                        .then((outcome) => setExportNotice(outcome === 'canceled' ? null : t(outcome === 'saved' ? 'file_save_saved' : 'file_save_download_started')))
-                        .catch((err: unknown) => {
-                          setExportError(resolveRecipeExportError(err, t))
-                        })
-                        .finally(() => setIsExporting(false))
-                    }}
-                    disabled={isExporting || modelSurfaceEnabled || isLoading || replacePreviewLoading}
-                    leadingIcon={<DownloadIcon />}
-                    title={modelSurfaceEnabled ? t("recipe_export_model_surface_unavailable") : undefined}
-                    className="flex-1"
-                  />
-                </div>
-              </>
-            )}
-            {hasPreview && modelSurfaceEnabled && (
-              <p className="text-xs text-slate-500 dark:text-slate-400">
-                {t("recipe_export_model_surface_unavailable")}
-              </p>
-            )}
-            {exportError && (
-              <div className="text-xs text-red-500 dark:text-red-400">
-                {t("recipe_export_error").replace("{error}", exportError)}
-              </div>
-            )}
-            {!isExporting && !exportError && exportNotice && <p role="status" className="text-xs">{exportNotice}</p>}
           </div>
         </>
       )}
@@ -451,6 +350,13 @@ export default function ActionBar() {
         )}
 
       <div data-tutorial="print-output">
+        <Checkbox
+          label={t("project_embed")}
+          checked={embedProject}
+          onChange={(embed) => useProjectExportStore.setState({ embed })}
+          disabled={isGenerating || batchLoading}
+          tooltip={t("project_embed_detail")}
+        />
         <SlicerSelector
           threemfDiskPath={threemfDiskPath}
           downloadUrl={downloadUrl}

@@ -1,5 +1,5 @@
 import CloseButton from "../ui/CloseButton";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 
 import { getMachineRegistryAssetUrl } from "../../api/system";
@@ -15,6 +15,8 @@ import {
 } from "../ui/panelPrimitives";
 
 interface MachineSelectionDialogProps {
+  description?: string;
+  footer?: ReactNode;
   open: boolean;
   printers: PrinterInfo[];
   slicers: SlicerOption[];
@@ -44,6 +46,8 @@ function getMachinePlaceholderLabel(printer: PrinterInfo): string {
  * 系统设置使用的可搜索机器选择弹窗。
  */
 export default function MachineSelectionDialog({
+  description,
+  footer,
   open,
   printers,
   slicers,
@@ -166,7 +170,7 @@ export default function MachineSelectionDialog({
               id="machine-selection-dialog-description"
               className="mt-1 text-sm leading-6 text-slate-500 dark:text-slate-400"
             >
-              {t("settings.machine_dialog_description")}
+              {description ?? t("settings.machine_dialog_description")}
             </p>
           </div>
           <CloseButton label={t("settings.machine_dialog_close")} onClick={onClose} />
@@ -342,11 +346,14 @@ export default function MachineSelectionDialog({
           )}
         </div>
 
-        <footer className="flex justify-end border-t panel-divider px-4 py-3 sm:px-6">
+        <footer className="max-h-[40vh] overflow-y-auto border-t panel-divider px-4 py-3 sm:px-6">
+          {footer}
+          <div className="flex justify-end">
           <Button
             label={t("settings.machine_dialog_done")}
             onClick={onClose}
           />
+          </div>
         </footer>
       </div>
     </div>,

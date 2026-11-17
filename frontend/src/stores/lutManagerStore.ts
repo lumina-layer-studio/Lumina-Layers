@@ -1,3 +1,4 @@
+import { includeProjectLuts } from "../project/workflowRuntime";
 import { create } from "zustand";
 import type { LutInfo, LutInfoResponse, MergeResponse } from "../api/types";
 import { fetchLutInfo, mergeLuts } from "../api/lut";
@@ -107,7 +108,7 @@ export const useLutManagerStore = create<LutManagerState & LutManagerActions>(
       set({ lutListLoading: true });
       try {
         const response = await apiFetchLutList();
-        set({ lutList: response.luts, lutListLoading: false });
+        set({ lutList: includeProjectLuts("lut-manager", response.luts, get().lutList), lutListLoading: false });
       } catch (err) {
         set({
           lutListLoading: false,

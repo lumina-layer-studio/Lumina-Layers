@@ -951,6 +951,7 @@ class ColorReplaceResponse(DynamicMaterialResultResponse):
     preview_url: str
     preview_3d_url: str | None = None
     replacement_count: int
+    replacement_regions: list[dict] = Field(default_factory=list)
     can_undo: bool = False
     can_redo: bool = False
     selection: SelectionDocumentResponse | None = None
@@ -1045,6 +1046,7 @@ class BatchItemResult(BaseModel):
     filename: str
     status: str
     error: Optional[str] = None
+    download_url: str | None = None
 
 
 class WarningEntry(BaseModel):
@@ -1134,6 +1136,7 @@ class ExtractResponse(BaseModel):
     """颜色提取响应。"""
 
     session_id: str
+    workspace_session_id: str | None = None
     status: str
     message: str
     lut_download_url: str

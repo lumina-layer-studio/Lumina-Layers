@@ -3,12 +3,13 @@ import type { ConverterState } from "./types";
 type DimensionState = Pick<
   ConverterState,
   "bedSizes" | "bed_label" | "aspectRatio" | "largeFormatEnabled"
->;
+> & Partial<Pick<ConverterState, "projectSettings">>;
 
 export function getPrinterBedDimensions(
-  state: Pick<DimensionState, "bedSizes" | "bed_label">,
-  printerId: string,
+  state: Pick<DimensionState, "bedSizes" | "bed_label" | "projectSettings">,
+  defaultPrinterId: string,
 ) {
+  const printerId = state.projectSettings?.printerModel ?? defaultPrinterId;
   const bed = state.bedSizes.find((item) => item.printer_id === printerId)
     ?? state.bedSizes.find((item) => item.label === state.bed_label);
   // Use the existing default bed until the printer catalog has loaded.

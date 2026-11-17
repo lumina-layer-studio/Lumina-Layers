@@ -56,7 +56,7 @@ def assert_source_material_snapshot(final, source, *, slicer, output_slots):
     import fatcat_metadata
 
     target_name = {
-        "BambuStudio": "bambu-studio-02.08.02.61.json",
+        "BambuStudio": "bambu-studio-02.09.01.70.json",
         "OrcaSlicer": "orca-slicer-2.4.2.json",
     }[slicer]
     target = json.loads((Path(fatcat_metadata.__file__).parent / "fatcat_metadata_data"

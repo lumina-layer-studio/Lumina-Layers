@@ -57,6 +57,23 @@ const rawFailureResult: BatchResponse = {
 };
 
 describe("BatchResultSummary", () => {
+  it("offers completed single models when the merged export fails", () => {
+    render(<BatchResultSummary result={{
+      status: "partial", message: "merge unavailable", download_url: null,
+      preview_3d_url: null,
+      warnings: [{ code: "merge-unavailable", message: "internal fallback" }],
+      results: [
+        { filename: "art.png", status: "success", download_url: "/api/files/art" },
+        { filename: "second.svg", status: "success", download_url: "/api/files/second" },
+      ],
+    }} />);
+    expect(screen.getByText("合并未完成，已生成的单件仍可下载。请分别导入切片软件。"))
+      .toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "art.png" })).toHaveAttribute("href", "/api/files/art");
+    expect(screen.getByRole("link", { name: "second.svg" })).toHaveAttribute("href", "/api/files/second");
+    expect(screen.queryByRole("link", { name: "下载批量 3MF" })).not.toBeInTheDocument();
+  });
+
   describe("all success", () => {
     it("shows correct success count and total", () => {
       const { container } = render(<BatchResultSummary result={allSuccessResult} />);

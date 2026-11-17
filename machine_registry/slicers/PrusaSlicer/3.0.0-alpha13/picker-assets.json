@@ -1,0 +1,45 @@
+{
+  "application_version": "3.0.0-alpha13",
+  "source": {
+    "release_tag": "version_3.0.0-alpha13",
+    "vendor_id": "PrusaResearch",
+    "vendor_versions": [
+      "1.0.21"
+    ],
+    "fatcat_source_revision": "c2f39b9dedfeb8b6c015784e2aae1d82e56e7ffd"
+  },
+  "thumbnails": {
+    "prusa:coreone": "slicers/PrusaSlicer/3.0.0-alpha12/assets/COREONE_thumbnail.png",
+    "prusa:coreone-indx-4t": "slicers/PrusaSlicer/3.0.0-alpha12/assets/COREONEINDX_thumbnail.png",
+    "prusa:coreone-indx-8t": "slicers/PrusaSlicer/3.0.0-alpha12/assets/COREONEINDX_thumbnail.png",
+    "prusa:coreone-mmu3": "slicers/PrusaSlicer/3.0.0-alpha13/assets/COREONE_thumbnail.png",
+    "prusa:coreonel": "slicers/PrusaSlicer/3.0.0-alpha12/assets/COREONEL_thumbnail.png",
+    "prusa:coreonel-mmu3": "slicers/PrusaSlicer/3.0.0-alpha13/assets/COREONEL_thumbnail.png",
+    "prusa:coreoneoak": "slicers/PrusaSlicer/3.0.0-alpha12/assets/COREONEOAK_thumbnail.png",
+    "prusa:mini": "slicers/PrusaSlicer/3.0.0-alpha12/assets/MINI_thumbnail.png",
+    "prusa:mk2-5": "slicers/PrusaSlicer/3.0.0-alpha12/assets/MK2.5_thumbnail.png",
+    "prusa:mk2-5s": "slicers/PrusaSlicer/3.0.0-alpha12/assets/MK2.5S_thumbnail.png",
+    "prusa:mk2-5s-mmu2s": "slicers/PrusaSlicer/3.0.0-alpha12/assets/MK2.5S_thumbnail.png",
+    "prusa:mk2s": "slicers/PrusaSlicer/3.0.0-alpha12/assets/MK2S_thumbnail.png",
+    "prusa:mk3": "slicers/PrusaSlicer/3.0.0-alpha12/assets/MK3_thumbnail.png",
+    "prusa:mk3-5": "slicers/PrusaSlicer/3.0.0-alpha12/assets/MK3.5S_thumbnail.png",
+    "prusa:mk3-5-mmu3": "slicers/PrusaSlicer/3.0.0-alpha13/assets/MK3.5S_thumbnail.png",
+    "prusa:mk3-9": "slicers/PrusaSlicer/3.0.0-alpha12/assets/MK4_thumbnail.png",
+    "prusa:mk3-9-mmu3": "slicers/PrusaSlicer/3.0.0-alpha13/assets/MK4_thumbnail.png",
+    "prusa:mk3-9s": "slicers/PrusaSlicer/3.0.0-alpha12/assets/MK4S_thumbnail.png",
+    "prusa:mk3-9s-mmu3": "slicers/PrusaSlicer/3.0.0-alpha13/assets/MK4S_thumbnail.png",
+    "prusa:mk3s": "slicers/PrusaSlicer/3.0.0-alpha12/assets/MK3_thumbnail.png",
+    "prusa:mk3s-mmu2s": "slicers/PrusaSlicer/3.0.0-alpha12/assets/MK3_thumbnail.png",
+    "prusa:mk3s-mmu3": "slicers/PrusaSlicer/3.0.0-alpha13/assets/MK3_thumbnail.png",
+    "prusa:mk4": "slicers/PrusaSlicer/3.0.0-alpha12/assets/MK4_thumbnail.png",
+    "prusa:mk4-mmu3": "slicers/PrusaSlicer/3.0.0-alpha13/assets/MK4_thumbnail.png",
+    "prusa:mk4s": "slicers/PrusaSlicer/3.0.0-alpha12/assets/MK4S_thumbnail.png",
+    "prusa:mk4s-mmu3": "slicers/PrusaSlicer/3.0.0-alpha13/assets/MK4S_thumbnail.png",
+    "prusa:xl": "slicers/PrusaSlicer/3.0.0-alpha12/assets/XL_thumbnail.png",
+    "prusa:xl-2t": "slicers/PrusaSlicer/3.0.0-alpha12/assets/XL2_thumbnail.png",
+    "prusa:xl-5t": "slicers/PrusaSlicer/3.0.0-alpha12/assets/XL5_thumbnail.png",
+    "prusa:xlp": "slicers/PrusaSlicer/3.0.0-alpha12/assets/XLP1T_thumbnail.png",
+    "prusa:xlp-2t": "slicers/PrusaSlicer/3.0.0-alpha12/assets/XLP2T_thumbnail.png",
+    "prusa:xlp-5t": "slicers/PrusaSlicer/3.0.0-alpha12/assets/XLP5T_thumbnail.png"
+  }
+}

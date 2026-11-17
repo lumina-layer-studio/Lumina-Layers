@@ -1,4 +1,9 @@
-import { WORKSHOP_API_VERSION } from "../contracts";
+import {
+  HOST_WORKSHOP_API_VERSION,
+  WORKSHOP_BACKEND_FEATURE,
+  WORKSHOP_RPC_EVENT_NAMES,
+  type WorkshopRpcEventName,
+} from "../contracts";
 
 export const WORKSHOP_HANDSHAKE_TIMEOUT_MS = 10_000;
 export const WORKSHOP_RUNTIME_CLOSE_GRACE_MS = 350;
@@ -133,7 +138,7 @@ export function compareWorkshopSemver(
 
 export function isWorkshopApiCompatible(
   range: WorkshopApiRange,
-  hostVersion = WORKSHOP_API_VERSION,
+  hostVersion = HOST_WORKSHOP_API_VERSION,
 ): boolean {
   const minimum = compareWorkshopSemver(hostVersion, range.min);
   const maximum = compareWorkshopSemver(
@@ -141,6 +146,73 @@ export function isWorkshopApiCompatible(
     range.maxExclusive,
   );
   return minimum !== null && maximum !== null && minimum >= 0 && maximum < 0;
+}
+
+/**
+ * Accept a module's ready-handshake API version: same major as the host and
+ * not newer. Modules report the minimum API they actually need, so a
+ * frontend-only module built with a newer SDK still runs on older hosts.
+ * 接受与宿主主版本相同且不高于宿主的握手 API 版本。
+ */
+export function isAcceptedHandshakeApiVersion(
+  value: unknown,
+  hostVersion = HOST_WORKSHOP_API_VERSION,
+): boolean {
+  if (typeof value !== "string") {
+    return false;
+  }
+  const comparison = compareWorkshopSemver(value, hostVersion);
+  if (comparison === null || comparison > 0) {
+    return false;
+  }
+  return value.split(".", 1)[0] === hostVersion.split(".", 1)[0];
+}
+
+export interface WorkshopReadyHandshake {
+  events: ReadonlySet<WorkshopRpcEventName>;
+  /** The module asked for backend task RPC (Workshop API 1.1.0). */
+  backendRequested: boolean;
+}
+
+/**
+ * Validate one ready message. Modules report the minimum API they need
+ * (1.0.0 for frontend-only modules) and list optional features, like events.
+ * 校验就绪消息：模块上报实际需要的最低 API 版本，并另行声明可选能力。
+ */
+export function negotiateReady(
+  value: unknown,
+  moduleId: string,
+  moduleVersion: string,
+): WorkshopReadyHandshake | null {
+  if (
+    typeof value !== "object" ||
+    value === null ||
+    Array.isArray(value)
+  ) {
+    return null;
+  }
+  const message = value as Record<string, unknown>;
+  if (
+    message.type !== "lumina.workshop.ready" ||
+    message.moduleId !== moduleId ||
+    message.moduleVersion !== moduleVersion ||
+    !isAcceptedHandshakeApiVersion(message.apiVersion)
+  ) {
+    return null;
+  }
+  const knownEvents = new Set<string>(WORKSHOP_RPC_EVENT_NAMES);
+  const events = Array.isArray(message.events)
+    ? new Set(
+        message.events.filter(
+          (event): event is WorkshopRpcEventName =>
+            typeof event === "string" && knownEvents.has(event),
+        ),
+      )
+    : new Set<WorkshopRpcEventName>();
+  const backendRequested =
+    Array.isArray(message.features) &&
+    message.features.includes(WORKSHOP_BACKEND_FEATURE);
+  return { events, backendRequested };
 }
 
 export function desktopModuleUrl(

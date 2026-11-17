@@ -505,6 +505,96 @@ def test_missing_material_returns_none() -> None:
     assert build_labeled_surface_mesh(labels, material_id=9, height_px=2) is None
 
 
+def test_component_counting_does_not_promote_the_complete_label_volume(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A count pass must fit a bounded intp conversion, even for a solid."""
+
+    labels = np.ones((2, 256, 256), dtype=np.int16)
+    original_bincount = np.bincount
+    counted_sizes: list[int] = []
+
+    def bounded_bincount(values: np.ndarray, *args, **kwargs) -> np.ndarray:
+        counted_sizes.append(values.size)
+        if values.size > 65_536:
+            raise MemoryError("component count would promote the complete volume")
+        return original_bincount(values, *args, **kwargs)
+
+    monkeypatch.setattr(layered_meshing.np, "bincount", bounded_bincount)
+    monkeypatch.setattr(layered_meshing, "_COMPONENT_COUNT_BLOCK_VOXELS", 65_536)
+
+    mesh = build_labeled_surface_mesh(labels, material_id=1, height_px=256)
+
+    assert mesh is not None
+    assert sum(counted_sizes) == labels.size
+    _assert_exact_closed_mesh(mesh, volume=float(labels.size), shell_count=1)
+
+
+def test_small_lattice_mesh_fits_compact_coordinate_allocation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Ordinary pixel coordinates need no full-sized int64 token buffer."""
+
+    labels = np.asarray([[[1, 1]], [[1, -1]]], dtype=np.int16)
+    original_empty = np.empty
+
+    def compact_empty(shape, *args, **kwargs) -> np.ndarray:
+        dtype = kwargs.get("dtype", args[0] if args else np.float64)
+        if (
+            isinstance(shape, tuple)
+            and len(shape) == 2
+            and shape[1] == 3
+            and np.dtype(dtype) == np.dtype(np.int64)
+        ):
+            raise MemoryError("int64 coordinate buffer exceeds the lattice budget")
+        return original_empty(shape, *args, **kwargs)
+
+    monkeypatch.setattr(layered_meshing.np, "empty", compact_empty)
+
+    mesh = build_labeled_surface_mesh(labels, material_id=1, height_px=1)
+
+    assert mesh is not None
+    _assert_exact_closed_mesh(mesh, volume=3.0, shell_count=1)
+
+
+def test_component_counting_bounds_working_histograms_for_many_tiny_shells(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The count buffer must not scale with every shell once per block."""
+
+    rows, columns = np.indices((64, 64))
+    labels = np.where((rows + columns) % 2 == 0, 1, -1)[None, :, :]
+    original_bincount = np.bincount
+
+    def bounded_bincount(values: np.ndarray, *args, **kwargs) -> np.ndarray:
+        histogram_size = max(int(values.max()) + 1, int(kwargs.get("minlength", 0)))
+        if values.size > 1024 or histogram_size > 1024:
+            raise MemoryError("component histogram exceeds the working budget")
+        return original_bincount(values, *args, **kwargs)
+
+    monkeypatch.setattr(layered_meshing, "_COMPONENT_COUNT_BLOCK_VOXELS", 1024)
+    monkeypatch.setattr(layered_meshing.np, "bincount", bounded_bincount)
+
+    mesh = build_labeled_surface_mesh(labels, material_id=1, height_px=64)
+
+    assert mesh is not None
+    assert mesh.is_watertight
+    assert float(mesh.volume) == 2048.0
+    assert mesh.metadata["layered_mesh_stats"]["component_count"] == 2048
+
+
+@pytest.mark.parametrize("height_px", [2**24 + 1, 2**30])
+def test_non_cuboid_large_world_coordinates_keep_the_float32_collision_guard(
+    height_px: int,
+) -> None:
+    """Compact tokens must preserve the exact-coordinate rejection boundary."""
+
+    labels = np.asarray([[[1, 1]], [[1, -1]]], dtype=np.int16)
+
+    with pytest.raises(ValueError, match="lattice float32 collision"):
+        build_labeled_surface_mesh(labels, material_id=1, height_px=height_px)
+
+
 def test_sparse_cuboid_components_use_only_their_local_bounds(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

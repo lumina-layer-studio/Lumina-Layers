@@ -803,7 +803,7 @@ SUPPORTED_SLICERS: list[dict[str, str]] = [
     {"id": "AnycubicSlicerNext", "display_name": "Anycubic Slicer Next"},
     {"id": "FlashStudio", "display_name": "Flash Studio Desktop"},
     {"id": "QIDIStudio", "display_name": "QIDI Studio"},
-    {"id": "PrusaSlicer", "display_name": "PrusaSlicer 3.0.0-alpha12"},
+    {"id": "PrusaSlicer", "display_name": "PrusaSlicer 3.0.0-alpha13"},
 ]
 
 DEFAULT_SLICER_ID: str = "BambuStudio"
@@ -939,6 +939,16 @@ PRINTER_PROFILES: dict[str, PrinterProfile] = {
         bed_height=325,
         nozzle_count=2,
         is_dual_head=True,
+    ),
+    "bambu-h3c": PrinterProfile(
+        id="bambu-h3c",
+        display_name="Bambu Lab H3C",
+        brand="Bambu Lab",
+        bed_width=330,
+        bed_depth=320,
+        bed_height=325,
+        nozzle_count=1,
+        is_dual_head=False,
     ),
     "snapmaker-u1": PrinterProfile(
         id="snapmaker-u1",

@@ -5,6 +5,7 @@ import { useApplicationMenuCommand, useApplicationMenuLanguage } from "./integra
 import type { HealthResponse } from "./api/types";
 import { trackLuminaEvent } from "./analytics/umami";
 import { useAutoPreview } from "./hooks/useAutoPreview";
+import { useDynamicMaterialCatalog } from "./hooks/useDynamicMaterialCatalog";
 import { useVectorPreviewRenderer } from "./hooks/useVectorPreviewRenderer";
 import { useAnnouncement } from "./hooks/useAnnouncement";
 import { usePuzzleLayoutPreview } from "./hooks/usePuzzleLayoutPreview";
@@ -30,6 +31,8 @@ import { buildErrorTicketDescription } from "./utils/errorTicketDescription";
 import { useErrorTicketPromptCapture } from "./hooks/useErrorTicketPromptCapture";
 import { useErrorTicketPromptStore } from "./stores/errorTicketPromptStore";
 import { HeaderMenu } from "./components/HeaderMenu";
+import ProjectWorkspace from "./components/projects/ProjectWorkspace";
+import { useProjectSessionStore } from "./stores/projectSessionStore";
 import { LanguageToggle } from "./components/LanguageToggle";
 import { ThemeToggle } from "./components/ThemeToggle";
 import { TutorialHost } from "./components/tutorial/TutorialHost";
@@ -61,6 +64,7 @@ import FiveColorQueryPanel from "./components/FiveColorQueryPanel";
 import SettingsPanel from "./components/SettingsPanel";
 import VectorizerPanel from "./components/VectorizerPanel";
 import WorkshopPanel from "./workshop/WorkshopPanel";
+import { useWorkshopProjectRuntime } from "./project/workshopRuntime";
 import { useSingleStageStore } from "./stores/singleStageStore";
 import { useExtractorStore } from "./stores/extractorStore";
 import { collectConverterKeepFileIds, useConverterStore } from "./stores/converter";
@@ -225,6 +229,7 @@ function WidgetToggles() {
 /* ---------- App Content (inside I18nProvider) ---------- */
 
 function AppContent({ connected }: { connected: boolean | null }) {
+  const projectOpening = useProjectSessionStore(state => state.status === "opening");
   const { t } = useI18n();
   const announcement = useAnnouncement();
   const converterSessionId = useConverterStore((s) => s.sessionId);
@@ -232,7 +237,8 @@ function AppContent({ connected }: { connected: boolean | null }) {
     useShallow((s) => collectConverterKeepFileIds(s)),
   );
   const singleStageSessionId = useSingleStageStore((s) => s.sessionId);
-  useSessionLease(converterSessionId, "converter", converterKeepFileIds);
+  const expireConverterSession = useConverterStore((s) => s.expireSession);
+  useSessionLease(converterSessionId, "converter", converterKeepFileIds, expireConverterSession);
   useSessionLease(singleStageSessionId, "single_stage");
   useActionHistoryBootstrap();
   useAutoPreview();
@@ -293,6 +299,7 @@ function AppContent({ connected }: { connected: boolean | null }) {
     : "px-3 sm:px-4 lg:px-6";
 
   const [announcementReady, setAnnouncementReady] = useState(false);
+  const workshopMounted = useWorkshopProjectRuntime((state) => state.mounted);
   const [bugReportOpen, setBugReportOpen] = useState(false);
   const [infoPage, setInfoPage] = useState<"about" | "credits" | null>(null);
   const infoOpen = infoPage !== null;
@@ -332,6 +339,10 @@ function AppContent({ connected }: { connected: boolean | null }) {
     setBugReportPreset("");
   }, [dismissErrorTicketPrompt]);
   const activeTab = useWidgetStore((s) => s.activeTab);
+  useDynamicMaterialCatalog(connected === true && activeTab === "converter" && !projectOpening);
+  useEffect(() => {
+    if (activeTab === "workshop") useWorkshopProjectRuntime.setState({ mounted: true });
+  }, [activeTab]);
   const activeConverterSubTab = useWidgetStore((s) => s.activeConverterSubTab);
   const setActiveTab = useWidgetStore((s) => s.setActiveTab);
   const converterEntrySequence = useRef(0);
@@ -424,6 +435,15 @@ function AppContent({ connected }: { connected: boolean | null }) {
     return () => window.clearTimeout(timer);
   }, []);
 
+  const subTabNavigation = hasSubTabs(activeTab) && (
+    <AlignedNavStrip
+      alignment={headerNavAlignment}
+      centerShift={`calc((${subTabsCenterShift(headerNavFit)}) + var(--project-actions-width, 0px) / 2)`}
+    >
+      <SubTabBar activeTab={activeTab} onTabChange={handleTabChange} compact={workspace.isCompact} />
+    </AlignedNavStrip>
+  );
+
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-slate-200 text-slate-900 dark:bg-slate-950 dark:text-white">
       <header
@@ -506,11 +526,18 @@ function AppContent({ connected }: { connected: boolean | null }) {
           </AlignedNavStrip>
         </div>
       </header>
+      {!reproMode.enabled && <div inert={infoOpen} aria-hidden={infoOpen || undefined} className="shrink-0">
+        <ProjectWorkspace className={headerPaddingXClass} style={
+          headerNavAlignment === "left"
+            ? { paddingLeft: headerNavFit.primaryTabsInsetPx }
+            : { paddingLeft: headerNavFit.paddingLeft, paddingRight: headerNavFit.paddingRight }
+        }>{subTabNavigation}</ProjectWorkspace>
+      </div>}
 
-      <main inert={infoOpen} aria-hidden={infoOpen || undefined}
+      <main inert={infoOpen || projectOpening} aria-hidden={infoOpen || undefined} aria-busy={projectOpening || undefined}
         style={{ visibility: infoOpen ? "hidden" : undefined }}
         className="relative flex min-h-0 flex-1 flex-col overflow-hidden bg-slate-50 dark:bg-slate-950">
-        {hasSubTabs(activeTab) && (
+        {reproMode.enabled && hasSubTabs(activeTab) && (
           <div
             data-testid="sub-tab-row"
             className={`flex shrink-0 border-b panel-divider bg-slate-200 py-0.5 dark:bg-slate-950 ${headerPaddingXClass} ${subTabRowJustifyClass(headerNavAlignment)}`}
@@ -520,16 +547,7 @@ function AppContent({ connected }: { connected: boolean | null }) {
                 : { paddingLeft: headerNavFit.paddingLeft, paddingRight: headerNavFit.paddingRight }
             }
           >
-            <AlignedNavStrip
-              alignment={headerNavAlignment}
-              centerShift={subTabsCenterShift(headerNavFit)}
-            >
-              <SubTabBar
-                activeTab={activeTab}
-                onTabChange={handleTabChange}
-                compact={workspace.isCompact}
-              />
-            </AlignedNavStrip>
+            {subTabNavigation}
           </div>
         )}
 
@@ -580,7 +598,7 @@ function AppContent({ connected }: { connected: boolean | null }) {
           </div>
         )}
         {activeTab === 'vectorizer' && <VectorizerPanel />}
-        {activeTab === 'workshop' && <WorkshopPanel />}
+        {(workshopMounted || activeTab === "workshop") && <div className={activeTab === "workshop" ? "h-full min-h-0" : "hidden"}><WorkshopPanel /></div>}
         {activeTab === 'settings' && <SettingsPanel />}
         </div>
       </main>

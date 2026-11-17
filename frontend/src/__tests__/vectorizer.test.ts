@@ -155,6 +155,19 @@ describe("vectorizerStore", () => {
   });
 
   // --- cancel ---
+  it("ignores a completed request from the image replaced by a project restore", async () => {
+    let finish!: (value: Awaited<ReturnType<typeof vectorizeImage>>) => void;
+    vi.mocked(vectorizeImage).mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }));
+    useVectorizerStore.getState().setImageFile(new File(["old"], "old.png"));
+    const pending = useVectorizerStore.getState().submit();
+    const restored = new File(["new"], "restored.png");
+    useVectorizerStore.getState().setImageFile(restored);
+    finish({ status: "ok", message: "old", svg_url: "/api/files/old", width: 1, height: 1, num_shapes: 1, num_colors: 1, palette: [] });
+    await pending;
+    expect(useVectorizerStore.getState().imageFile).toBe(restored);
+    expect(useVectorizerStore.getState().result).toBeNull();
+  });
+
   it("cancel sets isProcessing=false and abortController=null", () => {
     // Simulate processing state
     const controller = new AbortController();
@@ -552,7 +565,7 @@ describe("VectorizerPanel send-to-converter", () => {
     });
   });
 
-  it("resets vectorizer resources after a real unmount once the delay flushes", async () => {
+  it("preserves the vectorizer workspace when leaving its tab for another project workflow", async () => {
     vi.useFakeTimers();
     const controller = new AbortController();
     const abortSpy = vi.spyOn(controller, "abort");
@@ -587,10 +600,10 @@ describe("VectorizerPanel send-to-converter", () => {
 
     await vi.advanceTimersByTimeAsync(0);
 
-    expect(abortSpy).toHaveBeenCalledOnce();
-    expect(revokeObjectURLSpy).toHaveBeenCalledWith("blob:vectorizer-preview");
-    expect(useVectorizerStore.getState().imagePreviewUrl).toBeNull();
-    expect(useVectorizerStore.getState().abortController).toBeNull();
+    expect(abortSpy).not.toHaveBeenCalled();
+    expect(revokeObjectURLSpy).not.toHaveBeenCalled();
+    expect(useVectorizerStore.getState().imagePreviewUrl).toBe("blob:vectorizer-preview");
+    expect(useVectorizerStore.getState().abortController).toBe(controller);
 
     Object.defineProperty(URL, "revokeObjectURL", {
       configurable: true,

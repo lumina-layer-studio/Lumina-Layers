@@ -14,6 +14,7 @@ from shapely.geometry.base import BaseGeometry
 from shapely.ops import unary_union
 
 from config import ModelingMode, PrinterConfig
+from core.export_materials import resolve_coating_material
 from core.mesh_generators import HighFidelityMesher
 from core.pipeline import s07_mesh_generation, s08_auxiliary_meshes
 
@@ -53,6 +54,7 @@ def _run_s08_outline_case(
             "enable_cloisonne": False,
             "backing_metadata": {},
             "enable_coating": True,
+            "resolved_coating_material": resolve_coating_material(None, slot_names=[], preview_colors={}, material_types={}),
             "coating_height_mm": coating_height_mm,
             "enable_outline": True,
             "outline_width": outline_width,
@@ -127,6 +129,7 @@ def test_s08_aux_meshes_use_boundary_geometry_for_coating_and_outline() -> None:
             "enable_cloisonne": False,
             "backing_metadata": {},
             "enable_coating": True,
+            "resolved_coating_material": resolve_coating_material(None, slot_names=[], preview_colors={}, material_types={}),
             "coating_height_mm": PrinterConfig.LAYER_HEIGHT,
             "enable_outline": True,
             "outline_width": 1.0,

@@ -40,6 +40,7 @@ def build_common_generation_params(request: ConvertGenerateRequest) -> dict:
         "nozzle_size": request.nozzle_size,
         "device_profile_id": request.device_profile_id,
         "build_plate_id": request.build_plate_id,
+        "external_spool_material": request.external_spool_material,
         "native_filament_profiles": dict(request.native_filament_profiles),
         "enable_base_layer_height_modifier": request.enable_base_layer_height_modifier,
         "enable_wipe_tower_auto_placement": request.enable_wipe_tower_auto_placement,

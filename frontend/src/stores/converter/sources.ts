@@ -2,6 +2,7 @@ import type { ColorMode, LutSupportedMode, NativeBrandGroup } from "../../api/ty
 import { ColorMode as ColorModeEnum, ModelingMode as ModelingModeEnum } from "../../api/types";
 import { useSettingsStore } from "../settingsStore";
 import type { ConverterState, SourceVersion } from "./types";
+import { resolveConverterSettings } from "./project";
 
 function looksLikeWhiteMaterialLabel(label: string | null | undefined): boolean {
   const text = String(label ?? "").trim().toLowerCase();
@@ -34,7 +35,21 @@ const MATERIAL_ARCHIVE_RELIEF_LAYER_HEIGHT_MM = 0.08;
 
 export const MATERIAL_DYNAMIC_LAYER_COUNT_MIN = 5;
 
-export const MATERIAL_DYNAMIC_LAYER_COUNT_MAX = 10;
+export const MATERIAL_DYNAMIC_LAYER_COUNT_MAX = 30;
+
+/** Default upper bound of the dynamic range (wider ranges cost build time). */
+export const MATERIAL_DYNAMIC_LAYER_COUNT_DEFAULT_MAX = 10;
+
+/** Upper bound for fixed material-archive colour layers (layer-wise DP > 10). */
+export const MATERIAL_LAYER_COUNT_MAX = 30;
+
+/** Layer cap while the advanced "unlock 30 layers" switch is off. 未解锁时的层数上限。 */
+export const MATERIAL_LAYER_COUNT_LOCKED_MAX = 10;
+
+/** Effective material layer cap for the current unlock state. 当前解锁状态下的层数上限。 */
+export function materialLayerCountLimit(unlocked: boolean): number {
+  return unlocked ? MATERIAL_LAYER_COUNT_MAX : MATERIAL_LAYER_COUNT_LOCKED_MAX;
+}
 
 export function normalizeDynamicMaterialLayerCount(
   value: number,
@@ -568,9 +583,9 @@ export function buildMaterialSourceParams(
     | "materialDynamicLayerCountEnabled"
     | "materialMinLayerCount"
     | "materialMaxLayerCount"
-  >,
+  > & Partial<Pick<ConverterState, "projectSettings">>,
 ) {
-  const settingsState = useSettingsStore.getState();
+  const settingsState = resolveConverterSettings(state, useSettingsStore.getState());
   const materialGridResolution = settingsState.enableSolverCacheGridSelection
     ? settingsState.solverCacheGridResolution
     : undefined;

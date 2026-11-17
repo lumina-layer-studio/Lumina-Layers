@@ -52,7 +52,7 @@ def test_root_external_metadata_uses_fatcat_explicit_scope_not_name_suffix() -> 
     assert builder.external_metadata == [("Application", "BambuStudio-test")]
 
 
-@pytest.mark.parametrize("slicer,version", [("BambuStudio", "02.08.02.61"), ("OrcaSlicer", "2.4.2")])
+@pytest.mark.parametrize("slicer,version", [("BambuStudio", "02.09.01.70"), ("OrcaSlicer", "2.4.2")])
 def test_target_selection_uses_exact_runtime_profile(slicer: str, version: str) -> None:
     common = {
         "slicer": slicer,
@@ -88,7 +88,7 @@ def test_target_selection_uses_exact_runtime_profile(slicer: str, version: str) 
 
 
 @pytest.mark.parametrize("target", [
-    MetadataTarget("BambuStudio", "02.08.02.61", "bambu-lab:a1-mini", "nozzle:0.4mm", "plate:textured-pei"),
+    MetadataTarget("BambuStudio", "02.09.01.70", "bambu-lab:a1-mini", "nozzle:0.4mm", "plate:textured-pei"),
     MetadataTarget("OrcaSlicer", "2.4.2", "bambu-lab:p1s", "nozzle:0.6mm", "plate:textured-pei"),
 ])
 def test_project_request_preserves_template_materials_and_explicit_process_fields(target: MetadataTarget) -> None:

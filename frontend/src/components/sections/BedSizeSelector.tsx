@@ -1,5 +1,6 @@
 import { useConverterStore } from "../../stores/converter";
-import { useWidgetStore } from "../../stores/widgetStore";
+import { useState } from "react";
+import ProjectDeviceDialog from "../projects/ProjectDeviceDialog";
 import { useI18n } from "../../i18n/context";
 import HelpDot from "../ui/HelpDot";
 
@@ -7,7 +8,7 @@ export default function BedSizeSelector() {
   const { t } = useI18n();
   const bed_label = useConverterStore((s) => s.bed_label);
   const bedSizes = useConverterStore((s) => s.bedSizes);
-  const setActiveTab = useWidgetStore((s) => s.setActiveTab);
+  const [editing, setEditing] = useState(false);
   const selectedBed = bedSizes.find((bed) => bed.label === bed_label);
   const dimensions = selectedBed
     ? `${selectedBed.width_mm}×${selectedBed.height_mm} ${t('common_unit_mm')}`
@@ -18,7 +19,7 @@ export default function BedSizeSelector() {
       : bed_label;
 
   return (
-    <div className="flex items-center justify-between gap-3">
+    <><div className="flex items-center justify-between gap-3">
       <span className="flex shrink-0 items-center gap-1.5 text-[clamp(0.65rem,0.85vw,0.75rem)] font-medium text-slate-500 dark:text-slate-400">
         {t("bed_size_label")}
         <HelpDot
@@ -34,13 +35,13 @@ export default function BedSizeSelector() {
         </span>
         <button
           type="button"
-          onClick={() => setActiveTab("settings")}
-          aria-label={t("bed_size_change_aria")}
+          onClick={() => setEditing(true)}
+          aria-label={t("project_device_settings")}
           className="action-control shrink-0 rounded-lg px-2 py-1 text-[clamp(0.65rem,0.85vw,0.75rem)] font-medium"
         >
           {t("bed_size_change")}
         </button>
       </span>
-    </div>
+    </div>{editing && <ProjectDeviceDialog onClose={() => setEditing(false)} />}</>
   );
 }

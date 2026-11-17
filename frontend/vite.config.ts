@@ -10,7 +10,18 @@ export default defineConfig({
   define: {
     __LUMINA_VERSION__: JSON.stringify(pkg.version),
   },
-  plugins: [react()],
+  plugins: [{
+    name: "lumina-state-reload",
+    handleHotUpdate({ file, server }) {
+      // Stores and service queues must share one module generation. Fast
+      // Refresh can otherwise leave mounted consumers using the old singleton.
+      if (/\/src\/(?:.*\.ts|i18n\/context\.tsx)$/.test(file)
+        && !/(?:\/__tests__\/|\.test\.)/.test(file)) {
+        server.ws.send({ type: "full-reload" });
+        return [];
+      }
+    },
+  }, react()],
   // Pre-bundle every external npm dependency the app uses, eagerly. Vite's
   // dep optimizer normally auto-scans entry files for imports, but the
   // discovery order and even the discovered set can vary between starts
@@ -64,6 +75,7 @@ export default defineConfig({
   cacheDir: "node_modules/.vite",
   server: {
     ...resolveDevServerConfig(process.env),
+    watch: { ignored: ["**/__tests__/**", "**/*.test.*", "**/.scratch/**"] },
     proxy: {
       "/api": {
         target: resolveApiProxyTarget(process.env),

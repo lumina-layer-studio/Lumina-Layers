@@ -6,7 +6,7 @@
       "slicer_id": "BambuStudio",
       "display_name": "Bambu Studio",
       "source_kind": "local_install",
-      "source_version": "02.07.00.07",
+      "source_version": "02.09.01.70",
       "profile_format": "bambu_orca",
       "machines": [
         {
@@ -23,28 +23,28 @@
               "device_profile_id": "BambuStudio:bbl:bambu-lab-a1:0.2",
               "nozzle_size": "0.2",
               "source_profile_name": "Bambu Lab A1 0.2 nozzle",
-              "revision": "sha256:2e9e8ca5f7adf708151120807d55828de8b7712cd0b7c3f2f0272392f475356a",
+              "revision": "sha256:57a6a6aa1ec5bd77ace21c1e3ce9507c0adf3ebf18323a0be9fee497bb396c04",
               "supported": true
             },
             {
               "device_profile_id": "BambuStudio:bbl:bambu-lab-a1:0.4",
               "nozzle_size": "0.4",
               "source_profile_name": "Bambu Lab A1 0.4 nozzle",
-              "revision": "sha256:44686115894540c6cc4f3f815ce42eeb9c05e572082052c0ae04c63d932ef538",
+              "revision": "sha256:8727a62c13c463fbfc57947b300c718bebed1c0195725c86e7769284ad952a58",
               "supported": true
             },
             {
               "device_profile_id": "BambuStudio:bbl:bambu-lab-a1:0.6",
               "nozzle_size": "0.6",
               "source_profile_name": "Bambu Lab A1 0.6 nozzle",
-              "revision": "sha256:9b3219869a39d50f53ec11c38c21f080bd610599b9cbb835a6b841f69ba96eb0",
+              "revision": "sha256:851bbda69e4e244ac89b9321ac1c76ff227b57be13dbbfdff0533b19acb22576",
               "supported": true
             },
             {
               "device_profile_id": "BambuStudio:bbl:bambu-lab-a1:0.8",
               "nozzle_size": "0.8",
               "source_profile_name": "Bambu Lab A1 0.8 nozzle",
-              "revision": "sha256:5b43e4d40b04d38e3b6534b58bc24e1b37407a28e2baba7c942409408405ad0c",
+              "revision": "sha256:967fafb5e449b3c36510a5dad1da70dadd85ba1826c89e7144168a1192eec2ae",
               "supported": true
             }
           ],
@@ -72,28 +72,28 @@
               "device_profile_id": "BambuStudio:bbl:bambu-lab-a1-mini:0.2",
               "nozzle_size": "0.2",
               "source_profile_name": "Bambu Lab A1 mini 0.2 nozzle",
-              "revision": "sha256:5492f827592854259ce0016a3548ac97929d0cfa4dac965441f090918671289d",
+              "revision": "sha256:f5d60123c13c86088e699a5f6d54982b676146fef877f30c4c8001fb13cfd4d4",
               "supported": true
             },
             {
               "device_profile_id": "BambuStudio:bbl:bambu-lab-a1-mini:0.4",
               "nozzle_size": "0.4",
               "source_profile_name": "Bambu Lab A1 mini 0.4 nozzle",
-              "revision": "sha256:5edead80fcdb63015e0dc46c41c7d59bef5f8f8633fc9819e1d8dd43852ccb6a",
+              "revision": "sha256:85724e8f1340fa8c4354173bf1ef3eb82489b47b37a278038469a882bc551b2d",
               "supported": true
             },
             {
               "device_profile_id": "BambuStudio:bbl:bambu-lab-a1-mini:0.6",
               "nozzle_size": "0.6",
               "source_profile_name": "Bambu Lab A1 mini 0.6 nozzle",
-              "revision": "sha256:d45c3edc7fa894d74b620af8e0e05aab2b0b590023c8b46b5b73f094844d488a",
+              "revision": "sha256:90a212c976487b69482d1b3847d97273daf584cbe2e0251b4faed5a95b69cd71",
               "supported": true
             },
             {
               "device_profile_id": "BambuStudio:bbl:bambu-lab-a1-mini:0.8",
               "nozzle_size": "0.8",
               "source_profile_name": "Bambu Lab A1 mini 0.8 nozzle",
-              "revision": "sha256:31f3af1975eb158e85595ecb814eb563f892ab41c0dab474741d5bbe60a4d19f",
+              "revision": "sha256:44ae6f942ef57d3d2f400cc8f6834d2dc6cea829a295d080b8e03695976f2bcd",
               "supported": true
             }
           ],
@@ -119,28 +119,28 @@
               "device_profile_id": "BambuStudio:bbl:bambu-lab-a2l:0.2",
               "nozzle_size": "0.2",
               "source_profile_name": "Bambu Lab A2L 0.2 nozzle",
-              "revision": "sha256:7f71cc785cfa51a81b28b7d4412d4a426361a1b9a89fcd4850e7a8463c1f6f01",
+              "revision": "sha256:be7e1f20d27d853e8981c1bad6904d7b9e4b650221387b77ae80787cd402ce9a",
               "supported": true
             },
             {
               "device_profile_id": "BambuStudio:bbl:bambu-lab-a2l:0.4",
               "nozzle_size": "0.4",
               "source_profile_name": "Bambu Lab A2L 0.4 nozzle",
-              "revision": "sha256:e35d69d6a6899abbf59ed211c4c1c5760045552943a8d6849c4b5303b62de0ae",
+              "revision": "sha256:b7fe19c4f5434f86d3e27d3b947188dfc4781bc5eaa61ff59f308f0b0edfc1d6",
               "supported": true
             },
             {
               "device_profile_id": "BambuStudio:bbl:bambu-lab-a2l:0.6",
               "nozzle_size": "0.6",
               "source_profile_name": "Bambu Lab A2L 0.6 nozzle",
-              "revision": "sha256:7e94db2bd56f324bd1162ede33d1b598feec798d9b167f4bede8f5fd76b43a14",
+              "revision": "sha256:404cbb10b2d8d3daac0aa12bce68dcc8851633029f4dfaecf3611c0558930bc7",
               "supported": true
             },
             {
               "device_profile_id": "BambuStudio:bbl:bambu-lab-a2l:0.8",
               "nozzle_size": "0.8",
               "source_profile_name": "Bambu Lab A2L 0.8 nozzle",
-              "revision": "sha256:b599f16d47192e4d135ee8109c78f303edaaf6f26abeb881755b36cf5403d5f8",
+              "revision": "sha256:feaffd79928d61818b4fb4debcfb6f4d785ed30b2c7810dfa9b60ad92bb904ba",
               "supported": true
             }
           ],
@@ -167,28 +167,28 @@
               "device_profile_id": "BambuStudio:bbl:bambu-lab-h2c:0.2",
               "nozzle_size": "0.2",
               "source_profile_name": "Bambu Lab H2C 0.2 nozzle",
-              "revision": "sha256:2be533e1ad6ea9afb29cc79eea3122b8f6365969b2731404e730e8eccf06e91a",
+              "revision": "sha256:076161cfdb6b71e2bb7bc501347624a194a0130201f9d6b14ee884cb5fb99415",
               "supported": true
             },
             {
               "device_profile_id": "BambuStudio:bbl:bambu-lab-h2c:0.4",
               "nozzle_size": "0.4",
               "source_profile_name": "Bambu Lab H2C 0.4 nozzle",
-              "revision": "sha256:e59fcaca524bc6eac1fbdc5eff7f4c591ab5018b1f51d6f3e07eff1c42b7b0b5",
+              "revision": "sha256:1bdbe2b007e1d66c8aeb2feff16e48227620a55f4d011d0e5f1b74c88ce456e4",
               "supported": true
             },
             {
               "device_profile_id": "BambuStudio:bbl:bambu-lab-h2c:0.6",
               "nozzle_size": "0.6",
               "source_profile_name": "Bambu Lab H2C 0.6 nozzle",
-              "revision": "sha256:4766c3c11ffb611386ef399ad66ec86b97bdb650b30a526dd3f66b16811d3972",
+              "revision": "sha256:a9635f3806b103228fe4b35876345c3f729e06bfdad7d2c3fac806a963fb56d1",
               "supported": true
             },
             {
               "device_profile_id": "BambuStudio:bbl:bambu-lab-h2c:0.8",
               "nozzle_size": "0.8",
               "source_profile_name": "Bambu Lab H2C 0.8 nozzle",
-              "revision": "sha256:974fc4063f8fa22182e764af22f53b58c594aff1a63926703295c426943ea8ab",
+              "revision": "sha256:a7b73bfe360ff01df66f73f4c48241b28f84ae8cfdf67e76b9927d3ff58051a1",
               "supported": true
             }
           ],
@@ -214,28 +214,28 @@
               "device_profile_id": "BambuStudio:bbl:bambu-lab-h2d:0.2",
               "nozzle_size": "0.2",
               "source_profile_name": "Bambu Lab H2D 0.2 nozzle",
-              "revision": "sha256:d3d0fa90ec9cbce458cd0cf5311ebba9096d2522303567043f6d52ac32858a90",
+              "revision": "sha256:64da88c5fddccd1b621784568248c773b8e54570b91b1d5615d10bf53fcffc24",
               "supported": true
             },
             {
               "device_profile_id": "BambuStudio:bbl:bambu-lab-h2d:0.4",
               "nozzle_size": "0.4",
               "source_profile_name": "Bambu Lab H2D 0.4 nozzle",
-              "revision": "sha256:8fc80e88640791d7b15b6e4c142258fd65d983fb0c3b02bf520ebf0bca7f8563",
+              "revision": "sha256:e2cd025270027fb6ec1c1ba5f91c26861a35b40453de192b0ac7879aa0e7d938",
               "supported": true
             },
             {
               "device_profile_id": "BambuStudio:bbl:bambu-lab-h2d:0.6",
               "nozzle_size": "0.6",
               "source_profile_name": "Bambu Lab H2D 0.6 nozzle",
-              "revision": "sha256:5fe13cca00fc081d665ca490b67e2301f6b18dd87ae962a3eac76bde988cbdc1",
+              "revision": "sha256:c1f2daca6fa7a059e0e053fedbd1f2cc903f15a0e775b5fd2f473fdc4822d97f",
               "supported": true
             },
             {
               "device_profile_id": "BambuStudio:bbl:bambu-lab-h2d:0.8",
               "nozzle_size": "0.8",
               "source_profile_name": "Bambu Lab H2D 0.8 nozzle",
-              "revision": "sha256:01b86d86525b51515eb9f15e9b7df54744160b0f6f10404fc8bc2b41670b8f9e",
+              "revision": "sha256:f003a3d6124f8033ab7b9fcd40ea53314300c3f03503f1f5eafa99aabeded1d6",
               "supported": true
             }
           ],
@@ -262,28 +262,28 @@
               "device_profile_id": "BambuStudio:bbl:bambu-lab-h2d-pro:0.2",
               "nozzle_size": "0.2",
               "source_profile_name": "Bambu Lab H2D Pro 0.2 nozzle",
-              "revision": "sha256:3e0c30b57ded929f3c4dcd64b4faf6d54fa805fe13302edcc2bdebece73c608b",
+              "revision": "sha256:ed505ce5de6aa402c0a3fd61549a9171707484e658b6de4365f846e90fe2acf8",
               "supported": true
             },
             {
               "device_profile_id": "BambuStudio:bbl:bambu-lab-h2d-pro:0.4",
               "nozzle_size": "0.4",
               "source_profile_name": "Bambu Lab H2D Pro 0.4 nozzle",
-              "revision": "sha256:22a1e8d162abc3237c41333b43fa08e020f7382ace6d1ea9a89f1cfe92040f82",
+              "revision": "sha256:b253724b318cbb11c6313d87e7e08ff0ce2ef3c46760897b250dfe6f3fe5309d",
               "supported": true
             },
             {
               "device_profile_id": "BambuStudio:bbl:bambu-lab-h2d-pro:0.6",
               "nozzle_size": "0.6",
               "source_profile_name": "Bambu Lab H2D Pro 0.6 nozzle",
-              "revision": "sha256:e3de8dac153d085d18c165459e4db1074f962272f219eab0d885e91d2bfbfab0",
+              "revision": "sha256:908a4cb9128140d2a0e59ef6663797178f1af6edbfdb703c942c8b008b716db2",
               "supported": true
             },
             {
               "device_profile_id": "BambuStudio:bbl:bambu-lab-h2d-pro:0.8",
               "nozzle_size": "0.8",
               "source_profile_name": "Bambu Lab H2D Pro 0.8 nozzle",
-              "revision": "sha256:af95b34c3687bf8a786577876521d5ac2fade25aa97503b1debc22c040b79614",
+              "revision": "sha256:0d905ae180eb417704af85d3dc8c3580ffdb786c2bac277812d3b246910d6bb0",
               "supported": true
             }
           ],
@@ -310,28 +310,28 @@
               "device_profile_id": "BambuStudio:bbl:bambu-lab-h2s:0.2",
               "nozzle_size": "0.2",
               "source_profile_name": "Bambu Lab H2S 0.2 nozzle",
-              "revision": "sha256:f0803b2ebe0d79ae1ed988bdb30f4dbb4bc06a8cc08d61b07aa866773286cde1",
+              "revision": "sha256:346ed8f3d3a9171a9fca9f5df6e5ab037e7c4aba0540c682ef444a19ec8a06d0",
               "supported": true
             },
             {
               "device_profile_id": "BambuStudio:bbl:bambu-lab-h2s:0.4",
               "nozzle_size": "0.4",
               "source_profile_name": "Bambu Lab H2S 0.4 nozzle",
-              "revision": "sha256:c2442aa492284aa23a560203ea982c49fdc670a27e7696231fee9b6d562030f7",
+              "revision": "sha256:55127842c07a2898375e304222b95943c137da1f4714710c8ba89fa7df8179bb",
               "supported": true
             },
             {
               "device_profile_id": "BambuStudio:bbl:bambu-lab-h2s:0.6",
               "nozzle_size": "0.6",
               "source_profile_name": "Bambu Lab H2S 0.6 nozzle",
-              "revision": "sha256:fd5a775a5093511aafe83376c7c4af7e8d1ef6978f9ff1476b88246c7a01de99",
+              "revision": "sha256:01201c412ccf9b7d41bcbbe32957dcfd4d59f4a0a2d31805aaf73369e8f3176c",
               "supported": true
             },
             {
               "device_profile_id": "BambuStudio:bbl:bambu-lab-h2s:0.8",
               "nozzle_size": "0.8",
               "source_profile_name": "Bambu Lab H2S 0.8 nozzle",
-              "revision": "sha256:ccc53c9572aac4eb59d88839f39741be6f3bb231811285589f29611c79167a69",
+              "revision": "sha256:07f876ad74e2969c5e410a785b41b6de59eedc70c728925635107c124e14e2e6",
               "supported": true
             }
           ],
@@ -343,6 +343,53 @@
           ],
           "default_build_plate_id": "textured-pei-plate",
           "bed_model": "bbl-3dp-O1S.stl"
+        },
+        {
+          "machine_profile_id": "BambuStudio:bbl:bambu-lab-h3c",
+          "display_name": "Bambu Lab H3C",
+          "brand": "Bambu Lab",
+          "vendor_key": "BBL",
+          "bed_width": 330,
+          "bed_depth": 320,
+          "bed_height": 325,
+          "thumbnail": "slicers/BambuStudio/02.09.01.70/assets/bambu-lab-h3c_cover.png",
+          "bed_model": "bbl-3dp-H3C.stl",
+          "supported_build_plate_ids": [
+            "engineering-plate",
+            "textured-pei-plate",
+            "supertack-plate"
+          ],
+          "default_build_plate_id": "textured-pei-plate",
+          "nozzles": [
+            {
+              "device_profile_id": "BambuStudio:bbl:bambu-lab-h3c:0.2",
+              "nozzle_size": "0.2",
+              "source_profile_name": "Bambu Lab H3C 0.2 nozzle",
+              "revision": "sha256:479a6b16b5292d4a5ecd85ca246400005206f7158bb0f43d0b866fcda20a91f0",
+              "supported": true
+            },
+            {
+              "device_profile_id": "BambuStudio:bbl:bambu-lab-h3c:0.4",
+              "nozzle_size": "0.4",
+              "source_profile_name": "Bambu Lab H3C 0.4 nozzle",
+              "revision": "sha256:f659952feed3c8bf4522f92e03025faf7eaa196c48de0533bad7da96fd22a88e",
+              "supported": true
+            },
+            {
+              "device_profile_id": "BambuStudio:bbl:bambu-lab-h3c:0.6",
+              "nozzle_size": "0.6",
+              "source_profile_name": "Bambu Lab H3C 0.6 nozzle",
+              "revision": "sha256:cea091c30191b6617248acdbbec24ab0b83db794de1c0e80486ebd4c5b5384c7",
+              "supported": true
+            },
+            {
+              "device_profile_id": "BambuStudio:bbl:bambu-lab-h3c:0.8",
+              "nozzle_size": "0.8",
+              "source_profile_name": "Bambu Lab H3C 0.8 nozzle",
+              "revision": "sha256:a6057e0c817e17834d6c77be2f32ce4fe84c17a392acc122a525c8b4bac082b9",
+              "supported": true
+            }
+          ]
         },
         {
           "machine_profile_id": "BambuStudio:bbl:bambu-lab-p1p",
@@ -358,28 +405,28 @@
               "device_profile_id": "BambuStudio:bbl:bambu-lab-p1p:0.2",
               "nozzle_size": "0.2",
               "source_profile_name": "Bambu Lab P1P 0.2 nozzle",
-              "revision": "sha256:8686236344d942f15849d8649a649cdbc53f20468d34b1c836ddd080a00a9c43",
+              "revision": "sha256:0f4192e9685ded66d43309ab918ab37ce4feaf9faa4f85448a2c52b22405b6a1",
               "supported": true
             },
             {
               "device_profile_id": "BambuStudio:bbl:bambu-lab-p1p:0.4",
               "nozzle_size": "0.4",
               "source_profile_name": "Bambu Lab P1P 0.4 nozzle",
-              "revision": "sha256:1c8e8f25b425bfdc13394a53bf4b22792b789e374d03429d6c03454ce20722a0",
+              "revision": "sha256:5f021a7b23678985967d149411ddee93d404f7766074bc08564cbe67b9c6ac80",
               "supported": true
             },
             {
               "device_profile_id": "BambuStudio:bbl:bambu-lab-p1p:0.6",
               "nozzle_size": "0.6",
               "source_profile_name": "Bambu Lab P1P 0.6 nozzle",
-              "revision": "sha256:482e9c628c287eec0fe9ca9647f4d0e0c8720f2fa9263ea7c666873c9ff48732",
+              "revision": "sha256:c8fa4b67e6d4ac780e048c87e6134111e5c6835f63d6411e9584122300a0cb77",
               "supported": true
             },
             {
               "device_profile_id": "BambuStudio:bbl:bambu-lab-p1p:0.8",
               "nozzle_size": "0.8",
               "source_profile_name": "Bambu Lab P1P 0.8 nozzle",
-              "revision": "sha256:81f822a602122391d4fc8edee484ce5d99be9b584e4769c57a790e1845b764f2",
+              "revision": "sha256:591de8850b4af1de6b47b2380111a90a5b5e3925293c05bc20e64b6c388ffe0c",
               "supported": true
             }
           ],
@@ -407,28 +454,28 @@
               "device_profile_id": "BambuStudio:bbl:bambu-lab-p1s:0.2",
               "nozzle_size": "0.2",
               "source_profile_name": "Bambu Lab P1S 0.2 nozzle",
-              "revision": "sha256:ef56babf78fb07fc4973a401d01ff8d8bfb950a157c753cf770a21d7651d5c20",
+              "revision": "sha256:f4a957571767fd7c9cb7f9faa7cd8af8c1745d3b25cef596d65b0a580606e8c7",
               "supported": true
             },
             {
               "device_profile_id": "BambuStudio:bbl:bambu-lab-p1s:0.4",
               "nozzle_size": "0.4",
               "source_profile_name": "Bambu Lab P1S 0.4 nozzle",
-              "revision": "sha256:e5bf2bcfe701ff1013d6cb8bd2967fabf124cc0f2ad6f8217f6ec8a642e364e2",
+              "revision": "sha256:12bff72c95f25e78b80ab8ba39c7f7f7b25e29f5e9c54ac556c303ac865fa1d5",
               "supported": true
             },
             {
               "device_profile_id": "BambuStudio:bbl:bambu-lab-p1s:0.6",
               "nozzle_size": "0.6",
               "source_profile_name": "Bambu Lab P1S 0.6 nozzle",
-              "revision": "sha256:b46db2efd4bc3768449bc87a6506eaad9396a3ecf9d26715a6f54b910fdcfef0",
+              "revision": "sha256:850b0c60459f45a1dfafb82219f217d69975a6abbbe3910ea4518c8c8184c861",
               "supported": true
             },
             {
               "device_profile_id": "BambuStudio:bbl:bambu-lab-p1s:0.8",
               "nozzle_size": "0.8",
               "source_profile_name": "Bambu Lab P1S 0.8 nozzle",
-              "revision": "sha256:90ffa6252b2643a42b1deb7e94f8515d57585677e183b6ada935debb3abdb069",
+              "revision": "sha256:b2dd5428651d604c1f0ca0e8edd73decfb27784965211428a499c42f57b16dea",
               "supported": true
             }
           ],
@@ -456,28 +503,28 @@
               "device_profile_id": "BambuStudio:bbl:bambu-lab-p2s:0.2",
               "nozzle_size": "0.2",
               "source_profile_name": "Bambu Lab P2S 0.2 nozzle",
-              "revision": "sha256:66b569e534d465d5e380397bcad16e306cc4ba5bd23c4e52ebd763d4b4b6a556",
+              "revision": "sha256:76a54698ca2c4dca400dc3079f109657e0aa7e24c3f38df2ab71a8f72e29cc4d",
               "supported": true
             },
             {
               "device_profile_id": "BambuStudio:bbl:bambu-lab-p2s:0.4",
               "nozzle_size": "0.4",
               "source_profile_name": "Bambu Lab P2S 0.4 nozzle",
-              "revision": "sha256:cecd70cab002cb7392322310bc8a4e09ae34bf93d2baaf333086d8c36aa92c4a",
+              "revision": "sha256:9d239b7220d78a8123e7d26362f8ec2edfd399de839dedb49dcea5319f9102f6",
               "supported": true
             },
             {
               "device_profile_id": "BambuStudio:bbl:bambu-lab-p2s:0.6",
               "nozzle_size": "0.6",
               "source_profile_name": "Bambu Lab P2S 0.6 nozzle",
-              "revision": "sha256:03710bc15efa1cf6b1306d7b394983f04518528d58709a2d697da2d5ebb3bce3",
+              "revision": "sha256:dbd7882c371cf7174b47a034acef0597493c6493f36af3502116d4e60a9ed0c2",
               "supported": true
             },
             {
               "device_profile_id": "BambuStudio:bbl:bambu-lab-p2s:0.8",
               "nozzle_size": "0.8",
               "source_profile_name": "Bambu Lab P2S 0.8 nozzle",
-              "revision": "sha256:788058c0a048f1956f7e0a36cdcd3782618934692f139df825c0eab59d8d8140",
+              "revision": "sha256:20513b7a3fd15e23104738506a15b979fdf3d6a194ca89a3f341bb37f49b07d0",
               "supported": true
             }
           ],
@@ -504,28 +551,28 @@
               "device_profile_id": "BambuStudio:bbl:bambu-lab-x1:0.2",
               "nozzle_size": "0.2",
               "source_profile_name": "Bambu Lab X1 0.2 nozzle",
-              "revision": "sha256:b90467b6459df0279ed0a41bdf1b97027e95b8ed3d128eb1d53e17a559ddf687",
+              "revision": "sha256:8198f0f082f56902243329dbb5cce112ee8a95df55ea1cfa44ea66d6bba60566",
               "supported": true
             },
             {
               "device_profile_id": "BambuStudio:bbl:bambu-lab-x1:0.4",
               "nozzle_size": "0.4",
               "source_profile_name": "Bambu Lab X1 0.4 nozzle",
-              "revision": "sha256:b2baf12c7da12aec24631ab501ab0a3246153b526a9b7b010a4e52679e9d819a",
+              "revision": "sha256:ad9ae36a816834761f9b948b8cd7d81899c81270c65cfea25de9d82f06fad7e3",
               "supported": true
             },
             {
               "device_profile_id": "BambuStudio:bbl:bambu-lab-x1:0.6",
               "nozzle_size": "0.6",
               "source_profile_name": "Bambu Lab X1 0.6 nozzle",
-              "revision": "sha256:60f73eb4d1c1db5ec41f15c8bbe3f4f77d68b551fdd7696d928ac14756299212",
+              "revision": "sha256:b3d4819f7ef38e9e9d7bfb457776a6406189066013b0e8b201fb2d3e618d2079",
               "supported": true
             },
             {
               "device_profile_id": "BambuStudio:bbl:bambu-lab-x1:0.8",
               "nozzle_size": "0.8",
               "source_profile_name": "Bambu Lab X1 0.8 nozzle",
-              "revision": "sha256:ceeddefdc1846f3d06d5ec57501052bab3be333a54ca80279d48aeaccc66c905",
+              "revision": "sha256:89c751ccce3cc521eec6588afb0d10bdd62c85fb86fa7719bb9c815675f6b56f",
               "supported": true
             }
           ],
@@ -553,28 +600,28 @@
               "device_profile_id": "BambuStudio:bbl:bambu-lab-x1-carbon:0.2",
               "nozzle_size": "0.2",
               "source_profile_name": "Bambu Lab X1 Carbon 0.2 nozzle",
-              "revision": "sha256:d7a5f290a56a3452f7b72a2e2307c186ac79de3a8d108f632e47a77ec96f5281",
+              "revision": "sha256:d604055a9848e1c680b6626e1a5fadf78818c008d197aa3f98b7fe5287ddaa46",
               "supported": true
             },
             {
               "device_profile_id": "BambuStudio:bbl:bambu-lab-x1-carbon:0.4",
               "nozzle_size": "0.4",
               "source_profile_name": "Bambu Lab X1 Carbon 0.4 nozzle",
-              "revision": "sha256:1f27523e4902eff3035d9ab0515f8d584ce077e9b1b63e8806e1dd09437bd844",
+              "revision": "sha256:3519163700e4e6bddfa4e8b5167736379cd71fffd10fdb4b5cea2025a24fc58d",
               "supported": true
             },
             {
               "device_profile_id": "BambuStudio:bbl:bambu-lab-x1-carbon:0.6",
               "nozzle_size": "0.6",
               "source_profile_name": "Bambu Lab X1 Carbon 0.6 nozzle",
-              "revision": "sha256:a7c46520faa18963f741aa2a10be4fa4bd905fc9084f1a13968e6c64ae87ae03",
+              "revision": "sha256:5186bed3ced62d1dce268f3c55bf6877fea9769286bdee11079199a1cb69a3d0",
               "supported": true
             },
             {
               "device_profile_id": "BambuStudio:bbl:bambu-lab-x1-carbon:0.8",
               "nozzle_size": "0.8",
               "source_profile_name": "Bambu Lab X1 Carbon 0.8 nozzle",
-              "revision": "sha256:565afa55a954aacf8ee8891e5832e32dda7ff19f3974f2a48ae1f9c7b89da527",
+              "revision": "sha256:d792812bfe6074a43e907ed8b8fd056055668d17b1c0f593723d3af6f8fd7c9a",
               "supported": true
             }
           ],
@@ -602,28 +649,28 @@
               "device_profile_id": "BambuStudio:bbl:bambu-lab-x1e:0.2",
               "nozzle_size": "0.2",
               "source_profile_name": "Bambu Lab X1E 0.2 nozzle",
-              "revision": "sha256:5337cdb093efd984dec2b69cde54ca803588ad8e91f6e6ee662b4a278245cbbf",
+              "revision": "sha256:d5450e8bee1cee5b0fe3d78cf2ec2b81e374b5c57a7056d9796151f45c7ca27f",
               "supported": true
             },
             {
               "device_profile_id": "BambuStudio:bbl:bambu-lab-x1e:0.4",
               "nozzle_size": "0.4",
               "source_profile_name": "Bambu Lab X1E 0.4 nozzle",
-              "revision": "sha256:0cda17a57977595561726ea51edeb07c4f97339433c3b51bafe52578ce4c5f8f",
+              "revision": "sha256:da20659a15ca4d4688daf2a4aa42378178d17c2874f3968ca068a280adae3bd2",
               "supported": true
             },
             {
               "device_profile_id": "BambuStudio:bbl:bambu-lab-x1e:0.6",
               "nozzle_size": "0.6",
               "source_profile_name": "Bambu Lab X1E 0.6 nozzle",
-              "revision": "sha256:6c5007d1691cb7de826dfc4c01767138635ac4e7b54a89419b6d32db5b6d2de8",
+              "revision": "sha256:47e98aec4fb734f0ec3c821ceb77effe4416ab439c3876a7a469a078e383fc0e",
               "supported": true
             },
             {
               "device_profile_id": "BambuStudio:bbl:bambu-lab-x1e:0.8",
               "nozzle_size": "0.8",
               "source_profile_name": "Bambu Lab X1E 0.8 nozzle",
-              "revision": "sha256:a8572a3a375c542dcabda5968ed4eb6dae7ffc9b35a345eca0cc44a48c87f97c",
+              "revision": "sha256:2d79e96387c61e50076cc85c3aaf4435ef6fb038b38db73592a245b182dcf047",
               "supported": true
             }
           ],
@@ -651,28 +698,28 @@
               "device_profile_id": "BambuStudio:bbl:bambu-lab-x2d:0.2",
               "nozzle_size": "0.2",
               "source_profile_name": "Bambu Lab X2D 0.2 nozzle",
-              "revision": "sha256:53ffea615450b81f45d4a38321303e4211057be3c559c933e16e1cc426b57584",
+              "revision": "sha256:f73111b1d03788cba8bede64758d3246c466bc8527273645221b8d5aaf98d1fa",
               "supported": true
             },
             {
               "device_profile_id": "BambuStudio:bbl:bambu-lab-x2d:0.4",
               "nozzle_size": "0.4",
               "source_profile_name": "Bambu Lab X2D 0.4 nozzle",
-              "revision": "sha256:c4362558bbabb929c08903b8bfc765c152b0aaac3b4200db41f5d05073a7beb2",
+              "revision": "sha256:980f18f626102536e65ad4505af870560a846b41f26c37399135ca3534a78c70",
               "supported": true
             },
             {
               "device_profile_id": "BambuStudio:bbl:bambu-lab-x2d:0.6",
               "nozzle_size": "0.6",
               "source_profile_name": "Bambu Lab X2D 0.6 nozzle",
-              "revision": "sha256:0e2818ce6755167c41665b95360c598e6bafd62a53d06585cb1de13428430d86",
+              "revision": "sha256:f7d052ca8e38fb2546d55a120233c3c3683a1ad783fff9563aa8e5bcba52716e",
               "supported": true
             },
             {
               "device_profile_id": "BambuStudio:bbl:bambu-lab-x2d:0.8",
               "nozzle_size": "0.8",
               "source_profile_name": "Bambu Lab X2D 0.8 nozzle",
-              "revision": "sha256:4b343138a8938537ae35bb4f89bef7da36cd88b1d1604af7755d8dbb83817676",
+              "revision": "sha256:53e3645b74f77e8ae053c2eb0da826cf36f1c7e97627915eb9b151ec939a6fd0",
               "supported": true
             }
           ],
@@ -2789,8 +2836,8 @@
               "supported": true
             }
           ],
-          "supported_build_plate_ids": [],
-          "default_build_plate_id": "",
+          "supported_build_plate_ids": ["smooth-high-temp-plate"],
+          "default_build_plate_id": "smooth-high-temp-plate",
           "bed_model": "flashforge_g3u_buildplate_model.stl"
         },
         {

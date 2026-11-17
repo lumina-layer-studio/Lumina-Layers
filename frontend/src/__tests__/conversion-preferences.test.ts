@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { useConverterStore, DEFAULT_STATE } from "../stores/converter";
+import { useConverterStore, DEFAULT_STATE, converterDocumentHistory } from "../stores/converter";
 import { useSettingsStore, DEFAULT_SETTINGS } from "../stores/settingsStore";
 import { StructureMode } from "../api/types";
 import {
@@ -14,6 +14,7 @@ describe("conversion preferences", () => {
     localStorage.clear();
     useSettingsStore.setState({ ...DEFAULT_SETTINGS });
     useConverterStore.setState({ ...DEFAULT_STATE, lut_name: "", lut_names: [] });
+    converterDocumentHistory.reset();
   });
   afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
@@ -21,6 +22,19 @@ describe("conversion preferences", () => {
     const stop = bindConversionPreferences();
     try {
       expect(useConverterStore.getState().source_version).toBe("material");
+    } finally { stop(); }
+  });
+
+  it("does not turn startup defaults into a user undo step", () => {
+    useSettingsStore.setState({ conversionPreferences: { last: {
+      ...captureConversionParameters(useConverterStore.getState()), size_mm: 230,
+    }, presets: [] } });
+    const stop = bindConversionPreferences();
+    try {
+      expect(useConverterStore.getState().target_width_mm).toBe(230);
+      expect(converterDocumentHistory.store.getState().canUndo).toBe(false);
+      useConverterStore.getState().setTargetWidthMm(240);
+      expect(converterDocumentHistory.store.getState().canUndo).toBe(true);
     } finally { stop(); }
   });
 
@@ -37,6 +51,43 @@ describe("conversion preferences", () => {
     try {
       expect(useConverterStore.getState().source_version).toBe(source);
     } finally { stopAgain(); }
+  });
+
+  it("remembers 30-layer settings and the unlock switch", async () => {
+    const stop = bindConversionPreferences();
+    const store = useConverterStore.getState();
+    store.setSourceVersion("material");
+    store.setMaterialLayersUnlocked(true);
+    store.setMaterialLayerCount(30);
+    store.setMaterialLayerHeightMm(0.04);
+    store.setTargetWidthMm(180);
+    stop();
+    const stored = localStorage.getItem("lumina-settings")!;
+    expect(JSON.parse(stored).state.conversionPreferences.last).toMatchObject({
+      materialLayersUnlocked: true, materialLayerCount: 30, materialLayerHeightMm: 0.04, size_mm: 180,
+    });
+
+    // Reload: a fresh store starts locked at 10 layers, then restores everything.
+    useSettingsStore.setState({ ...DEFAULT_SETTINGS });
+    localStorage.setItem("lumina-settings", stored);
+    await useSettingsStore.persist.rehydrate();
+    useConverterStore.setState({ ...DEFAULT_STATE });
+    const stopAgain = bindConversionPreferences();
+    try {
+      expect(useConverterStore.getState()).toMatchObject({
+        materialLayersUnlocked: true, materialLayerCount: 30, materialLayerHeightMm: 0.04, target_width_mm: 180,
+      });
+    } finally { stopAgain(); }
+  });
+
+  it("unlocks deep layer counts from records saved before the switch existed", () => {
+    const prefs = normalizeConversionPreferences({ last: {
+      ...captureConversionParameters({ ...DEFAULT_STATE, source_version: "material" } as never),
+      materialLayerCount: 24, materialLayersUnlocked: undefined,
+    } });
+    expect(prefs.last?.materialLayerCount).toBe(24);
+    applyConversionParameters(useConverterStore.getState, prefs.last!);
+    expect(useConverterStore.getState()).toMatchObject({ materialLayersUnlocked: true, materialLayerCount: 24 });
   });
 
   it("restores saved inputs after reconnecting without persisting session data", async () => {

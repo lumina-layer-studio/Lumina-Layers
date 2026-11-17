@@ -294,7 +294,7 @@ def test_native_worker_rejects_analysis_without_num_layers() -> None:
 
         @staticmethod
         def analyze_svg(**_kwargs: object) -> object:
-            return SimpleNamespace(slot_names=["White"])
+            return SimpleNamespace(slot_names=["White"], preview_colors={})
 
     params = _params(
         total_width_mm=10.0,

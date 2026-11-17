@@ -31,6 +31,7 @@ if TYPE_CHECKING:
     import neroued_3mf as n3mf
 
 from api.structured_logging import get_logger
+from core.errors import ExternalSpoolSelectionError
 from core.export_materials import resolve_preview_color_for_slot as _resolve_preview_color_for_slot_name
 from core.mesh_export_parts import (
     MeshExportPartRange,
@@ -69,6 +70,7 @@ from utils.fatcat_metadata import (
     ProjectLayout,
     build_builtin_project_settings_request,
     build_model_metadata_request,
+    external_spool_filament_map,
     compose_builtin_project_settings,
     compose_model_metadata,
     compose_project_settings,
@@ -767,6 +769,7 @@ class Slicer3MFWriter:
         custom_3mf_template_id: Optional[str] = None,
         material_types: Mapping[str, str | None] | None = None,
         native_filament_profiles: Mapping[str, str] | None = None,
+        external_spool_material: str | None = None,
     ):
         """Initialize a writer for an exact native target or saved user project.
         初始化使用精确原生目标或已保存用户项目的 3MF 写入器。
@@ -839,6 +842,7 @@ class Slicer3MFWriter:
             defaults, settings, aliases=process_setting_aliases(self.slicer),
         )
         self._material_types = dict(material_types or {})
+        self.external_spool_material = external_spool_material
         self._native_filament_profiles = dict(native_filament_profiles or {})
         self.device_profile_id = str(device_profile_id or "").strip() or None
         self.build_plate_id = str(build_plate_id or "").strip() or None
@@ -1023,6 +1027,8 @@ class Slicer3MFWriter:
         preview_colors = self._project_preview_colors or {}
         for slot_index, slot_name in enumerate(self._project_slot_names):
             if slot_name in name_to_index:
+                if slot_name == self.external_spool_material:
+                    raise ExternalSpoolSelectionError(f"External spool material {slot_name!r} matches multiple exported slots.")
                 continue
             color_rgb, _ = _resolve_preview_color_for_slot_name(
                 slot_name=slot_name,
@@ -1090,8 +1096,12 @@ class Slicer3MFWriter:
         if slot_policy == "preserve_native_capacity":
             slot_mode = "preserve"
         if self._custom_template is not None:
+            from core.custom_3mf_templates import require_template_slot_capacity
+
             aliases = process_setting_aliases(self.slicer)
-            source_slot_count = len(read_project_material_slots(self._custom_template, target=target))
+            source_slot_count = require_template_slot_capacity(
+                self._custom_template, len(material_palette), target=target,
+            )
             geometry_fields = {
                 aliases.get(key, key) for key in (
                     "layer_height", "initial_layer_print_height", "initial_layer_height",
@@ -1410,6 +1420,12 @@ class Slicer3MFWriter:
             bed_type=metadata_defaults["plate_value"],
         )
         model_request["active_material_count"] = len(material_palette)
+        if self.external_spool_material is not None:
+            model_request["plate"]["filament_maps"] = external_spool_filament_map(
+                self.external_spool_material, [name for name, _ in material_palette],
+                slicer_id=metadata_target.slicer_id, machine_uid=metadata_target.machine_uid,
+                source_slot_indices=self._source_slot_indices,
+            )
         model_request["identify_id"] = metadata_defaults["identify_id"]
         uuid_seed_prefix = metadata_defaults.get("slice_uuid_seed_prefix")
         if uuid_seed_prefix:
@@ -1537,7 +1553,9 @@ class Slicer3MFWriter:
                 },
             )
 
-        n3mf.write_to_file(self.output_path, doc, opts)
+        from utils.threemf_io import write_3mf_document
+
+        write_3mf_document(self.output_path, doc, opts)
 
     def _get_wipe_tower_placement(
         self,
@@ -1954,6 +1972,7 @@ def export_scene_with_slicer_metadata(
     native_filament_profiles: Mapping[str, str] | None = None,
     backing_output: str = "same_project",
     source_slot_indices: Mapping[str, int] | None = None,
+    external_spool_material: str | None = None,
 ):
     """Export a Trimesh scene as the selected slicer's native 3MF project.
     将 Trimesh 场景导出为所选切片软件的原生 3MF 工程。
@@ -2053,6 +2072,7 @@ def export_scene_with_slicer_metadata(
                 cover_source=cover_source, device_profile_id=device_profile_id,
                 build_plate_id=build_plate_id, custom_3mf_template_id=custom_3mf_template_id,
                 material_types=material_types, native_filament_profiles=native_filament_profiles,
+                external_spool_material=external_spool_material,
             ),
         )
     if backing_output != "same_project":
@@ -2096,6 +2116,7 @@ def export_scene_with_slicer_metadata(
         custom_3mf_template_id=custom_3mf_template_id,
         material_types=material_types,
         native_filament_profiles=native_filament_profiles,
+        external_spool_material=external_spool_material,
         enable_relief=bool(enable_relief),
         enable_base_layer_height_modifier=bool(enable_base_layer_height_modifier),
         enable_wipe_tower_auto_placement=bool(enable_wipe_tower_auto_placement),

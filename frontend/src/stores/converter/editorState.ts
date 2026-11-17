@@ -2,7 +2,6 @@ import type { ColorReplacementItem, EditorCommitResult, RecipeOverrideItem } fro
 import { colorRemapToReplacementRegions } from "../../utils/colorUtils";
 import { normalizeResourceUrl } from "../../utils/resourceUrl";
 import type {
-  AdjustmentSnapshot,
   ConverterState,
   RegionData,
   RemapSnapshot,
@@ -188,6 +187,8 @@ export function normalizeReplacementRegionsFromHistory(
         quantized_hex: quantizedHex,
         matched_hex: matchedHex,
         replacement_hex: replacementHex,
+        ...('source_scope' in region && region.source_scope
+          ? { source_scope: region.source_scope as ColorReplacementItem['source_scope'] } : {}),
       },
     ];
   });
@@ -327,40 +328,6 @@ export function cloneRemapHistory(history: RemapSnapshot[]): RemapSnapshot[] {
   return history.map((snapshot) => ({ ...snapshot }));
 }
 
-export function createAdjustmentSnapshot(
-  state: Pick<
-    ConverterState,
-    | "colorRemapMap"
-    | "remapHistory"
-    | "replacement_regions"
-    | "recipe_overrides"
-    | "regionReplacementCount"
-    | "previewImageUrl"
-    | "previewBaseImageUrl"
-    | "originalPreviewUrl"
-    | "previewGlbUrl"
-    | "color_layers"
-    | "layer_height_mm"
-    | "lutMatchMode"
-    | "lutMatchInfo"
-  >,
-): AdjustmentSnapshot {
-  return {
-    colorRemapMap: { ...state.colorRemapMap },
-    remapHistory: cloneRemapHistory(state.remapHistory),
-    replacement_regions: cloneReplacementRegions(state.replacement_regions),
-    recipe_overrides: cloneRecipeOverrides(state.recipe_overrides),
-    regionReplacementCount: state.regionReplacementCount,
-    previewImageUrl: state.previewImageUrl,
-    previewBaseImageUrl: state.previewBaseImageUrl,
-    originalPreviewUrl: state.originalPreviewUrl,
-    previewGlbUrl: state.previewGlbUrl,
-    color_layers: state.color_layers,
-    layer_height_mm: state.layer_height_mm,
-    lutMatchMode: state.lutMatchMode,
-    lutMatchInfo: state.lutMatchInfo ? { ...state.lutMatchInfo } : null,
-  };
-}
 
 export function hasAdjustmentState(
   state: Pick<
@@ -476,7 +443,7 @@ export function buildSourceChangeProjectColorState(
   const portable = clonePortableProjectColorState(state);
   const liveRemaps = colorRemapToReplacementRegions(
     state.colorRemapMap,
-    state.palette,
+    state.palette, state.replacement_regions,
   );
   return {
     ...portable,

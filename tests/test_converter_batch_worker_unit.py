@@ -145,19 +145,9 @@ def test_two_svg_batch_exports_keep_coating(tmp_path, monkeypatch, mode, enabled
                 assert max(z_values) - min(z_values) == pytest.approx(expected_height)
 
 
-@pytest.mark.parametrize("source", ["lut", "material_archive"])
-@pytest.mark.parametrize("mode", ["vector", "high-fidelity"])
-@pytest.mark.parametrize(("kinds", "expected"), [
-    (("PLA", "PLA"), "PLA"),
-    (("PETG", "PETG"), "PETG"),
-    (("PETG", "PLA"), "PLA"),
-])
-def test_automatic_coating_type_survives_real_export(tmp_path, monkeypatch, source, mode, kinds, expected):
-    import zipfile
-
+def _prepare_two_material_sources(tmp_path, monkeypatch, mode, kinds):
     import config
     from config import LUTMetadata, PaletteEntry
-    from core.export_material_selection import require_export_material_selection
     from core import material_lut_provider, material_lut_synthesis
     from core.pipeline import s09_export_3mf, s11_glb_preview
     from utils.lut_manager import LUTManager
@@ -200,6 +190,55 @@ def test_automatic_coating_type_survives_real_export(tmp_path, monkeypatch, sour
     else:
         image_path = tmp_path / "source.png"
         Image.new("RGB", (5, 5), "white").save(image_path)
+    return image_path, lut_path
+
+
+@pytest.mark.parametrize("source", ["lut", "material_archive"])
+@pytest.mark.parametrize("mode", ["vector", "high-fidelity"])
+def test_x2d_single_generation_uses_preflight_identity_for_raster_and_svg(tmp_path, monkeypatch, source, mode):
+    from xml.etree import ElementTree as ET
+    from zipfile import ZipFile
+    from api.workers.converter_workers import worker_generate_model
+    from config import ModelingMode
+    from core.export_material_selection import require_export_material_selection
+
+    image, lut = _prepare_two_material_sources(tmp_path, monkeypatch, mode, ("PETG", "PETG"))
+    params = dict(printer_id="bambu-lab-x2d", slicer="BambuStudio", nozzle_size="0.4",
+                  device_profile_id="BambuStudio:bbl:bambu-lab-x2d:0.4",
+                  build_plate_id="textured-pei-plate", enable_coating=True,
+                  external_spool_material="Coating", material_source=source,
+                  selected_materials=["White", "Black"] if source == "material_archive" else None)
+    selection = require_export_material_selection({**params, "lut_path": str(lut)})
+    names = [slot["name"] for slot in selection["materials"]]
+    params.update(target_width_mm=5, spacer_thick=1.2, structure_mode="Single-sided",
+                  color_mode="4-Color (RYBW)", add_loop=False, loop_width=1, loop_length=1,
+                  loop_hole=1, loop_pos=None, modeling_mode=ModelingMode(mode),
+                  color_layers=5, layer_height_mm=0.08)
+    output = worker_generate_model(str(image), str(lut), params)
+    assert output["threemf_path"], output["status_msg"]
+    with ZipFile(output["threemf_path"]) as package:
+        root = ET.fromstring(package.read("Metadata/model_settings.config"))
+        mapping = root.find("plate/metadata[@key='filament_maps']").get("value").split()
+        assert len(mapping) == len(names)
+        assert mapping.count("2") == 1
+        coating = next(part for part in root.findall(".//part")
+                       if part.find("metadata[@key='name']").get("value") == "Coating")
+        coating_slot = int(coating.find("metadata[@key='extruder']").get("value")) - 1
+        assert mapping[coating_slot] == "2"
+
+
+@pytest.mark.parametrize("source", ["lut", "material_archive"])
+@pytest.mark.parametrize("mode", ["vector", "high-fidelity"])
+@pytest.mark.parametrize(("kinds", "expected"), [
+    (("PLA", "PLA"), "PLA"),
+    (("PETG", "PETG"), "PETG"),
+    (("PETG", "PLA"), "PLA"),
+])
+def test_automatic_coating_type_survives_real_export(tmp_path, monkeypatch, source, mode, kinds, expected):
+    from core.export_material_selection import require_export_material_selection
+    import zipfile
+
+    image_path, lut_path = _prepare_two_material_sources(tmp_path, monkeypatch, mode, kinds)
     selection = require_export_material_selection(
         {"enable_coating": True}, source_context={
             "material_source": source, "selected_materials": ["White", "Black"],

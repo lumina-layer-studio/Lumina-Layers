@@ -593,6 +593,24 @@ async def validate_heightmap(file: UploadFile = File(...)) -> dict[str, int]:
             os.unlink(temp_path)
 
 
+def _prepare_browser_preview(path: str) -> tuple[int, int]:
+    """Decode the actual file format and provide browser-readable PNG bytes."""
+    from PIL import ImageOps
+
+    with Image.open(path) as source:
+        needs_conversion = source.format != "PNG" or source.getexif().get(274, 1) != 1
+        if not needs_conversion:
+            return source.size
+        image = ImageOps.exif_transpose(source)
+        if image.mode not in {"RGB", "RGBA", "L", "LA", "P", "1", "I", "I;16"}:
+            image = image.convert("RGB")
+    try:
+        image.save(path, format="PNG")
+        return image.size
+    finally:
+        image.close()
+
+
 @router.post("/image-preview")
 async def image_preview(
     file: UploadFile,
@@ -611,8 +629,7 @@ async def image_preview(
     original_filename = file.filename or "unknown"
     png_path = await ensure_png_tempfile(file)
     try:
-        with Image.open(png_path) as img:
-            width, height = img.size
+        width, height = await run_in_threadpool(_prepare_browser_preview, png_path)
     except (OSError, ValueError) as exc:
         with suppress(OSError):
             if os.path.exists(png_path):

@@ -40,6 +40,7 @@ export interface BuildAdvancedParamsOptions {
   svgPixelsPerMm?: number;
   materialDeltaE00Tolerance?: number;
   enableWipeTowerAutoPlacement?: boolean;
+  externalSpoolMaterial?: string;
 }
 
 /**
@@ -158,6 +159,7 @@ function buildGeneration(
     enable_wipe_tower_auto_placement:
       options.enableWipeTowerAutoPlacement !== false,
     native_filament_profiles: { ...state.native_filament_profiles },
+    ...(options.externalSpoolMaterial ? { external_spool_material: options.externalSpoolMaterial } : {}),
     native_filament_profile_scope: state.nativeFilamentProfileScope
       ? { ...state.nativeFilamentProfileScope }
       : null,
@@ -380,7 +382,7 @@ function buildColorReplacement(
 ): AdvancedParamsColorReplacement {
   const liveReplacementRegions = colorRemapToReplacementRegions(
     state.colorRemapMap,
-    state.palette,
+    state.palette, state.replacement_regions,
   );
   const globalReplacementRegions = mergeGlobalReplacementRegions(
     state.replacement_regions,

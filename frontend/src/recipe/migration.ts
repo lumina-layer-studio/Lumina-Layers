@@ -35,6 +35,11 @@ function validateConverterShape(recipe: Record<string, unknown>, version: number
     throw new Error("Invalid recipe: backing output mode");
   }
   const device = converter.device as Record<string, unknown>;
+  if (device.external_spool_material !== undefined && (
+    typeof device.external_spool_material !== "string" || !device.external_spool_material.trim()
+  )) {
+    throw new Error("Invalid recipe: external spool material");
+  }
   if (device.native_filament_profiles !== undefined && (
     !isRecord(device.native_filament_profiles) ||
     Object.values(device.native_filament_profiles).some(

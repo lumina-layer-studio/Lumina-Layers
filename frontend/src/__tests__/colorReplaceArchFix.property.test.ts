@@ -100,8 +100,6 @@ function resetStore() {
     colorRemapMap: {},
     remapHistory: [],
     remapRedoHistory: [],
-    adjustmentHistory: [],
-    adjustmentRedoHistory: [],
     replacement_regions: [],
     palette: [],
     pendingReplacement: null,

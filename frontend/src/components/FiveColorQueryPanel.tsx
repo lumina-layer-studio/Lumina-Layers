@@ -43,7 +43,8 @@ export default function FiveColorQueryPanel() {
     setSwatchBlockSize, setSwatchGap, setSwatchCols, setSwatchStructureMode, generateSwatch,
   } = useFiveColorStore()
 
-  const lutList = useConverterStore((s) => s.lutList)
+  const catalogLuts = useConverterStore((s) => s.lutList)
+  const lutList = lutName && !catalogLuts.includes(lutName) ? [...catalogLuts, lutName] : catalogLuts
   const fetchLutList = useConverterStore((s) => s.fetchLutList)
   const [isDownloadingSwatch, setIsDownloadingSwatch] = useState(false)
   const [swatchDownloadError, setSwatchDownloadError] = useState<string | null>(null)

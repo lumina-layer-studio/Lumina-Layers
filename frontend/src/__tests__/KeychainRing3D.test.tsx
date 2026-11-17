@@ -1,5 +1,5 @@
 import { StrictMode } from "react";
-import { act, render } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, it, expect, vi } from "vitest";
 import * as THREE from "three";
 import {
@@ -9,6 +9,8 @@ import {
   keychainLoopHoleClearance,
   resetKeychainRingGeometryDisposeForTests,
 } from "../components/KeychainRing3D";
+import type { KeychainRing3DProps } from "../components/KeychainRing3D";
+import KeychainLoopSettings from "../components/sections/KeychainLoopSettings";
 import { useConverterStore } from "../stores/converter";
 import { createPreviewSpace } from "../utils/previewSpace";
 
@@ -58,7 +60,7 @@ afterEach(() => {
   vi.restoreAllMocks();
   vi.useRealTimers();
   resetKeychainRingGeometryDisposeForTests();
-  useConverterStore.setState({ loop_offset_y: 0 });
+  useConverterStore.setState({ add_loop: false, loop_offset_x: 0, loop_offset_y: 0 });
   mockControls.enabled = true;
   document.body.style.cursor = "default";
 });
@@ -72,7 +74,200 @@ function getReactProps<T extends object>(element: Element): T {
   return (element as unknown as Record<string, T>)[reactPropsKey];
 }
 
+function LiveRing(props: Partial<KeychainRing3DProps>) {
+  const offsetX = useConverterStore((state) => state.loop_offset_x);
+  const offsetY = useConverterStore((state) => state.loop_offset_y);
+  return (
+    <>
+      <KeychainLoopSettings />
+      <KeychainRing3D
+        enabled
+        width={4}
+        length={8}
+        hole={2}
+        angle={0}
+        positionPreset="top-center"
+        modelBounds={defaultBounds}
+        {...props}
+        offsetX={offsetX}
+        offsetY={offsetY}
+      />
+    </>
+  );
+}
+
+function startRingDrag(container: HTMLElement, x = 0, y = 0) {
+  const ring = container.querySelector("mesh");
+  expect(ring).not.toBeNull();
+  act(() => {
+    getReactProps<{
+      onPointerDown: (event: {
+        button: number;
+        stopPropagation: () => void;
+        ray: { intersectPlane: (plane: THREE.Plane, target: THREE.Vector3) => THREE.Vector3 };
+      }) => void;
+    }>(ring as Element).onPointerDown({
+      button: 0,
+      stopPropagation: () => {},
+      ray: { intersectPlane: (_plane, target) => target.set(x, y, 0) },
+    });
+  });
+}
+
 describe("KeychainRing3D", () => {
+  describe("live dragging", () => {
+    it("does not notify position subscribers when clamping leaves the offsets unchanged", () => {
+      useConverterStore.setState({ loop_offset_x: 200, loop_offset_y: 0 });
+      const unchanged = useConverterStore.getState();
+      unchanged.setLoopOffsetX(250);
+      unchanged.setLoopOffsetY(0);
+      expect(useConverterStore.getState()).toBe(unchanged);
+    });
+
+    it.each([-0, Number.NaN])("preserves numeric identity and skips repeated offset %s", (offset) => {
+      useConverterStore.setState({ loop_offset_x: 0, loop_offset_y: 0 });
+      const { setLoopOffsetX, setLoopOffsetY, setLoopOffsets } = useConverterStore.getState();
+      setLoopOffsetX(offset);
+      expect(Object.is(useConverterStore.getState().loop_offset_x, offset)).toBe(true);
+      const afterX = useConverterStore.getState();
+      setLoopOffsetX(offset);
+      expect(useConverterStore.getState()).toBe(afterX);
+
+      setLoopOffsetY(offset);
+      expect(Object.is(useConverterStore.getState().loop_offset_y, offset)).toBe(true);
+      const afterY = useConverterStore.getState();
+      setLoopOffsetY(offset);
+      expect(useConverterStore.getState()).toBe(afterY);
+
+      useConverterStore.setState({ loop_offset_x: 0, loop_offset_y: 0 });
+      setLoopOffsets(offset, offset);
+      const afterBoth = useConverterStore.getState();
+      expect(Object.is(afterBoth.loop_offset_x, offset)).toBe(true);
+      expect(Object.is(afterBoth.loop_offset_y, offset)).toBe(true);
+      setLoopOffsets(offset, offset);
+      expect(useConverterStore.getState()).toBe(afterBoth);
+    });
+
+    it("publishes one complete position per frame and keeps the settings in sync", () => {
+      vi.useFakeTimers();
+      useConverterStore.setState({
+        add_loop: true, loop_offset_x: 0, loop_offset_y: 0,
+        puzzleEnabled: false, enable_fridge_magnet: false,
+      });
+      const { container } = render(<LiveRing />);
+      startRingDrag(container);
+      const positions: number[][] = [];
+      const unsubscribe = useConverterStore.subscribe((state) => {
+        positions.push([state.loop_offset_x, state.loop_offset_y]);
+      });
+      try {
+        for (let index = 1; index <= 100; index += 1) {
+          fireEvent.pointerMove(window, { clientX: 100 + index / 10, clientY: 100 - index / 20 });
+        }
+        expect(positions).toHaveLength(0);
+        act(() => vi.advanceTimersToNextFrame());
+        expect(positions).toHaveLength(1);
+        expect(positions[0][0]).toBeCloseTo(10);
+        expect(positions[0][1]).toBeCloseTo(5);
+        expect(screen.getByRole("textbox", { name: "X 偏移 value" })).toHaveValue("10.0");
+        expect(screen.getByRole("textbox", { name: "Y 偏移 value" })).toHaveValue("5.0");
+        expect(mockControls.enabled).toBe(false);
+
+        fireEvent.pointerMove(window, { clientX: 110, clientY: 95 });
+        act(() => vi.advanceTimersToNextFrame());
+        expect(positions).toHaveLength(1);
+        fireEvent.pointerUp(window);
+        expect(mockControls.enabled).toBe(true);
+      } finally {
+        unsubscribe();
+      }
+    });
+
+    it("applies the destination contour before publishing a drag that crosses its edge", () => {
+      vi.useFakeTimers();
+      useConverterStore.setState({
+        add_loop: true, loop_offset_x: -30, loop_offset_y: -2,
+        puzzleEnabled: false, enable_fridge_magnet: false,
+      });
+      const { container } = render(
+        <LiveRing
+          contours={{ body: [[[10, 0], [30, 0], [30, 30], [10, 30]]] }}
+          contourCanvasBounds={{ minX: -20, maxX: 20, minY: -15, maxY: 15 }}
+        />,
+      );
+      startRingDrag(container, -30, 0);
+      const positions: number[][] = [];
+      const unsubscribe = useConverterStore.subscribe((state) => {
+        positions.push([state.loop_offset_x, state.loop_offset_y]);
+      });
+      try {
+        fireEvent.pointerMove(window, { clientX: 100, clientY: 110 });
+        act(() => vi.advanceTimersToNextFrame());
+        expect(positions).toEqual([[0, 0]]);
+        expect(screen.getByRole("textbox", { name: "Y 偏移 value" })).toHaveValue("0.0");
+        fireEvent.pointerUp(window);
+      } finally {
+        unsubscribe();
+      }
+    });
+
+    it.each([
+      { angle: 0, clientX: 70, expectedX: -30 },
+      { angle: 45, clientX: 100, expectedX: 0 },
+    ])("allows inward movement when the destination is unconstrained (angle $angle, x $expectedX)", ({ angle, clientX, expectedX }) => {
+      vi.useFakeTimers();
+      useConverterStore.setState({ loop_offset_x: 0, loop_offset_y: 0 });
+      const { container } = render(
+        <LiveRing
+          angle={angle}
+          contours={{ body: [[[10, 0], [30, 0], [30, 30], [10, 30]]] }}
+          contourCanvasBounds={{ minX: -20, maxX: 20, minY: -15, maxY: 15 }}
+        />,
+      );
+      startRingDrag(container);
+      fireEvent.pointerMove(window, { clientX, clientY: 110 });
+      act(() => vi.advanceTimersToNextFrame());
+      expect(useConverterStore.getState().loop_offset_x).toBeCloseTo(expectedX);
+      expect(useConverterStore.getState().loop_offset_y).toBeCloseTo(-10);
+      fireEvent.pointerUp(window);
+    });
+
+    it("flushes the final position on release before the next frame", () => {
+      vi.useFakeTimers();
+      useConverterStore.setState({ loop_offset_x: 0, loop_offset_y: 0 });
+      const { container } = render(<LiveRing />);
+      startRingDrag(container);
+      fireEvent.pointerMove(window, { clientX: 105, clientY: 95 });
+      fireEvent.pointerUp(window);
+      expect(useConverterStore.getState().loop_offset_x).toBeCloseTo(5);
+      expect(useConverterStore.getState().loop_offset_y).toBeCloseTo(5);
+      expect(mockControls.enabled).toBe(true);
+      expect(document.body.style.cursor).toBe("default");
+    });
+
+    it.each(["pointercancel", "blur"])("ends a drag on %s and discards pending movement on unmount", (eventName) => {
+      vi.useFakeTimers();
+      useConverterStore.setState({ loop_offset_x: 0, loop_offset_y: 0 });
+      const { container, unmount } = render(<LiveRing />);
+      startRingDrag(container);
+      fireEvent.pointerMove(window, { clientX: 105, clientY: 95 });
+      fireEvent(window, new Event(eventName));
+      expect(mockControls.enabled).toBe(true);
+      const stopped = useConverterStore.getState();
+      fireEvent.pointerMove(window, { clientX: 150, clientY: 50 });
+      act(() => vi.advanceTimersToNextFrame());
+      expect(useConverterStore.getState()).toBe(stopped);
+
+      startRingDrag(container);
+      fireEvent.pointerMove(window, { clientX: 110, clientY: 90 });
+      unmount();
+      const unmounted = useConverterStore.getState();
+      act(() => vi.advanceTimersToNextFrame());
+      expect(useConverterStore.getState()).toBe(unmounted);
+      expect(mockControls.enabled).toBe(true);
+    });
+  });
+
   describe("enabled/disabled rendering", () => {
     it("returns null when enabled=false", () => {
       const { container } = render(

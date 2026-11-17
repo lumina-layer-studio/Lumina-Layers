@@ -150,7 +150,7 @@ function resolveBedPaletteFamily(
   if (identity.includes("bambu")) {
     if (/\b(?:p1p|p1s|p2s)\b/.test(identity)) return "bambu-p";
     if (/\b(?:x1c|x1e|x2d)\b/.test(identity)) return "bambu-x";
-    if (/\b(?:h2c|h2d|h2s)\b/.test(identity)) return "bambu-h";
+    if (/\b(?:h2c|h2d|h2s|h3c)\b/.test(identity)) return "bambu-h";
     return "bambu-a";
   }
   if (identity.includes("snapmaker")) return "snapmaker";

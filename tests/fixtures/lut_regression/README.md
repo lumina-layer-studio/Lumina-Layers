@@ -6,6 +6,7 @@
 | --- | --- | --- |
 | `必趣&PLAGO&6色RYBWGK.npy` | `BIQU/必趣&PLAGO&6色RYBWGK.npy` | 通道顺序、palette 元数据 |
 | `Bambulab&PLA&RYBW&红-黄-蓝-白.npy` | `Custom/Bambulab&PLA&RYBW&红-黄-蓝-白.npy` | SVG 转换与空图错误 |
+| `bambulab_pla_basic_rybw.npy` | `bambulab/bambulab_pla_basic_rybw.npy` | 深灰匹配时保持中性色 |
 | `赛纳&8色PLA-红-黄-蓝-品红-青-白-绿-黑.npy` | `赛纳/赛纳&8色PLA-红-黄-蓝-品红-青-白-绿-黑.npy` | 模型表面 8 色材料身份 |
 | `快造&4色PLA&RYBW.npy` | `snapmaker/快造&4色PLA&RYBW.npy` | 模型表面栅格转换 |
 

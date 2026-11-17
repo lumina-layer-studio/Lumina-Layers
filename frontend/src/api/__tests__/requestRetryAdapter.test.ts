@@ -98,6 +98,35 @@ describe("batch editor request recovery", () => {
 });
 
 describe("stateless request recovery", () => {
+  it.each(["/slicer/detect", "/lut/catalog"])("recovers an empty development-proxy 500 for %s", async (url) => {
+    const base: AxiosAdapter = vi.fn(async (config) => {
+      if (vi.mocked(base).mock.calls.length === 1) {
+        throw new AxiosError("proxy disconnected", "ERR_BAD_RESPONSE", config, undefined, {
+          status: 500, statusText: "", data: "", headers: { "content-type": "text/plain" }, config,
+        });
+      }
+      return { status: 200, statusText: "", data: {}, headers: {}, config };
+    });
+    const client = axios.create({ adapter: createRequestRetryAdapter(base) });
+    await expect(client.get(url)).resolves.toMatchObject({ status: 200 });
+    expect(base).toHaveBeenCalledTimes(2);
+  });
+
+  it.each([
+    { data: { detail: "backend failure" }, headers: { "content-type": "application/json" } },
+    { data: "", headers: { "content-type": "text/plain", "x-request-id": "backend-error" } },
+    { data: "", headers: { "content-type": "text/plain", "Retry-After": "30" } },
+  ])("preserves application errors and explicit backoff on catalog reads: %j", async ({ data, headers }) => {
+    const base: AxiosAdapter = vi.fn(async (config) => {
+      throw new AxiosError("failed", "ERR_BAD_RESPONSE", config, undefined, {
+        status: 500, statusText: "", data, headers, config,
+      });
+    });
+    const client = axios.create({ adapter: createRequestRetryAdapter(base) });
+    await expect(client.get("/slicer/detect")).rejects.toMatchObject({ response: { status: 500 } });
+    expect(base).toHaveBeenCalledOnce();
+  });
+
   it.each([
     "/system/printers",
     "/system/slicers",

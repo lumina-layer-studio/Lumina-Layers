@@ -358,6 +358,7 @@ def _format_advanced_params_section(context: dict[str, Any]) -> str:
             "svg_hole_max_area_mm2",
             "svg_hole_max_width_mm",
             "backing_output",
+            "external_spool_material",
         ):
             if field in generation:
                 lines.append(f"- {field}: {_safe_str(generation[field])}")

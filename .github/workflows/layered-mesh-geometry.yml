@@ -14,6 +14,55 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  source-install:
+    name: PyPI source install (${{ matrix.runner }})
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-24.04, windows-2022, macos-15]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+    env:
+      PYTHONUTF8: "1"
+      PIP_EXTRA_INDEX_URL: ""
+      PIP_FIND_LINKS: ""
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+        with:
+          version: 10.33.2
+          run_install: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "22"
+      - name: Install README runtime requirements in a fresh virtual environment
+        shell: python
+        run: |
+          import os, pathlib, subprocess, sys
+          subprocess.run([sys.executable, '-m', 'venv', '.venv'], check=True)
+          python = pathlib.Path('.venv') / ('Scripts/python.exe' if os.name == 'nt' else 'bin/python')
+          subprocess.run([str(python), '-m', 'pip', 'install', '--index-url',
+                          'https://pypi.org/simple', '-r', 'requirements.txt'], check=True)
+      - name: Install the README frontend dependencies
+        run: pnpm --dir frontend install --frozen-lockfile
+      - name: Check startup and download a real 3MF after session closure
+        shell: python
+        run: |
+          import os, pathlib, subprocess
+          python = pathlib.Path('.venv') / ('Scripts/python.exe' if os.name == 'nt' else 'bin/python')
+          subprocess.run([str(python), 'scripts/verify_source_install.py',
+                          '--report-dir', 'source-install-report'], check=True)
+      - name: Retain source-install diagnostics
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: source-install-${{ matrix.runner }}
+          path: source-install-report/
+          if-no-files-found: ignore
+
   windows-geometry:
     runs-on: windows-latest
     steps:
@@ -30,7 +79,7 @@ jobs:
             requirements-dev.txt
             core/requirements-glb-v2.txt
 
-      - name: Prepare native 3MF wheelhouse
+      - name: Install published native 3MF wheels
         uses: ./.github/actions/prepare-3mf-native-wheels
 
       - name: Install geometry dependencies
@@ -45,7 +94,10 @@ jobs:
           tests/test_vector_layer_geometry_unit.py
           tests/test_vector_engine_mesh_weld_unit.py
           tests/test_bambu_3mf_writer_unit.py
-          tests/test_3mf_native_dependency_unit.py -q
+          tests/test_3mf_native_dependency_unit.py
+          tests/test_source_dependencies_unit.py
+          tests/test_start_all_dependencies_unit.py
+          tests/test_source_install_verifier_unit.py -q
 
   ubuntu-geometry:
     runs-on: ubuntu-latest
@@ -72,7 +124,7 @@ jobs:
             requirements-dev.txt
             core/requirements-glb-v2.txt
 
-      - name: Prepare native 3MF wheelhouse
+      - name: Install published native 3MF wheels
         uses: ./.github/actions/prepare-3mf-native-wheels
 
       - name: Install geometry dependencies
@@ -88,4 +140,7 @@ jobs:
           tests/test_vector_layer_geometry_unit.py
           tests/test_vector_engine_mesh_weld_unit.py
           tests/test_bambu_3mf_writer_unit.py
-          tests/test_3mf_native_dependency_unit.py -q
+          tests/test_3mf_native_dependency_unit.py
+          tests/test_source_dependencies_unit.py
+          tests/test_start_all_dependencies_unit.py
+          tests/test_source_install_verifier_unit.py -q

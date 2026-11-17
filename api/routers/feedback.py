@@ -139,6 +139,7 @@ class BugReportContext(BaseModel):
     nozzle_size: str | None = Field(default=None)
     device_profile_id: str | None = Field(default=None)
     build_plate_id: str | None = Field(default=None)
+    external_spool_material: str | None = Field(default=None)
     color_mode: str | None = Field(default=None)
     lut_name: str | None = Field(default=None)
     lut_names: list[str] = Field(default_factory=list)
@@ -148,8 +149,8 @@ class BugReportContext(BaseModel):
     selected_material_dir_names: list[str] = Field(default_factory=list)
     material_layer_count: int | None = Field(default=None, ge=0, le=1000)
     material_dynamic_layer_count_enabled: bool | None = None
-    material_min_layer_count: int | None = Field(default=None, ge=5, le=10)
-    material_max_layer_count: int | None = Field(default=None, ge=5, le=10)
+    material_min_layer_count: int | None = Field(default=None, ge=5, le=30)
+    material_max_layer_count: int | None = Field(default=None, ge=5, le=30)
     material_delta_e00_tolerance: float | None = Field(
         default=None,
         ge=0.0,

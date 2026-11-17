@@ -240,7 +240,7 @@ def test_target_calls_cpp_metadata_and_writer_once(
 
         slice_root = ET.fromstring(package.read("Metadata/slice_info.config"))
         headers = slice_root.findall("header/header_item")
-        client_version = "02.06.00.51" if slicer == "OrcaSlicer" else "02.08.02.61"
+        client_version = "02.06.00.51" if slicer == "OrcaSlicer" else "02.09.01.70"
         expected_headers = [
             ("X-BBL-Client-Type", "slicer"),
             ("X-BBL-Client-Version", client_version),
@@ -371,7 +371,7 @@ def test_target_calls_cpp_metadata_and_writer_once(
             assert float(actual.attrib["min_z"]) == pytest.approx(expected["min_z"])
             assert float(actual.attrib["max_z"]) == pytest.approx(expected["max_z"])
             target_filename = (
-                "bambu-studio-02.08.02.61.json"
+                "bambu-studio-02.09.01.70.json"
                 if slicer == "BambuStudio"
                 else "orca-slicer-2.4.2.json"
             )

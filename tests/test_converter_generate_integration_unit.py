@@ -21,13 +21,17 @@ from api.worker_pool import WorkerPoolManager
 
 
 @pytest.fixture()
-def generate_harness():
+def generate_harness(monkeypatch):
     """Create an isolated generate-router test client."""
 
     store = SessionStore(ttl=1800)
     registry = FileRegistry()
     pool = MagicMock(spec=WorkerPoolManager)
     pool.submit = AsyncMock()
+    # These canary tests use sentinel worker output, not native file fixtures.
+    monkeypatch.setattr(generate_router, "require_material_selection", lambda *args, **kwargs: {"materials": []})
+    monkeypatch.setattr(generate_router, "read_wipe_tower_placement_warnings", lambda path: [])
+    monkeypatch.setattr(generate_router, "_resolve_batch_plate_dimensions", lambda *args, **kwargs: (256.0, 256.0))
 
     test_app = FastAPI()
     test_app.include_router(generate_router.router, prefix="/api/convert")
@@ -44,6 +48,7 @@ def generate_harness():
 def _capture_generate_logger(caplog: pytest.LogCaptureFixture) -> logging.Logger:
     logger = logging.getLogger("lumina.api.routers.converter.generate")
     logger.addHandler(caplog.handler)
+    logger.propagate = False
     caplog.set_level(logging.INFO, logger=logger.name)
     return logger
 

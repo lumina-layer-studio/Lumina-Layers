@@ -16,7 +16,7 @@ from core.vector_engine import VectorProcessor
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-LUT_PATH = REPO_ROOT / "lut-preset" / "Custom" / "Bambulab&PLA&RYBW&红-黄-蓝-白.npy"
+LUT_PATH = REPO_ROOT / "tests/fixtures/lut_regression" / "Bambulab&PLA&RYBW&红-黄-蓝-白.npy"
 COLOR_MODE = "4-Color (RYBW)"
 TARGET_WIDTH_MM = 100.0
 

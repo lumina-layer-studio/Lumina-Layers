@@ -100,6 +100,7 @@ from core.material_color_solver import (
     DEFAULT_SUGGEST_MIN_SPACING,
     DEFAULT_SUGGEST_TOP_K,
     MAX_LAYER_COUNT as _SOLVER_MAX_LAYER_COUNT,  # noqa: N811
+    MITM_MAX_LAYER_COUNT as _SOLVER_MITM_MAX_LAYER_COUNT,  # noqa: N811
     MIN_LAYER_COUNT as _SOLVER_MIN_LAYER_COUNT,  # noqa: N811
     ColorSuggestion,
     MaterialParams,
@@ -2466,6 +2467,17 @@ async def material_solver_cache_build(
     """
     dir_names = _parse_material_directory_names(material_directory_names)
     _validate_cache_parameters(layer_count, layer_height_mm, substrate)
+    if layer_count > _SOLVER_MITM_MAX_LAYER_COUNT:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"穷举求解缓存最多支持 {_SOLVER_MITM_MAX_LAYER_COUNT} 层；更深的叠层请构建"
+                "候选运行时（/material-solver-runtime/build），它使用逐层 DP。"
+                f" / The exhaustive solver cache supports at most "
+                f"{_SOLVER_MITM_MAX_LAYER_COUNT} layers; build the candidate runtime "
+                "(/material-solver-runtime/build) for deeper stacks."
+            ),
+        )
     _validate_grid_resolution(grid_resolution)
     materials = _load_palette_or_raise(dir_names)
     def _run_build():
@@ -3234,6 +3246,8 @@ async def material_solver_cache_suggest_colors(
     top_k: int = Form(DEFAULT_SUGGEST_TOP_K),
     min_spacing: float = Form(DEFAULT_SUGGEST_MIN_SPACING),
     grid_resolution: int = Form(DEFAULT_GRID_RESOLUTION),
+    session_id: str | None = Form(None),
+    store: SessionStore = Depends(get_session_store),
 ) -> MaterialColorSuggestionsResponse:
     """Return up to ``top_k`` achievable colors near ``target_hex``.
     为 ``target_hex`` 返回至多 ``top_k`` 个可达近似色建议。
@@ -3256,7 +3270,15 @@ async def material_solver_cache_suggest_colors(
     _validate_grid_resolution(grid_resolution)
     _validate_suggest_parameters(top_k, min_spacing)
     target_hex_clean, target_rgb_tuple = _parse_target_hex(target_hex)
-    materials = _load_palette_or_raise(dir_names)
+    if isinstance(session_id, str) and session_id:
+        session = store.get(session_id)
+        if session is None:
+            raise HTTPException(404, "Project preview session expired")
+        if session.get("selected_materials") != dir_names:
+            raise HTTPException(422, "Material selection differs from the project preview")
+        materials = load_multiple_materials(dir_names, materials_dir=session.get("project_materials_dir"))
+    else:
+        materials = _load_palette_or_raise(dir_names)
     palette_hash = _palette_cache_identity(materials)
 
     target_rgb_arr = np.asarray(target_rgb_tuple, dtype=np.uint8)
@@ -3288,6 +3310,20 @@ async def material_solver_cache_suggest_colors(
             substrate,
             candidate_budget=DEFAULT_PERSISTED_CANDIDATE_BUDGET,
         )
+        if runtime is None and layer_count > _SOLVER_MITM_MAX_LAYER_COUNT:
+            # MITM cannot enumerate deep stacks; build a preview runtime
+            # (layer-wise DP, memoized in-process) instead.
+            # MITM 无法枚举深叠层，改为构建预览运行时（逐层 DP，进程内缓存）。
+            def _build_preview_runtime():
+                return build_material_candidate_runtime(
+                    materials=materials,
+                    layer_count=layer_count,
+                    layer_height_mm=layer_height_mm,
+                    substrate=substrate,
+                    config=MaterialCandidateCacheConfig.preview_safe(),
+                )
+
+            runtime = await anyio.to_thread.run_sync(_build_preview_runtime)
         if runtime is not None:
             try:
                 suggestions = runtime.lookup_top_k(

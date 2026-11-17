@@ -14,8 +14,13 @@ on:
       - "core/workshop/**"
       - "frontend/package.json"
       - "frontend/pnpm-lock.yaml"
+      - "requirements.txt"
       - "scripts/verify_workshop_release_chain.py"
+      - "tests/test_workshop_backend_runtime_integration.py"
+      - "tests/test_workshop_backend_store_unit.py"
+      - "tests/test_workshop_backend_supervisor_unit.py"
       - "tests/test_workshop_release_chain_unit.py"
+      - "tests/workshop_backend_fixture.py"
   workflow_dispatch:
 
 permissions:
@@ -123,3 +128,38 @@ jobs:
 
       - name: Run release-chain regression tests
         run: python -m pytest tests/test_workshop_release_chain_unit.py -q
+
+  backend-lifecycle:
+    name: Workshop backend lifecycle on Linux
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out reviewed host source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12"
+
+      - name: Install lifecycle test dependencies
+        # Test tools plus the psutil and uv pins the host runtime uses.
+        run: >-
+          python -m pip install
+          "cryptography>=44.0.0,<46.0.0"
+          "hypothesis>=6.0.0,<7.0.0"
+          "httpx>=0.27.0,<1.0.0"
+          "pillow>=10.0.0,<12.0.0"
+          "pydantic>=2.10.0,<3.0.0"
+          "pytest>=8.0.0,<9.0.0"
+          $(grep -E '^(psutil|uv)[=<>]' requirements.txt)
+
+      - name: Run backend lifecycle tests with real processes
+        # Windows ends a backend tree through a job object; POSIX walks the
+        # process tree, which Windows runs never exercise.
+        run: >-
+          python -m pytest
+          tests/test_workshop_backend_supervisor_unit.py
+          tests/test_workshop_backend_store_unit.py
+          tests/test_workshop_backend_runtime_integration.py
+          -q

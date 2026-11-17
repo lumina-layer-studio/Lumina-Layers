@@ -18,8 +18,6 @@ function resetRemapState(): void {
     colorRemapMap: {},
     remapHistory: [],
     remapRedoHistory: [],
-    adjustmentHistory: [],
-    adjustmentRedoHistory: [],
     sessionId: null,
     replacePreviewLoading: false,
   });

@@ -92,12 +92,15 @@ def _capture_cover_failed_warnings(
     """
 
     target_logger = logging.getLogger(_WRITER_LOGGER_NAME)
+    original_propagate = target_logger.propagate
+    target_logger.propagate = False
     target_logger.addHandler(caplog.handler)
     caplog.set_level(logging.WARNING, logger=_WRITER_LOGGER_NAME)
     try:
         fn()
     finally:
         target_logger.removeHandler(caplog.handler)
+        target_logger.propagate = original_propagate
     return [
         record
         for record in caplog.records

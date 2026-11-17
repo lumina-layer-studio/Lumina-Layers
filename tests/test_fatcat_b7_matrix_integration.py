@@ -8,6 +8,7 @@ from zipfile import ZipFile
 import pytest
 import trimesh
 
+from core.errors import NativeMaterialSelectionError
 from core.machine_registry import load_machine_registry, resolve_machine_registry_root
 from utils.bambu_3mf_writer import BambuStudio3MFWriter
 from utils.fatcat_metadata import compose_builtin_project_settings
@@ -48,11 +49,14 @@ def test_native_source_preserves_selected_materials_and_selected_plate(tmp_path:
         machine_uid=f"bambu-lab:{machine}", nozzle_uid=f"nozzle:{device.nozzle_size}mm",
         material_types=["PLA"] * 2, plate_value=plate_value)
     if not supported:
-        with pytest.raises(
-            ValueError,
-            match="no available native filament profile|matches multiple native profiles",
-        ):
+        with pytest.raises(NativeMaterialSelectionError) as error:
             compose_builtin_project_settings(request)
+        assert error.value.material_selection["ready"] is False
+        assert error.value.material_selection["issues"]
+        assert all(issue["code"] in {
+            "native_material_plate_incompatible", "native_material_ambiguous",
+            "native_material_unavailable",
+        } for issue in error.value.material_selection["issues"])
     else:
         result = compose_builtin_project_settings(request)
         final = json.loads(result["project_settings_json"])
@@ -110,17 +114,21 @@ def test_native_source_compacts_four_materials_and_selected_plate(tmp_path: Path
     assert target.build_plate_uid == binding["build_plate_uid"]
     plate_value = binding["project_value"]
     palette = [(f"Slot {i}", (10 + i, 20, 30)) for i in range(4)]
+    writer._set_project_palette([name for name, _ in palette], dict(palette))
     request = writer._build_fatcat_project_request(palette, target)
     assert request["filament_slot_mode"] == "compact"
     supported = native_materials_support_plate(slicer_id=device.slicer_id,
         machine_uid=f"bambu-lab:{machine}", nozzle_uid=f"nozzle:{device.nozzle_size}mm",
         material_types=["PLA"] * 4, plate_value=plate_value)
     if not supported:
-        with pytest.raises(
-            ValueError,
-            match="no available native filament profile|matches multiple native profiles",
-        ):
+        with pytest.raises(NativeMaterialSelectionError) as error:
             compose_builtin_project_settings(request)
+        assert error.value.material_selection["ready"] is False
+        assert error.value.material_selection["issues"]
+        assert all(issue["code"] in {
+            "native_material_plate_incompatible", "native_material_ambiguous",
+            "native_material_unavailable",
+        } for issue in error.value.material_selection["issues"])
     else:
         source = writer._get_base_config_template()
         source_matrix = source.get("flush_volumes_matrix") or None

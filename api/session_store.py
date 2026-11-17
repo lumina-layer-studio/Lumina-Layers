@@ -1,4 +1,5 @@
 import os
+import shutil
 import threading
 import time
 import uuid
@@ -379,7 +380,10 @@ class SessionStore:
                 continue
 
             try:
-                os.remove(path)
+                if os.path.isdir(path) and not os.path.islink(path):
+                    shutil.rmtree(path)
+                else:
+                    os.remove(path)
                 cleaned += 1
             except FileNotFoundError:
                 cleaned += 1

@@ -142,7 +142,7 @@ jobs:
             requirements.txt
             requirements-dev.txt
             core/requirements-glb-v2.txt
-      - name: Prepare native 3MF wheelhouse
+      - name: Install published native 3MF wheels
         uses: ./.github/actions/prepare-3mf-native-wheels
       - name: Install Lumina test dependencies
         run: >-

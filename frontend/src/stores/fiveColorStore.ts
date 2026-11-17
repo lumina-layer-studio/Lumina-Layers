@@ -1,3 +1,4 @@
+import { workflowRuntime, workflowSettings } from "../project/workflowRuntime";
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { BaseColorEntry, FiveColorMatchResponse, FiveColorQueryResponse } from "../api/types";
@@ -7,7 +8,6 @@ import {
   matchFiveColorByHex,
   generateRecipeSwatch,
 } from "../api/fiveColor";
-import { useSettingsStore } from "./settingsStore";
 import {
   captureGeneratedArtifactIdentity,
   isGeneratedArtifactIdentityCurrent,
@@ -525,14 +525,15 @@ export const useFiveColorStore = create<FiveColorState & FiveColorActions>()(
           swatchStructureMode,
         } = get();
         if (collectedRecipes.length === 0) return;
-        const settings = useSettingsStore.getState();
+        const settings = workflowSettings("five-color");
         const requestIdentity = captureGeneratedArtifactIdentity(
           settings.deviceProfileId,
           settings.buildPlateId,
+          !workflowRuntime("five-color")?.settings,
         );
         const requestSequence = ++swatchRequestSequence;
         const isCurrentRequest = (): boolean => {
-          const latestSettings = useSettingsStore.getState();
+          const latestSettings = workflowSettings("five-color");
           return (
             requestSequence === swatchRequestSequence &&
             isGeneratedArtifactIdentityCurrent(
@@ -642,7 +643,8 @@ export const useFiveColorStore = create<FiveColorState & FiveColorActions>()(
   ),
 );
 
-registerGeneratedArtifactInvalidator(({ preservePreviews }) => {
+registerGeneratedArtifactInvalidator(({ preservePreviews, source }) => {
+  if (source === "defaults" && workflowRuntime("five-color")?.settings) return;
   swatchRequestSequence += 1;
   useFiveColorStore.setState({
     isGeneratingSwatch: false,

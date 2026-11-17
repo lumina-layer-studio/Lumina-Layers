@@ -27,7 +27,13 @@ from zipfile import (
 from PIL import Image, UnidentifiedImageError
 from pydantic import ValidationError
 
+from .backend.locks import parse_backend_lock
 from .constants import (
+    BACKEND_PACKAGE_PREFIX,
+    BACKEND_SOURCE_SUFFIXES,
+    MAX_BACKEND_FILE_BYTES,
+    MAX_BACKEND_FILES,
+    MAX_BACKEND_TOTAL_BYTES,
     MAX_COMPRESSION_RATIO,
     MAX_FILE_BYTES,
     MAX_FILE_COUNT,
@@ -45,9 +51,12 @@ from .constants import (
 )
 from .errors import WorkshopPackageError
 from .models import (
+    BackendDeclaration,
     InspectedWorkshopPackage,
     PackageInspectionSummary,
-    WorkshopManifestV1,
+    WorkshopManifest,
+    WorkshopManifestV2,
+    parse_workshop_manifest,
 )
 
 
@@ -205,7 +214,9 @@ def _validate_declared_limits(
     return unpacked_bytes
 
 
-def _validate_package_file_set(member_names: set[str]) -> list[str]:
+def _validate_package_file_set(
+    member_names: set[str],
+) -> tuple[list[str], list[str]]:
     missing = REQUIRED_PACKAGE_FILES - member_names
     if missing:
         missing_list = ", ".join(sorted(missing))
@@ -214,11 +225,15 @@ def _validate_package_file_set(member_names: set[str]) -> list[str]:
         )
 
     gallery_names: list[str] = []
+    backend_names: list[str] = []
     for name in member_names:
         if name in REQUIRED_PACKAGE_FILES:
             continue
         if name.startswith(_GALLERY_PREFIX):
             gallery_names.append(name)
+            continue
+        if name.startswith(BACKEND_PACKAGE_PREFIX):
+            backend_names.append(name)
             continue
         raise WorkshopPackageError(f"unexpected package file: {name!r}")
 
@@ -226,7 +241,54 @@ def _validate_package_file_set(member_names: set[str]) -> list[str]:
         raise WorkshopPackageError(
             f"gallery file count exceeds {MAX_GALLERY_FILES}"
         )
-    return sorted(gallery_names)
+    return sorted(gallery_names), sorted(backend_names)
+
+
+def _validate_backend_files(
+    package: ZipFile,
+    members_by_name: dict[str, ZipInfo],
+    backend_names: list[str],
+    declaration: BackendDeclaration,
+) -> None:
+    """Accept only bounded UTF-8 backend sources and valid wheel locks."""
+
+    if len(backend_names) > MAX_BACKEND_FILES:
+        raise WorkshopPackageError(
+            f"backend file count exceeds {MAX_BACKEND_FILES}"
+        )
+    total = 0
+    for name in backend_names:
+        info = members_by_name[name]
+        parts = name.split("/")
+        if "__pycache__" in parts or any(part.startswith(".") for part in parts):
+            raise WorkshopPackageError(
+                f"backend cache or hidden file is not allowed: {name!r}"
+            )
+        if Path(name).suffix.casefold() not in BACKEND_SOURCE_SUFFIXES:
+            raise WorkshopPackageError(
+                "backend files must be text sources; native code comes "
+                f"only from locked wheels: {name!r}"
+            )
+        if info.file_size > MAX_BACKEND_FILE_BYTES:
+            raise WorkshopPackageError(
+                f"backend file size exceeds limit: {name!r}"
+            )
+        total += info.file_size
+        if total > MAX_BACKEND_TOTAL_BYTES:
+            raise WorkshopPackageError("backend source size exceeds limit")
+        _decode_utf8(name, _read_member(package, info))
+
+    present = set(backend_names)
+    for required in declaration.referenced_files():
+        if required not in present:
+            raise WorkshopPackageError(
+                f"backend declaration references a missing file: {required!r}"
+            )
+    for lock_name in (
+        declaration.lock,
+        *(variant.lock for variant in declaration.variants),
+    ):
+        parse_backend_lock(_read_member(package, members_by_name[lock_name]))
 
 
 def _validate_specific_declared_limits(
@@ -295,7 +357,7 @@ def _json_object_without_duplicates(
     return value
 
 
-def _parse_manifest(value: bytes) -> WorkshopManifestV1:
+def _parse_manifest(value: bytes) -> WorkshopManifest:
     text = _decode_utf8("manifest.json", value)
     try:
         raw = json.loads(
@@ -309,7 +371,7 @@ def _parse_manifest(value: bytes) -> WorkshopManifestV1:
     if not isinstance(raw, dict):
         raise WorkshopPackageError("invalid manifest: root must be an object")
     try:
-        return WorkshopManifestV1.model_validate(raw)
+        return parse_workshop_manifest(raw)
     except ValidationError as exc:
         raise WorkshopPackageError(f"invalid manifest: {exc}") from exc
 
@@ -564,7 +626,9 @@ def _inspect_open_zip(
         members,
         max_ratio=max_ratio,
     )
-    gallery_names = _validate_package_file_set(set(members_by_name))
+    gallery_names, backend_names = _validate_package_file_set(
+        set(members_by_name)
+    )
     _validate_specific_declared_limits(members_by_name, gallery_names)
 
     manifest_bytes = _read_member(package, members_by_name["manifest.json"])
@@ -574,6 +638,15 @@ def _inspect_open_zip(
     license_bytes = _read_member(package, members_by_name["LICENSE"])
 
     manifest = _parse_manifest(manifest_bytes)
+    if isinstance(manifest, WorkshopManifestV2):
+        _validate_backend_files(
+            package,
+            members_by_name,
+            backend_names,
+            manifest.backend,
+        )
+    elif backend_names:
+        raise WorkshopPackageError("backend files require manifest v2")
     _validate_runtime_html(runtime_html)
     _validate_image(
         name="assets/icon.png",

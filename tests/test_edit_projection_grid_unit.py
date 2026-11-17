@@ -6,6 +6,34 @@ import numpy as np
 import pytest
 
 from core.edit_projection import EditProjectionGrid
+from core.recipe_order import pad_material_matrix_layers
+
+
+@pytest.mark.parametrize("layer_order", ["Top2Bottom", "Bottom2Top"])
+@pytest.mark.parametrize("output_layers", [2, 4])
+def test_material_replay_aligns_backing_without_overwriting_fresh_analysis(layer_order: str, output_layers: int) -> None:
+    grid = EditProjectionGrid((2, 2), (4, 4))
+    source_solid = np.array([[True, True], [True, False]])
+    target_solid = source_solid.repeat(2, axis=0).repeat(2, axis=1)
+    pristine = np.ones((2, 2, 2), dtype=np.int16)
+    pristine[~source_solid] = -1
+    edited = pad_material_matrix_layers(pristine, 3, 2, layer_order, source_solid)
+    edited[0, 0] = [3, 0, 1] if layer_order == "Top2Bottom" else [1, 0, 3]
+    fresh = np.full((4, 4, 2), 4, dtype=np.int16)
+    fresh[~target_solid] = -1
+
+    result, changed = grid.replay_materials(
+        edited, pristine, fresh, source_solid=source_solid, target_solid=target_solid,
+        base_channel_idx=2, layer_order=layer_order, target_layers=output_layers,
+    )
+
+    expected = pad_material_matrix_layers(fresh, output_layers, 2, layer_order, target_solid)
+    recipe = [3, 0] if output_layers == 2 else [3, 0, 1, 2]
+    expected[:2, :2] = recipe if layer_order == "Top2Bottom" else recipe[::-1]
+    np.testing.assert_array_equal(result, expected)
+    expected_mask = np.zeros((4, 4), dtype=bool)
+    expected_mask[:2, :2] = True
+    np.testing.assert_array_equal(changed, expected_mask)
 
 
 def test_equal_grid_projection_is_identity() -> None:

@@ -73,19 +73,30 @@ export function toAbsoluteReliefHeightMap(
 export function colorRemapToReplacementRegions(
   remapMap: Record<string, string>,
   palette: PaletteEntry[],
+  saved: ColorReplacementItem[] = [],
 ): ColorReplacementItem[] {
   const result: ColorReplacementItem[] = [];
 
   for (const [origHex, newHex] of Object.entries(remapMap)) {
     const entry = palette.find((p) => p.matched_hex === origHex);
+    const source = origHex.replace(/^#/, "").toLowerCase();
+    let savedEntry: ColorReplacementItem | undefined;
+    for (let index = saved.length - 1; index >= 0; index--) {
+      if (saved[index].matched_hex.replace(/^#/, "").toLowerCase() === source) {
+        savedEntry = saved[index];
+        break;
+      }
+    }
 
+    const scope = savedEntry?.source_scope;
     // Backend expects #rrggbb format per API contract
     const ensureHash = (h: string) => (h.startsWith('#') ? h : `#${h}`);
 
     result.push({
-      quantized_hex: ensureHash(entry?.quantized_hex ?? origHex),
+      quantized_hex: ensureHash(scope ? savedEntry!.quantized_hex : entry?.quantized_hex ?? origHex),
       matched_hex: ensureHash(entry?.matched_hex ?? origHex),
       replacement_hex: ensureHash(newHex),
+      ...(scope ? { source_scope: scope } : {}),
     });
   }
 

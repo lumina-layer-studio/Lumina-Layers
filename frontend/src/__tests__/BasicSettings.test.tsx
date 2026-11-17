@@ -1,3 +1,9 @@
+import { useSessionLease } from "../hooks/useSessionLease";
+import { heartbeatSession } from "../api/session";
+vi.mock("../api/session", async () => {
+  const actual = await vi.importActual<typeof import("../api/session")>("../api/session");
+  return { ...actual, heartbeatSession: vi.fn() };
+});
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import "./communityTestMocks";
 import { TUTORIAL_STEPS } from "../data/tutorialSteps";
@@ -557,6 +563,34 @@ describe("BasicSettings", () => {
       expect(useConverterStore.getState()).toMatchObject({ lut_names: ["Brand A - A4", "Brand A - Added"], imageFile, target_width_mm: 137 });
     }
   });
+  it("keeps partial ZIP warnings visible when the source session expires", async () => {
+    vi.useFakeTimers();
+    vi.mocked(heartbeatSession).mockRejectedValueOnce({ response: { status: 404 } });
+    useConverterStore.setState({
+      sessionId: "partial-zip-expiry", downloadUrl: "/api/files/partial-zip",
+      largeFormatWarnings: ["wipe_tower_manual_adjustment_required"],
+      largeFormatFailedTiles: ["r2_c3"], generateWarnings: ["saved export warning"],
+      imageFile: new File(["source"], "source.png", { type: "image/png" }), target_width_mm: 301,
+    });
+    function SettingsWithLease() {
+      const sid = useConverterStore(state => state.sessionId);
+      const expire = useConverterStore(state => state.expireSession);
+      useSessionLease(sid, "converter", ["partial-zip"], expire);
+      return <BasicSettings />;
+    }
+    const view = render(<SettingsWithLease />);
+    expect(screen.getByText(/下载包缺少以下切片：r2_c3/)).toBeInTheDocument();
+    await act(async () => { await vi.advanceTimersByTimeAsync(120_000); });
+    expect(useConverterStore.getState()).toMatchObject({
+      sessionId: null, downloadUrl: "/api/files/partial-zip", target_width_mm: 301,
+      largeFormatWarnings: ["wipe_tower_manual_adjustment_required"],
+      largeFormatFailedTiles: ["r2_c3"], generateWarnings: ["saved export warning"],
+    });
+    expect(screen.getByText(/下载包缺少以下切片：r2_c3/)).toBeInTheDocument();
+    expect(screen.getByText(/自动摆放未能确认模型/)).toBeInTheDocument();
+    view.unmount();
+  });
+
   it.each([
     [2, "宽度", "500", "250"],
     [0.5, "高度", "150", "300"],
@@ -1285,6 +1319,16 @@ describe("BasicSettings", () => {
     });
     expect(dynamicToggle).not.toBeChecked();
     expect(screen.getByRole("slider", { name: "叠色层数" })).toHaveValue("7");
+    // Locked to 10 layers until the advanced switch is turned on.
+    expect(screen.getByRole("slider", { name: "叠色层数" })).toHaveAttribute(
+      "max",
+      "10",
+    );
+    act(() => useConverterStore.getState().setMaterialLayersUnlocked(true));
+    expect(screen.getByRole("slider", { name: "叠色层数" })).toHaveAttribute(
+      "max",
+      "30",
+    );
     expect(
       screen.queryByRole("slider", { name: "最小有效叠层数" }),
     ).not.toBeInTheDocument();
@@ -1303,7 +1347,7 @@ describe("BasicSettings", () => {
     ).toHaveAttribute("step", "1");
     expect(
       screen.getByRole("slider", { name: "最大有效叠层数" }),
-    ).toHaveAttribute("max", "10");
+    ).toHaveAttribute("max", "30");
     expect(screen.queryByText(/单一层数的缓存入口已隐藏/)).not.toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: "穷举缓存…" }),

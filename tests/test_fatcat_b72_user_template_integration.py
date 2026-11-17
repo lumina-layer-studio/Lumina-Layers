@@ -16,6 +16,216 @@ FIXTURES = Path(__file__).resolve().parent / "fixtures" / "fatcat"
 SOURCE = FIXTURES / "bambu-p1s-02-user-tuned-native-template.3mf"
 
 
+def test_material_preflight_rejects_palette_larger_than_imported_template(tmp_path, monkeypatch):
+    from fastapi.testclient import TestClient
+    from api.app import app
+
+    monkeypatch.setattr(custom_3mf_templates, "_root", lambda: tmp_path / "templates")
+    record = custom_3mf_templates.import_template(SOURCE.read_bytes(), "Two slots")
+    with TestClient(app) as client:
+        response = client.post("/api/convert/export-materials", json={"params": {
+            "printer_id": "bambu-p1s", "slicer": "BambuStudio", "nozzle_size": "0.2",
+            "device_profile_id": "BambuStudio:bbl:bambu-lab-p1s:0.2",
+            "custom_3mf_template_id": record["id"],
+            "lut_name": "bambulab - bambulab_pla_basic_rybw", "color_mode": "4-Color (RYBW)",
+        }})
+    assert response.status_code == 422, response.text
+    detail = response.json()["detail"]
+    assert detail["code"] == "template_slot_capacity"
+    assert detail["required_slots"] == 4
+    assert detail["available_slots"] == 2
+
+
+def test_direct_template_export_reports_capacity_before_queuing_meshes(tmp_path, monkeypatch):
+    from core.errors import CoreValidationError
+
+    monkeypatch.setattr(custom_3mf_templates, "_root", lambda: tmp_path / "templates")
+    record = custom_3mf_templates.import_template(SOURCE.read_bytes(), "Two slots")
+    writer = writer_module.BambuStudio3MFWriter(
+        str(tmp_path / "output.3mf"), printer_id="bambu-p1s", slicer="BambuStudio",
+        nozzle_size="0.2", custom_3mf_template_id=record["id"],
+        enable_wipe_tower_auto_placement=False,
+    )
+    for name, colour in (("White", (255, 255, 255)), ("Black", (0, 0, 0)), ("Blue", (0, 0, 255))):
+        writer.add_mesh(trimesh.creation.box(), name, colour)
+    monkeypatch.setattr(
+        writer, "_queue_meshes",
+        lambda *args: pytest.fail("Template capacity must be checked before queuing meshes"),
+    )
+    with pytest.raises(CoreValidationError) as error:
+        writer.export()
+    assert error.value.required_slots == 3
+    assert error.value.available_slots == 2
+    assert not (tmp_path / "output.3mf").exists()
+
+
+def test_material_preflight_counts_actual_preview_slots_instead_of_ui_color_mode(tmp_path, monkeypatch):
+    from fastapi.testclient import TestClient
+    from api.app import app
+    from api.dependencies import get_session_store
+    from api.session_store import SessionStore
+    from config import ColorSystem
+    from utils.lut_manager import LUTManager
+
+    monkeypatch.setattr(custom_3mf_templates, "_root", lambda: tmp_path / "templates")
+    record = custom_3mf_templates.import_template(SOURCE.read_bytes(), "Two slots")
+    store = SessionStore()
+    session_id = store.create()
+    store.put(session_id, "lut_path", LUTManager.get_lut_path("bambulab - bambulab_pla_basic_rybw"))
+    colour_config = ColorSystem.get("6-Color")
+    store.put(session_id, "preview_cache", {
+        "slot_names": colour_config["slots"],
+        "preview_colors": colour_config["preview"],
+        "color_conf": colour_config,
+    })
+    monkeypatch.setitem(app.dependency_overrides, get_session_store, lambda: store)
+
+    try:
+        with TestClient(app) as client:
+            response = client.post("/api/convert/export-materials", json={
+                "session_id": session_id,
+                "params": {
+                    "printer_id": "bambu-p1s", "slicer": "BambuStudio", "nozzle_size": "0.2",
+                    "device_profile_id": "BambuStudio:bbl:bambu-lab-p1s:0.2",
+                    "custom_3mf_template_id": record["id"],
+                    "lut_name": "bambulab - bambulab_pla_basic_rybw",
+                    "color_mode": "4-Color (RYBW)",
+                },
+            })
+        assert response.status_code == 422, response.text
+        detail = response.json()["detail"]
+        assert detail["code"] == "template_slot_capacity"
+        assert detail["required_slots"] == 6
+        assert detail["available_slots"] == 2
+    finally:
+        store.clear_all()
+
+
+def test_material_facts_keep_cached_order_before_coating_and_virtual_materials():
+    from core.export_material_selection import _source_materials
+    from utils.lut_manager import LUTManager
+
+    materials = _source_materials(
+        {"color_mode": "4-Color (RYBW)", "enable_coating": True},
+        {
+            "lut_path": LUTManager.get_lut_path("bambulab - bambulab_pla_basic_rybw"),
+            "slot_names": ["Blue", "White", "Red", "Yellow"],
+            "preview_colors": {
+                0: [10, 20, 30, 255], 1: [240, 241, 242, 255],
+                2: [210, 20, 30, 255], 3: [230, 220, 20, 255],
+            },
+            "recipe_overrides": [{
+                "region_id": "custom",
+                "virtual_materials": [{"name": "Silver", "hex": "#8899AA"}],
+            }],
+        },
+    )
+
+    assert [material["name"] for material in materials] == [
+        "Blue", "White", "Red", "Yellow", "Coating", "Silver",
+    ]
+    assert [material["colour"] for material in materials] == [
+        "#0A141E", "#F0F1F2", "#D2141E", "#E6DC14", "#C8C8C8", "#8899AA",
+    ]
+
+
+def test_cached_six_colour_slots_keep_generation_material_types():
+    from config import ColorSystem
+    from core.export_material_selection import _source_materials
+    from utils.lut_manager import LUTManager
+
+    colours = ColorSystem.get("6-Color")
+    materials = _source_materials(
+        {"color_mode": "4-Color (RYBW)"},
+        {
+            "lut_path": LUTManager.get_lut_path("bambulab - bambulab_pla_basic_rybw"),
+            "lut_metadata": None,
+            "slot_names": colours["slots"],
+            "preview_colors": colours["preview"],
+            "color_conf": colours,
+        },
+    )
+
+    assert [material["name"] for material in materials] == colours["slots"]
+    assert [material["material_type"] for material in materials] == ["PLA Basic"] * 6
+
+
+def test_used_slot_subset_does_not_drop_the_full_source_palette():
+    from config import LUTMetadata, PaletteEntry
+    from core.export_material_selection import _source_materials
+
+    materials = _source_materials(
+        {"color_mode": "4-Color (CMYW)"},
+        {
+            "lut_metadata": LUTMetadata(palette=[
+                PaletteEntry(color=name, material="PLA Basic")
+                for name in ("White", "Cyan", "Magenta", "Yellow")
+            ]),
+            "slot_names": ["White"],
+            "preview_colors": {"White": [255, 255, 255, 255]},
+        },
+    )
+
+    assert [material["name"] for material in materials] == ["White", "Cyan", "Magenta", "Yellow"]
+    assert [material["material_type"] for material in materials] == ["PLA Basic"] * 4
+    assert [material["colour"] for material in materials] == ["#FFFFFF", "#0086D6", "#EC008C", "#F4EE2A"]
+
+
+def test_cached_lut_material_types_and_coating_follow_final_slot_names():
+    from config import LUTMetadata, PaletteEntry
+    from core.export_material_selection import _source_materials
+
+    materials = _source_materials(
+        {"enable_coating": True},
+        {
+            "lut_metadata": LUTMetadata(palette=[
+                PaletteEntry(color="White", material="PETG"),
+                PaletteEntry(color="Blue", material="PETG"),
+            ]),
+            "slot_names": ["Blue", "White"],
+            "preview_colors": {0: [10, 20, 30, 255], 1: [240, 241, 242, 255]},
+            "recipe_overrides": [{
+                "region_id": "custom", "virtual_materials": [{"name": "Silver", "hex": "#8899AA"}],
+            }],
+        },
+    )
+
+    assert [(material["name"], material.get("material_type")) for material in materials] == [
+        ("Blue", "PETG"), ("White", "PETG"), ("Coating", "PETG"), ("Silver", None),
+    ]
+
+
+def test_cached_archive_material_types_follow_names_after_reordering(monkeypatch):
+    import numpy as np
+    from core.export_material_selection import _source_materials
+    from core.material_color_solver import MaterialParams
+
+    archive_materials = [
+        MaterialParams(
+            name=name, directory_name=name, E=np.ones(3), k=np.ones(3),
+            C0_white=np.ones(3), estimated_rgb=np.asarray(colour, dtype=np.uint8),
+            material_type=kind,
+        )
+        for name, colour, kind in (
+            ("White", (240, 241, 242), "PLA"), ("Blue", (10, 20, 30), "PETG"),
+        )
+    ]
+    monkeypatch.setattr("core.export_material_selection.load_materials", lambda *args, **kwargs: archive_materials)
+
+    materials = _source_materials(
+        {"enable_coating": True},
+        {
+            "material_source": "material_archive", "selected_materials": ["White", "Blue"],
+            "slot_names": ["Blue", "White"],
+            "preview_colors": {0: [10, 20, 30, 255], 1: [240, 241, 242, 255]},
+        },
+    )
+
+    assert [(material["name"], material["material_type"]) for material in materials] == [
+        ("Blue", "PETG"), ("White", "PLA"), ("Coating", "PLA"),
+    ]
+
+
 @pytest.mark.parametrize("policy,count", [(None, 2), (False, 2), (False, 1)])
 def test_native_saved_template_keeps_real_tuning_and_routes_new_geometry(tmp_path, monkeypatch, policy, count):
     monkeypatch.setattr(custom_3mf_templates, "_root", lambda: tmp_path / "stored-templates")

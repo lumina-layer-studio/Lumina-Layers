@@ -1,17 +1,8 @@
-import { createContext, useContext, useMemo } from "react";
+import { useContext, useMemo } from "react";
 import type { ReactNode } from "react";
 import { translations } from "./translations";
 import { useSettingsStore } from "../stores/settingsStore";
-
-interface I18nContextValue {
-  t: (key: string) => string;
-  lang: "zh" | "en";
-}
-
-const I18nContext = createContext<I18nContextValue>({
-  t: (key: string) => key,
-  lang: "zh",
-});
+import { I18nContext, type I18nContextValue } from "./value";
 
 export function I18nProvider({ children }: { children: ReactNode }) {
   const language = useSettingsStore((s) => s.language);

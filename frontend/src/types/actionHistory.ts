@@ -136,6 +136,7 @@ export interface AdvancedParamsGeneration {
   enable_wipe_tower_auto_placement?: boolean;
   wipe_tower_warning_codes?: string[];
   native_filament_profiles?: Record<string, string>;
+  external_spool_material?: string;
   native_filament_profile_scope?: {
     slicer: string;
     printer_id: string;

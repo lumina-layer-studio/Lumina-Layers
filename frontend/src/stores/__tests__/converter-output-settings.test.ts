@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { StructureMode } from "../../api/types";
 import { uploadImagePreview } from "../../api/system";
 import { fetchBedSizes } from "../../api/converter";
+import { captureProjectSettings } from "../converter/project";
 
 vi.mock("../../api/system", () => ({ uploadImagePreview: vi.fn() }));
 vi.mock("../../api/converter", async (importOriginal) => ({
@@ -47,6 +48,44 @@ afterEach(() => {
 });
 
 describe("printer-dependent output dimensions", () => {
+  it("restores the project printer's bed instead of the default bed label", async () => {
+    const { store, settings } = await startConverter();
+    settings.getState().setPrinterModel("large");
+    store.setState({ bedSizes: beds });
+    const projectSettings = { ...captureProjectSettings(settings.getState()), printerModel: "small" };
+    store.getState().commitProjectRestore({
+      ...store.getState(), projectSettings, bedSizes: beds, bed_label: "256×256 mm",
+      target_width_mm: 120, target_height_mm: 160,
+    });
+    expect(store.getState()).toMatchObject({ bed_label: "Small", target_width_mm: 120, target_height_mm: 160 });
+    expect(settings.getState().printerModel).toBe("large");
+  });
+
+  it("uses the project printer when its bed catalog arrives after restoration", async () => {
+    const { store, settings } = await startConverter();
+    settings.getState().setPrinterModel("large");
+    store.setState({ projectSettings: { ...captureProjectSettings(settings.getState()), printerModel: "small" }, bedSizes: [] });
+    vi.mocked(fetchBedSizes).mockResolvedValue({ beds });
+    await store.getState().fetchBedSizes();
+    expect(store.getState().bed_label).toBe("Small");
+    expect(settings.getState().printerModel).toBe("large");
+  });
+
+  it("keeps a project's bed independent of daily settings until its device settings change", async () => {
+    const { store, settings } = await startConverter();
+    settings.getState().setPrinterModel("large");
+    const projectSettings = { ...captureProjectSettings(settings.getState()), printerModel: "small" };
+    store.setState({ bedSizes: beds, bed_label: "Small", projectSettings });
+    settings.getState().setPrinterModel("large");
+    expect(store.getState().bed_label).toBe("Small");
+    store.setState({ projectSettings: captureProjectSettings(settings.getState()) });
+    expect(store.getState().bed_label).toBe("Large");
+    settings.getState().setPrinterModel("small");
+    expect(store.getState().bed_label).toBe("Large");
+    store.setState({ projectSettings: null });
+    expect(store.getState().bed_label).toBe("Small");
+  });
+
   it("uses both bed axes and allows printers larger than 400 mm", async () => {
     const { store, settings } = await startConverter();
     store.setState({ bedSizes: beds });
@@ -79,6 +118,15 @@ describe("printer-dependent output dimensions", () => {
     store.setState({ bedSizes: beds, aspectRatio: 2, target_width_mm: 480, target_height_mm: 240 });
     settings.getState().setPrinterModel("small");
     expect(store.getState()).toMatchObject({ target_width_mm: 180, target_height_mm: 90 });
+  });
+
+  it("still reapplies ordinary printer bounds when selecting the current printer again", async () => {
+    const { store, settings } = await startConverter();
+    store.setState({ bedSizes: beds });
+    settings.getState().setPrinterModel("small");
+    store.setState({ target_width_mm: 360, target_height_mm: 200, aspectRatio: 1.8 });
+    settings.getState().setPrinterModel("small");
+    expect(store.getState()).toMatchObject({ target_width_mm: 180, target_height_mm: 100 });
   });
 
   it("keeps extremely narrow artwork within the existing minimum and bed maximum", async () => {

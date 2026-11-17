@@ -17,6 +17,7 @@ const VALID_PRINTER_IDS = [
   "bambu-h2s",
   "bambu-p2s",
   "bambu-h2c",
+  "bambu-h3c",
 ] as const;
 
 // ========== Helpers ==========

@@ -1,4 +1,5 @@
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { beginDocumentGesture } from "../../stores/converter/documentGestures";
 import { cx } from "./panelPrimitives";
 import HelpDot from "./HelpDot";
 import type { WikiDocPath } from "../../utils/wikiDocs";
@@ -29,6 +30,9 @@ interface SliderProps {
 }
 
 export default function Slider(props: SliderProps) {
+  const finishGesture = useRef<(() => void) | null>(null);
+  const endGesture = () => { finishGesture.current?.(); finishGesture.current = null; };
+  useEffect(() => () => { finishGesture.current?.(); }, []);
   const {
   className,
   label,
@@ -183,6 +187,15 @@ export default function Slider(props: SliderProps) {
           disabled={disabled}
           aria-label={label}
           data-testid={testId}
+          onPointerDown={(event) => { endGesture(); finishGesture.current = beginDocumentGesture(); event.currentTarget.setPointerCapture?.(event.pointerId); }}
+          onPointerUp={endGesture}
+          onPointerCancel={endGesture}
+          onLostPointerCapture={endGesture}
+          onKeyDown={(event) => {
+            if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "PageUp", "PageDown", "Home", "End"].includes(event.key) && !finishGesture.current) finishGesture.current = beginDocumentGesture();
+          }}
+          onKeyUp={endGesture}
+          onBlur={endGesture}
           onChange={(e) => onChange(clampAndRound(Number(e.target.value)))}
           className={cx(
             "slider-track w-full min-w-0 appearance-none cursor-pointer rounded-full accent-blue-500 transition-all duration-200",

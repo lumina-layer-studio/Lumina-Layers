@@ -1,6 +1,6 @@
 import type {
+  HostWorkshopRpcMethod,
   WorkshopModuleIdentity,
-  WorkshopRpcMethod,
 } from "../contracts";
 
 
@@ -12,6 +12,14 @@ const MAX_PROJECT_ID_LENGTH = 256;
 const MAX_SCHEMA_VERSION_LENGTH = 128;
 const MAX_STATUS_TEXT_LENGTH = 500;
 const MAX_DIAGNOSTIC_FIELDS = 64;
+const MAX_BACKEND_INPUTS = 8;
+const MAX_BACKEND_PARAMS_BYTES = 64 * 1024;
+const BACKEND_TASK_ID = /^[0-9a-f]{32}$/;
+const BACKEND_OPERATION = /^[a-z][a-z0-9.-]{0,63}$/;
+const BACKEND_FILE_KEY = /^[a-z0-9][a-z0-9._-]{0,63}$/;
+const BACKEND_FILE_NAME = /^[A-Za-z0-9][A-Za-z0-9._ -]{0,127}$/;
+const BACKEND_MIME_TYPE =
+  /^[a-z0-9][a-z0-9!#$&^_.+-]{0,63}\/[a-z0-9][a-z0-9!#$&^_.+-]{0,63}$/;
 
 export type RpcPayloadValidationCode =
   | "rpc-payload-invalid"
@@ -519,13 +527,116 @@ function validateDiagnostics(payload: unknown): unknown {
   return Object.fromEntries(entries);
 }
 
+function validateBackendSubmit(payload: unknown): unknown {
+  if (
+    !isRecord(payload) ||
+    !hasOnlyKeys(payload, ["operation", "params", "inputs"], ["idempotencyKey"]) ||
+    typeof payload.operation !== "string" ||
+    !BACKEND_OPERATION.test(payload.operation) ||
+    !isRecord(payload.params) ||
+    !Array.isArray(payload.inputs) ||
+    payload.inputs.length > MAX_BACKEND_INPUTS ||
+    ("idempotencyKey" in payload &&
+      !boundedString(payload.idempotencyKey, 128))
+  ) {
+    return invalidPayload("Workshop backend task request is invalid.");
+  }
+  let params: Record<string, unknown>;
+  try {
+    const encoded = JSON.stringify(payload.params);
+    if (utf8Bytes(encoded) > MAX_BACKEND_PARAMS_BYTES) {
+      throw new RpcPayloadValidationError(
+        "rpc-payload-too-large",
+        "Workshop backend task parameters exceed 64 KiB.",
+      );
+    }
+    params = JSON.parse(encoded) as Record<string, unknown>;
+  } catch (error) {
+    if (error instanceof RpcPayloadValidationError) {
+      throw error;
+    }
+    return invalidPayload("Workshop backend task parameters must be JSON.");
+  }
+  const names = new Set<string>();
+  const inputs = payload.inputs.map((item) => {
+    if (
+      !isRecord(item) ||
+      !hasOnlyKeys(item, ["name", "fileName", "mimeType", "bytes"]) ||
+      typeof item.name !== "string" ||
+      !BACKEND_FILE_KEY.test(item.name) ||
+      names.has(item.name) ||
+      typeof item.fileName !== "string" ||
+      !BACKEND_FILE_NAME.test(item.fileName) ||
+      /[. ]$/.test(item.fileName) ||
+      typeof item.mimeType !== "string" ||
+      !BACKEND_MIME_TYPE.test(item.mimeType) ||
+      !(item.bytes instanceof ArrayBuffer) ||
+      item.bytes.byteLength === 0
+    ) {
+      return invalidPayload("Workshop backend task input is invalid.");
+    }
+    names.add(item.name);
+    return {
+      name: item.name,
+      fileName: item.fileName,
+      mimeType: item.mimeType,
+      bytes: item.bytes,
+    };
+  });
+  return {
+    operation: payload.operation,
+    params,
+    inputs,
+    ...(typeof payload.idempotencyKey === "string"
+      ? { idempotencyKey: payload.idempotencyKey }
+      : {}),
+  };
+}
+
+function validateBackendTaskId(payload: unknown): unknown {
+  if (
+    !isRecord(payload) ||
+    !hasOnlyKeys(payload, ["taskId"]) ||
+    typeof payload.taskId !== "string" ||
+    !BACKEND_TASK_ID.test(payload.taskId)
+  ) {
+    return invalidPayload("Workshop backend task ID is invalid.");
+  }
+  return { taskId: payload.taskId };
+}
+
+function validateBackendOutput(payload: unknown): unknown {
+  if (
+    !isRecord(payload) ||
+    !hasOnlyKeys(payload, ["taskId", "name"]) ||
+    typeof payload.taskId !== "string" ||
+    !BACKEND_TASK_ID.test(payload.taskId) ||
+    typeof payload.name !== "string" ||
+    !BACKEND_FILE_KEY.test(payload.name)
+  ) {
+    return invalidPayload("Workshop backend output request is invalid.");
+  }
+  return { taskId: payload.taskId, name: payload.name };
+}
+
 export function validateMethodPayload(
-  method: WorkshopRpcMethod,
+  method: HostWorkshopRpcMethod,
   payload: unknown,
   identity: WorkshopModuleIdentity,
 ): unknown {
   assertRpcPayloadBounds(payload);
   switch (method) {
+    case "backend.status":
+    case "backend.list":
+      return validateEmptyPayload(payload);
+    case "backend.submit":
+      return validateBackendSubmit(payload);
+    case "backend.get":
+    case "backend.cancel":
+    case "backend.remove":
+      return validateBackendTaskId(payload);
+    case "backend.readOutput":
+      return validateBackendOutput(payload);
     case "image.pick":
     case "project.latest":
     case "colorLibrary.read":

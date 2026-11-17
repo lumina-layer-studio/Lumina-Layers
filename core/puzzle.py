@@ -8,7 +8,7 @@ preview-overlay flow and the final piece-export flow.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import hashlib
 import math
 import random
@@ -17,6 +17,8 @@ from typing import Literal
 import cv2
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
+from shapely import box, contains_xy, union_all
+from shapely.affinity import affine_transform
 from shapely.geometry import GeometryCollection, MultiPolygon, Polygon
 from shapely.geometry.base import BaseGeometry
 from shapely.ops import unary_union
@@ -139,6 +141,8 @@ class PuzzlePiece:
     bbox_mm: tuple[float, float, float, float]
     centroid_mm: tuple[float, float]
     holes_px: tuple[tuple[_Point, ...], ...] = ()
+    # Only edges between two pieces receive cutter clearance.
+    cut_edges_px: BaseGeometry | None = None
 
 
 @dataclass(frozen=True)
@@ -320,6 +324,12 @@ def build_puzzle_layout(config: PuzzleLayoutConfig) -> PuzzleLayout:
                 "Actual piece count differs from the requested grid after transparent-boundary cleanup."
             )
 
+    footprint = mask_geometry if mask_geometry is not None else box(0, 0, config.width_px, config.height_px)
+    source_edges = footprint.boundary
+    pieces = [
+        replace(piece, cut_edges_px=Polygon(piece.polygon_px, piece.holes_px).boundary.difference(source_edges))
+        for piece in pieces
+    ]
     return PuzzleLayout(
         width_px=config.width_px,
         height_px=config.height_px,
@@ -406,37 +416,12 @@ def _build_mask_geometry(config: PuzzleLayoutConfig) -> BaseGeometry | None:
     if not np.any(solid_mask) or _mask_is_full_rect(solid_mask):
         return None
 
-    mask_u8 = np.where(solid_mask, 255, 0).astype(np.uint8, copy=False)
-    contours, hierarchy = cv2.findContours(mask_u8, cv2.RETR_CCOMP, cv2.CHAIN_APPROX_SIMPLE)
-    if hierarchy is None or len(contours) == 0:
-        return None
-
-    hierarchy_data = hierarchy[0]
-    polygons: list[Polygon] = []
-    for index, contour in enumerate(contours):
-        parent = int(hierarchy_data[index][3])
-        if parent != -1:
-            continue
-        shell = _contour_to_points(contour)
-        if len(shell) < 3:
-            continue
-        holes: list[list[_Point]] = []
-        child_index = int(hierarchy_data[index][2])
-        while child_index != -1:
-            hole = _contour_to_points(contours[child_index])
-            if len(hole) >= 3:
-                holes.append(hole)
-            child_index = int(hierarchy_data[child_index][0])
-        polygon = Polygon(shell=shell, holes=holes)
-        normalized_polygon = _normalize_polygonal_geometry(polygon)
-        if isinstance(normalized_polygon, Polygon):
-            polygons.append(normalized_polygon)
-        elif isinstance(normalized_polygon, MultiPolygon):
-            polygons.extend(list(normalized_polygon.geoms))
-
-    if not polygons:
-        return None
-    return _normalize_polygonal_geometry(unary_union(polygons))
+    # Preserve the whole area of each occupied pixel. Tracing pixel centres
+    # instead shrinks the body and widens every genuine hole by one pixel.
+    transitions = np.diff(solid_mask.view(np.int8), axis=1, prepend=np.int8(0), append=np.int8(0))
+    rows, starts = np.nonzero(transitions == 1)
+    _, stops = np.nonzero(transitions == -1)
+    return union_all(box(starts, rows, stops, rows + 1)).simplify(0)
 
 
 def _mask_is_full_rect(solid_mask: np.ndarray) -> bool:
@@ -445,14 +430,6 @@ def _mask_is_full_rect(solid_mask: np.ndarray) -> bool:
     """
 
     return bool(np.all(solid_mask))
-
-
-def _contour_to_points(contour: np.ndarray) -> list[_Point]:
-    """Convert an OpenCV contour into floating point coordinates.
-    将 OpenCV 轮廓转换为浮点坐标点集。
-    """
-
-    return [(float(point[0][0]), float(point[0][1])) for point in contour]
 
 
 def _normalize_polygonal_geometry(geometry: BaseGeometry | None) -> BaseGeometry | None:
@@ -906,6 +883,8 @@ def render_assembly_overview(
     source_rgba: np.ndarray,
     layout: PuzzleLayout,
     labels_enabled: bool = False,
+    *,
+    visibility_mask: np.ndarray | None = None,
 ) -> Image.Image:
     """Render an assembly overview image from source RGBA and puzzle layout.
     根据源 RGBA 图与拼图布局渲染拼装总览图。
@@ -924,31 +903,45 @@ def render_assembly_overview(
     overlay = render_puzzle_overlay(
         layout,
         labels_enabled=labels_enabled,
-        visibility_mask=source_rgba[..., 3] > 0,
+        visibility_mask=visibility_mask if visibility_mask is not None else source_rgba[..., 3] > 0,
     )
     return Image.alpha_composite(base, overlay)
 
 
-def export_piece_boundary_geometry(piece: PuzzlePiece) -> dict[str, object]:
-    """Export piece boundary geometry in crop-local coordinates.
-    将拼图块边界导出为相对裁切框左上角的局部坐标。
-
-    Args:
-        piece: Piece metadata to export. (待导出的拼图块元数据)
-
-    Returns:
-        dict[str, object]: JSON-serializable payload with ``bbox_px``,
-            ``polygon_px`` and ``holes_px``. (可 JSON 序列化的边界数据)
-    """
-
+def export_piece_boundary_geometry(
+    piece: PuzzlePiece,
+    *,
+    raster_size: tuple[int, int] | None = None,
+    inset_px: float = 0.0,
+) -> dict[str, object]:
+    """Export the piece on the crop-local worker grid, with clearance only at cuts."""
     x0, y0, x1, y1 = piece.bbox_px
+    sx, sy = (1.0, 1.0) if raster_size is None else (
+        raster_size[0] / (x1 - x0), raster_size[1] / (y1 - y0),
+    )
+    if inset_px <= 0:
+        def local(ring: tuple[_Point, ...]) -> list[list[float]]:
+            return [[(x - x0) * sx, (y - y0) * sy] for x, y in ring]
+
+        return {
+            "bbox_px": list(piece.bbox_px), "polygon_px": local(piece.polygon_px),
+            "holes_px": [local(ring) for ring in piece.holes_px],
+        }
+    transform = (sx, 0.0, 0.0, sy, -x0 * sx, -y0 * sy)
+    polygon = affine_transform(Polygon(piece.polygon_px, piece.holes_px), transform)
+    cuts = piece.cut_edges_px
+    if cuts is None:
+        # A standalone piece has no layout to distinguish shared and outer edges.
+        printable = polygon.buffer(-inset_px, join_style="mitre")
+    else:
+        cuts = affine_transform(cuts, transform)
+        printable = polygon.difference(cuts.buffer(inset_px, cap_style="flat", join_style="mitre"))
+    if isinstance(printable, Polygon) and not printable.is_empty:
+        polygon = printable
     return {
-        "bbox_px": [int(x0), int(y0), int(x1), int(y1)],
-        "polygon_px": _translate_points_to_local(piece.polygon_px, x0, y0),
-        "holes_px": [
-            _translate_points_to_local(hole, x0, y0)
-            for hole in piece.holes_px
-        ],
+        "bbox_px": list(piece.bbox_px),
+        "polygon_px": _geometry_ring_to_json(polygon.exterior.coords),
+        "holes_px": [_geometry_ring_to_json(ring.coords) for ring in polygon.interiors],
     }
 
 
@@ -1038,14 +1031,6 @@ def _geometry_ring_to_json(coords: object) -> list[list[float]]:
     return [[float(x), float(y)] for x, y in list(coords)[:-1]]
 
 
-def _translate_points_to_local(points: tuple[_Point, ...] | list[_Point], origin_x: int, origin_y: int) -> list[list[float]]:
-    """Translate a point ring to crop-local coordinates.
-    将点环平移到裁切框局部坐标系。
-    """
-
-    return [[float(x - origin_x), float(y - origin_y)] for x, y in points]
-
-
 def rasterize_piece_mask(piece: PuzzlePiece) -> tuple[_BBox, np.ndarray]:
     """Rasterize a piece polygon into a local alpha mask.
     将拼图块轮廓栅格化为局部 alpha 蒙版。
@@ -1060,16 +1045,12 @@ def rasterize_piece_mask(piece: PuzzlePiece) -> tuple[_BBox, np.ndarray]:
     """
 
     x0, y0, x1, y1 = piece.bbox_px
-    width = max(1, x1 - x0)
-    height = max(1, y1 - y0)
-    mask_img = Image.new("L", (width, height), 0)
-    mask_draw = ImageDraw.Draw(mask_img)
-    translated = [(x - x0, y - y0) for x, y in piece.polygon_px]
-    mask_draw.polygon(translated, fill=255)
-    for hole in piece.holes_px:
-        translated_hole = [(x - x0, y - y0) for x, y in hole]
-        mask_draw.polygon(translated_hole, fill=0)
-    return piece.bbox_px, np.array(mask_img, dtype=np.uint8)
+    inside = contains_xy(
+        Polygon(piece.polygon_px, piece.holes_px),
+        np.arange(x0, x1)[None, :] + 0.5,
+        np.arange(y0, y1)[:, None] + 0.5,
+    )
+    return piece.bbox_px, inside.astype(np.uint8) * 255
 
 
 def _resolve_grid(config: PuzzleLayoutConfig) -> tuple[int, int]:

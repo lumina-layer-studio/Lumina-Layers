@@ -26,6 +26,13 @@
   runtime remain independent of deployment packaging.
 - Native 3MF metadata comes from FatCat; its dependency setup is documented in
   the desktop source guide.
+- Creative Workshop module backends (Workshop API 1.1.0) run as local processes
+  prepared by the pinned `uv` from `requirements.txt`; the frozen desktop backend
+  carries it under `workshop-tools/`. Backend routes accept only loopback,
+  local-origin requests, so LAN/remote browsers get a clear 403. In a plain
+  local browser only browser-trusted official modules can open, so only they
+  can reach their backends. Targets: Windows x64, Linux x86-64, Apple Silicon
+  macOS; automated verification currently runs on Windows.
 
 ## Retired on 2026-10-06
 

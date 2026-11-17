@@ -597,6 +597,13 @@ def test_production_solver_pins_candidate_budget_for_every_layer_and_skips_fixed
         return runtimes[layer_count], 8
 
     monkeypatch.setattr(dynamic_solver, "load_dynamic_candidate_runtime", dynamic_loader)
+    # Preparing the palette before an image is chosen must populate the exact
+    # catalog subsequently consumed by the first real preview.
+    dynamic_solver.prepare_dynamic_material_catalog(
+        materials, 0, 0.08, "white",
+        dynamic_solver.DynamicMaterialSolveConfig(5, 6, 0.5),
+        catalog_cache_root=tmp_path,
+    )
     monkeypatch.setattr(
         "core.material_lut_provider.load_solver_cache",
         lambda *_args, **_kwargs: pytest.fail("legacy fixed cache must not be queried"),

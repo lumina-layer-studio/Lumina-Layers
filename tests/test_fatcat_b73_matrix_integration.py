@@ -10,6 +10,7 @@ import pytest
 import trimesh
 
 from core import custom_3mf_templates
+from core.errors import NativeMaterialSelectionError
 from core.wipe_tower_placement import Rect
 from fatcat_material_assertions import (
     assert_native_materials, native_materials_support_plate,
@@ -98,12 +99,17 @@ def test_device_plate_material_binding_or_incomplete_native_profile_error(tmp_pa
     if not native_materials_support_plate(slicer_id=device.slicer_id,
             machine_uid=f"bambu-lab:{machine}", nozzle_uid=f"nozzle:{device.nozzle_size}mm",
             material_types=types, plate_value=plate_value):
-        # Native zero temperatures explicitly forbid this active material/plate.
-        with pytest.raises(
-            ValueError,
-            match="no available native filament profile|matches multiple native profiles",
-        ):
+        # Unsupported plates and ambiguous presets require an explicit user choice.
+        with pytest.raises(NativeMaterialSelectionError) as error:
             compose(writer, palette)
+        selection = error.value.material_selection
+        assert selection["ready"] is False
+        assert selection["machine_uid"] == f"bambu-lab:{machine}"
+        assert selection["issues"]
+        assert all(issue["code"] in {
+            "native_material_plate_incompatible", "native_material_ambiguous",
+            "native_material_unavailable",
+        } for issue in selection["issues"])
         return
     gap = native_material_profile_gap(
         slicer_id=device.slicer_id, machine_uid=f"bambu-lab:{machine}",
@@ -118,8 +124,11 @@ def test_device_plate_material_binding_or_incomplete_native_profile_error(tmp_pa
             f"native material profile '{profile_name}' omits slice setting '{key}' "
             "and the exact target has no recorded native schema default"
         )
-        with pytest.raises(ValueError, match=re.escape(message)):
+        with pytest.raises(NativeMaterialSelectionError, match=re.escape(message)) as error:
             compose(writer, palette)
+        assert error.value.material_selection["issues"][0]["code"] == (
+            "native_material_settings_incompatible"
+        )
         return
     source = writer._get_base_config_template()
     final, request, result = compose(writer, palette)

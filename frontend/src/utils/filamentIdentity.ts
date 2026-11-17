@@ -125,6 +125,20 @@ function productLabel(name: string, aliases: string[]): string {
   return label;
 }
 
+function structuredProductLabel(label: string, display: Metadata) {
+  const materialType = textValue(display.material_type);
+  const series = textValue(display.series);
+  const color = textValue(display.color_name);
+  if (!materialType || !color) return;
+  const grade = materialSeries.test(series) ? series : [materialType, series].filter(Boolean).join(" ");
+  if (!key(grade).startsWith(key(materialType))) return;
+  const fullLabel = `${grade} ${color}`;
+  if (![color, `${series} ${color}`, fullLabel].some((candidate) => key(candidate) === key(label))) return;
+  const titleSeries = materialSeries.test(label) ? grade
+    : series.replace(new RegExp("^" + escapeRegExp(materialType) + "(?:\\s+|$)", "i"), "");
+  return { label: fullLabel, titleSeries };
+}
+
 function bambuColor(label: string, display: Metadata): PackageColor | undefined {
   const fromName = bambuByLabel.get(key(label));
   const metadataCode = [display.fila_color_code, display.color_code, display.sku].map(codeValue).find((v) => /^\d{5}$/.test(v));
@@ -135,8 +149,12 @@ function bambuColor(label: string, display: Metadata): PackageColor | undefined 
   if (!code) return fromName;
   const color = bambuByCode.get(code);
   if (!color || (fromName && fromName.code !== code)) return undefined;
-  // A grade in a legacy title must agree with a code supplied by the registry.
-  if (materialSeries.test(label) && !key(label).startsWith(key(color.series))) return undefined;
+  const polymer = color.series.split(" ", 1)[0];
+  const declaredType = textValue(display.material_type);
+  if (declaredType && key(declaredType) !== key(polymer)) return undefined;
+  // A polymer-only title can use an explicit package code; a conflicting grade cannot.
+  const namedGrade = label.match(descriptorGrade)?.[0].trim() ?? "";
+  if (materialSeries.test(label) && !key(label).startsWith(key(color.series)) && key(namedGrade) !== key(polymer)) return undefined;
   const beforeCode = label.split(/[（(]/, 1)[0].replace(code, "").trim();
   const namedColor = bambuByLabel.get(key(beforeCode));
   if (namedColor && namedColor.code !== code) return undefined;
@@ -167,7 +185,11 @@ const descriptorGrade = /^(?:(?:Panchroma\s+)?(?:PETG|PLA|ABS|ASA|TPU|PCTG)(?:\+
 
 function colorDescription(label: string) {
   const tokens = label.replace(descriptorGrade, "").trim();
-  return descriptions.get(key(tokens)) ?? descriptions.get(key(label.replace(/(?:PLA|PETG)\+?$/i, "")));
+  const direct = descriptions.get(key(tokens)) ?? descriptions.get(key(label.replace(/(?:PLA|PETG)\+?$/i, "")));
+  if (direct) return direct;
+  const qualified = tokens.match(/^(.+?)\s+([A-Z]\d*)$/u);
+  const base = qualified && descriptions.get(key(qualified[1]));
+  return base ? { zh: `${base.zh} ${qualified![2]}`, en: `${base.en} ${qualified![2]}` } : undefined;
 }
 
 export function filamentIdentity(
@@ -192,15 +214,20 @@ export function filamentIdentity(
     || localized(brandIdentity.names, marketLanguage) || rawBrand || textValue(brandIdentity.label);
 
   const label = productLabel(name, [...aliases, rawBrand]);
+  const structured = structuredProductLabel(label, metadata);
+  const lookupLabel = structured?.label ?? label;
   const explicitName = marketName(metadata.market_names, selectedMarket, language)
     || localized(metadata.localized_names, marketLanguage);
   let color: PackageColor | undefined;
-  if (known?.intl === "Bambu Lab") color = bambuColor(label, metadata);
-  if (known?.intl === "CAILAB") color = cailabColor(label, metadata);
-  const colorName = color && [color.series, color[marketLanguage], known?.intl === "CAILAB" && color.code].filter(Boolean).join(" ");
-  const description = (explicitName || color) ? undefined : colorDescription(label);
-  const descriptionText = description?.[language];
+  if (known?.intl === "Bambu Lab") color = bambuColor(lookupLabel, metadata);
+  if (known?.intl === "CAILAB") color = cailabColor(lookupLabel, metadata);
+  const colorName = color && [structured?.titleSeries ?? color.series, color[marketLanguage], known?.intl === "CAILAB" && color.code].filter(Boolean).join(" ");
+  const description = (explicitName || color) ? undefined : colorDescription(lookupLabel);
   const catalogCodes = [metadata.color_code, metadata.fila_color_code, metadata.sku].map(codeValue).filter(Boolean);
+  const descriptorName = structured && description && !catalogCodes.length
+    ? [structured.titleSeries, description[marketLanguage]].filter(Boolean).join(" ") : undefined;
+  const regionalColor = structured && (color?.[marketLanguage] || (descriptorName && description?.[marketLanguage]));
+  const descriptionText = descriptorName ? undefined : description?.[language];
   const allTerms = [
     name, textValue(metadata.material_name), textValue(metadata.color_name), textValue(metadata.material_type),
     textValue(metadata.series), textValue(metadata.contributor_name), textValue(metadata.author),
@@ -210,13 +237,13 @@ export function filamentIdentity(
     ...strings(brandIdentity.search_terms), color?.code, color?.series, color?.en, color?.zh, description?.en, description?.zh,
   ];
   return {
-    name: explicitName || colorName || name,
+    name: explicitName || colorName || descriptorName || name,
     originalName: name,
     brand: displayBrand,
     logo: known?.logo,
     productCode: catalogCodes[0] ?? color?.code,
     colorDescription: descriptionText && !fold(label).includes(fold(descriptionText)) ? descriptionText : undefined,
-    colorName: textValue(metadata.color_name) || color?.[marketLanguage] || undefined,
+    colorName: regionalColor || textValue(metadata.color_name) || color?.[marketLanguage] || undefined,
     series: textValue(metadata.series) || color?.series.replace(/^(?:PLA|PETG)\s*/i, "") || undefined,
     materialType: textValue(metadata.material_type) || undefined,
     description: localized(metadata.description, language) || textValue(metadata.description) || undefined,

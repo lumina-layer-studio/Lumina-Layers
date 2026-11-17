@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { filamentIdentity, filamentMatches } from "../utils/filamentIdentity";
+import { filamentIdentity, filamentMatches, materialDisplayName } from "../utils/filamentIdentity";
 
 describe("filament packaging and search", () => {
   it("resolves each packaging market independently of UI language", () => {
@@ -23,6 +23,63 @@ describe("filament packaging and search", () => {
     expect(filamentIdentity("拓竹", "Calibration", "zh", { fila_color_code: 10203 }).productCode).toBe("10203");
     expect(filamentIdentity("Unknown", "PLA Blue 10101", "en", { sku: [], color_code: {} }).productCode).toBeUndefined();
     expect(filamentIdentity("赛纳", "赛纳PETG深红色", "en").productCode).toBeUndefined();
+  });
+
+  it.each([
+    ["PLA", "Basic", "品红", "Magenta", "10202"],
+    ["PLA", "Basic", "南瓜橙", "Pumpkin Orange", "10301"],
+    ["PETG", "Basic", "白色", "White", "30106"],
+    ["PLA", "Matte", "暗夜蓝", "Dark Blue", "11602"],
+  ])("localizes structured %s %s colors consistently across packaging markets", (materialType, series, color, english, code) => {
+    const name = `${series} ${color}`;
+    const display = { material_type: materialType, series, color_name: color };
+    const intl = materialDisplayName(filamentIdentity("Bambu Lab", name, "zh", display, "INTL"));
+    const cn = materialDisplayName(filamentIdentity("Bambu Lab", name, "en", display, "CN"));
+    expect(intl).toMatchObject({ name: `${series} ${english}`, colorName: english, productCode: code, originalName: name });
+    expect(cn).toMatchObject({ name, colorName: color, productCode: code, originalName: name });
+    expect(filamentMatches(`${color} ${english} ${code}`, intl.searchText)).toBe(true);
+  });
+
+  it("keeps explicit regional names while localizing common descriptors without assigning a product", () => {
+    const display = { material_type: "PLA", series: "Basic", color_name: "深蓝色" };
+    expect(filamentIdentity("Bambu Lab", "Basic 深蓝色", "zh", display, "INTL"))
+      .toMatchObject({ name: "Basic Dark blue", colorName: "Dark blue", productCode: undefined });
+    expect(filamentIdentity("Bambu Lab", "Basic 深蓝色", "en", {
+      ...display, market_names: { INTL: "Special packaging" },
+    }, "INTL").name).toBe("Special packaging");
+    expect(filamentIdentity("Bambu Lab", "作者特别版", "en", display, "INTL").name).toBe("作者特别版");
+    expect(filamentIdentity("KARVAX", "Basic 烟笼紫霞", "en", {
+      material_type: "PLA", series: "Basic", color_name: "烟笼紫霞",
+    }, "INTL").name).toBe("Basic 烟笼紫霞");
+    expect(filamentIdentity("Bambu Lab", "Basic 黑色", "en", {
+      material_type: "PLA", series: "Basic", color_name: "黑色", color_code: "10203",
+    }, "INTL").name).toBe("Basic 黑色");
+  });
+
+  it("localizes plain and glow color descriptors without requiring a series or inventing a SKU", () => {
+    expect(filamentIdentity("Alchemakes", "白色", "zh", {
+      material_type: "PETG", color_name: "白色",
+    }, "INTL")).toMatchObject({ name: "White", colorName: "White", productCode: undefined });
+    expect(filamentIdentity("Bambu Lab", "Basic 夜光蓝", "zh", {
+      material_type: "PLA", series: "Basic", color_name: "夜光蓝",
+    }, "INTL")).toMatchObject({ name: "Basic Glow blue", colorName: "Glow blue", productCode: undefined });
+  });
+
+  it("uses an explicit package code when the polymer is known but the series is missing", () => {
+    const display = { material_type: "PLA", color_name: "红色", color_code: "16200" };
+    expect(filamentIdentity("Bambu Lab", "红色", "zh", display, "INTL"))
+      .toMatchObject({ name: "Red", productCode: "16200", series: "Lite" });
+    expect(filamentIdentity("Bambu Lab", "红色", "zh", { ...display, material_type: "PETG" }, "INTL").name).toBe("红色");
+  });
+
+  it.each([
+    ["Basic 蓝紫色", "Basic", "蓝紫色", "Basic Blue-violet"],
+    ["蓝色 L", "", "蓝色 L", "Blue L"],
+  ])("translates common descriptors while retaining a literal calibration tag in %s", (name, series, colorName, english) => {
+    const display = { material_type: "PLA", series, color_name: colorName };
+    expect(filamentIdentity("Bambu Lab", name, "zh", display, "INTL"))
+      .toMatchObject({ name: english, productCode: undefined });
+    expect(filamentIdentity("Bambu Lab", name, "en", display, "CN").name).toBe(name);
   });
 
   it("matches an exact manufacturer code on an original calibration with attribution", () => {

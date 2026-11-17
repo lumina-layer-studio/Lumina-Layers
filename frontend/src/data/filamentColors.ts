@@ -166,4 +166,7 @@ export const filamentColorDescriptions: readonly (readonly [string, string])[] =
   ["暖白", "Warm white"], ["暖黄", "Warm yellow"], ["钴蓝", "Cobalt blue"],
   ["蓝灰", "Blue-gray"], ["透明蓝", "Transparent blue"], ["荧光绿", "Fluorescent green"],
   ["瓷白", "Porcelain white"], ["正红", "True red"], ["海蓝", "Ocean blue"],
+  ["夜光粉", "Glow pink"], ["夜光橙", "Glow orange"], ["夜光黄", "Glow yellow"],
+  ["夜光绿", "Glow green"], ["夜光蓝", "Glow blue"], ["青铜", "Bronze"],
+  ["蓝紫", "Blue-violet"],
 ];

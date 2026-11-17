@@ -99,7 +99,7 @@ beforeEach(() => {
 });
 
 describe("MaterialCachePanel", () => {
-  it("keeps the 10-layer default and honors the shared 30-layer unlock", async () => {
+  it("allows dynamic ranges up to 30 without the fixed-layer unlock", async () => {
     selectCombo("dynamic");
     useConverterStore.setState({ materialLayersUnlocked: false });
     vi.mocked(fetchMaterialCacheOverview).mockResolvedValue({
@@ -107,17 +107,16 @@ describe("MaterialCachePanel", () => {
     });
     render(<MaterialCachePanel />);
     const maximum = screen.getByRole("slider", { name: zh("basic_material_max_layer_count_label") });
-    expect(maximum).toHaveAttribute("max", "10");
-    act(() => useConverterStore.setState({ materialLayersUnlocked: true }));
     expect(maximum).toHaveAttribute("max", "30");
     act(() => {
       useMaterialWorkbenchStore.getState().setMinLayerCount(24);
       useMaterialWorkbenchStore.getState().setMaxLayerCount(30);
     });
     expect(maximum).toHaveValue("30");
+    act(() => useConverterStore.setState({ materialLayersUnlocked: true }));
     act(() => useConverterStore.setState({ materialLayersUnlocked: false }));
-    await waitFor(() => expect(maximum).toHaveValue("10"));
-    expect(useMaterialWorkbenchStore.getState().minLayerCount).toBe(10);
+    await waitFor(() => expect(maximum).toHaveValue("30"));
+    expect(useMaterialWorkbenchStore.getState().minLayerCount).toBe(24);
   });
 
   it("prepares the dynamic layer cache and shows it as ready", async () => {

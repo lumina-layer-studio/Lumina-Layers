@@ -16,6 +16,7 @@ import {
   materialLayerCountLimit,
   useConverterStore,
 } from "./converter";
+import { normalizeDynamicMaterialLayerCount } from "./converter/sources";
 
 /** Converter fields that describe its current material-archive combination. */
 export interface ConverterMaterialSnapshot {
@@ -64,6 +65,9 @@ const clampLayers = (count: number): number =>
     materialLayerCountLimit(useConverterStore.getState().materialLayersUnlocked),
     Math.max(MATERIAL_DYNAMIC_LAYER_COUNT_MIN, Math.round(count)),
   );
+
+const clampDynamicLayers = (count: number): number =>
+  normalizeDynamicMaterialLayerCount(count, MATERIAL_DYNAMIC_LAYER_COUNT_MIN);
 
 const INITIAL_STATE: MaterialWorkbenchState = {
   materialDirectoryNames: [],
@@ -151,25 +155,25 @@ export const useMaterialWorkbenchStore = create<MaterialWorkbenchStore>((set, ge
   setLayerMode: (layerMode) => set({ layerMode, initialized: true }),
   setLayerCount: (count) => set({ layerCount: clampLayers(count), initialized: true }),
   setMinLayerCount: (count) => {
-    const minLayerCount = clampLayers(count);
+    const minLayerCount = clampDynamicLayers(count);
     set((state) => ({
       minLayerCount,
-      maxLayerCount: Math.max(clampLayers(state.maxLayerCount), minLayerCount),
+      maxLayerCount: Math.max(clampDynamicLayers(state.maxLayerCount), minLayerCount),
       initialized: true,
     }));
   },
   setMaxLayerCount: (count) => {
-    const maxLayerCount = clampLayers(count);
+    const maxLayerCount = clampDynamicLayers(count);
     set((state) => ({
       maxLayerCount,
-      minLayerCount: Math.min(clampLayers(state.minLayerCount), maxLayerCount),
+      minLayerCount: Math.min(clampDynamicLayers(state.minLayerCount), maxLayerCount),
       initialized: true,
     }));
   },
   clampLayerCounts: () => set((state) => {
     const layerCount = clampLayers(state.layerCount);
-    const minLayerCount = clampLayers(state.minLayerCount);
-    const maxLayerCount = clampLayers(state.maxLayerCount);
+    const minLayerCount = clampDynamicLayers(state.minLayerCount);
+    const maxLayerCount = clampDynamicLayers(state.maxLayerCount);
     return layerCount === state.layerCount && minLayerCount === state.minLayerCount && maxLayerCount === state.maxLayerCount
       ? state
       : { layerCount, minLayerCount, maxLayerCount };
@@ -182,8 +186,8 @@ export const useMaterialWorkbenchStore = create<MaterialWorkbenchStore>((set, ge
       materialDirectoryNames: [...selection.materialDirectoryNames],
       layerMode: selection.layerMode,
       layerCount: clampLayers(selection.layerCount),
-      minLayerCount: clampLayers(Math.min(selection.minLayerCount, selection.maxLayerCount)),
-      maxLayerCount: clampLayers(selection.maxLayerCount),
+      minLayerCount: clampDynamicLayers(Math.min(selection.minLayerCount, selection.maxLayerCount)),
+      maxLayerCount: clampDynamicLayers(selection.maxLayerCount),
       layerHeightMm: selection.layerHeightMm,
       substrate: selection.substrate,
       backingDirName: selection.backingDirName,

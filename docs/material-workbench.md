@@ -45,7 +45,8 @@
 公共字段为 `material_directory_names`（JSON 字符串数组）、`layer_mode`、
 `layer_height_mm`、`substrate`。固定模式需要 `layer_count`；动态模式需要
 `min_layer_count`、`max_layer_count` 和属于所选耗材的 `backing_material_directory_name`。
-层数范围为 5–30；界面默认上限为 10，沿用高级设置的 30 层解锁开关。
+动态叠层可直接选择 5–30 层，默认范围为 5–10，无需解锁。
+固定层数的界面上限默认为 10，沿用高级设置的 30 层解锁开关。
 固定层数的穷举缓存仍最多支持 10 层，更深的叠层使用智能缓存。
 跨度超过六个层数时，转换、预构建、状态查询与删除共用同一每层预算分摊规则；
 合并目录仍以基础预算标识，逐层缓存及概览中的 `candidate_budget` 使用实际分摊预算。

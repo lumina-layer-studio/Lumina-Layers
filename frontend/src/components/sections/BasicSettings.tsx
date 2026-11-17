@@ -4,6 +4,7 @@ import { useShallow } from "zustand/react/shallow";
 import {
   useConverterStore,
   ACCEPT_IMAGE_FORMATS,
+  MATERIAL_DYNAMIC_LAYER_COUNT_MAX,
   MATERIAL_DYNAMIC_LAYER_COUNT_MIN,
   materialLayerCountLimit,
   inferDefaultMaterialBackingDirName,
@@ -905,8 +906,8 @@ export default function BasicSettings() {
   }, [materialPickerOpen, notifyTutorialMaterialPicker]);
 
   const materialLayersUnlocked = useConverterStore((s) => s.materialLayersUnlocked);
-  // Above 10 layers only after the advanced "unlock 30 layers" switch.
-  // 高级里打开“解锁 30 层”后滑块上限才到 30。
+  // Fixed layers need the advanced unlock; dynamic sliders always allow 30.
+  // 固定层数需要高级解锁，动态层数滑块始终允许最高 30 层。
   const materialLayerMax = materialLayerCountLimit(materialLayersUnlocked);
 
   const materialSummary = useMemo(() => {
@@ -1309,7 +1310,7 @@ export default function BasicSettings() {
                       wikiPath={WIKI_DOCS.materialArchiveSource}
                       value={materialMinLayerCount}
                       min={MATERIAL_DYNAMIC_LAYER_COUNT_MIN}
-                      max={materialLayerMax}
+                      max={MATERIAL_DYNAMIC_LAYER_COUNT_MAX}
                       step={1}
                       onChange={(v) => setMaterialMinLayerCount(Math.round(v))}
                     />
@@ -1319,7 +1320,7 @@ export default function BasicSettings() {
                       wikiPath={WIKI_DOCS.materialArchiveSource}
                       value={materialMaxLayerCount}
                       min={MATERIAL_DYNAMIC_LAYER_COUNT_MIN}
-                      max={materialLayerMax}
+                      max={MATERIAL_DYNAMIC_LAYER_COUNT_MAX}
                       step={1}
                       onChange={(v) => setMaterialMaxLayerCount(Math.round(v))}
                     />

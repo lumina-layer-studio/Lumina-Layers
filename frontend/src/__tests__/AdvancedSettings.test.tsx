@@ -159,7 +159,7 @@ describe("AdvancedSettings — LUT-Constrained K-Means toggle", () => {
 });
 
 describe("AdvancedSettings — 30-layer unlock warning", () => {
-  const unlockSwitch = () => screen.getByRole("switch", { name: "解锁 30 层叠色" });
+  const unlockSwitch = () => screen.getByRole("switch", { name: "解锁 30 层固定叠色" });
 
   it("asks before unlocking and unlocks only on confirm", () => {
     useConverterStore.setState({ materialLayersUnlocked: false });

@@ -68,7 +68,7 @@ describe("materialWorkbenchStore", () => {
     expect(useMaterialWorkbenchStore.getState().materialDirectoryNames).toEqual(snapshot().selectedMaterialDirNames);
   });
 
-  it("keeps the dynamic range ordered and within 5..10", () => {
+  it("keeps the dynamic range ordered and caps fixed layers at 10", () => {
     const store = useMaterialWorkbenchStore.getState();
     store.setMaxLayerCount(6);
     store.setMinLayerCount(8);
@@ -81,6 +81,18 @@ describe("materialWorkbenchStore", () => {
 
     state.setLayerCount(42);
     expect(useMaterialWorkbenchStore.getState().layerCount).toBe(10);
+  });
+
+  it("imports and edits dynamic ranges up to 30 without unlocking fixed layers", () => {
+    const store = useMaterialWorkbenchStore.getState();
+    store.applySelection(comboFromConverter(snapshot({
+      materialDynamicLayerCountEnabled: true, materialMinLayerCount: 12, materialMaxLayerCount: 30,
+    })));
+    expect(useMaterialWorkbenchStore.getState()).toMatchObject({ minLayerCount: 12, maxLayerCount: 30 });
+    store.setMinLayerCount(42);
+    expect(useMaterialWorkbenchStore.getState()).toMatchObject({ minLayerCount: 30, maxLayerCount: 30 });
+    store.setMaxLayerCount(20);
+    expect(useMaterialWorkbenchStore.getState()).toMatchObject({ minLayerCount: 20, maxLayerCount: 20 });
   });
 
   it("combo key ignores fields the current layer mode does not use", () => {

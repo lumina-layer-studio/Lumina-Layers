@@ -3255,20 +3255,15 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
       _cancelPreviewWork();
       const materialSuggestionReset = _cancelMaterialSuggestionWork();
       set((state) => {
-        const limit = materialLayerCountLimit(state.materialLayersUnlocked);
-        const materialMinLayerCount = Math.min(
-          normalizeDynamicMaterialLayerCount(count, state.materialMinLayerCount),
-          limit,
+        const materialMinLayerCount = normalizeDynamicMaterialLayerCount(
+          count, state.materialMinLayerCount,
         );
-        const materialMaxLayerCount = Math.min(
-          Math.max(
-            normalizeDynamicMaterialLayerCount(
-              state.materialMaxLayerCount,
-              MATERIAL_DYNAMIC_LAYER_COUNT_DEFAULT_MAX,
-            ),
-            materialMinLayerCount,
+        const materialMaxLayerCount = Math.max(
+          normalizeDynamicMaterialLayerCount(
+            state.materialMaxLayerCount,
+            MATERIAL_DYNAMIC_LAYER_COUNT_DEFAULT_MAX,
           ),
-          limit,
+          materialMinLayerCount,
         );
         return {
           materialMinLayerCount,
@@ -3292,9 +3287,8 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
       _cancelPreviewWork();
       const materialSuggestionReset = _cancelMaterialSuggestionWork();
       set((state) => {
-        const materialMaxLayerCount = Math.min(
-          normalizeDynamicMaterialLayerCount(count, state.materialMaxLayerCount),
-          materialLayerCountLimit(state.materialLayersUnlocked),
+        const materialMaxLayerCount = normalizeDynamicMaterialLayerCount(
+          count, state.materialMaxLayerCount,
         );
         const materialMinLayerCount = Math.min(
           normalizeDynamicMaterialLayerCount(
@@ -3658,14 +3652,10 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
         set({ materialLayersUnlocked: true });
         return;
       }
-      // Locking back to 10 layers pulls any deeper setting down to the cap.
-      // 关闭解锁时，把超过 10 层的设置收回到上限。
+      // This switch only limits fixed layers; dynamic ranges always allow 30.
+      // 此开关只限制固定层数，动态范围始终允许最高 30 层。
       const cap = MATERIAL_LAYER_COUNT_LOCKED_MAX;
-      const exceeds =
-        state.materialLayerCount > cap ||
-        state.materialMinLayerCount > cap ||
-        state.materialMaxLayerCount > cap;
-      if (!exceeds) {
+      if (state.materialLayerCount <= cap) {
         set({ materialLayersUnlocked: false });
         return;
       }
@@ -3673,8 +3663,6 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
       set({
         materialLayersUnlocked: false,
         materialLayerCount: Math.min(state.materialLayerCount, cap),
-        materialMinLayerCount: Math.min(state.materialMinLayerCount, cap),
-        materialMaxLayerCount: Math.min(state.materialMaxLayerCount, cap),
         ..._cancelMaterialSuggestionWork(),
         ...buildPreviewSessionResetState(state, true),
       });

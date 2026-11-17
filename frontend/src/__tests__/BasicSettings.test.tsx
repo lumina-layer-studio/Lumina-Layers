@@ -1035,6 +1035,7 @@ describe("BasicSettings", () => {
       "max",
       "30",
     );
+    act(() => useConverterStore.getState().setMaterialLayersUnlocked(false));
     expect(
       screen.queryByRole("slider", { name: "最小有效叠层数" }),
     ).not.toBeInTheDocument();
@@ -1056,6 +1057,12 @@ describe("BasicSettings", () => {
     expect(
       screen.getByRole("slider", { name: "最大有效叠层数" }),
     ).toHaveAttribute("max", "30");
+    fireEvent.change(screen.getByRole("slider", { name: "最大有效叠层数" }), {
+      target: { value: "30" },
+    });
+    expect(useConverterStore.getState()).toMatchObject({
+      materialLayersUnlocked: false, materialMaxLayerCount: 30,
+    });
     expect(screen.queryByText(/单一层数的缓存入口已隐藏/)).not.toBeInTheDocument();
     // The cache status line replaces the old "cache control is hidden" banner.
     expect(screen.getByRole("button", { name: "管理缓存" })).toBeInTheDocument();

@@ -186,7 +186,7 @@ export interface ConverterDocumentState {
   materialMaxLayerCount: number;
   quantize_colors: number;
   quantize_colors_unlocked: boolean;
-  /** Advanced switch: allow material layer counts above 10 (up to 30). */
+  /** Advanced switch: allow fixed material layer counts above 10 (up to 30). */
   materialLayersUnlocked: boolean;
   high_precision_3d_preview: boolean;
   enable_cleanup: boolean;

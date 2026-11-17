@@ -169,10 +169,9 @@ export function applyConversionParameters(getState: () => ConverterState & Conve
     if (getState().selectedNativeBrandKey !== p.selectedNativeBrandKey) state.setNativeBrandKey(p.selectedNativeBrandKey);
     if (different(getState().selectedNativeDbNames, p.selectedNativeDbNames)) state.setNativeDbNames(p.selectedNativeDbNames);
   }
-  // Restore the 30-layer switch first so deeper counts are not clamped to 10.
-  // 先恢复“解锁 30 层”，否则后面的层数会被截到 10。
-  const unlockLayers = p.materialLayersUnlocked ??
-    Math.max(p.materialLayerCount, p.materialMaxLayerCount) > 10;
+  // Restore the fixed-layer switch first; dynamic ranges need no unlock.
+  // 先恢复固定层数解锁；动态层数范围无需解锁。
+  const unlockLayers = p.materialLayersUnlocked ?? p.materialLayerCount > 10;
   if (getState().materialLayersUnlocked !== unlockLayers && (unlockLayers || p.materialLayersUnlocked !== undefined)) {
     state.setMaterialLayersUnlocked(unlockLayers);
   }

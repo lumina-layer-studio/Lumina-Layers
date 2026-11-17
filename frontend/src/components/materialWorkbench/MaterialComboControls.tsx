@@ -4,6 +4,7 @@ import { useShallow } from "zustand/react/shallow";
 import { useI18n } from "../../i18n/context";
 import { tRuntime } from "../../i18n/runtime";
 import {
+  MATERIAL_DYNAMIC_LAYER_COUNT_MAX,
   MATERIAL_DYNAMIC_LAYER_COUNT_MIN,
   materialLayerCountLimit,
   useConverterStore,
@@ -149,7 +150,7 @@ export default function MaterialComboControls({
               label={t("basic_material_min_layer_count_label")}
               value={workbench.minLayerCount}
               min={MATERIAL_DYNAMIC_LAYER_COUNT_MIN}
-              max={materialLayerMax}
+              max={MATERIAL_DYNAMIC_LAYER_COUNT_MAX}
               step={1}
               disabled={disabled}
               onChange={workbench.setMinLayerCount}
@@ -158,7 +159,7 @@ export default function MaterialComboControls({
               label={t("basic_material_max_layer_count_label")}
               value={workbench.maxLayerCount}
               min={MATERIAL_DYNAMIC_LAYER_COUNT_MIN}
-              max={materialLayerMax}
+              max={MATERIAL_DYNAMIC_LAYER_COUNT_MAX}
               step={1}
               disabled={disabled}
               onChange={workbench.setMaxLayerCount}

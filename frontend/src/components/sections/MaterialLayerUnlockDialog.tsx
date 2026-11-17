@@ -19,8 +19,8 @@ const WARNING_KEYS = [
 ] as const;
 
 /**
- * Confirmation shown before unlocking more than 10 colour layers.
- * 解锁 10 层以上叠色前的确认提示。
+ * Confirmation shown before unlocking more than 10 fixed colour layers.
+ * 解锁 10 层以上固定叠色前的确认提示。
  */
 export default function MaterialLayerUnlockDialog({
   open,

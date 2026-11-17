@@ -152,9 +152,10 @@ function bambuColor(label: string, display: Metadata): PackageColor | undefined 
   const polymer = color.series.split(" ", 1)[0];
   const declaredType = textValue(display.material_type);
   if (declaredType && key(declaredType) !== key(polymer)) return undefined;
-  // A polymer-only title can use an explicit package code; a conflicting grade cannot.
+  // A number in an old file name is not evidence of a product series.
+  // Translate only when the recorded grade also matches the manufacturer's entry.
   const namedGrade = label.match(descriptorGrade)?.[0].trim() ?? "";
-  if (materialSeries.test(label) && !key(label).startsWith(key(color.series)) && key(namedGrade) !== key(polymer)) return undefined;
+  if (key(namedGrade) !== key(color.series)) return undefined;
   const beforeCode = label.split(/[（(]/, 1)[0].replace(code, "").trim();
   const namedColor = bambuByLabel.get(key(beforeCode));
   if (namedColor && namedColor.code !== code) return undefined;
@@ -167,7 +168,7 @@ function cailabColor(label: string, display: Metadata): PackageColor | undefined
   const color = code ? cailabByCode.get(code) : fromName;
   if (!color || (fromName && fromName.code !== color.code)) return undefined;
   // AC numbers describe colors. A code on an unrelated grade is not a PLA identity.
-  if (materialSeries.test(label) && !fromName && !cailabByLabel.has(key(label + color.code))) return undefined;
+  if (!fromName && !cailabByLabel.has(key(label + color.code))) return undefined;
   const recordedGrade = textValue(display.material_type);
   if (recordedGrade && !["pla", "pla+bio"].includes(key(recordedGrade))) return undefined;
   return key(recordedGrade) === "pla+bio" ? { ...color, series: recordedGrade } : color;

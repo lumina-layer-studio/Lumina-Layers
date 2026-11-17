@@ -65,11 +65,25 @@ describe("filament packaging and search", () => {
     }, "INTL")).toMatchObject({ name: "Basic Glow blue", colorName: "Glow blue", productCode: undefined });
   });
 
-  it("uses an explicit package code when the polymer is known but the series is missing", () => {
+  it("does not invent a product series from a code on an incomplete legacy record", () => {
     const display = { material_type: "PLA", color_name: "红色", color_code: "16200" };
     expect(filamentIdentity("Bambu Lab", "红色", "zh", display, "INTL"))
-      .toMatchObject({ name: "Red", productCode: "16200", series: "Lite" });
+      .toMatchObject({ name: "红色", productCode: "16200", series: undefined });
     expect(filamentIdentity("Bambu Lab", "红色", "zh", { ...display, material_type: "PETG" }, "INTL").name).toBe("红色");
+    expect(filamentIdentity("Bambu Lab", "PLA red 16200", "en").name).toBe("PLA red 16200");
+    expect(filamentIdentity("Bambu Lab", "Calibration", "en", { fila_color_code: 10203 }))
+      .toMatchObject({ name: "Calibration", series: undefined });
+    expect(filamentIdentity("彩多屋", "Measurement", "en", { color_code: "AC3517" }))
+      .toMatchObject({ name: "Measurement", series: undefined });
+  });
+
+  it("uses a confirmed series without letting a conflicting old number turn Basic into Lite", () => {
+    expect(filamentIdentity("Bambu Lab", "Basic 红色", "zh", {
+      material_type: "PLA", series: "Basic", color_name: "红色", color_code: "16200",
+    }, "INTL")).toMatchObject({ name: "Basic 红色", series: "Basic" });
+    expect(filamentIdentity("Bambu Lab", "Basic 红色", "zh", {
+      material_type: "PLA", series: "Basic", color_name: "红色",
+    }, "INTL")).toMatchObject({ name: "Basic Red", series: "Basic", productCode: "10200" });
   });
 
   it.each([
@@ -100,7 +114,7 @@ describe("filament packaging and search", () => {
     expect(filamentIdentity("拓竹", "PLA Basic 黑色", "en", { color_code: "10203" }).name).toBe("PLA Basic 黑色");
     expect(filamentIdentity("拓竹", "PLA Basic 黑色 (10203)", "en").name).toBe("PLA Basic 黑色 (10203)");
     expect(filamentIdentity("拓竹", "PLA Basic 黑色 (10101) + 粉色 (10203)", "en").name).toContain("黑色");
-    expect(filamentIdentity("拓竹", "Calibration", "en", { fila_color_code: 10203 }).name).toBe("PLA Basic Pink");
+    expect(filamentIdentity("拓竹", "Calibration", "en", { fila_color_code: 10203 }).name).toBe("Calibration");
     expect(filamentIdentity("彩多屋", "PETG sample", "en", { sku: "AC3517" }).name).toBe("PETG sample");
     expect(filamentIdentity("彩多屋", "Measurement", "en", { color_code: "AC3517", material_type: "PETG" }).name).toBe("Measurement");
     expect(filamentIdentity("拓竹", "Bambu PLA Basic 亮黑色", "en").name).toBe("Bambu PLA Basic 亮黑色");

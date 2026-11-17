@@ -9,7 +9,9 @@ import subprocess
 import sys
 import time
 import zipfile
+from contextlib import contextmanager
 from pathlib import Path
+from types import SimpleNamespace
 
 import psutil
 import pytest
@@ -37,6 +39,46 @@ def test_accepts_geometry_in_a_production_extension_member() -> None:
     from scripts.verify_source_install import verify_3mf
 
     verify_3mf(archive())
+
+
+def test_clean_install_uses_frozen_lut_without_touching_user_library(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from scripts import log_quality_check, verify_source_install
+
+    personal = tmp_path / "personal-luts"
+    personal.mkdir()
+    marker = personal / "keep.txt"
+    marker.write_text("personal data")
+    monkeypatch.setenv("LUMINA_CUSTOM_LUT_DIR", str(personal))
+    monkeypatch.setattr(verify_source_install.subprocess, "run", lambda *args, **kwargs: None)
+    monkeypatch.setattr(verify_source_install.metadata, "distribution", lambda name: SimpleNamespace(
+        version="test", read_text=lambda filename: None,
+    ))
+    selected_library: list[Path] = []
+
+    @contextmanager
+    def inspect_backend(script: Path, *, env: dict[str, str], stdout):
+        library = Path(env["LUMINA_CUSTOM_LUT_DIR"])
+        assert library != personal
+        frozen = verify_source_install.ROOT / "tests/fixtures/frozen_assets/luts/4c" / f"{log_quality_check.DEFAULT_LUT_STEM}.npy"
+        assert (library / frozen.name).read_bytes() == frozen.read_bytes()
+        selected_library.append(library)
+        yield None
+
+    class BackendInputVerified(Exception):
+        pass
+
+    def stop_before_network(*args, **kwargs):
+        raise BackendInputVerified
+
+    monkeypatch.setattr(verify_source_install, "_server_process", inspect_backend)
+    monkeypatch.setattr(log_quality_check, "_wait_for_server", stop_before_network)
+    with pytest.raises(BackendInputVerified):
+        verify_source_install.verify_install(tmp_path / "report")
+    assert os.environ["LUMINA_CUSTOM_LUT_DIR"] == str(personal)
+    assert marker.read_text() == "personal data"
+    assert selected_library and not selected_library[0].exists()
 
 
 @pytest.mark.parametrize(

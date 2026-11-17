@@ -136,39 +136,40 @@ def verify_install(report_dir: Path) -> dict[str, object]:
     import httpx
     from scripts.log_quality_check import (
         DEFAULT_LUT_NAME, _generate_payload, _post_preview, _select_lut_name,
-        _wait_for_server,
+        _wait_for_server, isolated_workflow_resources,
     )
 
     report_dir.mkdir(parents=True, exist_ok=True)
     with socket.socket() as listener:
         listener.bind(("127.0.0.1", 0))
         port = listener.getsockname()[1]
-    env = dict(os.environ)
-    env.update(
-        LUMINA_API_HOST="127.0.0.1", LUMINA_API_PORT=str(port),
-        LUMINA_LOG_PATH=str((report_dir / "backend.jsonl").resolve()),
-        LUMINA_FEEDBACK_SERVER_URL="off",
-        LUMINA_WORKSHOP_DATA_DIR=str((report_dir / "workshop").resolve()),
-    )
-    with (report_dir / "backend-console.log").open("w", encoding="utf-8") as console:
-        with _server_process(ROOT / "api_server.py", env=env, stdout=console) as proc:
-            base_url = f"http://127.0.0.1:{port}"
-            _wait_for_server(base_url, 90.0, proc)
-            with httpx.Client(base_url=base_url, timeout=120.0, trust_env=False) as client:
-                response = client.get("/api/lut/list")
-                response.raise_for_status()
-                lut_name = _select_lut_name(response.json(), fallback=DEFAULT_LUT_NAME)
-                session_id = _post_preview(client, lut_name)
-                response = client.post("/api/convert/generate", json=_generate_payload(session_id, lut_name))
-                response.raise_for_status()
-                download_url = response.json()["download_url"]
-                response = client.post("/api/session/close", json={"session_id": session_id})
-                response.raise_for_status()
-                response = client.get(download_url)
-                response.raise_for_status()
-                verify_3mf(response.content)
-                size = len(response.content)
-                (report_dir / "source-install.3mf").write_bytes(response.content)
+    with isolated_workflow_resources():
+        env = dict(os.environ)
+        env.update(
+            LUMINA_API_HOST="127.0.0.1", LUMINA_API_PORT=str(port),
+            LUMINA_LOG_PATH=str((report_dir / "backend.jsonl").resolve()),
+            LUMINA_FEEDBACK_SERVER_URL="off",
+            LUMINA_WORKSHOP_DATA_DIR=str((report_dir / "workshop").resolve()),
+        )
+        with (report_dir / "backend-console.log").open("w", encoding="utf-8") as console:
+            with _server_process(ROOT / "api_server.py", env=env, stdout=console) as proc:
+                base_url = f"http://127.0.0.1:{port}"
+                _wait_for_server(base_url, 90.0, proc)
+                with httpx.Client(base_url=base_url, timeout=120.0, trust_env=False) as client:
+                    response = client.get("/api/lut/list")
+                    response.raise_for_status()
+                    lut_name = _select_lut_name(response.json(), fallback=DEFAULT_LUT_NAME)
+                    session_id = _post_preview(client, lut_name)
+                    response = client.post("/api/convert/generate", json=_generate_payload(session_id, lut_name))
+                    response.raise_for_status()
+                    download_url = response.json()["download_url"]
+                    response = client.post("/api/session/close", json={"session_id": session_id})
+                    response.raise_for_status()
+                    response = client.get(download_url)
+                    response.raise_for_status()
+                    verify_3mf(response.content)
+                    size = len(response.content)
+                    (report_dir / "source-install.3mf").write_bytes(response.content)
     return {"python": sys.version, "dependencies": versions, "download_bytes": size}
 
 

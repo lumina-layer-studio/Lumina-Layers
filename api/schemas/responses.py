@@ -819,6 +819,177 @@ class MaterialSolverCacheDetailsResponse(BaseModel):
     rgb_points: list[LutPlotPoint] = Field(default_factory=list)
 
 
+class MaterialGamutCoverageValue(BaseModel):
+    """Reached and total sRGB reference cells.
+    已触达与总 sRGB 参考单元数。
+    """
+
+    reached_cell_count: int
+    reference_cell_count: int
+    percent: float
+
+
+class MaterialGamutGroupAccuracy(BaseModel):
+    """Mean estimated CIEDE2000 error over the eight nearest Lab candidates.
+    单个颜色组中基于八个 Lab 近邻候选估计的平均 CIEDE2000 色差。
+    """
+
+    group: Literal["all", "neutral", "dark", "skin", "vivid"]
+    target_count: int
+    mean_delta_e: float | None = None
+
+
+class MaterialGamutAccuracy(BaseModel):
+    """Per-group match accuracy and the printable lightness range.
+    逐组匹配精度与可打印亮度范围。
+    """
+
+    groups: list[MaterialGamutGroupAccuracy] = Field(default_factory=list)
+    darkest_lightness: float | None = None
+    lightest_lightness: float | None = None
+
+
+class MaterialGamutSourceResponse(BaseModel):
+    """Where the evaluated colors came from.
+    被评估颜色的来源。
+    """
+
+    kind: Literal["exhaustive_cache", "saved_smart_cache", "quick_sample", "dynamic_catalog"]
+    candidate_budget: int | None = None
+    is_complete: bool
+    was_cached: bool
+
+
+class MaterialGamutLayerCapResponse(BaseModel):
+    """Coverage when recipes use at most ``layer_count`` color layers.
+    配方最多使用 ``layer_count`` 层颜色时的覆盖率。
+    """
+
+    layer_count: int
+    coverage: MaterialGamutCoverageValue
+
+
+class MaterialGamutCoverageResponse(BaseModel):
+    """sRGB coverage, provenance, and charts for one material combination.
+    单个耗材组合的 sRGB 覆盖率、来源与图表。
+    """
+
+    status: str
+    message: str
+    material_directory_names: list[str] = Field(default_factory=list)
+    layer_mode: Literal["fixed", "dynamic"]
+    layer_count: int
+    min_layer_count: int | None = None
+    layer_height_mm: float
+    substrate: str
+    backing_material_directory_name: str | None = None
+    cell_size_delta_e: float
+    coverage: MaterialGamutCoverageValue
+    accuracy: MaterialGamutAccuracy
+    color_count: int
+    source: MaterialGamutSourceResponse
+    layer_cap_coverage: list[MaterialGamutLayerCapResponse] = Field(default_factory=list)
+    coverage_stats: LutCoverageStatsResponse
+    lab_points: list[LutPlotPoint] = Field(default_factory=list)
+    lab_points_3d: list[LutPlotPoint3D] = Field(default_factory=list)
+    lab_hull: list[LutHullPoint] = Field(default_factory=list)
+    rgb_points: list[LutPlotPoint] = Field(default_factory=list)
+
+
+class MaterialGamutContributionItem(BaseModel):
+    """Coverage and accuracy lost when one material is removed.
+    移除单个耗材时损失的覆盖率与匹配精度。
+    """
+
+    directory_name: str
+    material_name: str
+    coverage_without: MaterialGamutCoverageValue
+    drop_percent: float
+    accuracy_without: MaterialGamutAccuracy
+    largest_loss_group: Literal["neutral", "dark", "skin", "vivid"] | None = None
+    largest_loss_delta_e: float | None = None
+
+
+class MaterialGamutContributionsResponse(BaseModel):
+    """Per-material coverage contributions measured with one method.
+    以同一方法测得的逐耗材覆盖率贡献。
+    """
+
+    status: str
+    message: str
+    layer_count: int
+    cell_size_delta_e: float
+    baseline: MaterialGamutCoverageValue
+    baseline_accuracy: MaterialGamutAccuracy
+    is_complete: bool
+    items: list[MaterialGamutContributionItem] = Field(default_factory=list)
+
+
+class MaterialSavedFileResponse(BaseModel):
+    """Size and modification time of one saved cache file.
+    单个已保存缓存文件的大小与修改时间。
+    """
+
+    size_bytes: int
+    modified_at: str | None = None
+
+
+class MaterialFixedCacheOverviewResponse(BaseModel):
+    """Saved caches a fixed-layer conversion can use.
+    固定层数转换可用的已保存缓存。
+    """
+
+    exhaustive_grid_resolutions: list[int] = Field(default_factory=list)
+    saved_runtime_budgets: list[int] = Field(default_factory=list)
+
+
+class MaterialDynamicCacheOverviewResponse(BaseModel):
+    """Saved data a dynamic-layer conversion can use.
+    动态层数转换可用的已保存数据。
+    """
+
+    candidate_budget: int
+    is_ready: bool
+    catalog: MaterialSavedFileResponse | None = None
+    saved_layer_counts: list[int] = Field(default_factory=list)
+    missing_layer_counts: list[int] = Field(default_factory=list)
+    prepared_layer_counts: list[int] = Field(default_factory=list)
+
+
+class MaterialCacheOverviewResponse(BaseModel):
+    """Cache readiness for one combination in fixed or dynamic layer mode.
+    固定或动态层数模式下单个组合的缓存就绪状态。
+    """
+
+    status: str
+    message: str
+    layer_mode: Literal["fixed", "dynamic"]
+    fixed: MaterialFixedCacheOverviewResponse | None = None
+    dynamic: MaterialDynamicCacheOverviewResponse | None = None
+
+
+class MaterialDynamicCachePrepareResponse(BaseModel):
+    """Result of preparing the dynamic-layer cache ahead of conversion.
+    提前预构建动态层数缓存的结果。
+    """
+
+    status: str
+    message: str
+    built: bool
+    elapsed_seconds: float
+    dynamic: MaterialDynamicCacheOverviewResponse
+
+
+class MaterialDynamicCacheDeleteResponse(BaseModel):
+    """Result of deleting a saved dynamic-layer catalog.
+    删除已保存动态层数目录的结果。
+    """
+
+    status: str
+    message: str
+    deleted: bool
+
+
 class RecipePredictResponse(BaseModel):
     """Recipe color prediction response."""
 

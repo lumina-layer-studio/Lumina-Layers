@@ -2747,6 +2747,14 @@ export const translations: Record<string, Record<"zh" | "en", string>> = {
     zh: "配方查询",
     en: "Recipe Query",
   },
+  "tab.materialGamut": {
+    zh: "色域覆盖",
+    en: "Gamut Coverage",
+  },
+  "tab.materialCache": {
+    zh: "求解缓存",
+    en: "Solver Cache",
+  },
   "tab.lutManager": {
     zh: "LUT 合并",
     en: "LUT Merge",
@@ -5184,10 +5192,6 @@ export const translations: Record<string, Record<"zh" | "en", string>> = {
     zh: "每种颜色配方允许使用的最多有效颜色层数，也是最终模型的统一打印层数。",
     en: "Maximum number of effective color layers allowed per recipe and the uniform printed layer count of the final model.",
   },
-  basic_material_dynamic_range_hint: {
-    zh: "动态模式会在设定范围内自动加载并评估候选；单一层数的穷举缓存入口暂不显示。",
-    en: "Dynamic mode automatically loads and evaluates candidates across the configured range; the single-layer-count cache control is hidden.",
-  },
   basic_material_layer_height_label: {
     zh: "\u5c42\u9ad8",
     en: "Layer Height",
@@ -5388,10 +5392,6 @@ export const translations: Record<string, Record<"zh" | "en", string>> = {
     zh: "穷举缓存",
     en: "Exhaustive Cache",
   },
-  basic_material_cache_open_button: {
-    zh: "\u7a77\u4e3e\u7f13\u5b58\u2026",
-    en: "Exhaustive cache\u2026",
-  },
   basic_material_cache_section_description: {
     zh: "为当前耗材组合构建 Lab 网格配方库，后续出图直接查表。",
     en: "Build a Lab-grid recipe library for this palette so future conversions are served from cache.",
@@ -5427,6 +5427,10 @@ export const translations: Record<string, Record<"zh" | "en", string>> = {
   basic_material_cache_fallback_hint: {
     zh: "未构建缓存时，参数调整不会自动预览；仍可手动预览，但会使用临时候选求解器，耗时较长，结果可能与持久缓存不同。",
     en: "When no cache is available, parameter changes will not auto-preview. You can still preview manually with the temporary candidate solver; it may take longer and differ from a persisted-cache result.",
+  },
+  basic_material_cache_layer_limit_hint: {
+    zh: "穷举缓存最多支持 {max} 层。更多层数请使用下方的智能缓存。",
+    en: "Exhaustive caches support up to {max} layers. For deeper stacks, use the smart cache below.",
   },
   basic_material_cache_build_button: {
     zh: "立即构建缓存",
@@ -6113,16 +6117,16 @@ export const translations: Record<string, Record<"zh" | "en", string>> = {
     en: "Unlocking raises the color count ceiling from 256 to 8192. This noticeably increases memory use and processing time; enable only when truly needed.",
   },
   adv_unlock_material_layers: {
-    zh: "解锁 30 层叠色",
-    en: "Unlock 30 colour layers",
+    zh: "解锁 30 层固定叠色",
+    en: "Unlock 30 fixed colour layers",
   },
   adv_unlock_material_layers_hint: {
-    zh: "耗材档案模式的叠色层数上限从 10 层提高到 30 层（固定层数和动态层数范围都适用），主要用于 0.04 mm 等细层高打印。层数越多，首次预览构建求解运行时越慢；关闭后超过 10 层的设置会自动收回到 10 层。",
-    en: "Raises the material-archive colour layer limit from 10 to 30 (fixed count and dynamic range), mainly for fine layer heights such as 0.04 mm. More layers make the first preview's solver build slower; turning this off pulls any setting above 10 back to 10.",
+    zh: "将耗材档案模式的固定叠色层数上限从 10 层提高到 30 层，主要用于 0.04 mm 等细层高打印。更多层数会增加首次预览耗时；关闭后固定层数收回到 10 层。动态叠层始终可选 5–30 层，无需解锁。",
+    en: "Raises the fixed material-archive layer limit from 10 to 30, mainly for fine layer heights such as 0.04 mm. More layers increase the first preview time; turning this off caps the fixed count at 10. Dynamic stacking always supports 5–30 layers without unlocking.",
   },
   adv_unlock_material_layers_confirm_title: {
-    zh: "解锁 30 层叠色？",
-    en: "Unlock 30 colour layers?",
+    zh: "解锁 30 层固定叠色？",
+    en: "Unlock 30 fixed colour layers?",
   },
   adv_unlock_material_layers_warn_speed: {
     zh: "速度：超过 10 层后，首次预览要先构建求解数据，可能需要几十秒，配置较低的电脑会更久；求解缓存也会占用更多内存和磁盘。",
@@ -6133,8 +6137,8 @@ export const translations: Record<string, Record<"zh" | "en", string>> = {
     en: "Layer height: High-Fidelity and Pixel modes always build the model at 0.08 mm layers. For other layer heights such as 0.04 mm, use Vector mode, or the colours will be off.",
   },
   adv_unlock_material_layers_warn_lock: {
-    zh: "关闭后，超过 10 层的设置会自动收回到 10 层。",
-    en: "Turning this off pulls any setting above 10 layers back to 10.",
+    zh: "关闭后，超过 10 层的固定层数会收回到 10 层，动态叠层范围保持不变。",
+    en: "Turning this off caps the fixed count at 10 layers and keeps the dynamic range unchanged.",
   },
   adv_unlock_material_layers_confirm: {
     zh: "解锁",
@@ -11494,5 +11498,349 @@ export const translations: Record<string, Record<"zh" | "en", string>> = {
   tutorial_step_help_body: {
     zh: "设置项旁边的问号图标可以查看说明和在线文档；右上角这个菜单里的“反馈问题”可以把问题发给开发者。\n想再看一遍这份引导，随时打开这个菜单选择“新手引导”。祝打印顺利！",
     en: "The question-mark icons next to settings show explanations and link to the online docs, and Report a bug in this menu at the top right sends problems to the developers.\nTo see this tour again, open this menu and choose Beginner tour any time. Happy printing!",
+  },
+  material_workbench_materials_header: {
+    zh: "耗材组合",
+    en: "Material combination",
+  },
+  material_workbench_layers_header: {
+    zh: "层数设置",
+    en: "Layers",
+  },
+  material_workbench_use_converter: {
+    zh: "使用转换器当前选择",
+    en: "Use converter selection",
+  },
+  material_workbench_empty_hint: {
+    zh: "请先选择至少一种耗材。",
+    en: "Select at least one material first.",
+  },
+  material_gamut_title: {
+    zh: "色域覆盖",
+    en: "Gamut coverage",
+  },
+  material_gamut_description: {
+    zh: "查看这个耗材组合能打印出 sRGB 中多大比例的颜色，以及每种耗材的贡献。",
+    en: "See how much of the sRGB color range this material combination can print, and what each material adds.",
+  },
+  material_gamut_calculate: {
+    zh: "计算覆盖率",
+    en: "Calculate coverage",
+  },
+  material_gamut_calculating: {
+    zh: "正在计算…",
+    en: "Calculating…",
+  },
+  material_gamut_empty_state: {
+    zh: "选择耗材组合后点击“计算覆盖率”。",
+    en: "Choose a material combination, then select “Calculate coverage”.",
+  },
+  material_gamut_stale_hint: {
+    zh: "设置已更改，下方结果对应的是之前的组合。",
+    en: "Settings changed. The results below are for the previous combination.",
+  },
+  material_gamut_dynamic_first_run_hint: {
+    zh: "动态模式首次计算需要构建候选目录，可能需要 10–30 秒；结果会保存，转换时直接复用。",
+    en: "The first dynamic calculation builds the candidate catalog, which can take 10–30 s. It is saved and reused by conversion.",
+  },
+  material_gamut_failed: {
+    zh: "覆盖率计算失败：{message}",
+    en: "Coverage calculation failed: {message}",
+  },
+  material_gamut_result_label: {
+    zh: "sRGB 覆盖率",
+    en: "sRGB coverage",
+  },
+  material_gamut_result_detail: {
+    zh: "触达 {reached} / {total} 个色彩单元（每格 {cell} ΔE），共 {colors} 种可打印颜色",
+    en: "{reached} of {total} color cells reached ({cell} ΔE per cell) · {colors} printable colors",
+  },
+  material_gamut_exact_badge: {
+    zh: "候选完整",
+    en: "Complete candidates",
+  },
+  material_gamut_estimated_badge: {
+    zh: "候选近似",
+    en: "Approximate candidates",
+  },
+  material_gamut_exact_tooltip: {
+    zh: "已保留全部可能叠层的颜色。匹配误差仍采用近邻估计。",
+    en: "Colors from every possible stack are retained. Match error still uses a nearest-neighbor estimate.",
+  },
+  material_gamut_estimated_tooltip: {
+    zh: "结果基于采样或分桶后保留的候选颜色，可能遗漏可达颜色。",
+    en: "Results use sampled or bucketed candidate colors and may omit reachable colors.",
+  },
+  material_gamut_source_exhaustive_cache: {
+    zh: "来自已保存的穷举缓存",
+    en: "From the saved exhaustive cache",
+  },
+  material_gamut_source_saved_smart_cache: {
+    zh: "来自已保存的智能缓存（{budget}）",
+    en: "From the saved smart cache ({budget})",
+  },
+  material_gamut_source_quick_sample: {
+    zh: "来自快速采样（{budget}，未保存）",
+    en: "From a quick sample ({budget}, not saved)",
+  },
+  material_gamut_source_dynamic_catalog: {
+    zh: "来自转换使用的动态层数目录",
+    en: "From the dynamic-layer catalog conversion uses",
+  },
+  material_gamut_accuracy_header: {
+    zh: "匹配误差估计",
+    en: "Estimated match error",
+  },
+  material_gamut_accuracy_description: {
+    zh: "以邻近可打印颜色估计平均色差（ΔE00），越小越接近；不保证为全局最小色差。",
+    en: "Average ΔE00 estimated from nearby printable colors. Lower is closer; this is not a guaranteed global minimum.",
+  },
+  material_gamut_group_all: {
+    zh: "全部 sRGB",
+    en: "All sRGB",
+  },
+  material_gamut_group_neutral: {
+    zh: "灰、黑、白",
+    en: "Greys, black & white",
+  },
+  material_gamut_group_dark: {
+    zh: "暗色",
+    en: "Dark colors",
+  },
+  material_gamut_group_skin: {
+    zh: "肤色",
+    en: "Skin tones",
+  },
+  material_gamut_group_vivid: {
+    zh: "鲜艳色",
+    en: "Vivid colors",
+  },
+  material_gamut_group_short_neutral: {
+    zh: "灰黑白",
+    en: "Neutrals",
+  },
+  material_gamut_group_short_dark: {
+    zh: "暗色",
+    en: "Dark",
+  },
+  material_gamut_group_short_skin: {
+    zh: "肤色",
+    en: "Skin",
+  },
+  material_gamut_group_short_vivid: {
+    zh: "鲜艳色",
+    en: "Vivid",
+  },
+  material_gamut_delta_e_unit: {
+    zh: "ΔE",
+    en: "ΔE",
+  },
+  material_gamut_no_printable_colors: {
+    zh: "无可打印颜色",
+    en: "Nothing printable",
+  },
+  material_gamut_lightness_range: {
+    zh: "L* {darkest} – {lightest}",
+    en: "L* {darkest} – {lightest}",
+  },
+  material_gamut_lightness_label: {
+    zh: "可打印亮度",
+    en: "Printable lightness",
+  },
+  material_gamut_lightness_black: {
+    zh: "黑",
+    en: "Black",
+  },
+  material_gamut_lightness_white: {
+    zh: "白",
+    en: "White",
+  },
+  material_gamut_layer_caps_header: {
+    zh: "层数越多，颜色越多",
+    en: "More layers, more colors",
+  },
+  material_gamut_layer_caps_description: {
+    zh: "叠层最多使用该层数时的覆盖率。",
+    en: "Coverage when no stack is thicker than this.",
+  },
+  material_gamut_layer_cap_label: {
+    zh: "最多 {count} 层",
+    en: "Up to {count} layers",
+  },
+  material_gamut_contrib_header: {
+    zh: "各耗材的贡献",
+    en: "Contribution of each material",
+  },
+  material_gamut_contrib_description: {
+    zh: "去掉某个耗材后各类颜色变差多少（在 {layers} 层下比较）。数字是色差增加量，底色越深损失越大。",
+    en: "How much worse each color group gets without a material (compared at {layers} layers). Numbers are the rise in ΔE; darker cells mean a bigger loss.",
+  },
+  material_gamut_contrib_loading: {
+    zh: "正在逐个比较耗材…",
+    en: "Comparing materials one by one…",
+  },
+  material_gamut_contrib_failed: {
+    zh: "耗材贡献计算失败，请重试。",
+    en: "Could not compare the materials. Try again.",
+  },
+  material_gamut_contrib_baseline: {
+    zh: "全部耗材",
+    en: "All materials",
+  },
+  material_gamut_contrib_col_material: {
+    zh: "耗材",
+    en: "Material",
+  },
+  material_gamut_contrib_col_darkest: {
+    zh: "最暗 L*",
+    en: "Darkest L*",
+  },
+  material_gamut_contrib_col_coverage: {
+    zh: "覆盖率",
+    en: "Coverage",
+  },
+  material_gamut_contrib_no_change: {
+    zh: "—",
+    en: "—",
+  },
+  material_gamut_charts_header: {
+    zh: "色彩分布",
+    en: "Color distribution",
+  },
+  material_cache_title: {
+    zh: "求解缓存",
+    en: "Solver cache",
+  },
+  material_cache_description: {
+    zh: "提前构建并保存候选颜色，转换时直接复用，避免首次转换时等待构建。",
+    en: "Build and save candidate colors ahead of time so conversions reuse them instead of building them on the first run.",
+  },
+  material_cache_dynamic_title: {
+    zh: "动态层数缓存",
+    en: "Dynamic layer cache",
+  },
+  material_cache_dynamic_description: {
+    zh: "动态层数会为范围内的每个层数构建候选，再用基板耗材补齐并合并成一个目录。预构建会同时保存这两部分，之后转换只需读取。",
+    en: "Dynamic layer mode builds candidates for every layer count in the range, pads them with the backing material, and merges them into one catalog. Preparing saves both, so conversions only need to load them.",
+  },
+  material_cache_dynamic_status_checking: {
+    zh: "检查中…",
+    en: "Checking…",
+  },
+  material_cache_dynamic_status_ready: {
+    zh: "已就绪",
+    en: "Ready",
+  },
+  material_cache_dynamic_status_missing: {
+    zh: "未预构建",
+    en: "Not prepared",
+  },
+  material_cache_dynamic_status_error: {
+    zh: "无法读取",
+    en: "Unavailable",
+  },
+  material_cache_dynamic_layers_label: {
+    zh: "已保存的逐层候选",
+    en: "Saved per-layer candidates",
+  },
+  material_cache_dynamic_layers_value: {
+    zh: "{saved} / {total} 个层数",
+    en: "{saved} of {total} layer counts",
+  },
+  material_cache_dynamic_catalog_label: {
+    zh: "合并目录",
+    en: "Merged catalog",
+  },
+  material_cache_dynamic_catalog_value: {
+    zh: "{size} MB · {time}",
+    en: "{size} MB · {time}",
+  },
+  material_cache_dynamic_catalog_missing: {
+    zh: "未保存",
+    en: "Not saved",
+  },
+  material_cache_dynamic_partial_hint: {
+    zh: "合并目录未保存，但已有 {saved} 个层数的候选可复用，转换时只需重新合并（约数秒）。",
+    en: "The merged catalog isn't saved, but candidates for {saved} layer counts can be reused, so conversion only re-merges them (a few seconds).",
+  },
+  material_cache_dynamic_prepare_button: {
+    zh: "预构建",
+    en: "Prepare",
+  },
+  material_cache_dynamic_preparing: {
+    zh: "正在预构建…",
+    en: "Preparing…",
+  },
+  material_cache_dynamic_prepare_hint: {
+    zh: "通常需要 10–40 秒，取决于耗材数量和层数范围。",
+    en: "Usually takes 10–40 s, depending on the number of materials and the layer range.",
+  },
+  material_cache_dynamic_prepared: {
+    zh: "预构建完成，用时 {seconds} 秒。",
+    en: "Prepared in {seconds} s.",
+  },
+  material_cache_dynamic_already_prepared: {
+    zh: "已经预构建过，无需重建。",
+    en: "Already prepared. Nothing to rebuild.",
+  },
+  material_cache_dynamic_delete_button: {
+    zh: "删除预构建缓存",
+    en: "Delete prepared cache",
+  },
+  material_cache_dynamic_deleted: {
+    zh: "预构建缓存已删除。",
+    en: "Prepared cache deleted.",
+  },
+  material_cache_dynamic_nothing_deleted: {
+    zh: "没有可删除的预构建缓存，手动智能缓存已保留。",
+    en: "No prepared cache to delete. Manual smart caches were kept.",
+  },
+  material_cache_dynamic_confirm_delete: {
+    zh: "删除为这组设置预构建的合并目录和逐层候选？下次转换会按需重新构建（首次会变慢）。",
+    en: "Delete the merged catalog and per-layer candidates prepared for these settings? The next conversion rebuilds what it needs (slower the first time).",
+  },
+  material_cache_dynamic_failed: {
+    zh: "操作失败，请检查耗材与缓存目录后重试。",
+    en: "The operation failed. Check the materials and cache storage, then try again.",
+  },
+  basic_material_cache_status_line_checking: {
+    zh: "正在检查缓存…",
+    en: "Checking caches…",
+  },
+  basic_material_cache_status_line_dynamic_ready: {
+    zh: "动态层数缓存已就绪",
+    en: "Dynamic layer cache ready",
+  },
+  basic_material_cache_status_line_dynamic_partial: {
+    zh: "部分已缓存：首次转换需重新合并（约数秒）",
+    en: "Partly cached: the first conversion re-merges candidates (a few seconds)",
+  },
+  basic_material_cache_status_line_dynamic_missing: {
+    zh: "未预构建：首次转换会多花约 10–30 秒",
+    en: "Not prepared: the first conversion takes about 10–30 s longer",
+  },
+  basic_material_cache_status_line_fixed_exhaustive: {
+    zh: "使用已保存的穷举缓存",
+    en: "Using the saved exhaustive cache",
+  },
+  basic_material_cache_status_line_fixed_smart: {
+    zh: "使用已保存的智能缓存（{budget} 个候选）",
+    en: "Using a saved smart cache ({budget} candidates)",
+  },
+  basic_material_cache_status_line_fixed_missing: {
+    zh: "无已保存缓存：转换时临时采样 1M 个候选",
+    en: "No saved cache: conversion samples 1M candidates on the fly",
+  },
+  basic_material_cache_status_line_error: {
+    zh: "无法读取缓存状态",
+    en: "Cache status unavailable",
+  },
+  basic_material_cache_manage_button: {
+    zh: "管理缓存",
+    en: "Manage caches",
+  },
+  basic_material_gamut_button: {
+    zh: "查看色域",
+    en: "View gamut",
   },
 };

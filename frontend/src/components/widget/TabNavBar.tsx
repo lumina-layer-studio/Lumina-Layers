@@ -26,10 +26,12 @@ type MaterialSubTabId =
   | 'gradient-card-extract'
   | 'material-library'
   | 'material-cloud-sync'
-  | 'material-recipe';
+  | 'material-recipe'
+  | 'material-gamut'
+  | 'material-cache';
 
 const LUT_SUB_TAB_IDS: LutSubTabId[] = ['lut-library', 'calibration', 'extractor', 'lut-manager', 'lut-cloud-sync', 'lut-details', 'lut-compare', 'five-color'];
-const MATERIAL_SUB_TAB_IDS: MaterialSubTabId[] = ['material-library', 'material-cloud-sync', 'gradient-card-generate', 'gradient-card-extract', 'material-recipe'];
+const MATERIAL_SUB_TAB_IDS: MaterialSubTabId[] = ['material-library', 'material-cloud-sync', 'gradient-card-generate', 'gradient-card-extract', 'material-recipe', 'material-gamut', 'material-cache'];
 
 const PRIMARY_TAB_ICONS: Record<PrimaryTabId, React.ReactNode> = {
   'converter': (

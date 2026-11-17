@@ -181,6 +181,8 @@ describe("Widget Workspace Layout", () => {
     expect(screen.getByTestId("subtab-material-cloud-sync")).toBeInTheDocument();
     expect(screen.queryByTestId("subtab-lut-cloud-sync")).not.toBeInTheDocument();
     expect(screen.getByTestId("subtab-material-recipe")).toBeInTheDocument();
+    expect(screen.getByTestId("subtab-material-gamut")).toBeInTheDocument();
+    expect(screen.getByTestId("subtab-material-cache")).toBeInTheDocument();
 
     expect(screen.queryByTestId("tab-calibration")).not.toBeInTheDocument();
     expect(screen.queryByTestId("tab-extractor")).not.toBeInTheDocument();

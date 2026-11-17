@@ -42,6 +42,8 @@ export const TAB_WIDGET_MAP: Record<TabId, WidgetId[]> = {
   "material-library": [],
   "material-cloud-sync": [],
   "material-recipe": [],
+  "material-gamut": [],
+  "material-cache": [],
   "lut-library": [],
   "lut-manager": [],
   "lut-cloud-sync": [],

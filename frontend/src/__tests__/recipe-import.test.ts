@@ -401,6 +401,23 @@ describe("recipe/importRecipe", () => {
       });
     });
 
+    it("round-trips a 30-layer dynamic range without unlocking fixed layers", () => {
+      const original = {
+        ...DEFAULT_STATE, source_version: "material",
+        materialDynamicLayerCountEnabled: true, materialMinLayerCount: 12, materialMaxLayerCount: 30,
+      } as ConverterState;
+      const firstExport = exportConverterRecipe(original, DEFAULT_SETTINGS, "fp123");
+      const recipe = createTestRecipe();
+      recipe.recipe.converter = firstExport;
+      const { state } = restoreConverterRecipe(recipe, LOCAL_LUTS);
+      expect(state).toMatchObject({
+        materialDynamicLayerCountEnabled: true, materialMinLayerCount: 12,
+        materialMaxLayerCount: 30, materialLayersUnlocked: false,
+      });
+      const secondExport = exportConverterRecipe({ ...original, ...state } as ConverterState, DEFAULT_SETTINGS, "fp123");
+      expect(secondExport.source).toEqual(firstExport.source);
+    });
+
     it("deep-clones valid imported dynamic result metadata", () => {
       const recipe = createTestRecipe();
       enableDynamicMaterial(recipe);

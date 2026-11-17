@@ -305,6 +305,40 @@ def build_material_cache_details(
     )
 
 
+def build_color_set_chart_details(
+    srgb: np.ndarray,
+    lab: np.ndarray,
+    *,
+    metadata: dict[str, Any],
+    max_points: int = 8000,
+    grid_resolution: int = 64,
+) -> MaterialSolverCacheDetails:
+    """Build the LUT-details chart payload for an arbitrary color set.
+    为任意颜色集生成与 LUT 详情同构的图表载荷。
+
+    Args:
+        srgb: ``(N, 3)`` uint8 colors. 颜色。
+        lab: ``(N, 3)`` Lab values matching ``srgb``. 与 ``srgb`` 对应的 Lab 值。
+        metadata: ``layer_count`` / ``layer_height_mm`` / ``substrate`` labels.
+            层数、层厚、基底标签。
+        max_points: Upper bound on plotted scatter points. 散点上限。
+        grid_resolution: Diagnostic grid label. 诊断网格标签。
+
+    Returns:
+        MaterialSolverCacheDetails: Chart-ready payload. 可直接渲染的图表载荷。
+    """
+    return build_material_cache_details(
+        _MaterialDetailsArrayView(
+            achieved_srgb=np.asarray(srgb),
+            achieved_lab=np.asarray(lab),
+            metadata=dict(metadata),
+        ),
+        palette_hash="",
+        grid_resolution=int(grid_resolution),
+        max_points=int(max_points),
+    )
+
+
 def build_material_runtime_details(
     runtime: MaterialCandidateRuntime,
     *,

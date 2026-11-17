@@ -299,7 +299,7 @@ it("uses the latest restored selection when the next operation starts", async ()
   expect(converter.getState().selectionDocument?.selection_revision).toBe(6);
 });
 
-it("undoes locking 30 colour layers back together with the clamped counts", async () => {
+it("undoes locking fixed colour layers without changing the dynamic range", async () => {
   converter.setState({ source_version: "material" });
   const store = converter.getState();
   store.setMaterialLayersUnlocked(true);
@@ -308,12 +308,14 @@ it("undoes locking 30 colour layers back together with the clamped counts", asyn
   store.setMaterialMaxLayerCount(20);
   store.setMaterialLayersUnlocked(false);
   expect(converter.getState()).toMatchObject({
-    materialLayersUnlocked: false, materialLayerCount: 10, materialMinLayerCount: 10, materialMaxLayerCount: 10,
+    materialLayersUnlocked: false, materialLayerCount: 10, materialMinLayerCount: 12, materialMaxLayerCount: 20,
   });
   await history.undo();
   expect(converter.getState()).toMatchObject({
     materialLayersUnlocked: true, materialLayerCount: 24, materialMinLayerCount: 12, materialMaxLayerCount: 20,
   });
   await history.redo();
-  expect(converter.getState()).toMatchObject({ materialLayersUnlocked: false, materialLayerCount: 10 });
+  expect(converter.getState()).toMatchObject({
+    materialLayersUnlocked: false, materialLayerCount: 10, materialMinLayerCount: 12, materialMaxLayerCount: 20,
+  });
 });

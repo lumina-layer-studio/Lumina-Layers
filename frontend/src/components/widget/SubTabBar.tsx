@@ -25,7 +25,9 @@ type MaterialSubTabId =
   | 'gradient-card-extract'
   | 'material-library'
   | 'material-cloud-sync'
-  | 'material-recipe';
+  | 'material-recipe'
+  | 'material-gamut'
+  | 'material-cache';
 
 const CONVERTER_SUB_TAB_ICONS: Record<ConverterSubTabId, React.ReactNode> = {
   core: (
@@ -113,6 +115,18 @@ const SECONDARY_TAB_ICONS: Record<LutSubTabId | MaterialSubTabId, React.ReactNod
       <circle cx="18" cy="18" r="3" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   ),
+  'material-gamut': (
+    <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" d="M12 3l8.5 15h-17L12 3z" />
+      <circle cx="12" cy="13" r="2.5" />
+    </svg>
+  ),
+  'material-cache': (
+    <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+      <ellipse cx="12" cy="6" rx="7" ry="3" />
+      <path strokeLinecap="round" strokeLinejoin="round" d="M5 6v6c0 1.66 3.13 3 7 3s7-1.34 7-3V6M5 12v6c0 1.66 3.13 3 7 3s7-1.34 7-3v-6" />
+    </svg>
+  ),
 };
 
 const CONVERTER_SUB_TAB_LIST: { id: ConverterSubTabId; titleKey: string }[] = [
@@ -137,6 +151,8 @@ const MATERIAL_SECONDARY_TAB_LIST: { id: MaterialSubTabId; titleKey: string }[] 
   { id: 'gradient-card-generate', titleKey: 'tab.gradientCardGenerate' },
   { id: 'gradient-card-extract', titleKey: 'tab.gradientCardExtract' },
   { id: 'material-recipe', titleKey: 'tab.materialRecipe' },
+  { id: 'material-gamut', titleKey: 'tab.materialGamut' },
+  { id: 'material-cache', titleKey: 'tab.materialCache' },
 ];
 
 interface SubTabBarProps {

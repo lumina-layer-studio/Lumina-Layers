@@ -171,6 +171,22 @@ describe("dynamic material request transport", () => {
     });
   });
 
+  it("sends the 30-layer dynamic range for preview and generate without unlocking fixed layers", async () => {
+    seedMaterialState(true);
+    useConverterStore.getState().setMaterialMinLayerCount(5);
+    useConverterStore.getState().setMaterialMaxLayerCount(30);
+    expect(useConverterStore.getState().materialLayersUnlocked).toBe(false);
+    await useConverterStore.getState().submitPreview();
+    await useConverterStore.getState().submitGenerate();
+    for (const request of [mocks.convertPreview.mock.calls[0], mocks.convertGenerate.mock.calls[0]]) {
+      expect(request[1]).toMatchObject({
+        material_dynamic_layer_count_enabled: true,
+        material_min_layer_count: 5, material_max_layer_count: 30,
+        material_layer_count: 30, color_layers: 30,
+      });
+    }
+  });
+
   it("sends dynamic settings, maximum physical depth, and zero hue weights for preview", async () => {
     seedMaterialState(true);
 

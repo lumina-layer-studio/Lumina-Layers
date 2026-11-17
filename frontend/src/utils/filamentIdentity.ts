@@ -117,7 +117,9 @@ function productLabel(name: string, aliases: string[]): string {
     .trim();
   const prefixes = aliases.filter(Boolean).sort((a, b) => b.length - a.length).map(escapeRegExp);
   if (prefixes.length) {
-    const brandPrefix = new RegExp("^(?:(?:" + prefixes.join("|") + ")[\\s_./&-]*)+", "iu");
+    // Legacy names may join a brand directly to a polymer, but never strip part of a product word.
+    const boundary = "(?=$|[\\s_./&-]|(?:" + materialSeries.source + ")(?![A-Za-z]))";
+    const brandPrefix = new RegExp("^(?:(?:" + prefixes.join("|") + ")" + boundary + "[\\s_./&-]*)+", "iu");
     label = label.replace(brandPrefix, "");
   }
   return label;

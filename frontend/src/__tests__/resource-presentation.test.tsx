@@ -37,6 +37,25 @@ describe("resource identity and details", () => {
     expect(materialDisplayName(filamentIdentity("Some SUNLU clone", "PLA 色卡", "en")).name).toBe("PLA 色卡");
   });
 
+  it.each([
+    ["Bambu Lab", "Basic 红色", "Basic 红色"],
+    ["Bambu Lab", "Bamboo 试样", "Bamboo 试样"],
+    ["Bambu Lab", "拓竹绿", "拓竹绿"],
+    ["Aliz", "Alizarin 红色", "Alizarin 红色"],
+    ["Bambu Lab", "Bambu Basic 红色", "Basic 红色"],
+    ["Bambu Lab", "BambuPLA Basic 深蓝色", "PLA Basic 深蓝色"],
+    ["Bambu Lab", "拓竹/拓竹PLA Basic 深蓝色", "PLA Basic 深蓝色"],
+    ["Bambu Lab", "ba PLA Basic 深蓝色", "PLA Basic 深蓝色"],
+    ["Sailner", "赛纳PETG深红色", "PETG深红色"],
+  ])("strips only complete brand prefixes from %s / %s", (brand, original, expected) => {
+    for (const language of ["zh", "en"] as const) {
+      const identity = materialDisplayName(filamentIdentity(brand, original, language));
+      expect(identity.name).toBe(expected);
+      expect(identity.originalName).toBe(original);
+      expect(identity.searchText).toContain(original);
+    }
+  });
+
   it("preserves explicit filament order and never treats LUT calibration pixels as material colors", () => {
     expect(resourceColors({ kind: "luts", name: "Aliz&8色PLA", mode: "8-color" }, "zh")).toEqual([]);
     expect(resourceColors({ kind: "luts", name: "PETG 红-黄-蓝-白-黑" }, "en").map((c) => c.label))

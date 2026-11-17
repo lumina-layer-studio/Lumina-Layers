@@ -122,4 +122,11 @@ describe("resource identity and details", () => {
     expect(rows[0]).toHaveTextContent("00200");
     expect(rows[1]).toHaveTextContent("White");
   });
+
+  it.each(["materials", "luts"] as const)("shows the retained source name for a normalized %s record", (kind) => {
+    render(<LibraryIdentity name="统一商品名称" originalName="规范后的颜色名" subtitle="Brand"
+      thumbnail={{ kind, display: { original_name: "PLA red 16200 by 原作者" } }} />);
+    expect(screen.getByText("PLA red 16200 by 原作者")).toBeInTheDocument();
+    expect(screen.queryByText("规范后的颜色名")).toBeNull();
+  });
 });

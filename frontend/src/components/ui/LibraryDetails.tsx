@@ -251,6 +251,8 @@ export function LibraryIdentity({
   const { t, lang } = useI18n();
   const market = useFilamentMarket();
   const isLut = thumbnail.kind === "luts";
+  const recordedName = thumbnail.display?.original_name;
+  const sourceName = (typeof recordedName === "string" && recordedName.trim()) || originalName;
   const filaments = resourceFilaments(thumbnail).map((row) => {
     const brand = typeof row.brand === "string" ? row.brand : "";
     const rowName =
@@ -275,8 +277,8 @@ export function LibraryIdentity({
     ...(description
       ? [{ label: t(isLut ? "resources_lut_description" : "resources_description"), value: description }]
       : []),
-    ...(originalName && originalName !== name
-      ? [{ label: t(isLut ? "resources_lut_original_name" : "resources_original_name"), value: originalName }]
+    ...(sourceName && sourceName !== name
+      ? [{ label: t(isLut ? "resources_lut_original_name" : "resources_original_name"), value: sourceName }]
       : []),
     ...(purchaseLinks?.length
       ? [{ label: t("resources_purchase"), value: <PurchaseLinks links={purchaseLinks} /> }]

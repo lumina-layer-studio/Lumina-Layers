@@ -39,6 +39,7 @@ const fields: Record<keyof ConverterDocumentState, true> = {
   materialDynamicLayerCountEnabled: true,
   materialMinLayerCount: true,
   materialMaxLayerCount: true,
+  materialLayersUnlocked: true,
   quantize_colors: true,
   quantize_colors_unlocked: true,
   high_precision_3d_preview: true,

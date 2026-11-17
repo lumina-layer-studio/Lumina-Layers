@@ -171,6 +171,33 @@ describe("MaterialSolverCacheStatusCard", () => {
     );
   });
 
+  it.each([{ cached: false, layers: 11 }, { cached: true, layers: 30 }])(
+    "disables exhaustive build at $layers layers while keeping smart build available",
+    async ({ cached, layers }) => {
+      vi.mocked(fetchMaterialSolverCacheStatus).mockImplementation(async (key) => ({
+        status: "ok", message: "", cached, palette_hash: "x",
+        layer_count: key.layerCount, layer_height_mm: key.layerHeightMm, substrate: "white",
+        entry: cached ? buildCacheEntry({ layer_count: key.layerCount }) : null,
+      }));
+      vi.mocked(buildMaterialSolverRuntime).mockResolvedValue({
+        status: "ok", message: "", entry: buildRuntimeEntry({ layer_count: layers }),
+      });
+      const names = ["red", "white"];
+      const view = render(<MaterialSolverCacheStatusCard materialDirectoryNames={names} layerCount={layers} layerHeightMm={0.08} />);
+      const buildName = cached ? "重新构建" : "立即构建缓存";
+      await waitFor(() => expect(screen.getByRole("button", { name: buildName })).toBeDisabled());
+      expect(screen.getByText("穷举缓存最多支持 10 层。更多层数请使用下方的智能缓存。")).toBeInTheDocument();
+      fireEvent.click(screen.getByRole("button", { name: buildName }));
+      expect(buildMaterialSolverCache).not.toHaveBeenCalled();
+      fireEvent.click(screen.getByRole("button", { name: "构建智能缓存" }));
+      await waitFor(() => expect(buildMaterialSolverRuntime).toHaveBeenCalledWith(
+        expect.objectContaining({ layerCount: layers }), expect.any(Object),
+      ));
+      view.rerender(<MaterialSolverCacheStatusCard materialDirectoryNames={names} layerCount={10} layerHeightMm={0.08} />);
+      await waitFor(() => expect(screen.getByRole("button", { name: buildName })).toBeEnabled());
+    },
+  );
+
   it.each(["exhaustive", "smart"] as const)("ignores an old %s build after changing the layer count", async (kind) => {
     vi.mocked(fetchMaterialSolverCacheStatus).mockImplementation(async (key) => ({
       status: "ok", message: "", cached: false, palette_hash: "x",

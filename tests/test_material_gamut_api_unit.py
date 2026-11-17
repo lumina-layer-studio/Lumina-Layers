@@ -213,7 +213,7 @@ def test_dynamic_prepare_is_invisible_to_fixed_layer_mode(client: TestClient) ->
     ("path", "form", "fragment"),
     [
         ("material-gamut/coverage", _fixed_form(layer_mode="hybrid"), "layer_mode"),
-        ("material-gamut/coverage", _fixed_form(layer_count=11), "layer_count"),
+        ("material-gamut/coverage", _fixed_form(layer_count=31), "layer_count"),
         ("material-gamut/coverage", _dynamic_form(min_layer_count=7), "min_layer_count"),
         (
             "material-gamut/coverage",

@@ -388,3 +388,36 @@ def test_prepare_fills_missing_layers_when_conversion_built_only_the_catalog(
 
     assert result.built is True
     assert result.overview.missing_layer_counts == ()
+
+
+def test_wide_range_prepared_caches_match_converter_budget(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    materials = _materials()
+    manual = build_material_candidate_runtime(
+        materials=materials, layer_count=5, layer_height_mm=0.08, substrate="white",
+        config=MaterialCandidateCacheConfig.persisted_for_budget(DYNAMIC_CANDIDATE_BUDGET),
+    )
+    save_material_candidate_runtime(manual, cache_root=tmp_path)
+    result = prepare_dynamic_layer_cache(materials, 0, 0.08, "white", 5, 11, cache_root=tmp_path)
+    expected_budget = DYNAMIC_CANDIDATE_BUDGET * 6 // 7
+    assert result.overview.candidate_budget == expected_budget
+    assert result.overview.prepared_layer_counts == tuple(range(5, 12))
+
+    monkeypatch.setattr(
+        material_provider, "build_material_candidate_runtime",
+        lambda **_kwargs: pytest.fail("converter must reuse the prepared per-layer budget"),
+    )
+    # Changing only the backing rebuilds the catalog from the prepared layers.
+    converted = dynamic_solver.prepare_dynamic_material_catalog(
+        materials, 1, 0.08, "white", dynamic_solver.DynamicMaterialSolveConfig(5, 11, 0.5),
+        catalog_cache_root=tmp_path,
+    )
+    assert converted.catalog.print_recipes.shape[1] == 11
+    assert delete_dynamic_layer_cache(materials, 0, 0.08, "white", 5, 11, cache_root=tmp_path)
+    after = describe_dynamic_layer_caches(materials, 0, 0.08, "white", 5, 11, cache_root=tmp_path)
+    assert after.prepared_layer_counts == ()
+    assert after.missing_layer_counts == tuple(range(5, 12))
+    assert load_material_candidate_runtime(
+        materials, 5, 0.08, "white", candidate_budget=DYNAMIC_CANDIDATE_BUDGET, cache_root=tmp_path,
+    ) is not None

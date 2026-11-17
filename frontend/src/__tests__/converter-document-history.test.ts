@@ -298,3 +298,22 @@ it("uses the latest restored selection when the next operation starts", async ()
   }));
   expect(converter.getState().selectionDocument?.selection_revision).toBe(6);
 });
+
+it("undoes locking 30 colour layers back together with the clamped counts", async () => {
+  converter.setState({ source_version: "material" });
+  const store = converter.getState();
+  store.setMaterialLayersUnlocked(true);
+  store.setMaterialLayerCount(24);
+  store.setMaterialMinLayerCount(12);
+  store.setMaterialMaxLayerCount(20);
+  store.setMaterialLayersUnlocked(false);
+  expect(converter.getState()).toMatchObject({
+    materialLayersUnlocked: false, materialLayerCount: 10, materialMinLayerCount: 10, materialMaxLayerCount: 10,
+  });
+  await history.undo();
+  expect(converter.getState()).toMatchObject({
+    materialLayersUnlocked: true, materialLayerCount: 24, materialMinLayerCount: 12, materialMaxLayerCount: 20,
+  });
+  await history.redo();
+  expect(converter.getState()).toMatchObject({ materialLayersUnlocked: false, materialLayerCount: 10 });
+});

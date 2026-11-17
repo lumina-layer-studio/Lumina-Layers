@@ -9,7 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 RgbChannel = Annotated[int, Field(ge=0, le=255)]
 MaterialIndex = Annotated[int, Field(ge=0)]
-LayerCount = Annotated[int, Field(ge=5, le=10)]
+LayerCount = Annotated[int, Field(ge=5, le=30)]
 NonNegativeFloat = Annotated[float, Field(ge=0.0)]
 DynamicBenefitScope = Literal["all_printable_pixels", "automatic_pixels"]
 

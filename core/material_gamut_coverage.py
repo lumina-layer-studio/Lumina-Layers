@@ -650,7 +650,7 @@ def compute_dynamic_layer_gamut(
     )
     source = GamutColorSource(
         ColorSourceKind.DYNAMIC_CATALOG,
-        PREVIEW_SAFE_CANDIDATE_BUDGET,
+        overview.candidate_budget,
         loaded.candidate_count_before_dedup >= full_space,
         overview.is_ready and loaded.cache_hit,
     )

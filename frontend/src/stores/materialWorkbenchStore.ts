@@ -10,9 +10,11 @@ import { create } from "zustand";
 import type { MaterialComboSelection } from "../api/materialGamut";
 import type { MaterialLayerMode } from "../api/types";
 import {
-  MATERIAL_DYNAMIC_LAYER_COUNT_MAX,
+  MATERIAL_DYNAMIC_LAYER_COUNT_DEFAULT_MAX,
   MATERIAL_DYNAMIC_LAYER_COUNT_MIN,
   inferDefaultMaterialBackingDirName,
+  materialLayerCountLimit,
+  useConverterStore,
 } from "./converter";
 
 /** Converter fields that describe its current material-archive combination. */
@@ -45,6 +47,7 @@ interface MaterialWorkbenchActions {
   setLayerCount: (count: number) => void;
   setMinLayerCount: (count: number) => void;
   setMaxLayerCount: (count: number) => void;
+  clampLayerCounts: () => void;
   setLayerHeightMm: (height: number) => void;
   setSubstrate: (substrate: "white" | "black") => void;
   setBackingDirName: (name: string | null) => void;
@@ -58,7 +61,7 @@ export type MaterialWorkbenchStore = MaterialWorkbenchState & MaterialWorkbenchA
 
 const clampLayers = (count: number): number =>
   Math.min(
-    MATERIAL_DYNAMIC_LAYER_COUNT_MAX,
+    materialLayerCountLimit(useConverterStore.getState().materialLayersUnlocked),
     Math.max(MATERIAL_DYNAMIC_LAYER_COUNT_MIN, Math.round(count)),
   );
 
@@ -67,7 +70,7 @@ const INITIAL_STATE: MaterialWorkbenchState = {
   layerMode: "fixed",
   layerCount: 5,
   minLayerCount: MATERIAL_DYNAMIC_LAYER_COUNT_MIN,
-  maxLayerCount: MATERIAL_DYNAMIC_LAYER_COUNT_MAX,
+  maxLayerCount: MATERIAL_DYNAMIC_LAYER_COUNT_DEFAULT_MAX,
   layerHeightMm: 0.08,
   substrate: "white",
   backingDirName: null,
@@ -151,7 +154,7 @@ export const useMaterialWorkbenchStore = create<MaterialWorkbenchStore>((set, ge
     const minLayerCount = clampLayers(count);
     set((state) => ({
       minLayerCount,
-      maxLayerCount: Math.max(state.maxLayerCount, minLayerCount),
+      maxLayerCount: Math.max(clampLayers(state.maxLayerCount), minLayerCount),
       initialized: true,
     }));
   },
@@ -159,10 +162,18 @@ export const useMaterialWorkbenchStore = create<MaterialWorkbenchStore>((set, ge
     const maxLayerCount = clampLayers(count);
     set((state) => ({
       maxLayerCount,
-      minLayerCount: Math.min(state.minLayerCount, maxLayerCount),
+      minLayerCount: Math.min(clampLayers(state.minLayerCount), maxLayerCount),
       initialized: true,
     }));
   },
+  clampLayerCounts: () => set((state) => {
+    const layerCount = clampLayers(state.layerCount);
+    const minLayerCount = clampLayers(state.minLayerCount);
+    const maxLayerCount = clampLayers(state.maxLayerCount);
+    return layerCount === state.layerCount && minLayerCount === state.minLayerCount && maxLayerCount === state.maxLayerCount
+      ? state
+      : { layerCount, minLayerCount, maxLayerCount };
+  }),
   setLayerHeightMm: (layerHeightMm) => set({ layerHeightMm, initialized: true }),
   setSubstrate: (substrate) => set({ substrate, initialized: true }),
   setBackingDirName: (backingDirName) => set({ backingDirName, initialized: true }),

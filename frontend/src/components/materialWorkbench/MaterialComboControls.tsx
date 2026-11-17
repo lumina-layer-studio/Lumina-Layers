@@ -1,11 +1,11 @@
-import { useMemo, useState } from "react";
+import { useLayoutEffect, useMemo, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
 
 import { useI18n } from "../../i18n/context";
 import { tRuntime } from "../../i18n/runtime";
 import {
-  MATERIAL_DYNAMIC_LAYER_COUNT_MAX,
   MATERIAL_DYNAMIC_LAYER_COUNT_MIN,
+  materialLayerCountLimit,
   useConverterStore,
 } from "../../stores/converter";
 import {
@@ -53,6 +53,9 @@ export default function MaterialComboControls({
   const library = useSavedMaterialLibrary();
   const [pickerOpen, setPickerOpen] = useState(false);
   const workbench = useMaterialWorkbenchStore();
+  const materialLayerMax = useConverterStore((state) => materialLayerCountLimit(state.materialLayersUnlocked));
+  const clampLayerCounts = workbench.clampLayerCounts;
+  useLayoutEffect(() => { clampLayerCounts(); }, [materialLayerMax, clampLayerCounts]);
   const converterSnapshot = useConverterStore(useShallow(selectConverterMaterialSnapshot));
 
   const nameLookup = useMemo(
@@ -146,7 +149,7 @@ export default function MaterialComboControls({
               label={t("basic_material_min_layer_count_label")}
               value={workbench.minLayerCount}
               min={MATERIAL_DYNAMIC_LAYER_COUNT_MIN}
-              max={MATERIAL_DYNAMIC_LAYER_COUNT_MAX}
+              max={materialLayerMax}
               step={1}
               disabled={disabled}
               onChange={workbench.setMinLayerCount}
@@ -155,7 +158,7 @@ export default function MaterialComboControls({
               label={t("basic_material_max_layer_count_label")}
               value={workbench.maxLayerCount}
               min={MATERIAL_DYNAMIC_LAYER_COUNT_MIN}
-              max={MATERIAL_DYNAMIC_LAYER_COUNT_MAX}
+              max={materialLayerMax}
               step={1}
               disabled={disabled}
               onChange={workbench.setMaxLayerCount}
@@ -166,7 +169,7 @@ export default function MaterialComboControls({
             label={t("basic_material_layer_count_label")}
             value={workbench.layerCount}
             min={MATERIAL_DYNAMIC_LAYER_COUNT_MIN}
-            max={MATERIAL_DYNAMIC_LAYER_COUNT_MAX}
+            max={materialLayerMax}
             step={1}
             disabled={disabled}
             onChange={workbench.setLayerCount}

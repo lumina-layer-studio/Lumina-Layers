@@ -42,6 +42,9 @@ interface MaterialSolverCacheStatusCardProps {
 
 type Phase = "idle" | "checking" | "cached" | "missing" | "error";
 
+// The exhaustive API uses MITM_MAX_LAYER_COUNT; deeper stacks use smart caches.
+const EXHAUSTIVE_LAYER_LIMIT = 10;
+
 interface InternalState {
   phase: Phase;
   entry: MaterialSolverCacheEntry | null;
@@ -82,6 +85,7 @@ export default function MaterialSolverCacheStatusCard({
 }: MaterialSolverCacheStatusCardProps) {
   const { t } = useI18n();
   const workspace = useWorkspaceMode();
+  const supportsExhaustiveBuild = layerCount <= EXHAUSTIVE_LAYER_LIMIT;
   const [state, setState] = useState<InternalState>(INITIAL_STATE);
   const [isBuilding, setIsBuilding] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -326,7 +330,7 @@ export default function MaterialSolverCacheStatusCard({
   ]);
 
   const handleBuild = useCallback(async () => {
-    if (materialDirectoryNames.length === 0) return;
+    if (materialDirectoryNames.length === 0 || !supportsExhaustiveBuild) return;
     const generation = cacheGenerationRef.current;
     setActionError(null);
     setIsBuilding(true);
@@ -350,6 +354,7 @@ export default function MaterialSolverCacheStatusCard({
     cacheKey,
     materialDirectoryNames.length,
     effectiveGridResolution,
+    supportsExhaustiveBuild,
   ]);
 
   const handleDelete = useCallback(async () => {
@@ -532,7 +537,11 @@ export default function MaterialSolverCacheStatusCard({
         <CachedEntryDetails entry={state.entry} />
       ) : null}
 
-      {state.phase === "missing" && materialDirectoryNames.length > 0 ? (
+      {!supportsExhaustiveBuild ? (
+        <p className="text-[11px] text-slate-500 dark:text-slate-400">
+          {tRuntime("basic_material_cache_layer_limit_hint", { max: EXHAUSTIVE_LAYER_LIMIT })}
+        </p>
+      ) : state.phase === "missing" && materialDirectoryNames.length > 0 ? (
         <p className="text-[11px] text-slate-500 dark:text-slate-400">
           {t("basic_material_cache_fallback_hint")}
         </p>
@@ -557,7 +566,7 @@ export default function MaterialSolverCacheStatusCard({
             <Button
               label={t("basic_material_cache_rebuild_button")}
               variant="secondary"
-              disabled={materialDirectoryNames.length === 0}
+              disabled={materialDirectoryNames.length === 0 || !supportsExhaustiveBuild}
               loading={isBuilding}
               onClick={handleBuild}
               className="px-3 text-xs"
@@ -593,7 +602,7 @@ export default function MaterialSolverCacheStatusCard({
                 : t("basic_material_cache_build_button")
             }
             variant="secondary"
-            disabled={materialDirectoryNames.length === 0 || isBuilding}
+            disabled={materialDirectoryNames.length === 0 || isBuilding || !supportsExhaustiveBuild}
             loading={isBuilding}
             onClick={handleBuild}
             className="px-3 text-xs"

@@ -34,6 +34,7 @@ from core.material_dynamic_catalog_cache import (
 )
 from core.material_dynamic_solver import (
     DynamicMaterialSolveConfig,
+    dynamic_per_layer_candidate_budget,
     load_or_build_persistent_dynamic_catalog,
 )
 from core.material_lut_provider import (
@@ -42,8 +43,8 @@ from core.material_lut_provider import (
 )
 
 DYNAMIC_CANDIDATE_BUDGET: int = PREVIEW_SAFE_CANDIDATE_BUDGET
-"""Candidate budget dynamic conversion pins for every layer count.
-动态转换为每个层数固定使用的候选预算。"""
+"""Base catalog budget; wide ranges split it using the converter's policy.
+目录基础预算；宽层数范围按转换器的规则分摊到每层。"""
 
 
 @dataclass(frozen=True)
@@ -188,17 +189,19 @@ def _dynamic_layer_runtime_sources(
     layer_height_mm: float,
     substrate: str,
     cache_root: str | Path | None,
+    *,
+    candidate_budget: int,
 ) -> tuple[bool, bool]:
     """Whether candidates are reusable and whether Prepare owns a saved copy.
 
-    Dynamic conversion checks the shared solver cache (a manually built 1M
-    smart cache) first and the isolated Prepare folder second.
+    Dynamic conversion checks a matching-budget shared smart cache first and
+    the isolated Prepare folder second.
     """
     available: list[bool] = []
     for root in (cache_root, dynamic_layer_runtime_root(cache_root)):
         record = load_material_candidate_runtime_metadata(
             canonical, layer_count, float(layer_height_mm), str(substrate),
-            candidate_budget=DYNAMIC_CANDIDATE_BUDGET, cache_root=root,
+            candidate_budget=candidate_budget, cache_root=root,
         )
         available.append(record is not None)
     return any(available), available[1]
@@ -233,19 +236,23 @@ def describe_dynamic_layer_caches(
     config = DynamicMaterialSolveConfig(int(min_layer_count), int(max_layer_count), 0.0)
     key = _dynamic_key(materials, backing_index, layer_height_mm, substrate, config)
     catalog_path = find_dynamic_candidate_catalog_file(key, cache_root=cache_root)
+    per_layer_budget = dynamic_per_layer_candidate_budget(
+        DYNAMIC_CANDIDATE_BUDGET, config.max_layer_count - config.min_layer_count + 1,
+    )
     canonical = _canonical_dynamic_palette(materials)
     saved: list[int] = []
     missing: list[int] = []
     prepared: list[int] = []
     for layer_count in range(config.min_layer_count, config.max_layer_count + 1):
         is_saved, is_prepared = _dynamic_layer_runtime_sources(
-            canonical, layer_count, layer_height_mm, substrate, cache_root
+            canonical, layer_count, layer_height_mm, substrate, cache_root,
+            candidate_budget=per_layer_budget,
         )
         (saved if is_saved else missing).append(layer_count)
         if is_prepared:
             prepared.append(layer_count)
     return DynamicLayerCacheOverview(
-        candidate_budget=DYNAMIC_CANDIDATE_BUDGET,
+        candidate_budget=per_layer_budget,
         catalog=_file_info(catalog_path) if catalog_path is not None else None,
         saved_layer_counts=tuple(saved),
         missing_layer_counts=tuple(missing),
@@ -307,7 +314,7 @@ def prepare_dynamic_layer_cache(
             layer_count,
             float(layer_height_mm),
             str(substrate),
-            candidate_budget=DYNAMIC_CANDIDATE_BUDGET,
+            candidate_budget=before.candidate_budget,
             cache_root=cache_root,
             persist=True,
         )
@@ -361,9 +368,12 @@ def delete_dynamic_layer_cache(
     removed = delete_dynamic_candidate_catalog(key, cache_root=cache_root)
     canonical = _canonical_dynamic_palette(materials)
     prepared_root = dynamic_layer_runtime_root(cache_root)
+    per_layer_budget = dynamic_per_layer_candidate_budget(
+        DYNAMIC_CANDIDATE_BUDGET, config.max_layer_count - config.min_layer_count + 1,
+    )
     for layer_count in range(config.min_layer_count, config.max_layer_count + 1):
         removed = delete_material_candidate_runtime(
             canonical, layer_count, float(layer_height_mm), str(substrate),
-            candidate_budget=DYNAMIC_CANDIDATE_BUDGET, cache_root=prepared_root,
+            candidate_budget=per_layer_budget, cache_root=prepared_root,
         ) or removed
     return removed

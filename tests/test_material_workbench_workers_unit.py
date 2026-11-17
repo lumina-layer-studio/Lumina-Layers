@@ -101,8 +101,10 @@ async def test_cancelled_request_keeps_its_slot_until_worker_completion(
     semaphore.release()
 
 
+@pytest.mark.parametrize("max_layer_count, expected_budget", [(6, 1_048_576), (30, 241_979)])
 def test_material_api_round_trip_with_real_process_workers(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, max_layer_count: int,
+    expected_budget: int,
 ) -> None:
     fixture_root = Path(__file__).parent / "fixtures" / "dynamic_material_materials"
     monkeypatch.setenv("LUMINA_RUNTIME_CACHE_DIR", str(tmp_path))
@@ -114,7 +116,7 @@ def test_material_api_round_trip_with_real_process_workers(
     client = TestClient(create_app())
     form = {
         "material_directory_names": '["white", "red"]', "layer_mode": "dynamic",
-        "min_layer_count": "5", "max_layer_count": "6", "layer_height_mm": "0.08",
+        "min_layer_count": "5", "max_layer_count": str(max_layer_count), "layer_height_mm": "0.08",
         "substrate": "white", "backing_material_directory_name": "white", "max_points": "128",
     }
     try:
@@ -128,12 +130,14 @@ def test_material_api_round_trip_with_real_process_workers(
         coverage = client.post("/api/extractor/material-gamut/coverage", data=form)
         assert coverage.status_code == 200, coverage.text
         assert coverage.json()["source"]["kind"] == "dynamic_catalog"
+        assert coverage.json()["source"]["candidate_budget"] == expected_budget
         contributions = client.post("/api/extractor/material-gamut/contributions", data=form)
         assert contributions.status_code == 200, contributions.text
         assert len(contributions.json()["items"]) == 2
         prepared = client.post("/api/extractor/material-dynamic-cache/prepare", data=form)
         assert prepared.status_code == 200, prepared.text
         assert prepared.json()["dynamic"]["is_ready"]
+        assert prepared.json()["dynamic"]["candidate_budget"] == expected_budget
         shared_overview = client.post("/api/extractor/material-cache/overview", data=form)
         assert shared_overview.json()["dynamic"]["is_ready"], "conversion and overview must see the worker's prepared catalog"
         assert list(tmp_path.rglob("*.npz"))

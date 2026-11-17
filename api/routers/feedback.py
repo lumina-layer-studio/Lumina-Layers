@@ -149,8 +149,8 @@ class BugReportContext(BaseModel):
     selected_material_dir_names: list[str] = Field(default_factory=list)
     material_layer_count: int | None = Field(default=None, ge=0, le=1000)
     material_dynamic_layer_count_enabled: bool | None = None
-    material_min_layer_count: int | None = Field(default=None, ge=5, le=10)
-    material_max_layer_count: int | None = Field(default=None, ge=5, le=10)
+    material_min_layer_count: int | None = Field(default=None, ge=5, le=30)
+    material_max_layer_count: int | None = Field(default=None, ge=5, le=30)
     material_delta_e00_tolerance: float | None = Field(
         default=None,
         ge=0.0,

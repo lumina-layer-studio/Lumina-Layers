@@ -201,10 +201,12 @@ it("requires an origin choice and confirms permission again when that choice cha
   expect(screen.getByRole("button", { name: "contribution_submit" })).toBeDisabled();
   chooseOrigin();
   expect(screen.getByRole("link", { name: "resources_lumina_license" })).toHaveAttribute("href", "/data-license.html");
+  expect(screen.getByRole("checkbox", { name: "contribution_original_consent" })).not.toBeChecked();
   expect(screen.getByRole("checkbox")).not.toBeChecked();
   fireEvent.click(screen.getByRole("checkbox"));
   expect(screen.getByRole("button", { name: "contribution_submit" })).toBeEnabled();
   chooseOrigin("contribution_origin_adapted");
+  expect(screen.getByRole("checkbox", { name: "contribution_consent" })).not.toBeChecked();
   expect(screen.queryByRole("link", { name: "resources_lumina_license" })).toBeNull();
   expect(screen.getByText("resources_license_unspecified")).toBeVisible();
   expect(screen.getByRole("checkbox")).not.toBeChecked();
@@ -236,6 +238,17 @@ it.each([undefined, "CC-BY-4.0", "LicenseRef-Lumina-Data-1.0"])("shows the actua
     expect(screen.getByRole("link", { name: license === "CC-BY-4.0" ? license : "resources_lumina_license" }))
       .toHaveAttribute("href", license === "CC-BY-4.0" ? "https://creativecommons.org/licenses/by/4.0/" : "/data-license.html");
   }
+});
+
+it("keeps existing original-work terms without asking for a new Lumina grant", async () => {
+  const prepared = await vi.mocked(api.prepareContribution)("materials", "Brand/Red");
+  vi.mocked(api.prepareContribution).mockResolvedValue({ ...prepared, display: { ...prepared.display, license: "CC-BY-4.0" } });
+  render(<ContributionDialog kind="materials" resourceKey="Brand/Red" onClose={vi.fn()} />);
+  await screen.findByDisplayValue("Red");
+  chooseOrigin();
+  expect(screen.getByRole("checkbox", { name: "contribution_consent" })).not.toBeChecked();
+  expect(screen.queryByRole("checkbox", { name: "contribution_original_consent" })).toBeNull();
+  expect(screen.getByRole("link", { name: "CC-BY-4.0" })).toHaveAttribute("href", "https://creativecommons.org/licenses/by/4.0/");
 });
 
 it("retains public origins without offering an original-work declaration", async () => {

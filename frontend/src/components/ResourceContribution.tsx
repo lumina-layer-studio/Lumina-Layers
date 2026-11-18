@@ -1286,7 +1286,8 @@ function ContributionFormDialog({
 
           <div className="border-t border-[var(--surface-divider)] pt-3">
             <Checkbox
-              label={t("contribution_consent")}
+              label={t(attribution?.relationship === "original" && !text(prepared?.display.license).trim()
+                ? "contribution_original_consent" : "contribution_consent")}
               appearance="checkbox"
               checked={consent}
               onChange={setConsent}

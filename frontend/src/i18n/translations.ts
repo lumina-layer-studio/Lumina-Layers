@@ -173,6 +173,7 @@ export const translations: Record<string, Record<"zh" | "en", string>> = {
   contribution_use_profile: { zh: "快捷带入本地耗材档案", en: "Prefill from local profile" },
   contribution_manual: { zh: "手动填写", en: "Enter manually" },
   contribution_consent: { zh: "确认来源与署名属实，并已获得公开分享这些数据的许可", en: "I confirm the attribution and have permission to share this data publicly" },
+  contribution_original_consent: { zh: "确认来源与署名属实，我同意按 Lumina 数据协议 1.0 公开这份原创数据", en: "I confirm the attribution and agree to publish this original data under Lumina Data License 1.0" },
   resources_license: { zh: "使用许可", en: "Usage license" },
   resources_data_license: { zh: "投稿数据协议说明", en: "Contribution data terms" },
   resources_lumina_license: { zh: "Lumina 数据使用协议 1.0", en: "Lumina Data License 1.0" },

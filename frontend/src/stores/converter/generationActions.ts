@@ -60,6 +60,7 @@ export function notifyCompletion(kind: CompletionNotificationKind): void {
 }
 
 export const CONVERTER_ERROR_KEYS = {
+  batchCustomTemplateUnsupported: "action_batch_custom_template_unsupported",
   heightmapUploadRequired: "relief_heightmap_generate_requires_upload",
   largeFormatModelSurfaceConflict: "large_format_model_surface_conflict",
 } as const;
@@ -141,9 +142,6 @@ let _batchRequestSequence = 0;
 
 let _activeFilenameEligibleGenerateSequence: number | null = null;
 
-/** True while a generate retry after a revision conflict is running. 版本冲突重试进行中。 */
-let _generateRevisionRetryActive = false;
-
 function _isCurrentGenerateRequest(
   sequence: number,
   sessionId: string,
@@ -191,6 +189,7 @@ export function createGenerationActions(
   | "cancelNativeMaterialSelection"
 > {
   const { waitForSelectionMutation, waitForContentCommits, refreshConfirmedEditorContentRevision } = editor;
+  const activeGenerations = new Set<string>();
   let pendingMaterialSelection: {
     action: NativeMaterialSelectionAction;
     response: ExportMaterialSelection;
@@ -199,6 +198,33 @@ export function createGenerationActions(
     refreshSequence: number;
     isCurrent: () => boolean;
   } | null = null;
+
+  function ownGeneration(run: (sessionId: string) => Promise<string | null>) {
+    return async (): Promise<string | null> => {
+      const { sessionId, isLoading } = _get();
+      if (isLoading) return null;
+      if (!sessionId) {
+        set({ error: "请先预览图片" });
+        return null;
+      }
+      if (activeGenerations.has(sessionId)) return null;
+
+      // Claim the session before the edit/preflight awaits. Invalidating the
+      // result or remounting the button does not end the actual request.
+      activeGenerations.add(sessionId);
+      try {
+        set({ isGenerating: true });
+        return await run(sessionId);
+      } finally {
+        activeGenerations.delete(sessionId);
+        const current = _get();
+        const isGenerating = current.sessionId !== null && activeGenerations.has(current.sessionId);
+        if (current.isGenerating !== isGenerating) {
+          set({ isGenerating });
+        }
+      }
+    };
+  }
 
   function showMaterialSelection(
     response: ExportMaterialSelection,
@@ -213,7 +239,6 @@ export function createGenerationActions(
       nativeMaterialSelectionAction: action,
       nativeMaterialSelectionLoading: false,
       nativeMaterialSelectionError: null,
-      isGenerating: false,
       batchLoading: false,
       error: null,
     });
@@ -236,7 +261,8 @@ export function createGenerationActions(
   }
 
   registerGeneratedArtifactInvalidator(({ preservePreviews, source }) => {
-    if (source === "defaults" && _get().projectSettings) return;
+    const { projectSettings, sessionId } = _get();
+    if (source === "defaults" && projectSettings) return;
     pendingMaterialSelection = null;
     invalidateGenerationRequests();
     set({
@@ -244,7 +270,7 @@ export function createGenerationActions(
       nativeMaterialSelectionAction: null,
       nativeMaterialSelectionLoading: false,
       nativeMaterialSelectionError: null,
-      isGenerating: false,
+      isGenerating: sessionId !== null && activeGenerations.has(sessionId),
       batchLoading: false,
       batchResult: null,
       threemfDiskPath: null,
@@ -277,7 +303,7 @@ export function createGenerationActions(
     ) {
       _generateRequestSequence += 1;
       _activeFilenameEligibleGenerateSequence = null;
-      set({ isGenerating: false });
+      _endGenerateTimer();
     }
 
     const state = _get();
@@ -303,6 +329,10 @@ export function createGenerationActions(
         state.batchLoading || state.nativeMaterialSelectionLoading ||
         (!batchMode && state.contentCommitStatus === "unknown")) return;
       const settings = resolveConverterSettings(state, useSettingsStore.getState());
+      if (batchMode && settings.custom3mfTemplateId) {
+        set({ error: CONVERTER_ERROR_KEYS.batchCustomTemplateUnsupported });
+        return;
+      }
       const identity = captureGeneratedArtifactIdentity(settings.deviceProfileId, settings.buildPlateId, !state.projectSettings);
       const sourceIdentity = generationSourceIdentity(state);
       const sequence = ++_generateRequestSequence;
@@ -408,7 +438,6 @@ export function createGenerationActions(
         nativeMaterialSelectionAction: null,
         nativeMaterialSelectionLoading: false,
         nativeMaterialSelectionError: null,
-        isGenerating: false,
         batchLoading: false,
       });
     },
@@ -423,7 +452,6 @@ export function createGenerationActions(
           nativeMaterialSelection: null,
           nativeMaterialSelectionAction: null,
           nativeMaterialSelectionError: null,
-          isGenerating: false,
           batchLoading: false,
         });
         return;
@@ -474,14 +502,9 @@ export function createGenerationActions(
         await _get().submitGenerate();
       }
     }, { blocked: () => Promise.resolve() }),
-    submitGenerate: async () => {
+    submitGenerate: ownGeneration(async function generate(sessionId, canRetryRevision = true) {
       let state = _get();
-      if (state.isLoading) return null;
-      if (!state.sessionId) {
-        set({ error: "请先预览图片" });
-        return null;
-      }
-      const sessionId = state.sessionId;
+      if (state.sessionId !== sessionId || state.isLoading) return null;
       if (state.contentCommitStatus === "unknown") {
         set({
           error:
@@ -570,7 +593,6 @@ export function createGenerationActions(
         nativeMaterialSelectionAction: null,
         nativeMaterialSelectionLoading: false,
         nativeMaterialSelectionError: null,
-        isGenerating: true,
         error: null,
         generatePerformanceTiming: null,
         // The previous download and its warnings remain available while retrying.
@@ -604,13 +626,6 @@ export function createGenerationActions(
           return false;
         }
 
-        const latestState = _get();
-        if (
-          _generateRequestSequence === generateSequence &&
-          latestState.isGenerating
-        ) {
-          set({ isGenerating: false });
-        }
         return true;
       };
       _generateStartTime = performance.now();
@@ -643,7 +658,6 @@ export function createGenerationActions(
           buildConversionSourceParams(state);
         if (!sourceParams) {
           set({
-            isGenerating: false,
             error: "请先选择品牌和数据库",
           });
           return null;
@@ -687,7 +701,6 @@ export function createGenerationActions(
           }
           const downloadUrl = normalizeStoreResourceUrl(puzzleResponse.download_url);
           set({
-            isGenerating: false,
             modelUrl: null,
             batchPreviewItems: [],
             downloadUrl,
@@ -745,7 +758,6 @@ export function createGenerationActions(
           }
           const downloadUrl = normalizeStoreResourceUrl(lfResponse.download_url);
           set({
-            isGenerating: false,
             modelUrl: null,
             batchPreviewItems: [],
             threemfDiskPath: null,
@@ -805,7 +817,6 @@ export function createGenerationActions(
         );
         const downloadUrl = normalizeStoreResourceUrl(response.download_url);
         set({
-          isGenerating: false,
           // Generate owns the exact downloadable 3MF only. Browser geometry
           // remains preview-owned so async lightweight polling and real-time
           // Three.js helpers continue without a print-scene GLB takeover.
@@ -819,8 +830,8 @@ export function createGenerationActions(
           largeFormatWarnings: [],
           largeFormatFailedTiles: [],
         });
-        _logGenerateTimer("UI unlocked (isGenerating=false, 3MF set)");
-        _clientLog("generate: UI unlocked", {
+        _logGenerateTimer("download ready");
+        _clientLog("generate: download ready", {
           response_model_url: responseModelUrl,
           selected_model_url: null,
           download_url: downloadUrl,
@@ -854,22 +865,16 @@ export function createGenerationActions(
         // revision once and retry; a second conflict is surfaced to the user.
         // 客户端版本落后于服务端：前面已等待所有未完成编辑，这里重读一次
         // 已提交版本并重试；再次冲突才提示用户。
-        if (!_generateRevisionRetryActive && isGenerateRevisionConflict(err)) {
+        if (canRetryRevision && isGenerateRevisionConflict(err)) {
           const refreshed = await refreshConfirmedEditorContentRevision(sessionId);
           if (refreshed && _get().sessionId === sessionId) {
             _clientLog("generate: retry after editor revision refresh", {
               session_id: sessionId,
             });
-            _generateRevisionRetryActive = true;
-            try {
-              return await _get().submitGenerate();
-            } finally {
-              _generateRevisionRetryActive = false;
-            }
+            return await generate(sessionId, false);
           }
         }
         set({
-          isGenerating: false,
           error: visibleConverterError(err, "生成失败"),
         });
         trackLuminaEvent("lumina_converter_generate_failed", {
@@ -891,9 +896,15 @@ export function createGenerationActions(
           _endGenerateTimer();
         }
       }
-    },
+    }),
     submitBatch: async () => {
       let state = _get();
+      if (state.batchLoading || state.nativeMaterialSelectionLoading) return;
+      const settings = resolveConverterSettings(state, useSettingsStore.getState());
+      if (settings.custom3mfTemplateId) {
+        set({ error: CONVERTER_ERROR_KEYS.batchCustomTemplateUnsupported });
+        return;
+      }
       const batchStartTime =
         typeof performance !== "undefined" ? performance.now() : null;
       const batchFileCount = state.batchFiles.length;
@@ -927,7 +938,6 @@ export function createGenerationActions(
         set({ error: "请先设置颜色高度映射后再批量生成" });
         return;
       }
-      const settings = resolveConverterSettings(state, useSettingsStore.getState());
       const batchIdentity = captureGeneratedArtifactIdentity(
         settings.deviceProfileId,
         settings.buildPlateId,

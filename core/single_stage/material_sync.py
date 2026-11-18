@@ -83,6 +83,27 @@ def _material_sync_signature(entry: dict[str, Any]) -> tuple[str, str] | None:
     return local_directory, content_hash
 
 
+def _installed_package_identities(target_root: Path) -> dict[tuple[str, str], tuple[str, str]]:
+    """Return installed IDs and revisions keyed by their directory and content."""
+    installed = _load_material_sync_index(target_root).get("installed")
+    if not isinstance(installed, dict):
+        return {}
+
+    identities: dict[tuple[str, str], set[tuple[str, str]]] = {}
+    for material_id, entry in installed.items():
+        if not isinstance(entry, dict):
+            continue
+        signature = _material_sync_signature(entry)
+        revision_id = entry.get("revision_id")
+        if signature and material_id.strip() and isinstance(revision_id, str) and revision_id.strip():
+            identities.setdefault(signature, set()).add((material_id, revision_id))
+    return {
+        signature: next(iter(matches))
+        for signature, matches in identities.items()
+        if len(matches) == 1
+    }
+
+
 def _local_material_sync_entries(target_root: Path) -> list[dict[str, Any]]:
     entries: list[dict[str, Any]] = []
     if not target_root.exists():

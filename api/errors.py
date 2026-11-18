@@ -8,6 +8,7 @@ from core.errors import (
     CoreError,
     CoreProcessingError,
     CoreValidationError,
+    MaterialArchiveUnavailableError,
     NativeMaterialSelectionError,
     TemplateSlotCapacityError,
 )
@@ -123,6 +124,8 @@ def to_http_exception(exc: Exception, context: str) -> HTTPException:
             status_code=WORKSHOP_BACKEND_STATUS_BY_CODE.get(exc.code, 422),
             detail={"code": exc.code, "message": str(exc)},
         )
+    if isinstance(exc, MaterialArchiveUnavailableError):
+        return HTTPException(status_code=422, detail={"code": exc.error_type, "message": exc.detail})
     if isinstance(exc, CoreValidationError):
         return HTTPException(status_code=422, detail=exc.detail)
     if isinstance(exc, CoreDependencyError):

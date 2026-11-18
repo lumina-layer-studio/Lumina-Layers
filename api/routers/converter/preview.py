@@ -23,6 +23,7 @@ from pydantic import ValidationError
 from api.dependencies import get_file_registry, get_session_store, get_worker_pool
 from api.dynamic_material_response import dynamic_material_result_from_cache
 from api.editor_project import EDITOR_PROJECT_MAX_BYTES, editor_project_preview_params
+from api.errors import to_http_exception
 from api.file_bridge import ensure_png_tempfile, ndarray_to_png_bytes
 from api.file_registry import FileRegistry
 from api.project_resources import stage_project_resources, discard_project_resources
@@ -71,7 +72,7 @@ from config import (
     normalize_svg_pixels_per_mm,
 )
 from core.converter import generate_empty_bed_glb, generate_segmented_glb
-from core.errors import CoreError
+from core.errors import CoreError, MaterialArchiveUnavailableError
 from core.naming import generate_segmented_glb_filename
 from core.heightmap_loader import HeightmapLoader
 from core.image_preprocessor import ImagePreprocessor
@@ -1320,6 +1321,8 @@ async def convert_preview(
         )
         _t_worker = time.perf_counter() - _worker_t0
         worker_completed = True
+    except MaterialArchiveUnavailableError as exc:
+        raise to_http_exception(exc, "preview material selection") from exc
     except (DynamicMaterialCandidateError, DynamicMaterialSolverError) as e:
         _handle_core_error(e, "preview generation")
     except BrokenProcessPool as e:

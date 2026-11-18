@@ -484,6 +484,44 @@ def test_preview_lut_constrained_positive_hue_weight_succeeds_through_worker(
                 app.dependency_overrides[dependency] = previous
 
 
+@pytest.mark.parametrize(("directory_name", "has_calibration"), [
+    ("_sync/curation-backups/source-materials/爱丽兹_PLA白", True),
+    ("爱丽兹/PLA 白", False),
+])
+def test_preview_unavailable_material_prompts_for_a_new_selection(
+    directory_name: str, has_calibration: bool, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    archive = tmp_path / "materials" / directory_name
+    archive.mkdir(parents=True)
+    (archive / "material.json").write_text('{"material_name":"PLA 白"}', encoding="utf-8")
+    if has_calibration:
+        (archive / "stage_A_parameters.json").write_text(json.dumps({"parameters": {
+            "channels": [{"E": [0.9, 0.9, 0.9], "k": [1.0, 1.0, 1.0]}],
+            "substrates": [{"substrate_id": "white", "C0": [1.0, 1.0, 1.0]}],
+        }}), encoding="utf-8")
+    monkeypatch.setattr("core.material_lut_synthesis.MATERIALS_DIR", str(tmp_path / "materials"))
+    monkeypatch.setitem(app.dependency_overrides, get_worker_pool, _InlineRealWorkerPool)
+    source = io.BytesIO()
+    Image.new("RGB", (12, 10), "white").save(source, format="PNG")
+
+    with TestClient(app, raise_server_exceptions=False) as local_client:
+        response = local_client.post(
+            "/api/convert/preview",
+            files={"image": ("input.png", source.getvalue(), "image/png")},
+            data={
+                "material_source": "material_archive",
+                "selected_materials": json.dumps([directory_name]),
+                "target_width_mm": "40",
+            },
+        )
+
+    assert response.status_code == 422, response.text
+    detail = response.json()["detail"]
+    assert detail["code"] == "material_archive_unavailable"
+    assert archive.name in detail["message"]
+    assert str(tmp_path) not in detail["message"]
+
+
 def test_preview_small_real_input_keeps_print_dimensions_with_bounded_display(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

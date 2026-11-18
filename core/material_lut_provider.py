@@ -24,6 +24,7 @@ from api.structured_logging import get_logger
 from config import MATERIALS_DIR
 from core import material_cache as _material_cache
 from core import material_lut_synthesis as _material_lut_synthesis
+from core.errors import MaterialArchiveUnavailableError
 from core.material_cache import DEFAULT_GRID_RESOLUTION
 from core.material_candidate_cache import (
     MaterialCandidateCacheConfig,
@@ -113,13 +114,12 @@ def load_materials(
     """Load material archives for the hot path (memoized).
     为热路径加载耗材档案（带 memo 缓存）。
 
-    Mirrors :func:`core.material_lut_synthesis.load_multiple_materials` exactly,
-    adding a process-local memo so repeated loads of the same palette within a
-    request hit memory. The returned list and its :class:`MaterialParams` are
-    treated as immutable by the pipeline; callers must not mutate them.
+    Memoizes successful loads of the same palette and reports unavailable archives
+    as conversion input errors. The pipeline treats the returned list and its
+    :class:`MaterialParams` as immutable.
 
-    精确镜像 ``load_multiple_materials``，叠加进程内 memo；返回的列表与
-    ``MaterialParams`` 在管线中按不可变对待，调用方不得修改。
+    复用进程内加载结果；不可用的耗材档案按转换输入错误处理。管线将返回的
+    列表与 ``MaterialParams`` 视为不可变。
 
     Args:
         directory_names: Material directory names in user-selected order.
@@ -137,9 +137,16 @@ def load_materials(
         if cached is not None:
             return cached
 
-    loaded = _material_lut_synthesis.load_multiple_materials(
-        directory_names, materials_dir=materials_dir
-    )
+    try:
+        loaded = _material_lut_synthesis.load_multiple_materials(
+            directory_names, materials_dir=materials_dir
+        )
+    except FileNotFoundError as exc:
+        raise MaterialArchiveUnavailableError(
+            f"{exc} Select an available material or import a complete material archive."
+        ) from exc
+    except ValueError as exc:
+        raise MaterialArchiveUnavailableError(str(exc)) from exc
 
     with _materials_lock:
         _materials_memo[key] = loaded

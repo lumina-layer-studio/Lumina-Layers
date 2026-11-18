@@ -13,6 +13,7 @@ from typing import Any, Sequence
 from config import MATERIALS_DIR, TEMP_DIR
 
 _INVALID_WINDOWS_FILENAME = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
+INTERNAL_MATERIAL_ROOT_NAMES = frozenset({"_sync", "_solver_cache"})
 
 _MATERIAL_LIBRARY_CACHE_TTL_S = 5 * 60
 
@@ -180,21 +181,6 @@ def _prune_empty_parents(start_dir: Path, stop_dir: Path) -> None:
         current = current.parent
 
 
-def _filter_nested_material_archive_paths(archive_paths: list[Path]) -> list[Path]:
-    material_dirs_set = {path.parent.resolve() for path in archive_paths if path.is_file()}
-    filtered_archive_paths: list[Path] = []
-    for path in archive_paths:
-        try:
-            parent = path.parent.resolve()
-        except OSError:
-            continue
-        ancestors = set(parent.parents) & material_dirs_set
-        if ancestors:
-            continue
-        filtered_archive_paths.append(path)
-    return filtered_archive_paths
-
-
 def _load_json_object(path: Path, error_message: str) -> dict[str, Any]:
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
@@ -344,9 +330,22 @@ def invalidate_material_library_cache(materials_dir: str | None = None) -> None:
     _invalidate_material_library_cache(Path(materials_dir or MATERIALS_DIR))
 
 
-def _discover_saved_material_dirs(material_root: Path) -> list[Path]:
-    archive_paths = [path for path in material_root.rglob("material.json") if path.is_file()]
-    return [path.parent for path in _filter_nested_material_archive_paths(archive_paths)]
+def _is_internal_material_directory(directory_name: str) -> bool:
+    return directory_name.split("/", 1)[0].casefold() in INTERNAL_MATERIAL_ROOT_NAMES
+
+
+def _discover_saved_material_dirs(
+    material_root: Path, *, include_internal: bool = False,
+) -> list[Path]:
+    """Find archives, excluding internal stores by default and nested runs always."""
+    archives: list[Path] = []
+    for directory, subdirs, _ in material_root.walk():
+        if directory == material_root and not include_internal:
+            subdirs[:] = [name for name in subdirs if not _is_internal_material_directory(name)]
+        if (directory / "material.json").is_file():
+            archives.append(directory)
+            subdirs.clear()
+    return archives
 
 
 def _import_target_material_dir(target_root: Path, directory_name: str) -> Path:

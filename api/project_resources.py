@@ -48,7 +48,12 @@ async def stage_project_resources(
             archive = root / "materials.zip"
             archive.write_bytes(await _read_resource(materials))
             materials_dir = str(root / "materials")
-            await asyncio.to_thread(import_saved_stage_a_material_archives, archive_path=str(archive), materials_dir=materials_dir)
+            await asyncio.to_thread(
+                import_saved_stage_a_material_archives,
+                archive_path=str(archive),
+                materials_dir=materials_dir,
+                preserve_internal_paths=True,
+            )
             await asyncio.to_thread(load_multiple_materials, selected_materials, materials_dir=materials_dir)
         return ProjectResources(str(root), lut_path, materials_dir)
     except (ValueError, KeyError, OSError, zipfile.BadZipFile) as exc:

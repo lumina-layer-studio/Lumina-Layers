@@ -33,9 +33,9 @@ import json
 import os
 import time
 import uuid
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from dataclasses import dataclass
-from itertools import chain
+from itertools import chain, islice
 from pathlib import Path
 from typing import Any, Callable, Iterator
 
@@ -461,7 +461,10 @@ _NEIGHBOR_COHERENCE_PROXIMITY_THRESHOLD: float = 20.0
 _NEIGHBOR_COHERENCE_TOP_K: int = 8
 
 _NEIGHBOR_COHERENCE_DEFAULT_BLOCK_ROWS: int = 256
-"""Local target-row block size for exact distance calculations."""
+"""Maximum default target rows in one exact distance block."""
+
+_NEIGHBOR_COHERENCE_WORKSPACE_BYTES: int = 64 * 1024**2
+"""Combined budget for dense distance and index matrices across lookup workers."""
 
 
 def _iter_neighbor_pairs_with_distances(
@@ -557,12 +560,10 @@ def _top_k_candidate_block(
                 np.arange(candidate_count, dtype=np.intp)[None, :],
                 (target_block.shape[0], candidate_count),
             ).copy()
-        else:
-            indices = np.argpartition(
-                distances,
-                top_k,
-                axis=1,
-            )[:, :top_k]
+            return indices, distances
+
+        # A slice would keep the whole partition matrix alive after the block.
+        indices = np.argpartition(distances, top_k, axis=1)[:, :top_k].copy()
         selected_distances = np.take_along_axis(distances, indices, axis=1)
         return indices, selected_distances
 
@@ -584,10 +585,8 @@ def _top_k_candidate_rows_blockwise(
         target_lab: ``(C, 3)`` target Lab rows. (目标 Lab)
         candidate_lab: ``(K, 3)`` candidate Lab rows. (候选 Lab)
         top_k: Maximum candidates retained per target. (每个目标保留数)
-        block_size: Optional explicit target rows per block. (显式分块行数)
+        block_size: Optional ceiling on target rows per block. (显式分块行数上限)
         parallelism: Maximum independent blocks processed together. (并行块数)
-        block_size: Target rows processed by one local distance block. (单个
-            距离计算块的目标行数)
 
     Returns:
         ``(indices, distances)`` arrays with shape ``(C, min(top_k, K))``.
@@ -599,48 +598,28 @@ def _top_k_candidate_rows_blockwise(
     target_count = targets.shape[0]
     candidate_count = candidates.shape[0]
     effective_top_k = min(max(0, int(top_k)), candidate_count)
-    if target_count == 0 or candidate_count == 0:
+    if target_count == 0 or effective_top_k == 0:
         return (
             np.empty((target_count, effective_top_k), dtype=np.intp),
             np.empty((target_count, effective_top_k), dtype=np.float64),
         )
 
-    requested_workers = max(1, int(parallelism))
+    bytes_per_row = candidate_count * (
+        np.dtype(np.float64).itemsize + np.dtype(np.intp).itemsize
+    )
+    # Keep full candidate rows to preserve the original argpartition order.
+    workspace_rows = max(1, _NEIGHBOR_COHERENCE_WORKSPACE_BYTES // bytes_per_row)
+    worker_ceiling = min(max(1, int(parallelism)), workspace_rows)
     resolved_block_size = min(
         target_count,
         max(1, int(block_size or _NEIGHBOR_COHERENCE_DEFAULT_BLOCK_ROWS)),
+        workspace_rows,
     )
+    if resolved_block_size < target_count:
+        resolved_block_size = min(resolved_block_size, workspace_rows // worker_ceiling)
 
-    slices = [
-        (start, min(start + resolved_block_size, target_count))
-        for start in range(0, target_count, resolved_block_size)
-    ]
-    worker_count = min(
-        requested_workers,
-        len(slices),
-    )
-    if worker_count > 1:
-        with ThreadPoolExecutor(max_workers=worker_count) as executor:
-            futures = [
-                executor.submit(
-                    _top_k_candidate_block,
-                    targets[start:end],
-                    candidates,
-                    effective_top_k,
-                )
-                for start, end in slices
-            ]
-            block_results = [future.result() for future in futures]
-    else:
-        block_results = [
-            _top_k_candidate_block(
-                targets[start:end],
-                candidates,
-                effective_top_k,
-            )
-            for start, end in slices
-        ]
-
+    block_starts = range(0, target_count, resolved_block_size)
+    worker_count = min(worker_ceiling, len(block_starts))
     selected_indices = np.empty(
         (target_count, effective_top_k),
         dtype=np.intp,
@@ -649,13 +628,32 @@ def _top_k_candidate_rows_blockwise(
         (target_count, effective_top_k),
         dtype=np.float64,
     )
-    for (start, end), (block_indices, block_distances) in zip(
-        slices,
-        block_results,
-        strict=True,
-    ):
-        selected_indices[start:end] = block_indices
-        selected_distances[start:end] = block_distances
+
+    def write_block(start: int) -> None:
+        end = min(start + resolved_block_size, target_count)
+        # Each worker writes disjoint output rows and releases its own block.
+        selected_indices[start:end], selected_distances[start:end] = (
+            _top_k_candidate_block(targets[start:end], candidates, effective_top_k)
+        )
+
+    if worker_count == 1:
+        for start in block_starts:
+            write_block(start)
+    else:
+        starts = iter(block_starts)
+        with ThreadPoolExecutor(max_workers=worker_count) as executor:
+            pending = {
+                executor.submit(write_block, start)
+                for start in islice(starts, worker_count)
+            }
+            while pending:
+                completed, pending = wait(pending, return_when=FIRST_COMPLETED)
+                for future in completed:
+                    future.result()
+                pending.update(
+                    executor.submit(write_block, start)
+                    for start in islice(starts, len(completed))
+                )
     return selected_indices, selected_distances
 
 

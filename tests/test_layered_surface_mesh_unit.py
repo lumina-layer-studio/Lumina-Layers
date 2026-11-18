@@ -7,6 +7,7 @@ import os
 import subprocess
 import sys
 import textwrap
+import tracemalloc
 
 import numpy as np
 import pytest
@@ -488,6 +489,27 @@ def test_face_connected_solid_does_not_report_diagonal_source_contacts() -> None
     stats = mesh.metadata["layered_mesh_stats"]
     assert stats["source_contact_edge_pair_count"] == 0
     assert stats["source_contact_point_pair_count"] == 0
+
+
+def test_source_contact_counting_keeps_temporary_memory_bounded() -> None:
+    component_labels = np.zeros((4, 1100, 1100), dtype=np.int32)
+    component_labels[0, 0, 0] = 1
+    component_labels[1, 0, 1] = 2
+    component_labels[2, 1, 2] = 3
+    selected = component_labels != 0
+    widths = np.array([3, 2, 4, 1], dtype=np.int64)
+
+    tracemalloc.start()
+    try:
+        baseline, _ = tracemalloc.get_traced_memory()
+        tracemalloc.reset_peak()
+        contacts = layered_meshing._count_source_contacts(selected, component_labels, widths)
+        _, peak = tracemalloc.get_traced_memory()
+    finally:
+        tracemalloc.stop()
+
+    assert contacts == (1, 1)
+    assert peak - baseline < selected.nbytes
 
 
 def test_source_rows_are_flipped_into_y_up_world_coordinates() -> None:

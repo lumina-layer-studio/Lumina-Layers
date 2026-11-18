@@ -27,6 +27,14 @@ class CoreValidationError(CoreError):
         super().__init__(detail=detail, error_type="core_validation_error")
 
 
+class MaterialArchiveUnavailableError(CoreValidationError):
+    """A selected conversion material is missing or has unusable calibration data."""
+
+    def __init__(self, detail: str):
+        super().__init__(detail)
+        self.error_type = "material_archive_unavailable"
+
+
 class TemplateSlotCapacityError(CoreValidationError):
     """The imported template cannot hold every material used by the model."""
 

@@ -125,19 +125,48 @@ export async function fetchCloudLutRegistryCatalog(
         ...(request.channels ? { channel: request.channels } : {}),
         ...(request.limit !== undefined ? { limit: request.limit } : {}),
         ...(request.offset !== undefined ? { offset: request.offset } : {}),
+        ...(request.refresh ? { refresh: true } : {}),
       },
     },
   );
   return response.data;
 }
 
+export type CloudLutPreviewRow = Pick<CloudLutRegistryCatalogItem, "lut_id" | "revision_id" | "content_hash" | "display">;
+
+// The API limit is independent of the number of cards in a responsive grid.
+const CLOUD_LUT_PREVIEW_BATCH_SIZE = 24;
+
+export async function fetchCloudLutPreviews(ids: string[], channels: string[], signal: AbortSignal) {
+  let sourceScope: string | undefined;
+  const previews: CloudLutPreviewRow[] = [];
+  for (let offset = 0; offset < ids.length; offset += CLOUD_LUT_PREVIEW_BATCH_SIZE) {
+    signal.throwIfAborted();
+    const params = new URLSearchParams();
+    ids.slice(offset, offset + CLOUD_LUT_PREVIEW_BATCH_SIZE).forEach((id) => params.append("lut_id", id));
+    channels.forEach((channel) => params.append("channel", channel));
+    const { data } = await apiClient.get<{ source_scope: string; previews: CloudLutPreviewRow[] }>(
+      "/lut-registry/previews", { params, signal, suppressErrorTicket: true },
+    );
+    signal.throwIfAborted();
+    if (sourceScope !== undefined && data.source_scope !== sourceScope) {
+      throw new Error("LUT preview source changed between batches");
+    }
+    sourceScope = data.source_scope;
+    previews.push(...data.previews);
+  }
+  return { source_scope: sourceScope ?? "", previews };
+}
+
 /** 安装一个云端 LUT registry 目录条目。 */
 export async function installCloudLut(
   entry: CloudLutRegistryCatalogItem,
+  accountId?: string,
 ): Promise<CloudLutInstallRecord> {
   const request: CloudLutInstallRequest = {
     lut_id: entry.lut_id,
     revision_id: entry.revision_id,
+    ...(accountId ? { account_id: accountId } : {}),
   };
   const response = await apiClient.post<CloudLutInstallRecord>(
     "/lut-registry/install",
@@ -152,6 +181,13 @@ export async function fetchCloudLutRegistryStatus(): Promise<CloudLutRegistrySta
   const response = await apiClient.get<CloudLutRegistryStatusResponse>(
     "/lut-registry/status",
   );
+  return response.data;
+}
+
+export async function restoreCloudLutRevision(lutId: string, revisionId: string): Promise<CloudLutInstallRecord> {
+  const response = await apiClient.post<CloudLutInstallRecord>("/lut-registry/restore", {
+    lut_id: lutId, revision_id: revisionId,
+  });
   return response.data;
 }
 

@@ -1,0 +1,32 @@
+{
+  "artifacts": {
+    "luts": {
+      "bytes": 2358075,
+      "download_url": "https://github.com/lumina-layer-studio/Lumina-materials/releases/download/v2026.11.18.1/lumina-luts-seed.zip",
+      "lut_count": 99,
+      "manifest": "lumina_lut_seed.json",
+      "path": "lumina-luts-seed.zip",
+      "sha256": "86ee4e5493718329935012e083780f4953464d9a1c20b6662b6f81a474e68a84"
+    },
+    "materials": {
+      "bytes": 6911293,
+      "download_url": "https://github.com/lumina-layer-studio/Lumina-materials/releases/download/v2026.11.18.1/lumina-materials-seed.zip",
+      "manifest": "lumina_material_seed.json",
+      "material_count": 662,
+      "path": "lumina-materials-seed.zip",
+      "sha256": "8ab9b2e6a55c187367f6a87b34da94989b6572ea706ae03b8024d8b35682eb87"
+    }
+  },
+  "dataset_version": "2026.11.18.1",
+  "kind": "lumina_resource_release",
+  "licenses": {
+    "existing_data": "Original per-resource licenses and source information are retained; no retroactive relicensing",
+    "new_contributions": "LicenseRef-Lumina-Data-1.0 with explicit contributor consent"
+  },
+  "schema_version": 1,
+  "selection": {
+    "basis": "all_current_approved_public_resources",
+    "calibration_review": false,
+    "publication_review": true
+  }
+}

@@ -1409,7 +1409,13 @@ class TestSourceCatalog:
         assert not any(name.startswith("ReferencePack -") for name in names)
         assert not any(name.startswith("ReferenceModel -") for name in names)
 
-    def test_catalog_includes_legacy_and_native_groups(self) -> None:
+    def test_catalog_includes_legacy_and_native_groups(self, tmp_path, monkeypatch, request) -> None:
+        # Production presets are external; this contract uses a frozen test LUT.
+        fixture = Path(__file__).parent / "fixtures/lut_regression/快造&4色PLA&RYBW.npy"
+        (tmp_path / fixture.name).write_bytes(fixture.read_bytes())
+        monkeypatch.setattr(lut_router.LUTManager, "LUT_PRESET_DIR", str(tmp_path))
+        lut_router.LUTManager.invalidate_preset_cache()
+        request.addfinalizer(lut_router.LUTManager.invalidate_preset_cache)
         response = client.get("/api/lut/catalog")
         assert response.status_code == 200
 

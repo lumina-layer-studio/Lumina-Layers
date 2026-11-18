@@ -1,7 +1,10 @@
+import { useResourceActivity } from "../../hooks/useResourceActivity";
 import CloseButton from "./CloseButton";
+import { useCommunityStore } from "../../stores/communityStore";
+import { CommunityNotice, ResourceActivityActions } from "./ResourceActivity";
+import { CommunityAccountDialog } from "../CommunityAccount";
 import DisclosureChevron from "./DisclosureChevron";
 import {
-  ChevronDownIcon,
   MagnifyingGlassIcon,
   StarIcon as StarOutlineIcon,
   XMarkIcon,
@@ -20,12 +23,22 @@ import { createPortal } from "react-dom";
 
 import type { SavedMaterialLibraryItem } from "../../api/types";
 import { useI18n } from "../../i18n/context";
+import { useFilamentMarket } from "../../hooks/useFilamentMarket";
+import { savedMaterialIdentity } from "../../utils/libraryFilamentIdentity";
+import { LibraryBrandLogo, LibraryCardIdentity } from "./LibraryDetails";
+import CalibrationThumbnail from "./CalibrationThumbnail";
 import {
   favoriteKeyForMaterial,
   loadMaterialProfileFavorites,
   saveMaterialProfileFavorites,
 } from "../../utils/materialPickerPreferences";
 import Button from "./Button";
+import Dropdown from "./Dropdown";
+import type { ResourceSource } from "../../api/resources";
+import ResourceCatalogPanel from "../ResourceCatalogPanel";
+import ResourceLibraryEmpty from "./ResourceLibraryEmpty";
+import TransientBanner from "./TransientBanner";
+import { useWidgetStore } from "../../stores/widgetStore";
 import {
   buildBrandOptions,
   buildMaterialProductGroups,
@@ -48,9 +61,16 @@ interface MaterialPickerDialogProps {
   loading: boolean;
   loadError?: boolean;
   initialSelected: string[];
-  onConfirm: (selected: string[]) => void;
+  onConfirm: (selected: string[]) => void | string | null;
   onCancel: () => void;
   onRetry?: () => void;
+  onOpen?: () => void;
+  onImport?: () => void;
+  onCalibrate?: (selected: string[]) => void;
+  operationError?: string | null;
+  initialQuery?: string;
+  trial?: boolean;
+  previewOnConfirm?: boolean;
   /** Lets a caller (the beginner tour) press Done on the user's behalf. 允许调用方（新手引导）代为点击「完成」。 */
   ref?: Ref<MaterialPickerDialogHandle>;
 }
@@ -147,9 +167,19 @@ export default function MaterialPickerDialog({
   onConfirm,
   onCancel,
   onRetry,
+  onOpen,
+  onImport,
+  onCalibrate,
+  operationError,
+  initialQuery = "",
+  trial = false,
+  previewOnConfirm = false,
   ref,
 }: MaterialPickerDialogProps) {
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
+  const market = useFilamentMarket();
+  const identities = useMemo(() => new Map(materials.map((item) =>
+    [item.directory_name, savedMaterialIdentity(item, lang, market)])), [materials, lang, market]);
   const titleId = useId();
   const descriptionId = useId();
   const confirmTitleId = useId();
@@ -162,20 +192,62 @@ export default function MaterialPickerDialog({
   const afterConfirmRef = useRef<(() => void) | undefined>(undefined);
 
   const [staged, setStaged] = useState<string[]>(initialSelected);
+  const initialSelectedRef = useRef(initialSelected);
+  initialSelectedRef.current = initialSelected;
+  const initialQueryRef = useRef(initialQuery);
+  initialQueryRef.current = initialQuery;
+  const previousInitialSelected = useRef(initialSelected);
+  useEffect(() => {
+    const previous = previousInitialSelected.current;
+    previousInitialSelected.current = initialSelected;
+    if (!open) return;
+    // A directory migration may finish after opening. Follow it only while
+    // the user has not changed the selection; catalog refreshes keep drafts.
+    setStaged((current) => current.length === previous.length && current.every((name, index) => name === previous[index])
+      ? initialSelected : current);
+  }, [initialSelected, open]);
+  const onOpenRef = useRef(onOpen);
+  onOpenRef.current = onOpen;
+  const [catalogSource, setCatalogSource] = useState<ResourceSource | null>(null);
+  const cloudOpen = catalogSource !== null;
+  const [resourceSuccess, setResourceSuccess] = useState<string | null>(null);
+  const [selectionError, setSelectionError] = useState<string | null>(null);
+  const returnToLocal = () => {
+    setCatalogSource(null);
+    window.setTimeout(() => searchInputRef.current?.focus(), 0);
+  };
+  const importResources = onImport ?? (() => { onCancel(); useWidgetStore.getState().setActiveTab("material-library"); });
+  const calibrate = () => {
+    if (onCalibrate) onCalibrate(staged);
+    else { onCancel(); useWidgetStore.getState().setActiveTab("gradient-card-generate"); }
+  };
   const materialByDirectory = useMemo(
     () => new Map(materials.map((item) => [item.directory_name, item])),
     [materials],
   );
   const [query, setQuery] = useState("");
-  const [typeFilter, setTypeFilter] = useState<MaterialTypeFilter>("all");
+  const [typeFilter, setTypeFilter] = useState<MaterialTypeFilter | "local">("all");
   const [brandKey, setBrandKey] = useState("all");
   const [sort, setSort] = useState<MaterialPickerSort>("name");
   const [expandedGroupKeys, setExpandedGroupKeys] = useState<Set<string>>(
     () => new Set(),
   );
-  const [favoriteKeys, setFavoriteKeys] = useState<Set<string>>(
+  const [localPins, setLocalPins] = useState<Set<string>>(
     () => new Set(),
   );
+  const [accountOpen, setAccountOpen] = useState(false);
+  const connection = useCommunityStore((state) => state.connection);
+  useEffect(() => {
+    if (connection?.state === "connected" && accountOpen) { setAccountOpen(false); setTypeFilter("favorites"); }
+    else if (connection && connection.state !== "connected" && typeFilter === "favorites") setTypeFilter("all");
+  }, [connection, accountOpen, typeFilter]);
+  const references = useCommunityStore((state) => state.references.materials);
+  const myActivity = useCommunityStore((state) => state.mine.materials);
+  const favoriteKeys = useMemo(() => typeFilter === "local" ? localPins : new Set(materials
+    .filter((profile) => myActivity[references[profile.directory_name]?.resource_id]?.saved)
+    .map(favoriteKeyForMaterial)), [materials, references, myActivity, typeFilter, localPins]);
+  useResourceActivity("materials", Object.values(references).map((row) => row.resource_id), open);
+  useEffect(() => { if (open) void useCommunityStore.getState().loadReferences("materials"); }, [open, materials]);
   const [showMixedConfirmation, setShowMixedConfirmation] = useState(false);
   const [selectionEffectDirectory, setSelectionEffectDirectory] =
     useState<string | null>(null);
@@ -187,13 +259,17 @@ export default function MaterialPickerDialog({
       document.activeElement instanceof HTMLElement
         ? document.activeElement
         : null;
-    setStaged(initialSelected);
-    setQuery("");
+    setStaged(initialSelectedRef.current);
+    onOpenRef.current?.();
+    setCatalogSource(null);
+    setSelectionError(null);
+    setResourceSuccess(null);
+    setQuery(initialQueryRef.current);
     setTypeFilter("all");
     setBrandKey("all");
     setSort("name");
     setExpandedGroupKeys(new Set());
-    setFavoriteKeys(loadMaterialProfileFavorites());
+    setLocalPins(loadMaterialProfileFavorites());
     afterConfirmRef.current = undefined;
     setShowMixedConfirmation(false);
     setSelectionEffectDirectory(null);
@@ -206,7 +282,13 @@ export default function MaterialPickerDialog({
       window.clearTimeout(focusTimer);
       previouslyFocusedRef.current?.focus();
     };
-  }, [initialSelected, open]);
+  }, [open]);
+
+  useEffect(() => {
+    if (!cloudOpen) return;
+    const timer = window.setTimeout(() => dialogRef.current?.querySelector<HTMLInputElement>('input[type="search"]')?.focus(), 0);
+    return () => window.clearTimeout(timer);
+  }, [cloudOpen]);
 
   useEffect(() => {
     if (!showMixedConfirmation) return undefined;
@@ -220,11 +302,15 @@ export default function MaterialPickerDialog({
     if (!open) return undefined;
 
     const handleKeyDown = (event: KeyboardEvent) => {
+      if (document.querySelector("[data-resource-dialog]")) return;
       if (event.key === "Escape") {
         event.preventDefault();
         if (showMixedConfirmation) {
           afterConfirmRef.current = undefined;
           setShowMixedConfirmation(false);
+        } else if (cloudOpen) {
+          setCatalogSource(null);
+          window.setTimeout(() => searchInputRef.current?.focus(), 0);
         } else {
           onCancel();
         }
@@ -261,7 +347,7 @@ export default function MaterialPickerDialog({
 
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [onCancel, open, showMixedConfirmation]);
+  }, [onCancel, open, showMixedConfirmation, cloudOpen]);
 
   const stagedSet = useMemo(() => new Set(staged), [staged]);
   const groups = useMemo(
@@ -273,19 +359,20 @@ export default function MaterialPickerDialog({
       buildBrandOptions(materials, {
         all: t("basic_material_picker_all_brands"),
         unassigned: t("basic_material_picker_brand_unassigned"),
-      }),
-    [materials, t],
+      }, identities),
+    [materials, identities, t],
   );
   const visibleGroups = useMemo(
     () =>
       filterMaterialGroups(groups, {
         query,
-        type: typeFilter,
+        type: typeFilter === "local" ? "favorites" : typeFilter,
         brandKey,
         favoriteKeys,
         sort,
+        identities,
       }),
-    [brandKey, favoriteKeys, groups, query, sort, typeFilter],
+    [brandKey, favoriteKeys, groups, identities, query, sort, typeFilter],
   );
   const selectedTypeSummary = useMemo(
     () => summarizeSelectedMaterialTypes(materials, staged),
@@ -337,7 +424,7 @@ export default function MaterialPickerDialog({
 
   const toggleFavorite = (profile: SavedMaterialLibraryItem) => {
     const favoriteKey = favoriteKeyForMaterial(profile);
-    setFavoriteKeys((previous) => {
+    setLocalPins((previous) => {
       const next = new Set(previous);
       if (next.has(favoriteKey)) {
         next.delete(favoriteKey);
@@ -364,7 +451,8 @@ export default function MaterialPickerDialog({
   const confirmSelection = () => {
     const afterConfirm = afterConfirmRef.current;
     afterConfirmRef.current = undefined;
-    onConfirm(staged);
+    const error = onConfirm(staged);
+    if (error) { setSelectionError(error); setShowMixedConfirmation(false); return; }
     afterConfirm?.();
   };
   const cancelMixedConfirmation = () => {
@@ -388,18 +476,10 @@ export default function MaterialPickerDialog({
     materialName: string,
   ) => {
     const key = favoriteKeyForMaterial(profile);
-    const isFavorite = favoriteKeys.has(key);
-    const author =
-      profile.contributor_name?.trim() ||
-      t("basic_material_picker_unknown_author");
-    const label = formatMessage(
-      t(
-        isFavorite
-          ? "basic_material_picker_unfavorite_profile"
-          : "basic_material_picker_favorite_profile",
-      ),
-      { material: materialName, author },
-    );
+    const isFavorite = localPins.has(key);
+    const reference = references[profile.directory_name];
+    if (reference && typeFilter !== "local") return <ResourceActivityActions kind="materials" resource={reference} favoriteOnly />;
+    const label = `${t(isFavorite ? "community_local_unpin" : "community_local_pin")} · ${materialName}（${profile.contributor_name?.trim() || t("basic_material_picker_unknown_author")}）`;
     const FavoriteIcon = isFavorite ? StarIcon : StarOutlineIcon;
     return (
       <button
@@ -425,7 +505,8 @@ export default function MaterialPickerDialog({
     profile: SavedMaterialLibraryItem,
   ) => {
     const selected = stagedSet.has(profile.directory_name);
-    const materialName = profile.material_name;
+    const identity = identities.get(profile.directory_name)!;
+    const materialName = identity.name;
     const materialType =
       resolvedMaterialType(profile) ||
       t("basic_material_picker_unknown_type");
@@ -467,24 +548,10 @@ export default function MaterialPickerDialog({
             className="flex min-w-0 flex-1 flex-col items-stretch gap-3 rounded-xl text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)]"
           >
             <span className="flex min-w-0 items-start gap-3">
-              <span
-                aria-hidden="true"
-                className="mt-0.5 h-11 w-11 shrink-0 rounded-xl border border-slate-200/80 dark:border-slate-700/80"
-                style={{ backgroundColor: materialSwatchColor(profile) }}
-              />
+              <CalibrationThumbnail kind="materials" rgb={profile.estimated_rgb} display={profile.display} size="sm" />
               <span className="min-w-0 flex-1">
-                <span className="block truncate text-sm font-semibold text-slate-900 dark:text-slate-50">
-                  {materialName}
-                </span>
-                <span className="mt-1 block truncate text-xs text-slate-500 dark:text-slate-400">
-                  {[
-                    profile.brand?.trim(),
-                    materialType,
-                    formatLayerHeightMm(profile.layer_height_mm),
-                  ]
-                    .filter(Boolean)
-                    .join(" · ")}
-                </span>
+                <LibraryCardIdentity {...identity} subtitle={[identity.brand, materialType, formatLayerHeightMm(profile.layer_height_mm)].filter(Boolean).join(" · ")}
+                  thumbnail={{ kind: "materials", rgb: profile.estimated_rgb, display: profile.display }} />
               </span>
             </span>
             <span className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-slate-500 dark:text-slate-400">
@@ -519,7 +586,8 @@ export default function MaterialPickerDialog({
   const renderMultiProfileCard = (group: MaterialProductGroup) => {
     const displayProfiles = profilesForDisplay(group);
     const summaryProfile = displayProfiles[0];
-    const materialName = summaryProfile.material_name;
+    const identity = identities.get(summaryProfile.directory_name)!;
+    const materialName = identity.name;
     const materialType =
       resolvedMaterialType(summaryProfile) ||
       t("basic_material_picker_unknown_type");
@@ -527,7 +595,7 @@ export default function MaterialPickerDialog({
       stagedSet.has(profile.directory_name),
     );
     const forceExpanded =
-      query.trim().length > 0 || typeFilter === "favorites";
+      query.trim().length > 0 || typeFilter === "favorites" || typeFilter === "local";
     const expanded = forceExpanded || expandedGroupKeys.has(group.key);
     const expandLabel = formatMessage(
       t(
@@ -552,25 +620,11 @@ export default function MaterialPickerDialog({
             "material-picker-card-select-effect",
         )}
       >
-        <div className="flex min-w-0 items-start gap-3">
-          <span
-            aria-hidden="true"
-            className="mt-0.5 h-11 w-11 shrink-0 rounded-xl border border-slate-200/80 dark:border-slate-700/80"
-            style={{ backgroundColor: materialSwatchColor(summaryProfile) }}
-          />
+        <div data-calibration-hover className="flex min-w-0 items-start gap-3">
+          <CalibrationThumbnail kind="materials" rgb={summaryProfile.estimated_rgb} display={summaryProfile.display} size="sm" />
           <div className="min-w-0 flex-1">
-            <p className="truncate text-sm font-semibold text-slate-900 dark:text-slate-50">
-              {materialName}
-            </p>
-            <p className="mt-1 truncate text-xs text-slate-500 dark:text-slate-400">
-              {[
-                summaryProfile.brand?.trim(),
-                materialType,
-                formatLayerHeightSummary(displayProfiles),
-              ]
-                .filter(Boolean)
-                .join(" · ")}
-            </p>
+            <LibraryCardIdentity {...identity} subtitle={[identity.brand, materialType, formatLayerHeightSummary(displayProfiles)].filter(Boolean).join(" · ")}
+              thumbnail={{ kind: "materials", rgb: summaryProfile.estimated_rgb, display: summaryProfile.display }} />
           </div>
           <button
             type="button"
@@ -664,22 +718,21 @@ export default function MaterialPickerDialog({
   const showEmpty = !loading && !loadError && materials.length === 0;
   const showEmptyFavorites =
     !loading &&
-    !loadError &&
     materials.length > 0 &&
     typeFilter === "favorites" &&
     visibleGroups.length === 0 &&
     query.trim().length === 0;
   const showNoMatch =
     !loading &&
-    !loadError &&
     materials.length > 0 &&
     !showEmptyFavorites &&
     visibleGroups.length === 0;
-  const tabs: Array<{ key: MaterialTypeFilter; label: string }> = [
+  const tabs: Array<{ key: MaterialTypeFilter | "local"; label: string }> = [
     {
       key: "favorites",
-      label: t("basic_material_picker_tab_favorites"),
+      label: t("community_filter_saved"),
     },
+    { key: "local", label: t("community_local_common") },
     { key: "all", label: t("basic_material_picker_tab_all") },
     { key: "pla", label: t("basic_material_picker_tab_pla") },
     { key: "petg", label: t("basic_material_picker_tab_petg") },
@@ -690,7 +743,7 @@ export default function MaterialPickerDialog({
     <>
       <div
         role="presentation"
-        className="fixed inset-0 z-[9999] flex items-center justify-center p-4 backdrop-blur-sm sm:p-6"
+        className="fixed inset-0 z-[9999] flex items-center justify-center p-4 sm:p-6"
         style={{ background: "var(--surface-scrim)" }}
         onMouseDown={(event) => {
           if (event.target === event.currentTarget) onCancel();
@@ -705,20 +758,20 @@ export default function MaterialPickerDialog({
           aria-describedby={descriptionId}
           aria-hidden={showMixedConfirmation || undefined}
           tabIndex={-1}
-          className="grid h-[min(51.25rem,calc(100vh-3rem))] w-[min(68rem,calc(100vw-3rem))] max-w-none overflow-hidden rounded-[28px] border shadow-2xl"
+          className="grid h-[min(51.25rem,calc(100vh-3rem))] w-[min(68rem,calc(100vw-3rem))] max-w-none grid-cols-[minmax(0,1fr)] overflow-hidden rounded-2xl border"
           style={{
-            borderColor: "var(--surface-outline)",
+            borderColor: "var(--surface-card-outline)",
             background: "var(--surface-panel-strong)",
-            gridTemplateRows: "auto auto auto minmax(0,1fr) auto",
+            gridTemplateRows: cloudOpen ? "auto minmax(0,1fr)" : "auto auto auto minmax(0,1fr) auto",
           }}
           onMouseDown={(event) => event.stopPropagation()}
           data-testid="material-picker-dialog"
         >
-          <header className="flex items-start justify-between border-b border-slate-200/80 px-5 py-4 dark:border-slate-700/80 sm:px-6">
+          <header className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-3 border-b border-slate-200/80 px-5 py-4 dark:border-slate-700/80 sm:grid-cols-[minmax(0,1fr)_auto_auto] sm:px-6">
             <div className="min-w-0 pr-4">
               <h2
                 id={titleId}
-                className="text-lg font-semibold tracking-tight text-slate-900 dark:text-slate-50"
+                className="text-[15px] font-semibold text-slate-900 dark:text-slate-50"
               >
                 {t("basic_material_picker_dialog_title")}
               </h2>
@@ -726,12 +779,23 @@ export default function MaterialPickerDialog({
                 id={descriptionId}
                 className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400"
               >
-                {t("basic_material_picker_dialog_subtitle")}
+                {t(trial ? "material_guide_picker_hint" : "basic_material_picker_dialog_subtitle")}
               </p>
             </div>
-            <CloseButton label={t("basic_material_picker_close")} onClick={onCancel} />
+            <div className="col-span-2 row-start-2 flex min-w-0 flex-wrap items-center gap-2 sm:col-span-1 sm:col-start-2 sm:row-start-1">
+              {!cloudOpen && materials.length > 0 && <Button label={t("resources_calibrate")} onClick={calibrate} />}
+              {cloudOpen ? <Button label={t("resources_back_to_picker")} onClick={returnToLocal} />
+                : materials.length > 0 && <Button label={t("resources_browse_public")} onClick={() => setCatalogSource("cloud")} />}
+            </div>
+            <div className="col-start-2 row-start-1 sm:col-start-3">
+              <CloseButton label={t("basic_material_picker_close")} onClick={onCancel} />
+            </div>
           </header>
 
+          {cloudOpen ? <div className="min-h-0"><ResourceCatalogPanel kind="materials" initialSource={catalogSource ?? "cloud"} initialPersonalFilter={typeFilter === "favorites" ? "saved" : "all"} initialQuery={query} onQueryChange={setQuery} onInstalled={() => {
+            onRetry?.();
+            setResourceSuccess(t("resources_installed_pick"));
+          }} /></div> : <>
           <div className="border-b border-slate-200/80 px-4 py-3 dark:border-slate-700/80 sm:px-6">
             <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
               <div
@@ -748,7 +812,10 @@ export default function MaterialPickerDialog({
                       type="button"
                       role="tab"
                       aria-selected={selected}
-                      onClick={() => setTypeFilter(tab.key)}
+                      onClick={() => {
+                        if (tab.key === "favorites" && connection?.state !== "connected") setAccountOpen(true);
+                        else setTypeFilter(tab.key);
+                      }}
                       className={cx(
                         "min-h-9 shrink-0 rounded-xl px-3 text-xs font-medium transition-colors focus:outline-none focus:ring-4 focus:ring-[var(--focus-ring)]",
                         selected
@@ -797,30 +864,18 @@ export default function MaterialPickerDialog({
                     </button>
                   )}
                 </label>
-                <label className="relative shrink-0">
-                  <span className="sr-only">
-                    {t("basic_material_picker_sort_label")}
-                  </span>
-                  <select
+                <div className="min-w-32 shrink-0 self-end sm:self-center">
+                  <Dropdown
+                    variant="filter"
+                    label={t("basic_material_picker_sort_label")}
                     value={sort}
-                    onChange={(event) =>
-                      setSort(event.target.value as MaterialPickerSort)
-                    }
-                    aria-label={t("basic_material_picker_sort_label")}
-                    className={`${workstationInputClass} min-w-32 appearance-none pr-9`}
-                  >
-                    <option value="name">
-                      {t("basic_material_picker_sort_name")}
-                    </option>
-                    <option value="recent">
-                      {t("basic_material_picker_sort_recent")}
-                    </option>
-                  </select>
-                  <ChevronDownIcon
-                    className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400"
-                    aria-hidden="true"
+                    onChange={value => setSort(value as MaterialPickerSort)}
+                    options={[
+                      { value: "name", label: t("basic_material_picker_sort_name") },
+                      { value: "recent", label: t("basic_material_picker_sort_recent") },
+                    ]}
                   />
-                </label>
+                </div>
               </div>
             </div>
           </div>
@@ -841,7 +896,7 @@ export default function MaterialPickerDialog({
                 <ul className="dock-scrollbar flex max-h-[4.5rem] min-w-0 flex-1 flex-wrap gap-1.5 overflow-y-auto">
                   {staged.map((directoryName) => {
                     const item = materialByDirectory.get(directoryName);
-                    const name = item?.material_name ?? directoryName;
+                    const name = identities.get(directoryName)?.name ?? directoryName;
                     return (
                       <li
                         key={directoryName}
@@ -905,10 +960,10 @@ export default function MaterialPickerDialog({
                       )}
                     >
                       <span
-                        className="min-w-0 truncate"
+                        className="flex min-w-0 items-center gap-1.5"
                         data-testid={`material-picker-brand-option-${option.key}`}
                       >
-                        {option.label}
+                        <LibraryBrandLogo logo={option.logo} /><span className="truncate">{option.label}</span>
                       </span>
                       <span className="shrink-0 tabular-nums text-slate-400 dark:text-slate-500">
                         {option.count}
@@ -921,43 +976,39 @@ export default function MaterialPickerDialog({
 
             <main className="flex min-h-0 min-w-0 flex-col">
               <div className="border-b border-slate-200/80 px-4 py-3 dark:border-slate-700/80 md:hidden">
-                <label className="block">
-                  <span className="sr-only">
-                    {t("basic_material_picker_brand_filter_label")}
-                  </span>
-                  <select
-                    value={brandKey}
-                    onChange={(event) => setBrandKey(event.target.value)}
-                    aria-label={t(
-                      "basic_material_picker_brand_filter_label",
-                    )}
-                    className={workstationInputClass}
-                  >
-                    {brandOptions.map((option) => (
-                      <option key={option.key} value={option.key}>
-                        {option.label} ({option.count})
-                      </option>
-                    ))}
-                  </select>
-                </label>
+                <Dropdown
+                  variant="filter"
+                  label={t("basic_material_picker_brand_filter_label")}
+                  value={brandKey}
+                  onChange={setBrandKey}
+                  options={brandOptions.map(option => ({
+                    value: option.key,
+                    label: `${option.label} (${option.count})`,
+                  }))}
+                />
               </div>
 
               <div
                 className="dock-scrollbar min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-4 sm:px-5"
                 data-tutorial="material-picker-cards"
               >
+                <CommunityNotice kind="materials" ids={Object.values(references).map((row) => row.resource_id)} />
+                {typeFilter === "local" && <p className="mb-3 text-xs text-slate-500">{t("community_local_hint")}</p>}
+                {operationError && <StatusBanner tone="error">{operationError}</StatusBanner>}
+                {loadError && materials.length > 0 && <StatusBanner tone="error" action={<Button label={t("resources_retry")} onClick={onRetry} />}>{t("basic_material_picker_load_error")}</StatusBanner>}
+                <TransientBanner message={resourceSuccess} onDismiss={() => setResourceSuccess(null)} />
                 {loading ? (
                   <div className="flex min-h-48 items-center justify-center text-sm text-slate-500 dark:text-slate-400">
                     {t("basic_material_loading")}
                   </div>
-                ) : loadError ? (
+                ) : loadError && materials.length === 0 ? (
                   <div
                     data-testid="material-picker-load-error"
                     className="flex min-h-48 flex-col items-center justify-center gap-4 text-center"
                   >
-                    <p className="max-w-sm text-sm text-slate-600 dark:text-slate-300">
+                    <StatusBanner tone="error">
                       {t("basic_material_picker_load_error")}
-                    </p>
+                    </StatusBanner>
                     {onRetry && (
                       <Button
                         label={t("basic_material_picker_retry")}
@@ -968,19 +1019,23 @@ export default function MaterialPickerDialog({
                     )}
                   </div>
                 ) : showEmpty ? (
-                  <div className="flex min-h-48 items-center justify-center text-center text-sm text-slate-500 dark:text-slate-400">
-                    {t("basic_material_empty")}
-                  </div>
+                  <ResourceLibraryEmpty kind="materials" onBrowse={setCatalogSource} onImport={importResources}
+                    onCalibrate={calibrate} />
                 ) : showEmptyFavorites ? (
-                  <div className="flex min-h-48 items-center justify-center text-center text-sm text-slate-500 dark:text-slate-400">
+                  <div className="flex min-h-48 flex-col items-center justify-center gap-3 text-center text-sm text-slate-500 dark:text-slate-400">
                     {t("basic_material_picker_empty_favorites")}
+                    <Button label={t("community_saved_browse")} onClick={() => setCatalogSource("cloud")} />
                   </div>
                 ) : showNoMatch ? (
                   <div
                     data-testid="material-picker-no-match"
-                    className="flex min-h-48 items-center justify-center text-center text-sm text-slate-500 dark:text-slate-400"
+                    className="flex min-h-48 flex-col items-center justify-center gap-3 text-center text-sm text-slate-500 dark:text-slate-400"
                   >
-                    {t("basic_material_picker_no_match")}
+                    <p>{t("basic_material_picker_no_match")}</p>
+                    <div className="flex flex-wrap justify-center gap-2">
+                      <Button label={t("resources_browse_materials")} onClick={() => setCatalogSource("cloud")} />
+                      <Button label={t("material_guide_create_missing")} onClick={calibrate} />
+                    </div>
                   </div>
                 ) : (
                   <div
@@ -1003,6 +1058,7 @@ export default function MaterialPickerDialog({
             className="border-t border-slate-200/80 px-4 py-3 dark:border-slate-700/80 sm:px-6"
             data-tutorial="material-picker-footer"
           >
+            {selectionError && <StatusBanner tone="error" className="mb-3">{t(selectionError)}</StatusBanner>}
             {selectedTypeSummary.requiresConfirmation && (
               <StatusBanner
                 role="status"
@@ -1027,17 +1083,20 @@ export default function MaterialPickerDialog({
                   size="sm"
                 />
                 <Button
-                  label={t("basic_material_picker_done")}
+                  label={t(trial ? (previewOnConfirm ? "material_guide_use_preview" : "material_guide_use") : "basic_material_picker_done")}
                   onClick={() => handleDone()}
+                  disabled={trial && staged.length === 0}
                   size="sm"
                   variant="primary"
                 />
               </div>
             </div>
           </footer>
+          </>}
         </div>
       </div>
 
+      {accountOpen && <CommunityAccountDialog onClose={() => setAccountOpen(false)} />}
       {showMixedConfirmation && (
         <div
           role="presentation"
@@ -1056,9 +1115,9 @@ export default function MaterialPickerDialog({
             aria-labelledby={confirmTitleId}
             aria-describedby={confirmDescriptionId}
             tabIndex={-1}
-            className="w-full max-w-md rounded-[24px] border p-5 shadow-2xl sm:p-6"
+            className="w-full max-w-md rounded-2xl border p-4 sm:p-5"
             style={{
-              borderColor: "var(--warning-border)",
+              borderColor: "var(--surface-card-outline)",
               background: "var(--surface-panel-strong)",
             }}
             onMouseDown={(event) => event.stopPropagation()}
@@ -1066,7 +1125,7 @@ export default function MaterialPickerDialog({
             <div className="flex items-start justify-between gap-3">
               <h3
                 id={confirmTitleId}
-                className="text-lg font-semibold text-slate-900 dark:text-slate-50"
+                className="text-[15px] font-semibold text-slate-900 dark:text-slate-50"
               >
                 {t("basic_material_picker_mixed_confirm_title")}
               </h3>
@@ -1081,12 +1140,12 @@ export default function MaterialPickerDialog({
                 { types: typeSummaryText },
               )}
             </p>
-            <div className="mt-6 flex justify-end gap-2">
+            <div className="mt-5 flex flex-wrap justify-end gap-2">
               <button
                 ref={confirmBackRef}
                 type="button"
                 onClick={cancelMixedConfirmation}
-                className="min-h-10 rounded-xl border border-slate-200/80 px-4 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-100 focus:outline-none focus:ring-4 focus:ring-[var(--focus-ring)] dark:border-slate-700/80 dark:text-slate-200 dark:hover:bg-slate-800"
+                className="action-control min-h-9 rounded-lg px-4 text-sm font-medium transition-colors"
               >
                 {t("basic_material_picker_mixed_back")}
               </button>

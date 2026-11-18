@@ -4,6 +4,8 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import GradientCardGeneratePanel from "../components/GradientCardGeneratePanel";
 import { useCalibrationStore } from "../stores/calibrationStore";
 import { MATERIAL_PRESETS } from "../constants/materialPresets";
+import { useSingleStageStore } from "../stores/singleStageStore";
+import { useWidgetStore } from "../stores/widgetStore";
 
 vi.mock("../api/calibration", () => ({
   calibrationGenerate: vi.fn(),
@@ -32,6 +34,16 @@ beforeEach(() => {
 });
 
 describe("GradientCardGeneratePanel", () => {
+  it("carries the entered identity into extraction after printing", () => {
+    useSingleStageStore.setState({ materialName: "", materialBrand: "" });
+    useCalibrationStore.setState({ lastSubmittedWorkflow: "single-stage", downloadUrl: "/api/files/kit.zip" });
+    render(<GradientCardGeneratePanel />);
+    fireEvent.change(screen.getByPlaceholderText("系列、颜色或色号（可稍后补充）"), { target: { value: "PLA Basic 蓝 101" } });
+    fireEvent.change(screen.getByRole("textbox", { name: "品牌（可选）" }), { target: { value: "Test Brand" } });
+    fireEvent.click(screen.getByRole("button", { name: "拍好照片后去提取" }));
+    expect(useWidgetStore.getState().activeTab).toBe("gradient-card-extract");
+    expect(useSingleStageStore.getState()).toMatchObject({ materialName: "PLA Basic 蓝 101", materialBrand: "Test Brand" });
+  });
   it("renders gradient-card generation fields and hides LUT color mode", () => {
     render(<GradientCardGeneratePanel />);
 

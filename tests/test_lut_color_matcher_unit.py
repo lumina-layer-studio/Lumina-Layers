@@ -71,7 +71,7 @@ def test_chromatic_dark_lut_matching_keeps_colored_candidate() -> None:
 
 
 def test_legacy_rybw_lut_keeps_deep_gray_achromatic() -> None:
-    lut = load_lut("lut-preset/bambulab/bambulab_pla_basic_rybw.npy", "4-Color (RYBW)")
+    lut = load_lut("tests/fixtures/lut_regression/bambulab_pla_basic_rybw.npy", "4-Color (RYBW)")
     unique_colors = np.array([[32, 32, 32]], dtype=np.uint8)
 
     result = match_colors_to_lut(unique_colors, lut["lut_rgb"], lut["lut_lab"], lut["kdtree"])

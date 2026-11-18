@@ -1019,8 +1019,9 @@ def save_settings(settings: UserSettings) -> SaveSettingsResponse:
     """
     try:
         settings_payload = settings.model_dump()
-        if "conversion_preferences" not in settings.model_fields_set:
-            settings_payload.pop("conversion_preferences", None)
+        for field in ("conversion_preferences", "filament_market"):
+            if field not in settings.model_fields_set:
+                settings_payload.pop(field, None)
         stored_payload: dict[str, object] = {}
         try:
             if SETTINGS_FILE.exists():

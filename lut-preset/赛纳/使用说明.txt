@@ -1,9 +1,0 @@
-赛纳PLA使用颜色
-PLA 白色
-PLA 黑色
-PLA 黄色
-PLA 深红色
-PLA 品红色
-PLA 深蓝色（预设里对应蓝色）
-PLA 青色
-PLA 浅绿色

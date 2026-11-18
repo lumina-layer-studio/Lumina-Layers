@@ -568,7 +568,7 @@ def test_empty_svg_real_worker_returns_actionable_422(tmp_path: Path) -> None:
     )
     upload_bytes = image_path.read_bytes()
     lut_path = Path(
-        "lut-preset/Custom/Bambulab&PLA&RYBW&红-黄-蓝-白.npy"
+        "tests/fixtures/lut_regression/Bambulab&PLA&RYBW&红-黄-蓝-白.npy"
     ).resolve()
     assert lut_path.exists()
 

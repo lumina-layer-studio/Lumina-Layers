@@ -1,0 +1,22 @@
+{
+  "display": {
+    "brand": null,
+    "material_name": null,
+    "material_type": null,
+    "series": null,
+    "color_name": null,
+    "color_code": null,
+    "market_names": {
+      "CN": null,
+      "INTL": null
+    },
+    "description": null,
+    "purchase_links": [
+      {
+        "market": "CN",
+        "label": null,
+        "url": null
+      }
+    ]
+  }
+}

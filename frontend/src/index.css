@@ -816,3 +816,12 @@ body.lumina-canvas-orbiting [data-widget-id] {
 .disclosure-summary::-webkit-details-marker { display: none; }
 .disclosure-summary::marker { content: ""; }
 details[open] > .disclosure-summary > .disclosure-chevron { transform: rotate(90deg); }
+
+/* Defer invalid field highlights until after user interaction or submit attempt. */
+.workstation-field-validate:is(:user-invalid) {
+  border-color: var(--error-border);
+}
+.workstation-field-validate:is(:user-invalid):focus {
+  border-color: rgb(239 68 68);
+  outline-color: var(--error-border);
+}

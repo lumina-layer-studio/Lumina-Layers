@@ -87,6 +87,7 @@ import {
   type SvgHoleCompensationOptions,
 } from "../../constants/svgHoleCompensation";
 import { tRuntime } from "../../i18n/runtime";
+import { useResourceStore } from "../resourceStore";
 import {
   postClientLog,
   summarizeErrorForLog,
@@ -1803,9 +1804,11 @@ function buildLegacySelectionAvailabilityUpdates(
     | "legacyCatalogGroups"
   >,
   availableNames: Iterable<string>,
+  aliases: Record<string, string> = {},
 ): Partial<ConverterState> {
   const available = new Set(availableNames);
-  const normalized = normalizeLegacyLutNames(state.lut_names, state.lut_name);
+  const normalized = [...new Set(normalizeLegacyLutNames(state.lut_names, state.lut_name)
+    .map((name) => available.has(name) ? name : aliases[name] ?? name))];
   if (normalized.length === 0) {
     return {};
   }
@@ -2090,9 +2093,11 @@ export const DEFAULT_STATE: ConverterState = {
   modelUrl: null,
   lutList: [],
   lutListLoading: false,
+  lutListError: null,
   lutListFull: [],
   legacyCatalogGroups: [],
   legacyCatalogLoading: false,
+  legacyCatalogError: null,
   selectedLegacyManufacturer: "",
   lutColors: [],
   lutColorCards: [],
@@ -6227,26 +6232,39 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
 
     // --- API 操作 ---
     uploadLut: async (file: File) => {
-      set({ lutListLoading: true, error: null });
+      set({ error: null });
       try {
-        const res = await apiUploadLut(file);
-        // 上传成功后通过 catalog 刷新 legacy/native 共享状态，再选中新 LUT
-        await Promise.all([
-          _get().fetchLutCatalog(),
-          _get().fetchLegacyCatalog(),
-        ]);
-        _get().setLutName(res.name);
+        await apiUploadLut(file);
+        // Import only updates inventory. The open picker owns staged choices
+        // and validates task context and compatibility before applying them.
+        await _get().refreshResourceCatalog();
       } catch (err) {
         set({
           error: visibleConverterError(err, "LUT 上传失败"),
         });
-      } finally {
-        set({ lutListLoading: false });
+        throw err;
+      }
+    },
+
+    refreshResourceCatalog: async () => {
+      set({ legacyCatalogLoading: true, lutListLoading: true, legacyCatalogError: null, lutListError: null });
+      const [catalog, details] = await Promise.allSettled([apiFetchLutCatalog(), apiFetchLutDetailsCatalog()]);
+      if (catalog.status === "fulfilled") {
+        const luts = catalog.value.legacy_groups.flatMap((group) => group.items);
+        useResourceStore.getState().observeLibrary("luts", luts.length);
+        set({ lutListFull: luts, lutList: luts.map((item) => item.name), lutListLoading: false });
+      } else {
+        set({ lutListLoading: false, lutListError: visibleConverterError(catalog.reason, tRuntime("lut_library_load_failed")) });
+      }
+      if (details.status === "fulfilled") {
+        set({ legacyCatalogGroups: details.value.groups, legacyCatalogLoading: false });
+      } else {
+        set({ legacyCatalogLoading: false, legacyCatalogError: visibleConverterError(details.reason, tRuntime("lut_library_load_failed")) });
       }
     },
 
     fetchLutList: async (options = {}) => {
-      set({ lutListLoading: true });
+      set({ lutListLoading: true, lutListError: null });
       try {
         const response = await apiFetchLutList(options);
         let luts = response.luts.map(normalizeLutColorMode);
@@ -6274,6 +6292,7 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
           buildLegacySelectionAvailabilityUpdates(
             selectionState,
             luts.map((lut) => lut.name),
+            response.legacy_aliases,
           ),
         );
         const remembered = updates.lut_name ?? currentState.lut_name;
@@ -6296,6 +6315,7 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
         set({
           lutListLoading: false,
           error: visibleConverterError(err, "LUT 列表加载失败"),
+          lutListError: visibleConverterError(err, "LUT 列表加载失败"),
         });
       }
     },
@@ -6348,6 +6368,7 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
           buildLegacySelectionAvailabilityUpdates(
             selectionState,
             legacyLuts.map((lut) => lut.name),
+            response.legacy_aliases,
           ),
         );
         if (remembered) {
@@ -6410,7 +6431,7 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
     },
 
     fetchLegacyCatalog: async (options = {}) => {
-      set({ legacyCatalogLoading: true, error: null });
+      set({ legacyCatalogLoading: true, legacyCatalogError: null, error: null });
       try {
         const response = await apiFetchLutDetailsCatalog(options);
         const groups = normalizeLutGroups(response.groups ?? []);
@@ -6436,7 +6457,7 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
           selectedLegacyManufacturer: selectedManufacturer,
         });
       } catch (err) {
-        set({ legacyCatalogLoading: false });
+        set({ legacyCatalogLoading: false, legacyCatalogError: visibleConverterError(err, "LUT 详情目录加载失败") });
         _get().setError(visibleConverterError(err, "LUT 详情目录加载失败"));
       }
     },

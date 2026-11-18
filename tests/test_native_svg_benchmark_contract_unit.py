@@ -33,9 +33,7 @@ ALPHA_FIXTURE_PATH = (
 )
 LUT_PATH = (
     REPO_ROOT
-    / "lut-preset"
-    / "bambulab"
-    / "bambulab_pla_basic_rybw.npy"
+    / "tests/fixtures/lut_regression/Bambulab&PLA&RYBW&红-黄-蓝-白.npy"
 )
 def _load_manifest() -> dict:
     return json.loads(MANIFEST_PATH.read_text(encoding="utf-8"))

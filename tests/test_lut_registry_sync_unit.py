@@ -364,6 +364,94 @@ def test_catalog_marks_existing_local_lut_available(
     assert item["local_match_path"] == "Official/Test/Readable LUT.json"
 
 
+def _install_history_pair() -> tuple[dict[str, Any], dict[str, Any]]:
+    old_bundle = _bundle_bytes()
+    old_entry = _entry(old_bundle)
+    old = sync.install_lut_archive_bytes(old_entry, old_bundle, source_url="offline:old")
+    new_bytes = _DEFAULT_LUT_BYTES.replace(b"255,255,255", b"220,220,220")
+    new_bundle = _bundle_bytes(new_bytes)
+    new_entry = _entry(new_bundle, revision_id="rev-2", content_hash=_sha256(new_bytes))
+    new = sync.install_lut_archive_bytes(new_entry, new_bundle, source_url="offline:new")
+    return old, new
+
+
+def test_lut_versions_update_restore_and_reinstall_preserve_project_files(_isolated_lut_dir: Path) -> None:
+    old, new = _install_history_pair()
+    old_path = _isolated_lut_dir / old["installed_path"]
+    new_path = _isolated_lut_dir / new["installed_path"]
+    old_bytes, new_bytes = old_path.read_bytes(), new_path.read_bytes()
+    assert old_path != new_path
+    assert sync._catalog_item_local_presence(new)["local_state"] == "installed"
+    assert sync._catalog_item_local_presence(old)["local_state"] == "local_available"
+    unseen = {**new, "revision_id": "rev-unseen", "content_hash": "sha256:" + "b" * 64}
+    assert sync._catalog_item_local_presence(unseen)["local_state"] == "update_available"
+    # The restore boundary needs no registry credentials or network download.
+    client = TestClient(create_app())
+    response = client.post("/api/lut-registry/restore", json={"lut_id": old["lut_id"], "revision_id": old["revision_id"]})
+    assert response.status_code == 200
+    assert sync._catalog_item_local_presence(old)["local_state"] == "installed"
+    assert sync._catalog_item_local_presence(new)["local_state"] == "local_available"
+    history = client.get("/api/lut-registry/status").json()["history"][0]
+    assert history["current_revision"] == old["revision_id"]
+    assert len(history["revisions"]) == 2
+    assert all(row["available"] for row in history["revisions"])
+    local_catalog = client.get("/api/lut/details/catalog").json()
+    versions = {row["path"]: row["local_version"] for group in local_catalog["groups"] for row in group["items"]}
+    assert versions[f'lut-preset/{old["installed_path"]}']["current"] is True
+    assert versions[f'lut-preset/{new["installed_path"]}']["current"] is False
+    assert old_path.read_bytes() == old_bytes and new_path.read_bytes() == new_bytes
+    files = LUTManager.get_all_lut_files()
+    assert str(old_path) in files.values() and str(new_path) in files.values()
+    # An idempotent re-install can make a stored version current again.
+    bundle = _bundle_bytes(new_bytes)
+    sync.install_lut_archive_bytes(_entry(bundle, revision_id="rev-2", content_hash=_sha256(new_bytes)), bundle, source_url="offline:new")
+    assert sync.registry_status()["history"][0]["current_revision"] == "rev-2"
+    local_catalog = client.get("/api/lut/details/catalog").json()
+    versions = {row["path"]: row["local_version"] for group in local_catalog["groups"] for row in group["items"]}
+    assert versions[f'lut-preset/{old["installed_path"]}']["current"] is False
+    assert versions[f'lut-preset/{new["installed_path"]}']["current"] is True
+
+
+@pytest.mark.parametrize("failure", ["missing", "modified"])
+def test_lut_history_rejects_unusable_versions_and_download_recovers_without_overwriting(
+    _isolated_lut_dir: Path, failure: str,
+) -> None:
+    old, new = _install_history_pair()
+    path = _isolated_lut_dir / new["installed_path"]
+    original = path.read_bytes()
+    if failure == "missing":
+        path.unlink()
+    else:
+        path.write_bytes(b"user changes")
+    assert sync._catalog_item_local_presence(new)["local_state"] == f"local_{failure}"
+    before = sync.read_installed_index()
+    response = TestClient(create_app()).post("/api/lut-registry/restore", json={"lut_id": new["lut_id"], "revision_id": new["revision_id"]})
+    assert response.status_code == 422
+    assert sync.read_installed_index() == before
+    history = sync.registry_status()["history"][0]
+    assert not next(row for row in history["revisions"] if row["revision_id"] == new["revision_id"])["available"]
+    bundle = _bundle_bytes(original)
+    restored = sync.install_lut_archive_bytes(
+        _entry(bundle, revision_id=new["revision_id"], content_hash=_sha256(original)), bundle, source_url="offline:repair",
+    )
+    assert (_isolated_lut_dir / restored["installed_path"]).read_bytes() == original
+    if failure == "modified":
+        assert path.read_bytes() == b"user changes"
+    assert (_isolated_lut_dir / old["installed_path"]).read_bytes() == _DEFAULT_LUT_BYTES
+    assert sync._catalog_item_local_presence(new)["local_state"] == "installed"
+
+
+def test_lut_legacy_history_uses_last_install_without_rewriting_index() -> None:
+    old, new = _install_history_pair()
+    index = sync.read_installed_index()
+    index.pop("current_revisions")
+    index["luts"][sync._record_key(old)]["installed_at"] = "2026-01-01T00:00:00Z"
+    index["luts"][sync._record_key(new)]["installed_at"] = "2026-02-01T00:00:00Z"
+    sync._write_installed_index(index)
+    assert sync.registry_status()["history"][0]["current_revision"] == new["revision_id"]
+    assert sync.read_installed_index() == index
+
+
 def test_catalog_does_not_mark_path_match_available_when_content_hash_differs(
     _isolated_lut_dir: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -418,7 +506,7 @@ def test_registry_status_counts_existing_local_luts(
 
 
 def test_catalog_requires_base_url(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv("LUMINA_LUT_REGISTRY_URL", raising=False)
+    monkeypatch.setenv("LUMINA_LUT_REGISTRY_URL", "")
     monkeypatch.delenv("LUMINA_MATERIAL_REGISTRY_URL", raising=False)
 
     with pytest.raises(sync.LutRegistryConfigError):
@@ -470,7 +558,8 @@ def test_install_valid_package_writes_cloud_lut_index_and_invalidates_scan(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     bundle = _bundle_bytes()
-    entry = _entry(bundle)
+    display = {"name": "Test LUT", "manufacturer": "Brand", "market_names": {"INTL": "US LUT"}, "sku": "IMG-1"}
+    entry = _entry(bundle, display=display)
     requests: list[httpx.Request] = []
 
     monkeypatch.setenv("LUMINA_LUT_REGISTRY_URL", "https://registry.example/api/material-registry/v1")
@@ -486,6 +575,16 @@ def test_install_valid_package_writes_cloud_lut_index_and_invalidates_scan(
     assert requests[0].url.path.endswith("/luts/catalog")
     assert requests[1].headers.get("authorization") is None
     assert "Cloud - Official - Test - test_lut" in LUTManager.get_all_lut_files()
+    monkeypatch.setattr(lut_router, "_lut_details_service", None)
+    lut_router.get_lut_details_service.cache_clear()
+    local = lut_router.get_lut_details_catalog().groups[0].items[0]
+    assert {k: v for k, v in local.display.items() if k != "lut_board_preview"} == display
+    board = local.display["lut_board_preview"]
+    assert board["pages"][0]["count"] == 1
+    assert local.name == "Cloud - Official - Test - test_lut"
+    assert local.path.endswith("Cloud/Official/Test/test_lut.json")
+    installed_path.write_bytes(_DEFAULT_LUT_BYTES + b"\n")
+    assert lut_router.get_lut_details_catalog().groups[0].items[0].display == {"lut_board_preview": board}
 
 
 def test_install_accepts_registry_service_sha256_prefixed_content_hash(
@@ -1257,7 +1356,7 @@ def test_router_catalog_status_install_success(monkeypatch: pytest.MonkeyPatch) 
 
 
 def test_router_maps_config_and_package_errors(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv("LUMINA_LUT_REGISTRY_URL", raising=False)
+    monkeypatch.setenv("LUMINA_LUT_REGISTRY_URL", "")
     monkeypatch.delenv("LUMINA_MATERIAL_REGISTRY_URL", raising=False)
     client = TestClient(create_app())
 
@@ -1284,3 +1383,11 @@ def test_router_maps_config_and_package_errors(monkeypatch: pytest.MonkeyPatch) 
     )
     assert invalid_package.status_code == 422
     assert "sha256" in invalid_package.json()["detail"]
+
+
+@pytest.mark.parametrize("denied", [401, 403])
+def test_lut_catalog_route_forwards_denied_access(monkeypatch, denied: int) -> None:
+    monkeypatch.setenv("LUMINA_LUT_REGISTRY_URL", "https://private.test/v1")
+    transport = httpx.MockTransport(lambda _: httpx.Response(denied))
+    monkeypatch.setattr(sync, "_make_http_client", lambda: httpx.Client(transport=transport))
+    assert TestClient(create_app()).get("/api/lut-registry/catalog").status_code == denied

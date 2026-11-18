@@ -3070,6 +3070,11 @@ def test_gradient_card_stage_a_routes_compute_and_save_material(
     tmp_path: Path,
 ) -> None:
     client, store, registry = _client_with_state()
+    captures = []
+    def capture_calibration(kind, key, *, new_calibration):
+        captures.append((kind, key, new_calibration))
+        return {"id": "a" * 32, "state": "needs_review"}
+    monkeypatch.setattr("api.services.contribution_queue.capture_calibration", capture_calibration)
     clock = {"now": 1_000.0}
     monkeypatch.setattr("api.file_registry.time.time", lambda: clock["now"])
     zip_path = tmp_path / "kit.zip"
@@ -3201,6 +3206,8 @@ def test_gradient_card_stage_a_routes_compute_and_save_material(
     assert save_body["material_file_url"].startswith("/api/files/")
     assert save_body["stage_a_params_url"].startswith("/api/files/")
     assert "2 runs aggregated" in save_body["message"]
+    assert save_body["contribution"] == {"id": "a" * 32, "state": "needs_review"}
+    assert captures == [("materials", "test-material", False)]
 
     material_resolved = registry.resolve(save_body["material_file_url"].split("/")[-1])
     stage_a_resolved = registry.resolve(save_body["stage_a_params_url"].split("/")[-1])

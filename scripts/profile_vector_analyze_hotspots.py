@@ -323,7 +323,7 @@ def run(args: argparse.Namespace) -> int:
 def parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("input", type=Path)
-    parser.add_argument("--lut", type=Path, default=REPO_ROOT / "lut-preset" / "Custom" / "lumina_lut.json")
+    parser.add_argument("--lut", type=Path, default=REPO_ROOT / "tests/fixtures/lut_regression" / "Custom" / "lumina_lut.json")
     parser.add_argument("--color-mode", default="4-Color (RYBW)")
     parser.add_argument("--target-width-mm", type=float, default=80.0)
     parser.add_argument("--max-samples", type=int, default=0)

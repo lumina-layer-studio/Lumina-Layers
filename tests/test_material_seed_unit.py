@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import hashlib
+import io
 import json
 import zipfile
+import shutil
 from pathlib import Path
 
 import pytest
@@ -101,6 +103,42 @@ def _write_seed_archive(zip_path: Path) -> str:
     return hashlib.sha256(zip_path.read_bytes()).hexdigest()
 
 
+def test_nested_collection_keeps_colliding_names_separate_and_installs_only_selection(tmp_path, monkeypatch):
+    from api.material_seed import material_seed_catalog, install_material_seed_revision
+    original = tmp_path / "original.zip"
+    _write_seed_archive(original)
+    entries = []
+    collection = tmp_path / "collection.zip"
+    with zipfile.ZipFile(collection, "w") as outer:
+        for suffix in ("one", "two"):
+            buffer = io.BytesIO()
+            with zipfile.ZipFile(original) as source, zipfile.ZipFile(buffer, "w") as target:
+                manifest = json.loads(source.read("lumina_material_bundle.json"))
+                package = manifest["packages"][0]
+                package["material_id"] = "mat_" + suffix
+                for name in source.namelist():
+                    target.writestr(name, json.dumps(manifest) if name == "lumina_material_bundle.json" else source.read(name))
+            payload = buffer.getvalue()
+            path = "packages/" + suffix + ".zip"
+            outer.writestr(path, payload)
+            entries.append({**package, "path": path, "package_bytes": len(payload),
+                            "package_sha256": hashlib.sha256(payload).hexdigest()})
+        outer.writestr("DATA-LICENSE.md", "Retain each resource's original license.")
+        outer.writestr("lumina_material_seed.json", json.dumps({"kind": "lumina_material_seed",
+            "schema_version": "1.0", "dataset_version": "nested.1", "packages": entries}))
+    monkeypatch.setenv("LUMINA_MATERIALS_SEED_PATH", str(collection))
+    root = tmp_path / "library"
+    catalog = material_seed_catalog(materials_dir=str(root))
+    assert catalog["dataset_version"] == "nested.1"
+    assert [r["resource_id"] for r in catalog["items"]] == ["mat_one", "mat_two"]
+    assert not root.exists()
+    assert install_material_seed_revision("mat_two", "rev_seed", materials_dir=str(root)) == {"installed_count": 1}
+    assert len(list(root.rglob("material.json"))) == 1
+    assert [r["installed"] for r in material_seed_catalog(materials_dir=str(root))["items"]] == [False, True]
+    assert install_material_seed_revision("mat_one", "rev_seed", materials_dir=str(root)) == {"installed_count": 1}
+    assert len(list(root.rglob("material.json"))) == 2
+
+
 def test_material_seed_installs_when_runtime_materials_are_empty(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -149,6 +187,59 @@ def test_material_seed_rejects_sha256_mismatch(
 
     with pytest.raises(ValueError, match="sha256 mismatch"):
         install_material_seed_if_needed(materials_dir=str(tmp_path / "materials"))
+
+
+def test_seed_does_not_return_after_user_deletes_library(monkeypatch, tmp_path):
+    seed = tmp_path / "seed.zip"
+    _write_seed_archive(seed)
+    monkeypatch.setenv("LUMINA_MATERIALS_SEED_PATH", str(seed))
+    root = tmp_path / "materials"
+    assert install_material_seed_if_needed(materials_dir=str(root))["installed_count"] == 1
+    shutil.rmtree(root / "SeedBrand")
+    assert install_material_seed_if_needed(materials_dir=str(root)) is None
+    assert not (root / "SeedBrand").exists()
+
+
+def test_existing_library_is_remembered_after_user_deletes_it(monkeypatch, tmp_path):
+    seed = tmp_path / "seed.zip"
+    _write_seed_archive(seed)
+    monkeypatch.setenv("LUMINA_MATERIALS_SEED_PATH", str(seed))
+    root = tmp_path / "materials"
+    material = root / "personal" / "material.json"
+    material.parent.mkdir(parents=True)
+    material.write_text("{}", encoding="utf-8")
+    assert install_material_seed_if_needed(materials_dir=str(root)) is None
+    shutil.rmtree(material.parent)
+    assert install_material_seed_if_needed(materials_dir=str(root)) is None
+
+
+def test_explicit_restore_is_idempotent_and_keeps_personal_changes(monkeypatch, tmp_path):
+    from api.material_seed import restore_material_seed
+    seed = tmp_path / "seed.zip"
+    _write_seed_archive(seed)
+    monkeypatch.setenv("LUMINA_MATERIALS_SEED_PATH", str(seed))
+    root = tmp_path / "materials"
+    install_material_seed_if_needed(materials_dir=str(root))
+    assert restore_material_seed(materials_dir=str(root))["installed_count"] == 0
+    personal = root / "SeedBrand/seed-pla/material.json"
+    payload = json.loads(personal.read_text())
+    payload["material_name"] = "My modified filament"
+    personal.write_text(json.dumps(payload), encoding="utf-8")
+    before = personal.read_bytes()
+    restore_material_seed(materials_dir=str(root))
+    assert personal.read_bytes() == before
+
+
+def test_failed_seed_can_retry_after_correcting_hash(monkeypatch, tmp_path):
+    seed = tmp_path / "seed.zip"
+    expected = _write_seed_archive(seed)
+    monkeypatch.setenv("LUMINA_MATERIALS_SEED_PATH", str(seed))
+    monkeypatch.setenv("LUMINA_MATERIALS_SEED_SHA256", "0" * 64)
+    root = tmp_path / "materials"
+    with pytest.raises(ValueError):
+        install_material_seed_if_needed(materials_dir=str(root))
+    monkeypatch.setenv("LUMINA_MATERIALS_SEED_SHA256", expected)
+    assert install_material_seed_if_needed(materials_dir=str(root))["installed_count"] == 1
 
 
 def test_material_bundle_accepts_resolved_directory_alias(tmp_path: Path) -> None:

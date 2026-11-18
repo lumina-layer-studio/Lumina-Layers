@@ -397,9 +397,11 @@ export interface ConverterRuntimeState {
   // LUT 列表
   lutList: string[];
   lutListLoading: boolean;
+  lutListError: string | null;
   lutListFull: LutInfo[];
   legacyCatalogGroups: LutDetailsCatalogGroup[];
   legacyCatalogLoading: boolean;
+  legacyCatalogError: string | null;
   selectedLegacyManufacturer: string;
 
   // LUT 全部颜色
@@ -731,6 +733,7 @@ export interface ConverterActions {
 
   // API 操作
   uploadLut: (file: File) => Promise<void>;
+  refreshResourceCatalog: () => Promise<void>;
   fetchLutList: (options?: ApiRequestOptions) => Promise<void>;
   fetchLutCatalog: (signal?: AbortSignal) => Promise<void>;
   fetchLegacyCatalog: (options?: ApiRequestOptions) => Promise<void>;

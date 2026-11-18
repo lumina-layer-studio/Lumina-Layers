@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { describe, it, expect, vi } from "vitest";
 import MaterialCloudHistoryDialog from "../MaterialCloudHistoryDialog";
 import type { MaterialSyncInstalledEntry } from "../../../api/types";
@@ -37,10 +37,10 @@ describe("local material history dialog", () => {
     expect(screen.getByRole("dialog")).toHaveTextContent(/日期未知|Date unknown/);
     expect(screen.getByRole("dialog")).not.toHaveTextContent("hash-old");
   });
-  it("shows an empty state and closes with Escape", () => {
+  it("shows an empty state and closes with Escape", async () => {
     const { onClose } = show([]);
     expect(screen.getByRole("dialog")).toHaveTextContent(/暂无|No local history/);
     fireEvent.keyDown(document, { key: "Escape" });
-    expect(onClose).toHaveBeenCalledOnce();
+    await waitFor(() => expect(onClose).toHaveBeenCalledOnce());
   });
 });

@@ -11,6 +11,7 @@ import zipfile
 from pathlib import Path, PureWindowsPath
 from typing import Any
 
+from core.filament_display import filament_display
 from . import material_files
 
 DEFAULT_MATERIAL_PACKAGE_MAX_ARCHIVE_BYTES = 100 * 1024 * 1024
@@ -94,13 +95,15 @@ def _validate_material_zip_resource_limits(
     archive: zipfile.ZipFile,
     *,
     archive_path: str,
+    max_entries: int | None = None,
 ) -> None:
     limits = _material_package_zip_limits()
     infos = archive.infolist()
-    if len(infos) > limits["max_entries"]:
+    entry_limit = limits["max_entries"] if max_entries is None else max_entries
+    if len(infos) > entry_limit:
         raise ValueError(
             "Material package ZIP has too many entries: "
-            f"{len(infos)} > {limits['max_entries']}"
+            f"{len(infos)} > {entry_limit}"
         )
     total_uncompressed_bytes = 0
     for member in infos:
@@ -179,11 +182,13 @@ def _material_package_identity(
 def _display_payload_from_material_archive(
     archive_payload: dict[str, Any],
     relative_directory_name: str,
-) -> dict[str, str]:
+) -> dict[str, Any]:
     path_parts = Path(relative_directory_name).parts
     fallback_brand = path_parts[0] if len(path_parts) > 1 else ""
     fallback_name = path_parts[-1] if path_parts else relative_directory_name
     display: dict[str, Any] = {
+        **filament_display(archive_payload),
+        **filament_display(archive_payload.get("display")),
         "brand": str(archive_payload.get("brand") or fallback_brand),
         "material_name": str(archive_payload.get("material_name") or fallback_name),
     }

@@ -18,6 +18,9 @@ from api.routers.lut import router as lut_router
 from api.routers.lut_registry import router as lut_registry_router
 from api.routers.material_registry import router as material_registry_router
 from api.routers.material_sync import router as material_sync_router
+from api.routers.resources import router as resources_router
+from api.routers.contributions import router as contributions_router
+from api.routers.resource_activity import router as resource_activity_router
 from api.routers.session import router as session_router
 from api.routers.slicer import router as slicer_router
 from api.routers.single_stage import router as single_stage_router
@@ -37,6 +40,9 @@ __all__ = [
     "lut_registry_router",
     "material_registry_router",
     "material_sync_router",
+    "resources_router",
+    "contributions_router",
+    "resource_activity_router",
     "session_router",
     "slicer_router",
     "single_stage_router",

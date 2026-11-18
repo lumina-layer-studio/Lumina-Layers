@@ -6,6 +6,7 @@ const {
   Menu,
   net: electronNet,
   protocol,
+  safeStorage,
   screen,
   session,
   shell,
@@ -23,6 +24,8 @@ if (launcherStartup.enabled) {
   launcherStartup.checkpoint(0);
   app.on('will-quit', () => launcherStartup.failed());
 }
+const { createCommunityVault } = require('./community-vault.cjs');
+let communityVault = null;
 const { saveGeneratedFile } = require("./generated-file-save.cjs");
 const { createApplicationMenu } = require("./application-menu.cjs");
 const { createProjectsHost, projectOpenFromArgv } = require("./projects.cjs");
@@ -368,7 +371,9 @@ function findNode() {
 
 function backendRuntimeEnv() {
   const env = {
+    ...(communityVault?.env || {}),
     LUMINA_MATERIALS_DIR: path.join(app.getPath("userData"), "materials"),
+    LUMINA_CONTRIBUTION_WORKSPACE: app.getPath("userData"),
     LUMINA_WORKSHOP_DATA_DIR: path.join(
       app.getPath("userData"),
       "workshop",
@@ -991,6 +996,7 @@ app.on("before-quit", (event) => {
 
 app.on("will-quit", () => {
   killAllChildren();
+  void communityVault?.close();
 });
 
 app.on("window-all-closed", () => {
@@ -1035,6 +1041,9 @@ app.whenReady().then(async () => {
     Menu.setApplicationMenu(null);
   }
 
+  communityVault = await createCommunityVault({
+    directory: app.getPath("userData"), safeStorage,
+  });
   createSplash();
 
   try {

@@ -82,6 +82,7 @@ export function isHeaderNavAlignment(
 export interface SettingsState {
   conversionPreferences: ConversionPreferences;
   language: "zh" | "en";
+  filamentMarket: FilamentMarketPreference;
   theme: "light" | "dark";
   lastLutName: string;
   lastColorMode: string;
@@ -164,6 +165,7 @@ export interface SettingsState {
 export interface SettingsActions {
   setConversionPreferences: (preferences: ConversionPreferences) => void;
   setLanguage: (lang: "zh" | "en") => void;
+  setFilamentMarket: (market: FilamentMarketPreference) => void;
   setTheme: (theme: "light" | "dark") => void;
   setLastLutName: (name: string) => void;
   setLastColorMode: (mode: string) => void;
@@ -205,9 +207,16 @@ export interface SettingsActions {
 
 // ========== Default State ==========
 
+export type FilamentMarketPreference = "auto" | "CN" | "INTL";
+
+export function isFilamentMarket(value: unknown): value is FilamentMarketPreference {
+  return value === "auto" || value === "CN" || value === "INTL";
+}
+
 export const DEFAULT_SETTINGS: SettingsState = {
   conversionPreferences: { last: null, presets: [] },
   language: "zh",
+  filamentMarket: "auto",
   theme: "light",
   lastLutName: "",
   lastColorMode: "4-Color (RYBW)",
@@ -373,6 +382,7 @@ export function deriveBackendDeviceSettingsPatch(
       ? settings.language
       : undefined,
   );
+  setScalarIfFresh("filamentMarket", isFilamentMarket(settings.filament_market) ? settings.filament_market : undefined);
   if (settings.external_spool_selections && !hasOwnSetting(persistedSnapshot, "externalSpoolSelections") &&
       Object.keys(current.externalSpoolSelections).length === 0) {
     patch.externalSpoolSelections = { ...settings.external_spool_selections };
@@ -648,6 +658,7 @@ export const useSettingsStore = create<SettingsState & SettingsActions>()(
       setConversionPreferences: (preferences) => set({ conversionPreferences: normalizeConversionPreferences(preferences) }),
 
       setLanguage: (lang: "zh" | "en") => set({ language: lang }),
+      setFilamentMarket: (filamentMarket) => set({ filamentMarket }),
 
       setTheme: (theme: "light" | "dark") => set({ theme }),
 
@@ -920,6 +931,7 @@ export const useSettingsStore = create<SettingsState & SettingsActions>()(
           await saveSettings({
             conversion_preferences: state.conversionPreferences,
             language: state.language,
+            filament_market: state.filamentMarket,
             theme: state.theme,
             last_lut: state.lastLutName,
             last_modeling_mode: state.lastModelingMode,
@@ -981,6 +993,8 @@ export const useSettingsStore = create<SettingsState & SettingsActions>()(
         return {
           ...currentState,
           ...persistedSettings,
+          filamentMarket: isFilamentMarket(persistedSettings.filamentMarket)
+            ? persistedSettings.filamentMarket : currentState.filamentMarket,
           conversionPreferences: normalizeConversionPreferences(persistedSettings.conversionPreferences),
           materialDeltaE00Tolerance: normalizeMaterialDeltaE00Tolerance(
             persistedSettings.materialDeltaE00Tolerance ??

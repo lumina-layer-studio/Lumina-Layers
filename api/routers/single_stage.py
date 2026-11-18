@@ -1404,6 +1404,8 @@ async def extractor_save_gradient_card_material(
         else None
     )
     cleaned_brand = brand.strip() if isinstance(brand, str) and brand.strip() else None
+    from api.services.contribution_queue import capture_calibration, owns_calibration
+    owns_previous = bool(existing_directory_name and owns_calibration("materials", existing_directory_name))
     if existing_directory_name is not None:
         material_backup = _create_material_directory_backup_or_raise(
             existing_directory_name,
@@ -1505,6 +1507,9 @@ async def extractor_save_gradient_card_material(
             "material_id": material_id,
         },
     )
+    contribution = capture_calibration("materials", directory_name,
+        new_calibration=owns_previous or (existing_directory_name is None and bool(new_material_snapshot)
+        and not new_material_snapshot[2]))
     return GradientCardMaterialSaveResponse(
         status="ok",
         message=(
@@ -1515,6 +1520,7 @@ async def extractor_save_gradient_card_material(
         material_file_url=f"/api/files/{material_id}",
         stage_a_params_url=f"/api/files/{stage_a_id}",
         material_summary=public_material_response_item(result.material_summary),
+        contribution=contribution,
     )
 
 

@@ -1,12 +1,23 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import LutPickerDialog, { type LutPickerBrand, type LutPickerOption } from "../ui/LutPickerDialog";
 import { cx, workstationPickerTriggerClass, workstationFieldLabelClass } from "../ui/panelPrimitives";
+import type { ResourceSelectionCheck } from "../../stores/converter/resourceSelection";
+import { useI18n } from "../../i18n/context";
+import { useFilamentMarket } from "../../hooks/useFilamentMarket";
+import { localLutIdentity } from "../../utils/libraryFilamentIdentity";
+import type { LocalLutVersion } from "../../api/types";
 
 interface LegacyLutOption {
   label: string;
   value: string;
   brand?: string;
   materialType?: string;
+  display?: Record<string, unknown> | null;
+  searchTokens?: string[];
+  mode?: string;
+  group?: string;
+  logo?: string;
+  localVersion?: LocalLutVersion | null;
 }
 
 interface LegacyLutOptionGroup {
@@ -26,7 +37,7 @@ interface LegacyLutSelectorProps {
   selectedLutNames?: string[];
   manufacturerOptions: LegacyLutOption[];
   groupedLutOptions: LegacyLutOptionGroup[];
-  /** Catalog-wide labels for selected LUTs outside the visible brand. */
+  /** Catalog-wide options for search and selections outside the visible brand. */
   allLutOptions?: LegacyLutOption[];
   brandInfo?: LegacyBrandInfo | null;
   colorModeSummary?: ReactNode;
@@ -38,6 +49,18 @@ interface LegacyLutSelectorProps {
   loading?: boolean;
   lutLoading?: boolean;
   refreshing?: boolean;
+  loadError?: string | null;
+  uploading?: boolean;
+  uploadError?: string | null;
+  uploadSuccess?: string | null;
+  onDismissUploadSuccess?: () => void;
+  onPickerOpen?: () => void;
+  resumeSelection?: { id: number; selected: string[] } | null;
+  onCalibrate?: (selected: string[]) => void;
+  onPickerClose?: () => void;
+  onInstalled?: () => void | Promise<unknown>;
+  checkSelection?: (values: string[]) => ResourceSelectionCheck;
+  onApplySelection?: (values: string[], allowModeChange: boolean) => string | null;
   labels: {
     manufacturer: string;
     manufacturerPlaceholder: string;
@@ -87,7 +110,7 @@ function buildPickerOptions(groups: LegacyLutOptionGroup[]): LutPickerOption[] {
     for (const option of group.options) {
       if (seen.has(option.value)) continue;
       seen.add(option.value);
-      result.push({ value: option.value, label: option.label, group: group.label });
+      result.push({ ...option, group: group.label });
     }
   }
   return result;
@@ -110,9 +133,26 @@ export default function LegacyLutSelector({
   loading = false,
   lutLoading = false,
   refreshing = false,
+  loadError,
+  uploading,
+  uploadError,
+  uploadSuccess,
+  onDismissUploadSuccess,
+  onPickerOpen,
+  resumeSelection,
+  onCalibrate,
+  onPickerClose,
+  onInstalled,
+  checkSelection,
+  onApplySelection,
   labels,
 }: LegacyLutSelectorProps) {
+  const { lang } = useI18n();
+  const market = useFilamentMarket();
   const [dialogOpen, setDialogOpen] = useState(false);
+  useEffect(() => {
+    if (resumeSelection) setDialogOpen(true);
+  }, [resumeSelection]);
 
   const catalogOptions = allLutOptions ?? flattenOptions(groupedLutOptions);
   const pickerOptions = buildPickerOptions(groupedLutOptions);
@@ -134,12 +174,21 @@ export default function LegacyLutSelector({
   const pickerBrands: LutPickerBrand[] = manufacturerOptions.map((opt) => ({
     value: opt.value,
     label: opt.label,
+    display: opt.display,
+    logo: opt.logo,
     displayName: brandInfo && opt.value === manufacturer ? brandInfo.displayName : undefined,
     materialTypes: brandInfo && opt.value === manufacturer ? brandInfo.materialTypes : undefined,
     vendor: brandInfo && opt.value === manufacturer ? brandInfo.vendor : undefined,
   }));
 
-  const handleConfirm = (lutNames: string[]) => {
+  const closePicker = () => { setDialogOpen(false); onPickerClose?.(); };
+  const handleConfirm = (lutNames: string[], allowModeChange = false) => {
+    if (onApplySelection) {
+      const error = onApplySelection(lutNames, allowModeChange);
+      if (error) return error;
+      closePicker();
+      return;
+    }
     setDialogOpen(false);
     if (onLutSelectionChange) {
       onLutSelectionChange(lutNames);
@@ -149,9 +198,10 @@ export default function LegacyLutSelector({
   };
 
   const primaryOption = selectedOptions[0];
-  const primaryMetadata = primaryOption
-    ? [primaryOption.brand, primaryOption.materialType]
-      .filter((value): value is string => !!value && !primaryOption.label.toLowerCase().includes(value.toLowerCase()))
+  const primaryIdentity = primaryOption && localLutIdentity(primaryOption.brand, primaryOption.label, lang, primaryOption.display, market);
+  const primaryMetadata = primaryOption && primaryIdentity
+    ? [primaryIdentity.brand, primaryOption.materialType]
+      .filter((value): value is string => !!value && !primaryIdentity.name.toLowerCase().includes(value.toLowerCase()))
       .join(" · ")
     : "";
   const selectionSummary = (labels.selectionSummary ?? "Selected {count} LUTs")
@@ -176,7 +226,7 @@ export default function LegacyLutSelector({
       <button
         type="button"
         disabled={loading && manufacturerOptions.length === 0}
-        onClick={() => setDialogOpen(true)}
+        onClick={() => { onPickerOpen?.(); setDialogOpen(true); }}
         data-testid="lut-picker-trigger"
         aria-haspopup="dialog"
         aria-expanded={dialogOpen}
@@ -188,13 +238,13 @@ export default function LegacyLutSelector({
       >
         <span className="flex min-w-0 flex-1 flex-col gap-1">
           <span className="truncate text-sm font-medium">
-            {selectedCount > 1 ? selectionSummary : primaryOption?.label ?? triggerPlaceholder}
+            {selectedCount > 1 ? selectionSummary : primaryIdentity?.name ?? triggerPlaceholder}
           </span>
           {primaryOption && (
             <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-xs text-slate-500 dark:text-slate-400">
               {selectedCount > 1 ? (
                 <>
-                  <span className="min-w-0 flex-1 truncate">{primaryOption.label}</span>
+                  <span className="min-w-0 flex-1 truncate">{primaryIdentity?.name}</span>
                   <span className="shrink-0">{moreSelected}</span>
                 </>
               ) : primaryMetadata ? <span>{primaryMetadata}</span> : null}
@@ -218,25 +268,31 @@ export default function LegacyLutSelector({
         open={dialogOpen}
         brands={pickerBrands}
         lutOptions={pickerOptions}
+        catalogOptions={allLutOptions?.map((opt) => ({ ...opt, group: opt.group ?? opt.mode ?? "" }))}
         selectedBrand={manufacturer}
         initialSelectedLuts={
-          selectedLutNames && selectedLutNames.length > 0
+          resumeSelection?.selected ?? (selectedLutNames && selectedLutNames.length > 0
             ? selectedLutNames
-            : lutName ? [lutName] : []
+            : lutName ? [lutName] : [])
         }
         onBrandChange={(brand) => {
           onManufacturerChange(brand);
         }}
         onConfirm={handleConfirm}
-        onCancel={() => setDialogOpen(false)}
-        onUploadClick={() => {
-          setDialogOpen(false);
-          onUploadClick();
-        }}
+        onCancel={closePicker}
+        onUploadClick={onUploadClick}
+        onCalibrate={onCalibrate ? (selected) => { onCalibrate(selected); setDialogOpen(false); } : undefined}
         onRefresh={onRefresh}
         loading={loading}
         lutLoading={lutLoading}
         refreshing={refreshing}
+        loadError={loadError}
+        uploading={uploading}
+        uploadError={uploadError}
+        uploadSuccess={uploadSuccess}
+        onDismissUploadSuccess={onDismissUploadSuccess}
+        onInstalled={onInstalled}
+        checkSelection={checkSelection}
         labels={{
           title: labels.dialogTitle ?? labels.manufacturer,
           searchPlaceholder: labels.dialogSearchPlaceholder ?? labels.lutPlaceholder,

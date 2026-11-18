@@ -4,6 +4,7 @@ LUT preset management module
 """
 
 import copy
+import hashlib
 from collections import Counter
 from dataclasses import dataclass
 import os
@@ -55,6 +56,7 @@ _lut_preset_cache_value: dict[str, str] | None = None
 _INT32_MIN = -(2**31)
 _INT32_MAX = 2**31 - 1
 _RECONSTRUCTABLE_LUT_COUNTS = frozenset({32, 1024, 1296, 2468, 2738})
+_LEGACY_LUT_MIGRATION_PATH = Path(__file__).resolve().parent.parent / "assets/legacy-lut-migration.json"
 
 
 def _looks_like_missing_keyed_stacks(stacks: object, color_count: int) -> bool:
@@ -737,7 +739,60 @@ class LUTManager:
             str | None: 文件路径，未找到时返回 None。
         """
         lut_files = cls.get_all_lut_files()
-        return lut_files.get(display_name)
+        if display_name in lut_files:
+            return lut_files[display_name]
+        return cls._migrated_preset_path(display_name)
+
+    @classmethod
+    def _migrated_preset_path(cls, display_name: str) -> str | None:
+        """Resolve an old bundled name only to its exact recorded revision."""
+        try:
+            migration = json.loads(_LEGACY_LUT_MIGRATION_PATH.read_text(encoding="utf-8"))
+            entries = [entry for entry in migration["luts"] if entry["name"] == display_name]
+            priority = {".npy": 0, ".npz": 1, ".json": 2, ".msgpack": 3}
+            entries.sort(key=lambda entry: priority.get(Path(entry["path"]).suffix, -1), reverse=True)
+            if not entries:
+                return None
+            entry = entries[0]
+            root = cls.cloud_lut_dir().resolve()
+            candidates = [root / entry["path"]]
+            index_path = cls.cloud_lut_sync_dir() / "index.json"
+            if index_path.is_file():
+                index = json.loads(index_path.read_text(encoding="utf-8"))
+                for record in index.get("luts", {}).values():
+                    if (record.get("local_path") == entry["path"] or
+                            str(record.get("content_hash") or "").removeprefix("sha256:") == entry["sha256"]):
+                        installed = str(record.get("installed_path") or "")
+                        if installed.startswith("Cloud/"):
+                            candidates.append(root / installed[len("Cloud/"):])
+            for path in candidates:
+                resolved = path.resolve()
+                if root not in resolved.parents or not resolved.is_file():
+                    continue
+                if hashlib.sha256(resolved.read_bytes()).hexdigest() == entry["sha256"]:
+                    return str(resolved)
+        except (OSError, ValueError, KeyError, TypeError, AttributeError):
+            return None
+        return None
+
+    @classmethod
+    def migrated_preset_aliases(cls, lut_files: dict[str, str] | None = None) -> dict[str, str]:
+        """Map remembered names to visible names only for the exact migrated bytes."""
+        files = cls.get_all_lut_files() if lut_files is None else lut_files
+        by_path = {str(Path(path).resolve()): name for name, path in files.items()}
+        try:
+            entries = json.loads(_LEGACY_LUT_MIGRATION_PATH.read_text(encoding="utf-8"))["luts"]
+            names = {entry["name"] for entry in entries}
+        except (OSError, ValueError, KeyError, TypeError):
+            return {}
+        aliases: dict[str, str] = {}
+        for name in sorted(names):
+            if name in files:
+                continue
+            path = cls._migrated_preset_path(name)
+            if path and path in by_path:
+                aliases[name] = by_path[path]
+        return aliases
 
     @classmethod
     def _iter_scanned_lut_files(cls):

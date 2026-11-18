@@ -1,5 +1,0 @@
-
-这里存放公共npy预设和校准色卡图，如果需要添加公用lut预设，请自己规划好文件夹中的文件和说明以及色卡校准图
-This is where public npy presets and calibration color card images are stored.
-If you need to add public LUT presets,
-please properly organize the files, instructions, and color calibration images in the folder yourself.

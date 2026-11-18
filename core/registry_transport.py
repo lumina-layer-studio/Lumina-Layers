@@ -3,10 +3,15 @@ from __future__ import annotations
 
 import os
 from time import sleep
+from pathlib import Path
 from typing import Any, Callable, Sequence, TypeVar
 from urllib.parse import urljoin, urlsplit
 
 import httpx
+from core.registry_catalog_cache import CatalogSnapshot
+from core.public_resources import (
+    PUBLIC_REGISTRY_URL, PUBLIC_REGISTRY_FALLBACK_URL, material_registry_url, is_static_catalog,
+)
 
 _Result = TypeVar("_Result")
 
@@ -43,11 +48,15 @@ def fallback_base(primary: str, family: str) -> str | None:
     Returns:
         Valid fallback URL, or None. / 有效备用地址或 None。
     """
+    if is_static_catalog(primary):
+        return None
     value = os.environ.get(f"LUMINA_{family}_REGISTRY_FALLBACK_URL")
     if value is None and family == "LUT":
-        material_primary = os.environ.get("LUMINA_MATERIAL_REGISTRY_URL", "").strip().rstrip("/")
+        material_primary = material_registry_url()
         if primary.rstrip("/") == material_primary:
             value = os.environ.get("LUMINA_MATERIAL_REGISTRY_FALLBACK_URL")
+    if value is None and primary.rstrip("/") == PUBLIC_REGISTRY_URL:
+        value = PUBLIC_REGISTRY_FALLBACK_URL
     fallback = (value or "").strip().rstrip("/")
     # A public fallback must not downgrade an HTTPS primary to remote HTTP.
     # Local HTTP endpoints remain usable as development primaries, but a
@@ -149,7 +158,9 @@ def read_with_fallback(*, client: Any, primary: str, fallback: str | None,
 
 def fetch_catalog(*, client: Any, primary: str, family: str, suffix: str,
                   channels: Sequence[str], headers: dict[str, str], params: Any,
-                  etag: str | None = None) -> Any:
+                  etag: str | None = None, cache_dir: Path | None = None,
+                  force_refresh: bool = False,
+                  offline_fallback: Callable[[], httpx.Response | None] | None = None) -> Any:
     """Read a catalog with stable primary package URLs. / 读取目录并保留稳定的主库包地址。
 
     Args:
@@ -165,10 +176,22 @@ def fetch_catalog(*, client: Any, primary: str, family: str, suffix: str,
     Returns:
         HTTP response with normalized fallback package URLs. / 包地址规范化后的响应。
     """
+    if is_static_catalog(primary):
+        from core.public_catalog import fetch_static_catalog
+        if not _public_client(client, headers, channels):
+            raise ValueError("Public snapshots require an anonymous connection")
+        return fetch_static_catalog(client=client, primary=primary, family=family,
+                                    channels=channels, params=params, cache_dir=cache_dir,
+                                    refresh=force_refresh)
+    snapshot = CatalogSnapshot(cache_dir, primary, suffix, params) if (
+        cache_dir is not None and etag is None and _public_client(client, headers, channels)
+    ) else None
+    effective_etag = etag if etag is not None else snapshot.etag if snapshot else None
+
     def request(base: str) -> Any:
         request_headers = dict(headers)
-        if etag is not None and base == primary:
-            request_headers["If-None-Match"] = etag
+        if effective_etag is not None and base == primary:
+            request_headers["If-None-Match"] = effective_etag
         response = client.get(base + suffix, headers=request_headers, params=params,
                               follow_redirects=False)
         if not 300 <= response.status_code < 400:
@@ -197,6 +220,27 @@ def fetch_catalog(*, client: Any, primary: str, family: str, suffix: str,
                              if key.lower() not in {"etag", "content-length", "content-encoding"}}
             return httpx.Response(200, json=payload, headers=clean_headers, request=response.request)
         return response
-    return read_with_fallback(client=client, primary=primary,
-                              fallback=fallback_base(primary, family), headers=headers,
-                              channels=channels, action=request, retry_primary=True)
+    try:
+        response = read_with_fallback(client=client, primary=primary,
+                                     fallback=fallback_base(primary, family), headers=headers,
+                                     channels=channels, action=request, retry_primary=True)
+    except httpx.HTTPError as exc:
+        cached = snapshot.response(offline=True) if snapshot and _retryable(exc) else None
+        if cached is None and snapshot and _retryable(exc) and offline_fallback is not None:
+            cached = offline_fallback()
+        if cached is not None:
+            return cached
+        raise
+    if snapshot:
+        if response.status_code == 304:
+            cached = snapshot.response(offline=False)
+            if cached is not None:
+                if snapshot.etag:
+                    cached.headers["ETag"] = snapshot.etag
+                snapshot.store(cached)
+                return snapshot.response(offline=False) or cached
+            return response
+        if response.status_code == 200:
+            snapshot.store(response)
+            return snapshot.response(offline=False) or response
+    return response

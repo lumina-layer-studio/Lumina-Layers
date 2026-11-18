@@ -11,6 +11,68 @@ vi.mock("../api/lut", () => ({
 }));
 
 describe("LutLibraryPanel", () => {
+  it("distinguishes retained versions of the same LUT without renaming either resource", async () => {
+    const baseline = await fetchLutDetailsCatalog();
+    const item = baseline.groups[0].items[0];
+    vi.mocked(fetchLutDetailsCatalog).mockResolvedValue({ groups: [{ manufacturer: "Cloud", items: [
+      { ...item, local_version: { current: true, installed_at: "2026-11-15T03:00:00Z" } },
+      { ...item, path: "Cloud/_revisions/previous.json", local_version: { current: false, installed_at: "2026-11-01T03:00:00Z" } },
+    ] }] });
+    render(<LutLibraryPanel />);
+    fireEvent.change(await screen.findByRole("searchbox"), { target: { value: "Simulated" } });
+    const cards = await screen.findAllByTestId("lut-library-card");
+    expect(cards).toHaveLength(2);
+    expect(cards[0]).toHaveTextContent("本地当前版本");
+    expect(cards[1]).toHaveTextContent("历史版本");
+    expect(cards[1]).toHaveTextContent(/2026.*11.*01/);
+  });
+
+  it("retains the shared folder heading and shows the individual maker and original name for a SKU match", async () => {
+    const base = { manufacturer: "Cloud", material_type: "PLA", color_mode: "4-Color", source_kind: "legacy_lookup",
+      manufacturer_source: "folder", material_source: "folder", search_tokens: [] };
+    vi.mocked(fetchLutDetailsCatalog).mockResolvedValue({ groups: [{ manufacturer: "Cloud", items: [
+      { ...base, path: "Cloud/official/a.json", name: "a.json", display: { name: "Original table", manufacturer: "Sailner",
+        market_names: { CN: "深红色表", INTL: "Garnet Table" }, sku: "SN-L10" } },
+      { ...base, path: "Cloud/official/b.json", name: "b.json", display: { manufacturer: "Bambu Lab" } },
+    ] }] });
+    render(<LutLibraryPanel />);
+    await screen.findByText("Cloud");
+    fireEvent.change(screen.getByRole("searchbox"), { target: { value: "SN-L10" } });
+    expect(screen.getByText("Cloud")).toBeInTheDocument();
+    const card = screen.getByTestId("lut-library-card");
+    expect(card).toHaveTextContent("赛纳");
+    expect(card).toHaveTextContent("深红色表");
+    fireEvent.click(card);
+    const detail = screen.getByTestId("lut-library-details");
+    expect(detail).toHaveTextContent("Original table");
+    expect(detail).toHaveTextContent("Cloud/official/a.json");
+    expect(detail).toHaveTextContent("SN-L10");
+  });
+
+  it("keeps the last local catalog when refresh fails", async () => {
+    render(<LutLibraryPanel />);
+    await screen.findByText("2个 LUT · 2个品牌");
+    fireEvent.click(screen.getByRole("button", { name: "全部展开" }));
+    vi.mocked(fetchLutDetailsCatalog).mockRejectedValueOnce(new Error("offline"));
+    fireEvent.click(screen.getByRole("button", { name: /刷新|Refresh/i }));
+    await screen.findByTestId("lut-library-error");
+    expect(screen.getAllByTestId("lut-library-card")).toHaveLength(2);
+    expect(screen.queryByTestId("resource-library-empty")).not.toBeInTheDocument();
+  });
+
+  it("offers public resources only for a genuinely empty library", async () => {
+    vi.mocked(fetchLutDetailsCatalog).mockResolvedValue({ groups: [] });
+    render(<LutLibraryPanel />);
+    expect(await screen.findByRole("button", { name: "去云端找 LUT" })).toBeInTheDocument();
+  });
+
+  it("distinguishes a search with no matches from an empty library", async () => {
+    render(<LutLibraryPanel />);
+    await screen.findByText("2个 LUT · 2个品牌");
+    fireEvent.change(screen.getByRole("searchbox"), { target: { value: "not-a-lut" } });
+    expect(await screen.findByText("没有符合筛选条件的资源。" )).toBeInTheDocument();
+    expect(screen.queryByTestId("resource-library-empty")).not.toBeInTheDocument();
+  });
   beforeEach(() => {
     vi.clearAllMocks();
     localStorage.removeItem("lut-library-pins");
@@ -119,8 +181,13 @@ describe("LutLibraryPanel", () => {
     const card = screen.getByTestId("lut-library-card");
     fireEvent.click(card);
     expect(screen.getByTestId("lut-library-details")).toBeInTheDocument();
+    fireEvent.click(card);
+    expect(screen.getByTestId("lut-library-details")).toHaveAttribute("inert");
+    await waitFor(() => expect(screen.queryByTestId("lut-library-details")).not.toBeInTheDocument());
+    expect(card).toHaveFocus();
+    fireEvent.click(card);
     fireEvent.keyDown(screen.getByTestId("lut-library-details"), { key: "Escape" });
-    expect(screen.queryByTestId("lut-library-details")).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByTestId("lut-library-details")).not.toBeInTheDocument());
     expect(card).toHaveFocus();
   });
 

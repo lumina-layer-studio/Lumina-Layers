@@ -1,0 +1,52 @@
+# Lumina 数据使用说明与协议 1.0
+
+协议标识：`LicenseRef-Lumina-Data-1.0`。生效日期：2026-11-18。
+
+允许接单打印、销售打印作品。禁止倒卖数据、收费分发数据，或将数据放进收费资源库。
+
+## 适用范围
+
+本协议适用于资源的 `license` 字段明确标为 `LicenseRef-Lumina-Data-1.0` 的耗材档案、LUT、校准数据及其配套说明。授权人是拥有相关权利的原作者或其他合法授权人，接收和使用数据的人是被授权人。数据公开不转移作者身份或所有权。
+
+历史资源保留原许可。已经按 CC BY 4.0 等其他协议发布的版本继续适用原协议，本说明不收回或缩减已经授予的权利。没有许可记录的旧资源标为未记录，不据此推断为原创、公共领域或自动改用本协议；需要额外授权的分发应先取得权利人的许可。
+
+## 可以做什么
+
+- 下载、保存、研究、测试、修改数据，并在自己的工作流中使用。
+- 使用数据生成模型、图像、配方和打印作品；承接收费打印业务、销售制作的作品。这些输出不因使用本数据而自动适用本协议，也不要求在每件作品上署名。
+- 免费分享原数据或修改后的数据，包括免费镜像、免费资源库，以及随免费软件分发。分发时须保留原作者、来源、原许可和本协议，并说明自己作出的修改；作者未留署名时如实写明。
+
+## 不可以做什么
+
+- 售卖、转售数据文件、数据合集或其修改版本，包括打包出售和收取下载费。
+- 以会员、订阅、付费 API、积分充值或其他收费方式，向他人提供数据访问、检索或分发服务。
+- 将数据作为收费资源库的内容，或以改名、格式转换、重新打包的方式规避上述限制。
+- 删除原署名、伪造作者身份、声称得到原作者或耗材品牌的背书。
+
+打印、设计、教学或咨询服务可以收费，但不得把交付本数据文件或开通本数据访问权限作为收费内容。免费镜像可以接受不影响访问权限的自愿捐赠；不得以捐赠或赞助作为下载条件。
+
+## 向 Lumina 投稿
+
+选择按本协议投稿，表示你有权授予上述许可，并非独占地允许 Lumina 项目及其运营者公开展示、校验、整理、免费提供、备份和分发该数据；可以制作离线包，并随 Lumina 软件及其收费便利打包服务提供。数据本身同时保持可免费获取，署名和原许可随分发保留。该项额外许可不授权其他人倒卖数据，也不授权 Lumina出售作者身份或品牌背书。
+
+代传、修改或合并他人数据时，原许可和原作者权利优先；你只能授权自己有权授权的部分。本协议不改变 Lumina 软件源码的许可，也不授予品牌 Logo、商标、专利或第三方作品的使用权。
+
+## 许可期限与违约
+
+在授权人拥有相关权利的范围内，本许可全球有效、免许可费、非独占；遵守条款时，授权不因资源下架而撤回。违反条款时相关授权终止；在发现违约后 30 日内完全纠正的，可恢复授权，但不得反复违约。依法不需要许可的使用不受本协议限制。
+
+数据按现状提供，实际打印前应自行验证效果。未经另行书面约定，授权人不保证数据适用于特定设备、材料批次或用途。另有权利人书面许可的，按该许可执行。
+
+## English
+
+License identifier: `LicenseRef-Lumina-Data-1.0`. Effective 18 November 2026. The Chinese text above governs; this section explains the same policy in English.
+
+This license applies only to resources expressly carrying this identifier. Their authors retain ownership. Existing licenses, including CC BY 4.0, remain valid for previously licensed versions; missing historical license information is not replaced by this license.
+
+You may download, study, modify and use the data, including for paid printing and the sale of produced works. Your outputs do not automatically inherit this license. You may redistribute the data free of charge, including in free mirrors, libraries and software, while retaining author, source and license notices and identifying your changes.
+
+You may not sell or resell the data or modified datasets, charge for downloads, or use them in paid resource libraries, subscriptions or paid data APIs. Renaming, repackaging and format conversion do not remove these conditions. You may charge for printing, design, teaching or consulting, but not for delivering these dataset files or access to them. Optional donations must not control access. Do not remove attribution, impersonate authors or imply endorsement.
+
+By contributing under this license, you non-exclusively permit Lumina and its operators to host, review, organize, back up and redistribute your contribution, including offline packs accompanying Lumina software and paid convenience packages, while keeping the data freely available and preserving attribution and licenses. This additional permission does not extend to third-party data resellers. You may grant only rights you actually hold; original third-party licenses take priority. Software, trademarks, logos, patents and third-party artwork are licensed separately.
+
+The license is worldwide, royalty-free and non-exclusive for the rights held by the licensor. Compliant permissions are not revoked by unlisting. Breach terminates the affected permissions; full cure within 30 days of discovery reinstates them, except for repeated breaches. Statutory exceptions remain unaffected. Data is provided as-is without guarantees for a particular device, batch or purpose. Separate written permission from the rights holder may authorize additional uses.

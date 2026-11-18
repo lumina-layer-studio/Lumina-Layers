@@ -243,6 +243,15 @@ class TestGetSettings:
 class TestPostSettings:
     """Verify POST /api/system/settings writes and handles errors."""
 
+    def test_legacy_client_preserves_filament_market(self, tmp_path) -> None:
+        with patch("api.routers.system.SETTINGS_FILE", tmp_path / "user_settings.json"):
+            assert client.get("/api/system/settings").json()["settings"]["filament_market"] == "auto"
+            assert client.post("/api/system/settings", json={"filament_market": "CN"}).status_code == 200
+            assert client.post("/api/system/settings", json={"language": "en"}).status_code == 200
+            settings = client.get("/api/system/settings").json()["settings"]
+        assert settings["filament_market"] == "CN"
+        assert settings["language"] == "en"
+
     def test_post_settings_success(self) -> None:
         """写入成功返回 200。"""
         payload = {

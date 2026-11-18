@@ -1,4 +1,10 @@
-import { LibraryIdentity, LibraryFields } from "./ui/LibraryDetails";
+import { LibraryIdentity, LibraryFields, LibraryCardIdentity } from "./ui/LibraryDetails";
+import ResourceDetailsPanel from "./ui/ResourceDetailsPanel";
+import CalibrationThumbnail from "./ui/CalibrationThumbnail";
+import ResourceContribution from "./ResourceContribution";
+import { savedMaterialIdentity } from "../utils/libraryFilamentIdentity";
+import { filamentMatches } from "../utils/filamentIdentity";
+import { useFilamentMarket } from "../hooks/useFilamentMarket";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent } from "react";
 import { motion } from "framer-motion";
@@ -18,20 +24,21 @@ import {
   updateGradientCardMaterial,
 } from "../api/extractor";
 import type { SavedMaterialLibraryItem } from "../api/types";
-import { useWorkspaceMode } from "../hooks/useWorkspaceMode";
 import { useI18n } from "../i18n/context";
 import { useSingleStageStore } from "../stores/singleStageStore";
 import { useWidgetStore } from "../stores/widgetStore";
+import { useResourceStore } from "../stores/resourceStore";
 
 import { normalizeResourceUrl } from "../utils/resourceUrl";
 import Button from "./ui/Button";
+import ResourceLibraryEmpty from "./ui/ResourceLibraryEmpty";
+import TransientBanner from "./ui/TransientBanner";
 import CloseButton from "./ui/CloseButton";
 import { LibraryBrandHeader as MaterialBrandHeader, SortableLibraryBrand as SortableMaterialBrand } from "./ui/LibraryBrandGroup";
 import {
   StatusBanner,
   cardPadClass,
   mutedSectionCardClass,
-  resolveSectionCardClass,
 } from "./ui/panelPrimitives";
 
 const isRgbTriplet = (value: number[] | null | undefined): value is [number, number, number] =>
@@ -164,13 +171,15 @@ const formatMaterialLibraryError = (
 
 export default function MaterialLibraryPanel() {
   const { t, lang } = useI18n();
-  const workspace = useWorkspaceMode();
+  const market = useFilamentMarket();
   const setActiveTab = useWidgetStore((state) => state.setActiveTab);
   const startMaterialVerification = useSingleStageStore((state) => state.startMaterialVerification);
   const importInputRef = useRef<HTMLInputElement | null>(null);
   const listScrollRef = useRef<HTMLDivElement | null>(null);
   const [listScrolled, setListScrolled] = useState(false);
   const [materials, setMaterials] = useState<SavedMaterialLibraryItem[]>([]);
+  const identities = useMemo(() => new Map(materials.map((item) =>
+    [item.directory_name, savedMaterialIdentity(item, lang, market)])), [materials, lang, market]);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchCollapsedBrands, setSearchCollapsedBrands] = useState<string[]>([]);
   const searchTerm = searchQuery.trim().toLocaleLowerCase();
@@ -222,6 +231,7 @@ export default function MaterialLibraryPanel() {
     try {
       const response = await listGradientCardMaterials();
       const nextMaterials = (response.materials ?? []).map(normalizeLibraryItem);
+      useResourceStore.getState().observeLibrary("materials", nextMaterials.length);
       setMaterials(nextMaterials);
       setHistoryMaterial((previous) =>
         previous
@@ -236,8 +246,6 @@ export default function MaterialLibraryPanel() {
       return nextMaterials;
     } catch (err) {
       setError(formatMaterialLibraryError(err, "mat_gradient_library_load_failed", t));
-      setMaterials([]);
-      setSelectedDirectoryNames([]);
       return [];
     } finally {
       setIsLoading(false);
@@ -307,9 +315,10 @@ export default function MaterialLibraryPanel() {
 
   const visibleGroups = useMemo(() => groupedMaterials.map((group) => ({
     ...group,
-    items: group.items.filter((item) => !searchTerm || [item.material_name, group.brand ?? t("mat_gradient_library_brand_unassigned"), item.material_type]
-      .some((value) => value?.toLocaleLowerCase().includes(searchTerm))),
-  })).filter((group) => group.items.length > 0), [groupedMaterials, searchTerm, t]);
+    items: group.items.filter((item) => filamentMatches(searchTerm.replace(/\s+/g, ""), [
+      identities.get(item.directory_name)?.searchText, !group.brand && t("mat_gradient_library_brand_unassigned"),
+    ].filter(Boolean).join(" "))),
+  })).filter((group) => group.items.length > 0), [groupedMaterials, identities, searchTerm, t]);
   const visibleMaterials = visibleGroups.flatMap(({ items }) => items);
   const allSelected = visibleMaterials.length > 0 && visibleMaterials.every((item) => selectedDirectoryNames.includes(item.directory_name));
   const groupIsExpanded = (key: string) => searchTerm ? !searchCollapsedBrands.includes(key) : expandedBrandGroupKeys.includes(key);
@@ -495,33 +504,41 @@ export default function MaterialLibraryPanel() {
   }, [refreshMaterials, t]);
 
   const renderMaterialDetails = (item: SavedMaterialLibraryItem) => {
-    const rgb = isRgbTriplet(item.estimated_rgb) ? item.estimated_rgb : null;
+    const identity = identities.get(item.directory_name)!;
     const busy = pendingDeleteDirectoryName === item.directory_name || pendingUpdateDirectoryName === item.directory_name;
     return (
-      <div className="grid min-w-0 gap-5">
-        <LibraryIdentity name={item.material_name} subtitle={`${getMaterialBrand(item) ?? t("mat_gradient_library_brand_unassigned")} · ${item.material_type?.trim() || t("mat_gradient_library_type_missing")}`} color={rgb ? toRgbCss(rgb) : undefined}>
+      <div className="grid min-w-0 gap-4">
+        <LibraryIdentity {...identity} subtitle={`${identity.brand || t("mat_gradient_library_brand_unassigned")} · ${item.material_type?.trim() || t("mat_gradient_library_type_missing")}`} thumbnail={{ kind: "materials", rgb: item.estimated_rgb, display: item.display }}>
           {item.sync_official && <span data-testid="material-library-official-badge" className="mt-2 block text-xs text-slate-500">{t("mat_sync_official_badge")}</span>}
         </LibraryIdentity>
-        <LibraryFields rows={[
-          { label: t("mat_gradient_library_fit_error_label"), value: formatNumericValue(item.mean_delta_e, 2) },
-          { label: t("mat_gradient_library_layer_height_label"), value: typeof item.layer_height_mm === "number" ? `${item.layer_height_mm.toFixed(2)} mm` : "—" },
-          { label: t("mat_gradient_library_verification_count_label"), value: Math.max(1, Number(item.verification_count ?? 1)) },
-        ]} />
-        <div data-testid="material-library-item-usage" className="grid gap-3">
+        <div className="border-t panel-divider pt-3.5">
+          <LibraryFields rows={[
+            { label: t("mat_gradient_library_fit_error_label"), value: formatNumericValue(item.mean_delta_e, 2) },
+            { label: t("mat_gradient_library_layer_height_label"), value: typeof item.layer_height_mm === "number" ? `${item.layer_height_mm.toFixed(2)} mm` : "—" },
+            { label: t("mat_gradient_library_verification_count_label"), value: Math.max(1, Number(item.verification_count ?? 1)) },
+          ]} />
+        </div>
+        <div data-testid="material-library-item-usage" className="grid gap-3 border-t panel-divider pt-3.5">
           <LibraryFields rows={[{ label: t("mat_gradient_library_usage_count_label"), value: Number(item.usage_total ?? 0) }]} />
           {item.usage_by_color_mode && <ul className="grid gap-1 text-xs text-slate-500 dark:text-slate-400">{Object.entries(item.usage_by_color_mode).sort((left, right) => right[1] - left[1]).map(([mode, count]) => <li key={mode} className="flex justify-between gap-2"><span>{mode}</span><span>{count}</span></li>)}</ul>}
           {item.usage_last_used_at && <p className="text-xs text-slate-500">{tRuntime("mat_gradient_library_usage_last_used", { when: formatCreatedAt(item.usage_last_used_at) })}</p>}
         </div>
-        <LibraryFields rows={[
-          { label: t("mat_gradient_library_created_at_label"), value: formatCreatedAt(item.created_at) },
-          { label: t("mat_gradient_library_updated_at_label"), value: formatCreatedAt(item.updated_at) },
-          { label: t("mat_gradient_library_directory_label"), value: item.directory_name, multiline: true },
-        ]} />
-        <div className="grid grid-cols-2 gap-2">
-          <Button label={t("mat_gradient_library_edit_btn")} variant="secondary" onClick={() => handleOpenEditDialog(item)} disabled={busy} />
-          <Button label={t("mat_gradient_library_reverify_btn")} variant="secondary" onClick={() => handleStartVerification(item)} disabled={busy} />
-          <Button label={t("mat_gradient_library_show_history_btn")} variant="secondary" onClick={() => handleOpenHistoryDialog(item)} disabled={busy} />
-          <Button label={t("mat_gradient_library_delete_btn")} variant="secondary" tone="danger" onClick={() => void handleDeleteMaterial(item)} disabled={busy} loading={pendingDeleteDirectoryName === item.directory_name} />
+        <div className="border-t panel-divider pt-3.5">
+          <LibraryFields rows={[
+            { label: t("mat_gradient_library_created_at_label"), value: formatCreatedAt(item.created_at) },
+            { label: t("mat_gradient_library_updated_at_label"), value: formatCreatedAt(item.updated_at) },
+            { label: t("mat_gradient_library_directory_label"), value: item.directory_name, multiline: true },
+          ]} />
+        </div>
+        <div className="grid gap-2 border-t panel-divider pt-3.5">
+          <div className="grid grid-cols-2 gap-2">
+            <Button label={t("mat_gradient_library_edit_btn")} variant="secondary" onClick={() => handleOpenEditDialog(item)} disabled={busy} />
+            <Button label={t("mat_gradient_library_reverify_btn")} variant="secondary" onClick={() => handleStartVerification(item)} disabled={busy} />
+            <Button label={t("mat_gradient_library_show_history_btn")} variant="secondary" onClick={() => handleOpenHistoryDialog(item)} disabled={busy} />
+            <Button label={t("mat_gradient_library_delete_btn")} variant="secondary" tone="danger" onClick={() => void handleDeleteMaterial(item)} disabled={busy} loading={pendingDeleteDirectoryName === item.directory_name} />
+          </div>
+          <ResourceContribution kind="materials" resourceKey={item.directory_name}
+            initialDisplay={{ brand: item.brand, material_type: item.material_type, ...item.display }} />
         </div>
       </div>
     );
@@ -565,6 +582,7 @@ export default function MaterialLibraryPanel() {
           </p>
         </div>
         <div className="flex flex-wrap items-center justify-end gap-3">
+          <ResourceContribution kind="materials" />
           <Button
             label={t(hasExpandedBrand ? "mat_gradient_library_collapse_all" : "mat_gradient_library_expand_all")}
             variant="secondary"
@@ -624,11 +642,7 @@ export default function MaterialLibraryPanel() {
         </StatusBanner>
       ) : null}
 
-      {success ? (
-        <StatusBanner data-testid="material-library-success" tone="success">
-          {success}
-        </StatusBanner>
-      ) : null}
+      <TransientBanner data-testid="material-library-success" message={success} onDismiss={() => setSuccess(null)} />
 
       {editingMaterial ? (
         <MaterialLibraryEditDialog
@@ -828,23 +842,22 @@ export default function MaterialLibraryPanel() {
       ) : null}
 
       {isLoading ? (
-        <section className={`${resolveSectionCardClass(workspace.mode)} flex min-h-48 items-center justify-center`}>
+        <section className="flex min-h-48 items-center justify-center" role="status">
           <p className="text-sm text-slate-500 dark:text-slate-400">{t("mat_gradient_library_loading")}</p>
         </section>
       ) : materials.length === 0 ? (
-        <section className={`${resolveSectionCardClass(workspace.mode)} flex min-h-48 items-center justify-center`}>
-          <p className="max-w-lg text-center text-sm text-slate-500 dark:text-slate-400">{t("mat_gradient_library_empty")}</p>
-        </section>
+        !error && <ResourceLibraryEmpty kind="materials" onBrowse={(source) => {
+          useResourceStore.getState().setCatalogSource("materials", source);
+          setActiveTab("material-cloud-sync");
+        }} onImport={() => importInputRef.current?.click()} onCalibrate={() => setActiveTab("gradient-card-generate")} />
       ) : visibleGroups.length === 0 ? (
         <p role="status" className="py-12 text-center text-sm text-slate-500">{t("mat_gradient_library_search_empty")}</p>
       ) : (
-        <div className={`grid items-start gap-5 ${detailMaterial ? "lg:grid-cols-[minmax(0,1fr)_22rem]" : ""}`}>
-          {detailMaterial && (
-            <section aria-label={t("mat_gradient_library_details")} data-testid="material-library-details" className={`${cardPadClass} relative order-first min-w-0 lg:sticky lg:top-0 lg:order-last lg:col-start-2 lg:row-start-1 lg:max-h-[calc(100vh-12rem)] lg:overflow-y-auto lg:overscroll-y-contain`} onKeyDown={(event) => { if (event.key === "Escape") { event.stopPropagation(); closeDetails(); } }}>
-              <div className="absolute right-4 top-3"><CloseButton ref={detailCloseRef} label={t("mat_gradient_library_history_close_btn")} onClick={closeDetails} /></div>
-              {renderMaterialDetails(detailMaterial)}
-            </section>
-          )}
+        <div className="resource-detail-layout grid items-start gap-5">
+            <ResourceDetailsPanel open={!!detailMaterial} aria-label={t("mat_gradient_library_details")} data-testid="material-library-details" className={`${cardPadClass} relative order-first min-w-0 lg:sticky lg:top-0 lg:order-last lg:col-start-2 lg:row-start-1 lg:max-h-[calc(100vh-12rem)] lg:overflow-y-auto lg:overscroll-y-contain`} onKeyDown={(event) => { if (event.key === "Escape") { event.stopPropagation(); closeDetails(); } }}>
+              <div className="absolute right-4 top-4"><CloseButton ref={detailCloseRef} label={t("mat_gradient_library_history_close_btn")} onClick={closeDetails} /></div>
+              {detailMaterial && renderMaterialDetails(detailMaterial)}
+            </ResourceDetailsPanel>
           <DndContext
             sensors={brandSensors}
             collisionDetection={closestCenter}
@@ -860,7 +873,8 @@ export default function MaterialLibraryPanel() {
           <div className="grid min-w-0 gap-6">
           {visibleGroups.map(({ brand, items }) => {
             const groupKey = getMaterialBrandGroupKey(brand);
-            const groupLabel = brand ?? t("mat_gradient_library_brand_unassigned");
+            const groupIdentity = identities.get(items[0].directory_name)!;
+            const groupLabel = groupIdentity.brand || t("mat_gradient_library_brand_unassigned");
             const isCollapsed = !groupIsExpanded(groupKey);
             const isPinned = pinnedBrandGroupKeys.includes(groupKey);
             return (
@@ -869,6 +883,7 @@ export default function MaterialLibraryPanel() {
                 groupKey={groupKey}
                 brand={brand}
                 label={groupLabel}
+                logo={groupIdentity.logo}
                 count={items.length}
                 collapsed={isCollapsed}
                 pinned={isPinned}
@@ -886,7 +901,7 @@ export default function MaterialLibraryPanel() {
                 {isCollapsed ? null : (
                   <div className="grid auto-rows-fr items-stretch gap-4 [grid-template-columns:repeat(auto-fill,min(100%,15rem))]">
                 {items.map((item) => {
-                  const rgb = isRgbTriplet(item.estimated_rgb) ? item.estimated_rgb : null;
+                  const identity = identities.get(item.directory_name)!;
                   const selected = selectedDirectoryNames.includes(item.directory_name);
                   return (
                     <button
@@ -900,16 +915,18 @@ export default function MaterialLibraryPanel() {
                           toggleMaterialSelection(item.directory_name);
                         } else {
                           detailTriggerRef.current = event.currentTarget;
-                          setDetailDirectory(item.directory_name);
+                          if (detailDirectory === item.directory_name) closeDetails();
+                          else setDetailDirectory(item.directory_name);
                         }
                       }}
-                      className={`${cardPadClass} material-library-card relative flex min-w-0 items-center gap-4 text-left transition-colors`}
+                      className={`${cardPadClass} material-library-card relative flex min-w-0 items-start gap-4 text-left transition-colors`}
                     >
                       {selectionMode && <span aria-hidden="true" className={`flex h-5 w-5 shrink-0 items-center justify-center rounded border text-xs ${selected ? "border-blue-500 bg-blue-500 text-white" : "border-slate-300 dark:border-slate-600"}`}>{selected && <CheckIcon className="h-3.5 w-3.5" />}</span>}
-                      <span aria-hidden="true" className="h-14 w-14 shrink-0 rounded-xl border border-black/10 bg-slate-100 dark:border-white/15 dark:bg-slate-800" style={rgb ? { backgroundColor: toRgbCss(rgb) } : undefined} />
+                      <CalibrationThumbnail kind="materials" rgb={item.estimated_rgb} display={item.display} />
                       <span className="min-w-0 flex-1">
-                        <span className="material-library-card-name block break-words text-sm font-semibold">{item.material_name}</span>
-                        <span className="material-library-card-meta mt-2 block text-xs">{item.material_type?.trim() || t("mat_gradient_library_type_missing")}</span>
+                        <LibraryCardIdentity {...identity}
+                          subtitle={[identity.brand, item.material_type?.trim()].filter(Boolean).join(" · ")}
+                          thumbnail={{ kind: "materials", rgb: item.estimated_rgb, display: item.display }} />
                         <span data-testid="material-library-card-fit-error" className="material-library-card-meta mt-1 block text-xs tabular-nums">{t("mat_gradient_library_fit_error_label")} {formatNumericValue(item.mean_delta_e, 2)}</span>
                         {(materialDuplicateCounts.get(getMaterialIdentityKey(item)) ?? 0) > 1 && <span data-testid="material-library-duplicate-badge" className="material-library-card-meta mt-1 block text-[11px] tabular-nums">{formatCreatedAt(item.updated_at || item.created_at)}</span>}
                       </span>
@@ -927,8 +944,9 @@ export default function MaterialLibraryPanel() {
             <DragOverlay dropAnimation={null}>
               {draggedBrand !== null && (() => {
                 const group = visibleGroups.find(({ brand }) => getMaterialBrandGroupKey(brand) === draggedBrand);
+                const identity = group && identities.get(group.items[0].directory_name);
                 return group ? <div className="rounded-lg bg-slate-100 shadow-lg ring-1 ring-slate-300 dark:bg-slate-800 dark:ring-slate-600" aria-hidden="true">
-                  <MaterialBrandHeader label={group.brand ?? t("mat_gradient_library_brand_unassigned")} count={group.items.length} collapsed={!groupIsExpanded(draggedBrand)} pinned={pinnedBrandGroupKeys.includes(draggedBrand)} />
+                  <MaterialBrandHeader label={identity?.brand || t("mat_gradient_library_brand_unassigned")} logo={identity?.logo} count={group.items.length} collapsed={!groupIsExpanded(draggedBrand)} pinned={pinnedBrandGroupKeys.includes(draggedBrand)} />
                 </div> : null;
               })()}
             </DragOverlay>, document.body,

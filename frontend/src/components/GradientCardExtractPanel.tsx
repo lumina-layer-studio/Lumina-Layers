@@ -7,6 +7,8 @@ import { listGradientCardMaterials } from "../api/extractor";
 import { useSingleStageStore } from "../stores/singleStageStore";
 import { ACCEPT_EXTRACTOR_FORMATS } from "../stores/extractorStore";
 import Button from "./ui/Button";
+import CalibrationResourceReturn from "./ui/CalibrationResourceReturn";
+import ResourceContribution from "./ResourceContribution";
 import Slider from "./ui/Slider";
 import { ChevronDown, ChevronLeft, ChevronRight, ChevronUp } from "./ui/icons";
 import GradientCardCornerSelector from "./GradientCardCornerSelector";
@@ -669,6 +671,7 @@ export default function GradientCardExtractPanel() {
     saveError,
     saveSuccess,
     savedMaterialSummary,
+    savedContribution,
     setDatasetFile,
     setWhiteImageFile,
     setBlackImageFile,
@@ -1040,6 +1043,10 @@ export default function GradientCardExtractPanel() {
                 />
               )}
               {renderSaveFeedback("top")}
+              <CalibrationResourceReturn family="materials" resource={savedMaterialSummary?.directory_name} />
+              {savedMaterialSummary?.directory_name && (savedContribution?.state === "queued" ?
+                <p role="status" className="text-xs text-[var(--surface-text-muted)]">{t("contribution_queue_confirmed")}</p> :
+                <ResourceContribution kind="materials" resourceKey={savedMaterialSummary.directory_name} queueId={savedContribution?.id} />)}
             </div>
           </section>
 </div>

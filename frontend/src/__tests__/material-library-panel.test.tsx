@@ -24,6 +24,17 @@ vi.mock("../api/extractor", () => ({
 }));
 
 describe("MaterialLibraryPanel", () => {
+  it("preserves local materials after a failed refresh and never reports a false empty library", async () => {
+    vi.mocked(listGradientCardMaterials).mockResolvedValue({ status: "ok", message: "ok", materials: [{ material_name: "Kept PLA", directory_name: "kept", material_file_url: "/materials/kept.json", estimated_rgb: [1, 2, 3] }] });
+    render(<MaterialLibraryPanel />);
+    fireEvent.click(await screen.findByTestId("material-library-brand-group-toggle"));
+    expect(screen.getByText("Kept PLA")).toBeInTheDocument();
+    vi.mocked(listGradientCardMaterials).mockRejectedValueOnce(new Error("offline"));
+    fireEvent.click(screen.getByRole("button", { name: /刷新|Refresh/ }));
+    await screen.findByTestId("material-library-error");
+    expect(screen.getByText("Kept PLA")).toBeInTheDocument();
+    expect(screen.queryByTestId("resource-library-empty")).not.toBeInTheDocument();
+  });
   const expandAllMaterialLibraryGroups = () => {
     for (const toggle of screen.getAllByTestId("material-library-brand-group-toggle")) {
       if (toggle.getAttribute("aria-expanded") === "false") {
@@ -107,8 +118,12 @@ describe("MaterialLibraryPanel", () => {
     fireEvent.click(screen.getAllByTestId("material-library-item")[0]);
     expect(screen.getByTestId("material-library-official-badge")).toBeInTheDocument();
     expect(screen.getByText("3")).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("material-library-item"));
+    expect(screen.getByTestId("material-library-details")).toHaveAttribute("inert");
+    await waitFor(() => expect(screen.queryByTestId("material-library-details")).not.toBeInTheDocument());
+    fireEvent.click(screen.getByTestId("material-library-item"));
     fireEvent.keyDown(screen.getByTestId("material-library-details"), { key: "Escape" });
-    expect(screen.queryByTestId("material-library-details")).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByTestId("material-library-details")).not.toBeInTheDocument());
     expect(screen.getByTestId("material-library-item")).toHaveFocus();
     fireEvent.click(screen.getByRole("button", { name: /选择耗材|select materials/i }));
     fireEvent.click(screen.getByTestId("material-library-item"));
@@ -370,7 +385,7 @@ describe("MaterialLibraryPanel", () => {
     await waitFor(() => {
       expect(within(screen.getByTestId("material-library-details")).getByText("PLA Matte")).toBeInTheDocument();
     });
-    expect(within(screen.getByTestId("material-library-details")).getByText(/Bambu Lab ·/)).toBeInTheDocument();
+    expect(within(screen.getByTestId("material-library-details")).getByText(/拓竹 ·/)).toBeInTheDocument();
   });
 
   it("edits the display color via hex input from the library", async () => {
@@ -752,7 +767,7 @@ describe("MaterialLibraryPanel", () => {
 
     await waitFor(() => {
       expect(
-        screen.getByText(/还没有已保存的耗材档案|No saved material archives yet/i),
+        screen.getByText(/本地暂无耗材档案|No local material profiles/i),
       ).toBeInTheDocument();
     });
   });
@@ -939,7 +954,7 @@ describe("MaterialLibraryPanel", () => {
     render(<MaterialLibraryPanel />);
 
     await waitFor(() => {
-      expect(screen.getByText(/还没有已保存的耗材档案|No saved material archives yet/i)).toBeInTheDocument();
+      expect(screen.getByText(/本地暂无耗材档案|No local material profiles/i)).toBeInTheDocument();
     });
 
     const importInput = screen.getByTestId("material-library-import-input");

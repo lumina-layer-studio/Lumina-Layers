@@ -68,7 +68,7 @@ const workstationFieldShellClass =
   "min-h-11 w-full rounded-[10px] border border-transparent bg-[var(--surface-well)] px-3.5 py-2 text-sm text-slate-800 outline-none transition-all duration-200 hover:border-[color:var(--surface-card-outline)] disabled:cursor-not-allowed disabled:opacity-45 dark:text-slate-100";
 
 export const workstationInputClass =
-  `${workstationFieldShellClass} focus:border-blue-400 focus:ring-2 focus:ring-[var(--focus-ring)]`;
+  `${workstationFieldShellClass} workstation-field-validate focus:border-blue-400 focus:ring-2 focus:ring-[var(--focus-ring)]`;
 
 /** Picker buttons show a focus ring only for keyboard navigation. */
 export const workstationPickerTriggerClass =
@@ -103,6 +103,20 @@ export const dependentGroupClass =
 /** Ghost button/icon-button class for raw <button> elements that do not go
  *  through the shared Button component. 原生按钮使用的幽灵按钮样式。 */
 export const ghostControlClass = "ghost-control";
+
+/** Navigation links use the same control tokens while preserving link semantics. */
+export const actionLinkClass =
+  "inline-flex min-h-9 min-w-0 items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm font-medium leading-5 transition-colors duration-150";
+
+/** Shared shell for catalog scope selectors and searchable facet menus. */
+export const catalogFilterTriggerClass =
+  "ghost-control inline-flex min-h-8 max-w-full items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)]";
+
+export const catalogFilterMenuClass =
+  "z-[10010] overflow-hidden rounded-[10px] border border-[var(--surface-card-outline)] bg-[var(--surface-panel-strong)] text-slate-800 dark:text-slate-100";
+
+export const catalogFilterOptionClass =
+  "flex min-h-9 w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm hover:bg-[var(--surface-well)]";
 
 export const desktopSplitLayoutClass =
   "grid min-h-0 gap-5 xl:grid-cols-[minmax(18rem,24rem)_minmax(0,1fr)] xl:items-start 2xl:grid-cols-[minmax(22rem,27.5rem)_minmax(0,1fr)]";
@@ -219,4 +233,14 @@ export function StatusBanner({
       {action && <div className="shrink-0">{action}</div>}
     </div>
   );
+}
+
+export function reportStatusBadgeClass(status: "open" | "resolved" | "dismissed" | string): string {
+  if (status === "resolved") {
+    return "bg-emerald-500/12 text-emerald-700 dark:bg-emerald-400/15 dark:text-emerald-300";
+  }
+  if (status === "open") {
+    return "bg-amber-500/12 text-amber-700 dark:bg-amber-400/15 dark:text-amber-300";
+  }
+  return "bg-slate-500/12 text-slate-700 dark:bg-slate-400/15 dark:text-slate-300";
 }

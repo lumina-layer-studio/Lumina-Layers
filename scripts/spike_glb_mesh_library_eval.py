@@ -63,7 +63,7 @@ DEFAULT_IMAGE = str(_REPO_ROOT / "test_images" / "LUT_Stress_Test_HD.png")
 # 默认图改为仓内 test_images/LUT_Stress_Test_HD.png，确保任何开发者 clone 后都能
 # 直接 python scripts/spike_glb_mesh_library_eval.py 跑出结果；要复现
 # spike 报告原始数字请用 --image= 显式覆盖。
-DEFAULT_LUT = "lut-preset/精亮/精亮&PLA4色&RYBW.npy"
+DEFAULT_LUT = "tests/fixtures/lut_regression/精亮/精亮&PLA4色&RYBW.npy"
 DEFAULT_COLOR_MODE = "RYBW"
 DEFAULT_TARGET_WIDTH_MM = 225.0
 

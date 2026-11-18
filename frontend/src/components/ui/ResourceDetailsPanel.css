@@ -1,0 +1,6 @@
+@media (min-width: 1024px) {
+  /* The exiting panel stays mounted, so pagination only reflows once. */
+  .resource-detail-layout:has(> .resource-detail-panel) {
+    grid-template-columns: minmax(0, 1fr) 22rem;
+  }
+}

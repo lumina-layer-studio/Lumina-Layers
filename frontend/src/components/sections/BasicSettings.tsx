@@ -18,7 +18,9 @@ import {
 } from "../../api/types";
 import { apiErrorToVisibleMessage } from "../../api/client";
 import type { SavedMaterialLibraryItem } from "../../api/types";
-import { listGradientCardMaterials } from "../../api/extractor";
+import { importGradientCardMaterials, listGradientCardMaterials } from "../../api/extractor";
+import { beginResourceCalibration, createResourceSelectionIntent, discardResourceCalibration, refreshConverterResources, restoreTrialLut, takeResourceCalibrationReturn, useMaterialTrialStore, useResourceCalibrationStore } from "../../stores/converter/resourceSelection";
+import { useResourceStore } from "../../stores/resourceStore";
 import { reconcileDirectoryNames } from "../../utils/materialDirectoryMigration";
 import UnifiedUploader from "../ui/UnifiedUploader";
 import Button from "../ui/Button";
@@ -31,12 +33,16 @@ import { CropModal } from "../ui/CropModal";
 import type { CropData } from "../ui/CropModal";
 import ImportConfirmDialog from "../ui/ImportConfirmDialog";
 import MaterialPickerDialog from "../ui/MaterialPickerDialog";
+import MaterialArchiveGuide from "../ui/MaterialArchiveGuide";
+import { dismissMaterialGuide, useMaterialGuideStore } from "../../stores/materialGuideStore";
 import type { MaterialPickerDialogHandle } from "../ui/MaterialPickerDialog";
 import MaterialCacheStatusLine from "../materialWorkbench/MaterialCacheStatusLine";
 import LegacyLutSelector from "./LegacyLutSelector";
 import { TUTORIAL_STEPS } from "../../data/tutorialSteps";
 import { useTutorialStore } from "../../stores/tutorialStore";
 import { useI18n } from "../../i18n/context";
+import { useFilamentMarket } from "../../hooks/useFilamentMarket";
+import { localLutIdentity, lutGroupBrand, savedMaterialIdentity } from "../../utils/libraryFilamentIdentity";
 import { useImageThumbnail } from "../../hooks/useImageThumbnail";
 import {
   prepareImport,
@@ -282,7 +288,13 @@ function ColorModeDots({ mode }: { mode: string }) {
 }
 
 export default function BasicSettings() {
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
+  const filamentMarket = useFilamentMarket();
+  const lutLoadError = useConverterStore((state) => state.legacyCatalogError || state.lutListError);
+  const materialIntentRef = useRef<ReturnType<typeof createResourceSelectionIntent> | null>(null);
+  const lutIntentRef = useRef<ReturnType<typeof createResourceSelectionIntent> | null>(null);
+  const calibrationContext = useResourceCalibrationStore((state) => state.context);
+  useEffect(() => () => { materialIntentRef.current?.dispose(); lutIntentRef.current?.dispose(); }, []);
 
   const structureModeOptions = Object.values(StructureMode).map((v) => ({
     label: t(`structure_mode.${v}`),
@@ -437,9 +449,11 @@ export default function BasicSettings() {
   const startupRetryMountedRef = useRef(false);
   const legacyCatalogRetryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const legacyCatalogStartupAttemptRef = useRef(0);
+  const [legacyCatalogRead, setLegacyCatalogRead] = useState(false);
   const legacyCatalogLoadPendingRef = useRef(false);
   const lutListRetryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lutListStartupAttemptRef = useRef(0);
+  const [lutListRead, setLutListRead] = useState(false);
   const lutListLoadPendingRef = useRef(false);
 
   // --- Share card import state ---
@@ -525,7 +539,6 @@ export default function BasicSettings() {
   const setCropModalOpen = useConverterStore((s) => s.setCropModalOpen);
   const submitCrop = useConverterStore((s) => s.submitCrop);
   const uploadLut = useConverterStore((s) => s.uploadLut);
-  const fetchLutCatalog = useConverterStore((s) => s.fetchLutCatalog);
   const removeBatchFile = useConverterStore((s) => s.removeBatchFile);
   const setLargeFormatEnabled = useConverterStore((s) => s.setLargeFormatEnabled);
   const setTileWidthMm = useConverterStore((s) => s.setTileWidthMm);
@@ -583,7 +596,9 @@ export default function BasicSettings() {
         if (!startupRetryMountedRef.current) return;
 
         const state = useConverterStore.getState();
-        if (state.source_version !== "legacy" || state.legacyCatalogGroups.length > 0) {
+        if (state.source_version !== "legacy") return;
+        if (!state.legacyCatalogError) {
+          setLegacyCatalogRead(true);
           legacyCatalogStartupAttemptRef.current = 0;
           return;
         }
@@ -612,7 +627,9 @@ export default function BasicSettings() {
         if (!startupRetryMountedRef.current) return;
 
         const state = useConverterStore.getState();
-        if (state.source_version !== "legacy" || state.lutListFull.length > 0) {
+        if (state.source_version !== "legacy") return;
+        if (!state.lutListError) {
+          setLutListRead(true);
           lutListStartupAttemptRef.current = 0;
           return;
         }
@@ -630,7 +647,8 @@ export default function BasicSettings() {
   }, [fetchLutList]);
 
   useEffect(() => {
-    if (source_version !== "legacy" || legacyCatalogGroups.length > 0) {
+    if (source_version !== "legacy" || legacyCatalogGroups.length > 0 || legacyCatalogRead) {
+      if (source_version !== "legacy") setLegacyCatalogRead(false);
       clearLegacyCatalogRetry();
       legacyCatalogStartupAttemptRef.current = 0;
       return;
@@ -650,13 +668,15 @@ export default function BasicSettings() {
   }, [
     source_version,
     legacyCatalogGroups.length,
+    legacyCatalogRead,
     legacyCatalogLoading,
     clearLegacyCatalogRetry,
     startLegacyCatalogLoad,
   ]);
 
   useEffect(() => {
-    if (source_version !== "legacy" || lutListFull.length > 0) {
+    if (source_version !== "legacy" || lutListFull.length > 0 || lutListRead) {
+      if (source_version !== "legacy") setLutListRead(false);
       clearLutListRetry();
       lutListStartupAttemptRef.current = 0;
       return;
@@ -676,6 +696,7 @@ export default function BasicSettings() {
   }, [
     source_version,
     lutListFull.length,
+    lutListRead,
     lutListLoading,
     clearLutListRetry,
     startLutListLoad,
@@ -689,11 +710,13 @@ export default function BasicSettings() {
     () =>
       Object.keys(lutIndex.byManufacturer)
         .sort((a, b) => a.localeCompare(b))
-        .map((name) => ({
-          label: name === "Unlabeled" ? t("basic_lut_unlabeled_brand") : name,
-          value: name,
-        })),
-    [lutIndex, t],
+        .map((name) => {
+          const items = lutIndex.byManufacturer[name].map((item) =>
+            localLutIdentity(name, item.name, lang, item.display, filamentMarket));
+          const { brand, logo } = lutGroupBrand(name, items, lang, filamentMarket);
+          return { label: brand === "Unlabeled" ? t("basic_lut_unlabeled_brand") : brand, value: name, logo };
+        }),
+    [lutIndex, t, lang, filamentMarket],
   );
   const lutNameByPath = useMemo(() => {
     const map = new Map<string, string>();
@@ -731,6 +754,11 @@ export default function BasicSettings() {
               return {
                 label: item.name,
                 value: legacyName,
+                brand: item.manufacturer,
+                display: item.display,
+                localVersion: item.local_version,
+                searchTokens: item.search_tokens,
+                mode: item.color_mode,
               };
             }).filter((option) => option !== null) ?? [],
         };
@@ -756,9 +784,11 @@ export default function BasicSettings() {
   const allLegacyLutOptions = useMemo(
     () => legacyCatalogGroups.flatMap((group) => group.items.flatMap((item) => {
       const value = lutNameByPath.get(normalizeLutPath(item.path));
-      return value ? [{ label: item.name, value, brand: group.manufacturer, materialType: item.material_type }] : [];
+      return value ? [{ label: item.name, value, brand: group.manufacturer, display: item.display, materialType: item.material_type,
+        localVersion: item.local_version,
+        mode: item.color_mode, group: legacyBucketLabel(item.color_mode, t), searchTokens: item.search_tokens }] : [];
     })),
-    [legacyCatalogGroups, lutNameByPath],
+    [legacyCatalogGroups, lutNameByPath, t],
   );
   const selectedLegacyBrandInfo = useMemo(() => {
     if (!selectedLegacyManufacturer) {
@@ -774,20 +804,14 @@ export default function BasicSettings() {
           .filter(Boolean),
       ),
     ).sort((a, b) => a.localeCompare(b));
-    return {
-      displayName:
-        selectedLegacyManufacturer === "Unlabeled"
-          ? t("basic_lut_unlabeled_brand")
-          : selectedLegacyManufacturer,
-      materialTypes,
-      vendor:
-        selectedLegacyManufacturer === "Unlabeled"
-          ? t("basic_lut_unlabeled_brand")
-          : selectedLegacyManufacturer,
-    };
-  }, [legacyCatalogGroups, selectedLegacyManufacturer, t]);
+    const label = manufacturerOptions.find((option) => option.value === selectedLegacyManufacturer)?.label ?? selectedLegacyManufacturer;
+    return { displayName: label, materialTypes, vendor: label };
+  }, [legacyCatalogGroups, manufacturerOptions, selectedLegacyManufacturer]);
 
   // --- Material library for material-archive mode ---
+  const [materialPickerOpen, setMaterialPickerOpen] = useState(false);
+  const [materialTrial, setMaterialTrial] = useState(false);
+  const [materialInitialQuery, setMaterialInitialQuery] = useState("");
   const [materialLibrary, setMaterialLibrary] = useState<SavedMaterialLibraryItem[]>([]);
   const [materialLibraryLoading, setMaterialLibraryLoading] = useState(false);
   const [materialLibraryLoaded, setMaterialLibraryLoaded] = useState(false);
@@ -796,8 +820,9 @@ export default function BasicSettings() {
   const retryMaterialLibraryLoad = useCallback(() => {
     setMaterialLibraryLoadAttempt((attempt) => attempt + 1);
   }, []);
+  const materialLibraryNeeded = source_version === "material" || materialPickerOpen;
   useEffect(() => {
-    if (source_version !== "material") {
+    if (!materialLibraryNeeded) {
       clearWorkshopMaterialCatalog();
       setMaterialLibraryLoaded(false);
       setMaterialLibraryLoadError(false);
@@ -811,14 +836,13 @@ export default function BasicSettings() {
       .then((res) => {
         if (cancelled) return;
         const materials = res.materials ?? [];
-        updateWorkshopMaterialCatalog(materials);
+        useResourceStore.getState().observeLibrary("materials", materials.length);
+        if (source_version === "material") updateWorkshopMaterialCatalog(materials);
         setMaterialLibrary(materials);
         setMaterialLibraryLoaded(true);
       })
       .catch(() => {
         if (!cancelled) {
-          clearWorkshopMaterialCatalog();
-          setMaterialLibrary([]);
           setMaterialLibraryLoaded(false);
           setMaterialLibraryLoadError(true);
         }
@@ -827,7 +851,7 @@ export default function BasicSettings() {
         if (!cancelled) setMaterialLibraryLoading(false);
       });
     return () => { cancelled = true; };
-  }, [materialLibraryLoadAttempt, source_version]);
+  }, [materialLibraryLoadAttempt, source_version, materialLibraryNeeded]);
 
   useEffect(() => {
     if (source_version !== "material" || !materialLibraryLoaded) return;
@@ -857,14 +881,84 @@ export default function BasicSettings() {
     source_version,
   ]);
 
-  const [materialPickerOpen, setMaterialPickerOpen] = useState(false);
+  const [materialPickerDraft, setMaterialPickerDraft] = useState<string[] | null>(null);
+  const [lutPickerResume, setLutPickerResume] = useState<{ id: number; selected: string[] } | null>(null);
+  useEffect(() => {
+    if (calibrationContext?.phase !== "ready") return;
+    const returned = takeResourceCalibrationReturn(calibrationContext.family);
+    if (!returned) return;
+    if (returned.family === "materials") {
+      materialIntentRef.current?.dispose();
+      materialIntentRef.current = returned.intent;
+      setMaterialTrial(returned.intent.materialTrial);
+      setMaterialInitialQuery(returned.intent.initialQuery);
+      setMaterialPickerDraft(returned.selected);
+      retryMaterialLibraryLoad();
+      setMaterialPickerOpen(true);
+    } else {
+      lutIntentRef.current?.dispose();
+      lutIntentRef.current = returned.intent;
+      const candidate = allLegacyLutOptions.find((option) => option.value === returned.selected.at(-1));
+      if (candidate?.brand) setLegacyManufacturer(candidate.brand);
+      setLutPickerResume({ id: returned.id, selected: returned.selected });
+    }
+  }, [calibrationContext, allLegacyLutOptions, retryMaterialLibraryLoad, setLegacyManufacturer]);
+  const materialImportRef = useRef<HTMLInputElement>(null);
+  const [materialImporting, setMaterialImporting] = useState(false);
+  const [materialImportError, setMaterialImportError] = useState<string | null>(null);
+  const handleMaterialImport = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    setMaterialImporting(true);
+    setMaterialImportError(null);
+    try {
+      await importGradientCardMaterials([file]);
+      retryMaterialLibraryLoad();
+    } catch (error) {
+      setMaterialImportError(apiErrorToVisibleMessage(error, t("mat_gradient_library_import_failed")));
+    } finally {
+      setMaterialImporting(false);
+    }
+  };
   const handleMaterialPickerConfirm = useCallback(
     (next: string[]) => {
-      setSelectedMaterialDirNames(next);
+      const trial = materialIntentRef.current?.materialTrial;
+      const error = materialIntentRef.current?.applyMaterials(next);
+      if (error) return error;
+      if (!materialIntentRef.current) setSelectedMaterialDirNames(next);
+      materialIntentRef.current?.dispose();
+      materialIntentRef.current = null;
+      setMaterialPickerDraft(null);
       setMaterialPickerOpen(false);
+      setMaterialTrial(false);
+      if (trial) {
+        dismissMaterialGuide();
+        const current = useConverterStore.getState();
+        if (current.imageFile) void current.submitPreview();
+      }
     },
     [setSelectedMaterialDirNames],
   );
+  const openMaterialTrial = useCallback(() => {
+    discardResourceCalibration();
+    materialIntentRef.current?.dispose();
+    // Use the applied LUT's structured brand, never infer a filament from its RGB.
+    const applied = allLegacyLutOptions.find((item) => item.value === lut_name);
+    const query = applied?.brand && applied.brand.toLowerCase() !== "custom" ? applied.brand : "";
+    materialIntentRef.current = createResourceSelectionIntent({ materialTrial: true, initialQuery: query });
+    setMaterialInitialQuery(query);
+    setMaterialPickerDraft(null);
+    setMaterialTrial(true);
+    setMaterialPickerOpen(true);
+  }, [allLegacyLutOptions, lut_name]);
+  const materialTrialRequested = useMaterialGuideStore((state) => state.requested);
+  const trialBackup = useMaterialTrialStore((state) => state.backup);
+  useEffect(() => {
+    if (!materialTrialRequested) return;
+    useMaterialGuideStore.setState({ requested: false });
+    openMaterialTrial();
+  }, [materialTrialRequested, openMaterialTrial]);
 
   // The beginner tour walks the user through the picker dialog. Entering its
   // steps opens the picker (unless the user already did); navigation first
@@ -921,14 +1015,14 @@ export default function BasicSettings() {
       const material = lookup.get(dirName);
       return {
         dirName,
-        name: material?.material_name ?? dirName,
+        name: material ? savedMaterialIdentity(material, lang, filamentMarket).name : dirName,
         color: material ? materialSwatchColor(material.estimated_rgb) : null,
       };
     });
-  }, [selectedMaterialDirNames, materialLibrary]);
+  }, [selectedMaterialDirNames, materialLibrary, lang, filamentMarket]);
   const materialNameLookup = useMemo(
-    () => new Map(materialLibrary.map((mat) => [mat.directory_name, mat.material_name])),
-    [materialLibrary],
+    () => new Map(materialLibrary.map((mat) => [mat.directory_name, savedMaterialIdentity(mat, lang, filamentMarket).name])),
+    [materialLibrary, lang, filamentMarket],
   );
   const materialBackingOptions = useMemo(
     () =>
@@ -1014,12 +1108,24 @@ export default function BasicSettings() {
     }
   }, [isFiveColorExt, modelSurfaceEnabled, structure_mode, setStructureMode]);
 
+  const [isImportingLut, setIsImportingLut] = useState(false);
+  const [lutImportError, setLutImportError] = useState<string | null>(null);
+  const [lutImportSuccess, setLutImportSuccess] = useState<string | null>(null);
   const handleLutUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (!file) return;
-    await uploadLut(file);
-    // Reset so same file can be re-uploaded
-    if (lutFileRef.current) lutFileRef.current.value = "";
+    e.target.value = "";
+    if (!file || isImportingLut) return;
+    setIsImportingLut(true);
+    setLutImportError(null);
+    setLutImportSuccess(null);
+    try {
+      await uploadLut(file);
+      setLutImportSuccess(t("resources_imported_pick"));
+    } catch (error) {
+      setLutImportError(apiErrorToVisibleMessage(error, t("basic_lut_upload_error")));
+    } finally {
+      setIsImportingLut(false);
+    }
   };
 
   const [isRefreshingLut, setIsRefreshingLut] = useState(false);
@@ -1027,11 +1133,11 @@ export default function BasicSettings() {
     if (isRefreshingLut) return;
     setIsRefreshingLut(true);
     try {
-      await Promise.all([fetchLutCatalog(), fetchLegacyCatalog()]);
+      await refreshConverterResources();
     } finally {
       setIsRefreshingLut(false);
     }
-  }, [fetchLegacyCatalog, fetchLutCatalog, isRefreshingLut]);
+  }, [isRefreshingLut]);
 
   const handleCropConfirm = (data: CropData) => {
     if (isSvgImageFile(imageFile)) {
@@ -1198,6 +1304,33 @@ export default function BasicSettings() {
       <ConversionPresets />
 
       <Block label={t("basic_group_color_source")} tutorial="color-source" className="gap-5">
+        <MaterialPickerDialog
+          ref={materialPickerRef}
+          open={materialPickerOpen}
+          materials={materialLibrary}
+          loading={materialLibraryLoading || materialImporting}
+          loadError={materialLibraryLoadError}
+          initialSelected={materialPickerDraft ?? selectedMaterialDirNames}
+          initialQuery={materialInitialQuery}
+          trial={materialTrial}
+          previewOnConfirm={Boolean(imageFile)}
+          onConfirm={handleMaterialPickerConfirm}
+          onOpen={() => { materialIntentRef.current ??= createResourceSelectionIntent(); }}
+          onCancel={() => {
+            materialIntentRef.current?.dispose(); materialIntentRef.current = null;
+            setMaterialPickerDraft(null); setMaterialPickerOpen(false); setMaterialTrial(false);
+          }}
+          onCalibrate={(selected) => {
+            const intent = materialIntentRef.current ?? createResourceSelectionIntent();
+            materialIntentRef.current = null;
+            setMaterialPickerOpen(false);
+            beginResourceCalibration("materials", selected, intent);
+          }}
+          onRetry={retryMaterialLibraryLoad}
+          onImport={() => materialImportRef.current?.click()}
+          operationError={materialImportError}
+        />
+        <input ref={materialImportRef} type="file" accept=".zip" className="hidden" onChange={(event) => void handleMaterialImport(event)} />
         <div data-tutorial="color-source-mode" className="min-w-0">
           <RadioGroup
             label={t("basic_source_version_label")}
@@ -1211,12 +1344,16 @@ export default function BasicSettings() {
 
         {source_version === "material" ? (
           <div className="flex min-w-0 flex-col gap-5">
+            {trialBackup && trialBackup.imageFile === imageFile && trialBackup.batchFiles === batchFiles
+              && trialBackup.modelSurfaceFile === useConverterStore.getState().modelSurfaceFile && (
+              <div><Button label={t("material_guide_return_lut")} size="sm" variant="ghost" onClick={restoreTrialLut} /></div>
+            )}
             <div data-tutorial="material-picker" className="flex min-w-0 flex-col gap-2">
               <label htmlFor="basic-material-picker" className={workstationFieldLabelClass}>{t("basic_material_select_label")}</label>
 
               <button
                 type="button"
-                onClick={() => setMaterialPickerOpen(true)}
+                onClick={() => { discardResourceCalibration(); setMaterialTrial(false); setMaterialInitialQuery(""); setMaterialPickerDraft(null); setMaterialPickerOpen(true); }}
                 id="basic-material-picker"
                 data-testid="material-picker-trigger"
                 className={`${workstationInputClass} flex h-auto min-h-10 flex-col items-stretch gap-2 py-2.5 text-left`}
@@ -1224,7 +1361,7 @@ export default function BasicSettings() {
                 <span className="flex items-center justify-between gap-3">
                   {materialSummary === null ? (
                     <span className="text-slate-400 dark:text-slate-500">
-                      {t("basic_material_picker_open")}
+                      {t(materialLibraryLoaded && materialLibrary.length === 0 ? "resources_find_first_material" : "basic_material_picker_open")}
                     </span>
                   ) : (
                     <span
@@ -1269,17 +1406,6 @@ export default function BasicSettings() {
                 )}
               </button>
 
-              <MaterialPickerDialog
-                ref={materialPickerRef}
-                open={materialPickerOpen}
-                materials={materialLibrary}
-                loading={materialLibraryLoading}
-                loadError={materialLibraryLoadError}
-                initialSelected={selectedMaterialDirNames}
-                onConfirm={handleMaterialPickerConfirm}
-                onCancel={() => setMaterialPickerOpen(false)}
-                onRetry={retryMaterialLibraryLoad}
-              />
             </div>
             <div className="flex min-w-0 flex-col gap-3">
               <div data-tutorial="material-layer-height" className="min-w-0">
@@ -1380,9 +1506,27 @@ export default function BasicSettings() {
               loading={legacyCatalogLoading}
               lutLoading={lutListLoading}
               refreshing={isRefreshingLut}
+              loadError={lutLoadError}
+              uploading={isImportingLut}
+              uploadError={lutImportError}
+              uploadSuccess={lutImportSuccess}
+              onDismissUploadSuccess={() => setLutImportSuccess(null)}
+              onPickerOpen={() => { discardResourceCalibration(); setLutPickerResume(null); lutIntentRef.current?.dispose(); lutIntentRef.current = createResourceSelectionIntent(); }}
+              onPickerClose={() => { lutIntentRef.current?.dispose(); lutIntentRef.current = null; setLutPickerResume(null); }}
+              resumeSelection={lutPickerResume}
+              onCalibrate={(selected) => {
+                const intent = lutIntentRef.current ?? createResourceSelectionIntent();
+                lutIntentRef.current = null;
+                setLutPickerResume(null);
+                beginResourceCalibration("luts", selected, intent);
+              }}
+              onInstalled={refreshConverterResources}
+              checkSelection={(names) => lutIntentRef.current?.checkLuts(names) ?? {}}
+              onApplySelection={(names, allowModeChange) => lutIntentRef.current?.applyLuts(names, allowModeChange) ?? null}
               labels={{
                 manufacturer: t("basic_lut_manufacturer_label"),
-                manufacturerPlaceholder: t("basic_lut_manufacturer_placeholder"),
+                manufacturerPlaceholder: t(legacyCatalogRead && lutListRead && !lutLoadError && manufacturerOptions.length === 0
+                  ? "resources_find_first_lut" : "basic_lut_manufacturer_placeholder"),
                 lutPlaceholder: t("basic_lut_lut_placeholder"),
                 refreshTooltip: t("basic_lut_refresh_tooltip"),
                 upload: `+ ${t("basic_lut_upload")}`,
@@ -1405,6 +1549,7 @@ export default function BasicSettings() {
                 moreSelected: t("basic_lut_picker_more_selected"),
               }}
             />
+            <MaterialArchiveGuide onFind={openMaterialTrial} />
             <input
               ref={lutFileRef}
               type="file"

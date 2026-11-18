@@ -27,6 +27,15 @@ interface CheckboxProps {
   appearance?: "switch" | "checkbox";
 }
 
+export function CheckboxIndicator({ checked }: { checked: boolean }) {
+  return <span aria-hidden="true" className={cx(
+    "flex h-5 w-5 shrink-0 items-center justify-center rounded-md border transition-colors duration-200 peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-[var(--focus-ring)]",
+    checked ? "border-blue-500 bg-blue-500" : "border-slate-300/80 bg-white dark:border-slate-600/80 dark:bg-slate-800",
+  )}>
+    <span className={cx("h-2.5 w-2.5 rounded-sm", checked ? "bg-white" : "bg-transparent")} />
+  </span>;
+}
+
 export default function Checkbox({
   label,
   checked,
@@ -94,19 +103,9 @@ export default function Checkbox({
           checked={checked}
           disabled={disabled}
           onChange={(e) => onChange(e.target.checked)}
-          className="sr-only"
+          className="peer sr-only"
         />
-        <span
-          aria-hidden="true"
-          className={cx(
-            "flex h-5 w-5 shrink-0 items-center justify-center rounded-md border transition-all duration-200",
-            checked
-              ? "border-blue-500 bg-blue-500"
-              : "border-slate-300/80 bg-white dark:border-slate-600/80 dark:bg-slate-800"
-          )}
-        >
-          <span className={cx("h-2.5 w-2.5 rounded-sm", checked ? "bg-white" : "bg-transparent")} />
-        </span>
+        <CheckboxIndicator checked={checked} />
         <span className={cx("flex-1", labelTextClass)}>{label}</span>
         {tooltip && <span aria-hidden="true" className="h-4 w-4 shrink-0" />}
       </label>

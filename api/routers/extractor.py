@@ -5,12 +5,14 @@ Extractor 领域 API 路由模块。
 from __future__ import annotations
 
 import json
+import hashlib
 import os
 import shutil
 import tempfile
 import time
 import uuid
 from dataclasses import dataclass, replace
+from pathlib import Path
 from typing import Any, List, Tuple
 
 import cv2
@@ -2118,8 +2120,8 @@ def confirm_palette(
                 existing_metadata.color_mode = session_data["color_mode"]
             if stacks is None:
                 stacks = np.zeros((len(rgb), 0), dtype=np.int32)
-            LUTManager.save_keyed_json(lut_path, rgb, stacks, existing_metadata)
             metadata = existing_metadata
+            LUTManager.save_keyed_json(lut_path, rgb, stacks, existing_metadata)
         except LUT_PERSIST_WARNING_ERRORS as e:
             persist_warning = f"调色板已确认，但持久化到磁盘失败: {e}"
             log.warning(
@@ -2151,3 +2153,55 @@ def confirm_palette(
     if persist_warning:
         return {"status": "warning", "message": persist_warning}
     return {"status": "ok", "message": "调色板已确认"}
+
+
+@router.post("/{session_id}/install-lut")
+async def install_confirmed_lut(
+    session_id: str,
+    store: SessionStore = Depends(get_session_store),
+) -> dict[str, Any]:
+    """Explicitly import the latest confirmed extraction into the local library."""
+    from api.routers.lut import upload_lut, invalidate_lut_details_service_cache
+    from api.services.contribution_queue import capture_calibration
+
+    session_data = store.get(session_id)
+    if session_data is None:
+        raise HTTPException(status_code=404, detail="Extraction session was not found. Extract the card again.")
+    metadata = session_data.get("lut_metadata")
+    source = session_data.get("lut_path")
+    if not isinstance(metadata, LUTMetadata) or not metadata.palette:
+        raise HTTPException(status_code=409, detail="Confirm the LUT palette before adding it to the local library.")
+    if not source or not Path(source).is_file():
+        raise HTTPException(status_code=404, detail="The extracted LUT is no longer available. Extract the card again.")
+    # The original download may predate palette confirmation. Rebuild from the
+    # current session and its confirmed metadata, including a recoverable
+    # confirmation whose disk write failed.
+    try:
+        rgb, stacks, _ = LUTManager.load_lut_with_metadata(source)
+        if stacks is None:
+            stacks = np.zeros((len(rgb), 0), dtype=np.int32)
+        with tempfile.TemporaryDirectory(prefix="confirmed_lut_", dir=TEMP_DIR) as temporary:
+            prepared = Path(temporary) / "confirmed.json"
+            LUTManager.save_keyed_json(str(prepared), rgb, stacks, metadata)
+            payload = prepared.read_bytes()
+            filename = f"Calibration-{hashlib.sha256(payload).hexdigest()[:16]}.json"
+            destination = LUTManager.custom_lut_dir()
+            stem = Path(filename).stem
+            candidates = [destination / filename, *sorted(destination.glob(f"{stem}_*.json"))]
+            for existing in candidates:
+                if existing.is_file() and not existing.is_symlink() and existing.read_bytes() == payload:
+                    invalidate_lut_details_service_cache()
+                    # Re-saving an identical installed LUT is not a new event.
+                    return {"status": "ok", "name": f"Custom - {existing.stem}"}
+            with prepared.open("rb") as handle:
+                result = await upload_lut(UploadFile(file=handle, filename=filename))
+            result["contribution"] = capture_calibration("luts", result["name"])
+            return result
+    except HTTPException:
+        raise
+    except (OSError, ValueError, TypeError, KeyError) as exc:
+        log.warning("Confirmed LUT could not be added to the library", extra={
+            "event": "extractor_lut_install_failed", "session_id": session_id,
+            "error_type": type(exc).__name__, "error_message": str(exc),
+        })
+        raise HTTPException(status_code=422, detail="The confirmed LUT could not be saved. Check the extraction and try again.") from exc

@@ -12,6 +12,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Sequence
 
+from core.filament_display import filament_display
 from . import material_files, material_package
 
 _MATERIAL_REGISTRY_AMBIGUOUS_LOCAL_MATCH_FAILURE_DETAIL = (
@@ -482,6 +483,8 @@ def _material_sync_metadata_by_directory(target_root: Path) -> dict[str, dict[st
             "sync_channel": channel,
             "sync_official": channel == "official",
         }
+        if display := filament_display(raw_entry.get("display")):
+            metadata[local_directory].update(display=display, display_hash=raw_entry.get("content_hash"))
     return metadata
 
 
@@ -537,6 +540,7 @@ def _record_material_sync_entries(
             "local_directory": material_files._relative_directory_name(target_root, destination_dir),
             "display_brand": str(display.get("brand") or ""),
             "display_name": str(display.get("material_name") or destination_dir.name),
+            "display": filament_display(display),
             "installed_at": now,
             "updated_at": now,
         }
@@ -729,11 +733,13 @@ def _installed_material_bundle_revision_path(
     target_root: Path,
     package: dict[str, Any],
     include_revision_history: bool = False,
+    index: dict[str, Any] | None = None,
 ) -> Path | None:
     material_id = str(package.get("material_id") or "")
     if not material_id:
         return None
-    index = _load_material_sync_index(target_root)
+    if index is None:
+        index = _load_material_sync_index(target_root)
     installed = index.get("installed")
     if not isinstance(installed, dict):
         return None
@@ -782,9 +788,9 @@ def _material_sync_revision_entry_path(
     local_directory = entry.get("local_directory")
     if not isinstance(local_directory, str) or not local_directory.strip():
         return None
-    material_dir = target_root / material_files._normalize_relative_directory_name(local_directory)
-    archive_path = material_dir / "material.json"
     try:
+        material_dir = material_files.resolve_saved_material_dir(target_root, local_directory)
+        archive_path = material_dir / "material.json"
         archive_payload = json.loads(archive_path.read_text(encoding="utf-8"))
         if not isinstance(archive_payload, dict):
             return None

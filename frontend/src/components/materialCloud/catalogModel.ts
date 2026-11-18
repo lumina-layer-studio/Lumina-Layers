@@ -7,6 +7,7 @@ import type {
   MaterialRegistryCatalogEntry,
   MaterialSyncInstalledEntry,
 } from "../../api/types";
+import { filamentIdentity, materialDisplayName } from "../../utils/filamentIdentity";
 
 export type CatalogFilter = "all" | "not_installed" | "updates" | "installed";
 export type CatalogInstallState =
@@ -126,6 +127,12 @@ export const resolveCatalogDisplay = (entry: MaterialRegistryCatalogEntry): Cata
   };
 };
 
+export function regionalCatalogDisplay(entry: MaterialRegistryCatalogEntry, lang: "zh" | "en", market: string) {
+  const display = resolveCatalogDisplay(entry);
+  return { ...display, ...materialDisplayName(filamentIdentity(display.brand, display.name, lang, entry.display, market)),
+    materialType: display.materialType };
+}
+
 export const resolveCatalogFitError = (entry: MaterialRegistryCatalogEntry): CatalogFitError => {
   const metadata = entry.card_metadata ?? {};
   const meanDeltaE = readNonNegativeNumber(metadata.mean_delta_e);
@@ -211,7 +218,7 @@ export const matchesCatalogFilter = (
     case "updates":
       return installState === "update_available";
     case "installed":
-      return installState === "installed";
+      return installState === "installed" || installState === "local_available";
     default:
       return true;
   }

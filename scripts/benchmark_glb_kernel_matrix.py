@@ -57,13 +57,13 @@ REPORT_JSON = _REPO_ROOT / "progress" / "glb-benchmark-synthetic-multisize-multi
 
 # Mode -> LUT discovery (verified to load via load_lut() in the pre-flight).
 MODE_TO_LUT: dict[str, Path] = {
-    "4-Color RYBW": _REPO_ROOT / "lut-preset" / "精亮" / "精亮&PLA4色&RYBW.npy",
-    "BW": _REPO_ROOT / "lut-preset" / "赛纳" / "赛纳&2色PLA&BW-白-黑.npy",
-    "8-Color": _REPO_ROOT / "lut-preset" / "精亮" / "精亮&PLA8色.npy",
-    "6-Color": _REPO_ROOT / "lut-preset" / "精亮" / "精亮&PLA6色&黑 白 黄 绿 红 蓝.npy",
+    "4-Color RYBW": _REPO_ROOT / "tests/fixtures/lut_regression" / "精亮" / "精亮&PLA4色&RYBW.npy",
+    "BW": _REPO_ROOT / "tests/fixtures/lut_regression" / "赛纳" / "赛纳&2色PLA&BW-白-黑.npy",
+    "8-Color": _REPO_ROOT / "tests/fixtures/lut_regression" / "精亮" / "精亮&PLA8色.npy",
+    "6-Color": _REPO_ROOT / "tests/fixtures/lut_regression" / "精亮" / "精亮&PLA6色&黑 白 黄 绿 红 蓝.npy",
     "5-Color-Extended": (
         _REPO_ROOT
-        / "lut-preset"
+        / "tests/fixtures/lut_regression"
         / "Aliz"
         / "PETG"
         / "5色"

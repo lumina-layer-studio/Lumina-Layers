@@ -26,6 +26,10 @@ import msgpack
 import numpy as np
 
 from core.native_reference import build_model_package_runtime_payload
+from core.filament_display import catalog_thumbnail_metadata, filament_display
+from core.lut_board_preview import published_lut_board
+from core.registry_catalog_cache import catalog_source_scope
+from core.public_resources import is_static_catalog, lut_registry_url, registry_read_token
 from core.registry_transport import (
     RegistryCatalogNotFoundError,
     fallback_base,
@@ -65,6 +69,10 @@ class LutRegistryRemoteError(LutRegistryError):
 
     status_code = 502
 
+    def __init__(self, message: str, *, status_code: int = 502) -> None:
+        super().__init__(message)
+        self.status_code = status_code
+
 
 class LutRegistryPackageError(LutRegistryError):
     """Raised when a downloaded LUT package is invalid or unsafe."""
@@ -95,19 +103,15 @@ def get_registry_config() -> LutRegistryConfig:
     从环境变量解析同步配置，显式空地址禁用同步。
     """
 
-    base_url = os.environ.get(
-        "LUMINA_LUT_REGISTRY_URL", os.environ.get("LUMINA_MATERIAL_REGISTRY_URL", "")
-    ).strip()
+    base_url = lut_registry_url()
     channels = (
         _env_csv("LUMINA_LUT_REGISTRY_CHANNELS")
         or _env_csv("LUMINA_MATERIAL_REGISTRY_CHANNELS")
         or DEFAULT_CHANNELS
     )
-    token = (
-        os.environ.get("LUMINA_LUT_REGISTRY_TOKEN")
-        or os.environ.get("LUMINA_MATERIAL_REGISTRY_TOKEN")
-        or ""
-    ).strip()
+    if is_static_catalog(base_url):
+        channels = ("official", "community")
+    token = registry_read_token("LUT", base_url)
     return LutRegistryConfig(
         base_url=base_url.rstrip("/") or None,
         channels=tuple(channels),
@@ -273,26 +277,75 @@ def _relative_lut_preset_path(path: Path) -> str | None:
     return LUTManager.logical_lut_path(path)
 
 
+def installed_lut_displays() -> dict[str, dict[str, Any]]:
+    """Bind package names and aliases to the exact installed file seen by the local catalog."""
+    displays: dict[str, dict[str, Any]] = {}
+    for item in _read_installed_index_safe()["luts"].values():
+        if not isinstance(item, dict) or not (display := filament_display(item.get("display"))):
+            continue
+        path = _safe_index_installed_path(item)
+        if path is not None and _local_lut_matches(path, item):
+            displays[str(path)] = display
+    return displays
+
+
+def _current_lut_record(index: dict[str, Any], lut_id: str) -> dict[str, Any] | None:
+    """Resolve the local selection; legacy indexes use the last installation."""
+    luts = index.get("luts", {})
+    current = index.get("current_revisions", {})
+    revision = current.get(lut_id) if isinstance(current, dict) else None
+    selected = luts.get(f"{lut_id}@{revision}")
+    if isinstance(selected, dict):
+        return selected
+    records = [row for row in luts.values() if isinstance(row, dict) and row.get("lut_id") == lut_id]
+    return max(records, key=lambda row: str(row.get("installed_at") or ""), default=None)
+
+
+def _set_current_lut_record(index: dict[str, Any], record: dict[str, Any]) -> None:
+    if not isinstance(index.get("current_revisions"), dict):
+        index["current_revisions"] = {}
+    index["current_revisions"][str(record["lut_id"])] = str(record["revision_id"])
+    index["updated_at"] = _now_iso()
+
+
 def _catalog_item_local_presence(
     item: dict[str, Any],
     index: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     index = index if index is not None else _read_installed_index_safe()
     luts = index.get("luts") if isinstance(index.get("luts"), dict) else {}
+    current = _current_lut_record(index, str(item.get("lut_id") or ""))
     record_key = _record_key_from_item(item)
     if record_key:
         record = luts.get(record_key)
         if isinstance(record, dict):
             installed_path = _safe_index_installed_path(record)
-            if installed_path is not None:
+            if installed_path is not None and _local_lut_matches(installed_path, item):
                 relative_installed_path = _relative_lut_preset_path(installed_path)
                 return {
-                    "local_state": "installed",
+                    "local_state": "installed" if current is None or current.get("revision_id") == item.get("revision_id") else "local_available",
                     "local_exists": True,
                     "local_match_path": relative_installed_path,
                     "installed_path": relative_installed_path,
                     "installed_at": record.get("installed_at"),
                 }
+            # An exact installation record lets us distinguish recovery from a
+            # first download. Never classify an unrelated same-name file this way.
+            return {
+                "local_state": "local_modified" if installed_path is not None else "local_missing",
+                "local_exists": False,
+                "local_match_path": None,
+            }
+
+    if current is not None:
+        current_path = _safe_index_installed_path(current)
+        if current_path is not None and _local_lut_matches(current_path, item):
+            return {
+                "local_state": "installed", "local_exists": True,
+                "local_match_path": _relative_lut_preset_path(current_path),
+                "installed_path": _relative_lut_preset_path(current_path),
+            }
+        return {"local_state": "update_available", "local_exists": False, "local_match_path": None}
 
     local_path = _existing_lut_path(
         _safe_lut_path_under_root(item.get("local_path"), cloud=False)
@@ -303,8 +356,7 @@ def _catalog_item_local_presence(
         )
     if local_path is not None:
         expected_hash = _hex_digest(item.get("content_hash"))
-        local_hash = _local_lut_content_hash(local_path, item.get("local_path"))
-        if expected_hash and local_hash != expected_hash:
+        if expected_hash and not _local_lut_matches(local_path, item):
             return {
                 "local_state": "not_installed",
                 "local_exists": False,
@@ -323,20 +375,22 @@ def _catalog_item_local_presence(
     }
 
 
-def _local_lut_content_hash(path: Path, catalog_local_path: Any) -> str | None:
+def _local_lut_matches(path: Path, item: dict[str, Any]) -> bool:
+    """Registries have published both raw-file and keyed content digests."""
     try:
         file_hash = _sha256(path.read_bytes())
     except OSError:
-        return None
-    logical_name = PurePosixPath(str(catalog_local_path or path.name).replace("\\", "/")).name
-    return _sha256(f"{logical_name}:{file_hash}".encode("utf-8"))
+        return False
+    logical_name = PurePosixPath(str(item.get("local_path") or path.name).replace("\\", "/")).name
+    keyed_hash = _sha256(f"{logical_name}:{file_hash}".encode("utf-8"))
+    return _hex_digest(item.get("content_hash")) in {file_hash, keyed_hash}
 
 
 def _normalize_catalog_item(
     item: dict[str, Any],
     index: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    normalized = dict(item)
+    normalized = catalog_thumbnail_metadata(item)
     display = normalized.get("display")
     display_record = dict(display) if isinstance(display, dict) else {}
     display_name = _catalog_item_display_name(normalized)
@@ -380,7 +434,9 @@ def fetch_remote_catalog(
     channels: list[str] | tuple[str, ...] | None = None,
     limit: int = MAX_CATALOG_LIMIT,
     offset: int = 0,
+    preview_ids: list[str] | None = None,
     client: httpx.Client | None = None,
+    refresh: bool = False,
 ) -> dict[str, Any]:
     """Fetch a bounded LUT catalog payload from the configured registry.
     从配置的主库读取有界 LUT 目录，临时故障时可尝试公开备用库。
@@ -394,14 +450,50 @@ def fetch_remote_catalog(
         ("limit", str(_bounded_limit(limit))),
         ("offset", str(_bounded_offset(offset))),
     ]
+    if preview_ids is not None:
+        if not 1 <= len(preview_ids) <= 24 or any(not isinstance(i, str) or not 1 <= len(i) <= 128 for i in preview_ids):
+            raise LutRegistryConfigError("A LUT preview page requires between 1 and 24 valid LUT IDs")
+        params.extend(("preview_id", key) for key in sorted(set(preview_ids)))
     owns_client = client is None
     active_client = client or _make_http_client()
+    cache_dir = LUTManager.cloud_lut_sync_dir() / "catalogs" if owns_client else None
+
+    def offline_full_page() -> httpx.Response | None:
+        from core.registry_catalog_cache import CatalogSnapshot
+
+        if cache_dir is None:
+            return None
+        full_params = [*[("channel", channel) for channel in selected_channels],
+                       ("limit", str(MAX_CATALOG_LIMIT)), ("offset", "0")]
+        cached = CatalogSnapshot(cache_dir, base_url, "/luts/catalog", full_params).response(offline=True)
+        if cached is None:
+            return None
+        payload = cached.json()
+        if isinstance(payload, list):
+            entries, total = payload, len(payload)
+        elif isinstance(payload, dict):
+            entries = payload.get("items", payload.get("luts", []))
+            if not isinstance(entries, list):
+                return None
+            total = payload.get("total", payload.get("total_count", len(entries)))
+            if payload.get("offset", 0) != 0:
+                return None
+        else:
+            return None
+        if not isinstance(entries, list) or total != len(entries):
+            return None
+        start = _bounded_offset(offset)
+        page = {"items": entries[start:start + _bounded_limit(limit)], "total": total}
+        return httpx.Response(200, json=page, headers=cached.headers, request=cached.request)
+
     try:
         response = fetch_catalog(
             client=active_client, primary=base_url, family="LUT", suffix="/luts/catalog",
             channels=selected_channels,
             params=params,
             headers=_headers(config),
+            cache_dir=cache_dir, offline_fallback=offline_full_page if preview_ids is None else None,
+            force_refresh=refresh,
         )
     except RegistryCatalogNotFoundError as exc:
         raise LutRegistryRemoteError(
@@ -410,6 +502,11 @@ def fetch_remote_catalog(
             "when inherited, and use a Registry service that provides /luts/catalog."
         ) from exc
     except httpx.HTTPError as exc:
+        if isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code in {401, 403}:
+            raise LutRegistryRemoteError(
+                f"LUT catalog request failed with status {exc.response.status_code}",
+                status_code=exc.response.status_code,
+            ) from exc
         raise LutRegistryRemoteError(f"Failed to fetch LUT catalog: {exc}") from exc
     except ValueError as exc:
         raise LutRegistryRemoteError("LUT catalog response is invalid") from exc
@@ -422,11 +519,34 @@ def fetch_remote_catalog(
     try:
         response.raise_for_status()
     except httpx.HTTPStatusError as exc:
+        if response.status_code in {401, 403}:
+            raise LutRegistryRemoteError(
+                f"LUT catalog request failed with status {response.status_code}",
+                status_code=response.status_code,
+            ) from exc
         raise LutRegistryRemoteError(
             f"LUT catalog request failed with status {response.status_code}"
         ) from exc
     try:
-        return _normalize_catalog_response(response.json(), config)
+        body = response.json()
+        scope = catalog_source_scope(base_url, selected_channels, config.token)
+        if preview_ids is not None:
+            previews = []
+            if isinstance(body, dict) and isinstance(body.get("previews"), list):
+                for entry in body["previews"][:24]:
+                    if not isinstance(entry, dict) or entry.get("lut_id") not in preview_ids:
+                        continue
+                    display = entry.get("display")
+                    validated = published_lut_board(display.get("lut_board_preview")) if isinstance(display, dict) else {}
+                    if validated:
+                        previews.append({key: entry.get(key) for key in ("lut_id", "revision_id", "content_hash")} | {"display": validated})
+            return {"source_scope": scope, "previews": previews}
+        return {
+            **_normalize_catalog_response(body, config),
+            "source_scope": scope,
+            "cached": response.headers.get("x-lumina-catalog-cached") == "true",
+            "fetched_at": response.headers.get("x-lumina-catalog-fetched-at"),
+        }
     except ValueError as exc:
         raise LutRegistryRemoteError("LUT catalog response is not valid JSON") from exc
 
@@ -758,7 +878,7 @@ def _validate_lut_bytes_are_loadable(lut_bytes: bytes, lut_path: str) -> None:
             pass
 
 
-def _read_lut_from_package(package_data: bytes, entry_content_hash: str) -> bytes:
+def _read_lut_from_package(package_data: bytes, entry_content_hash: str, *, local_path: str | None = None) -> bytes:
     try:
         with zipfile.ZipFile(BytesIO(package_data)) as zf:
             infos = zf.infolist()
@@ -788,6 +908,8 @@ def _read_lut_from_package(package_data: bytes, entry_content_hash: str) -> byte
 
             file_entry = _manifest_lut_file(manifest)
             lut_path = _file_entry_path(file_entry)
+            if local_path is not None and Path(lut_path).suffix.lower() != Path(local_path).suffix.lower():
+                raise LutRegistryPackageError("LUT package file extension does not match its installation path")
             required_names = {MANIFEST_NAME, lut_path}
             allowed_names = {MANIFEST_NAME, lut_path, *_required_parent_dirs(lut_path)}
             actual_names = set(normalized_names)
@@ -1154,13 +1276,13 @@ def _install_verified_catalog_entry(
     config = get_registry_config()
     base_url = _require_base_url(config)
     package_url = _resolve_same_origin_package_url(entry.get("package_url"), base_url)
-    target = _safe_cloud_target(entry.get("local_path"))
+    _safe_cloud_target(entry.get("local_path"))
     canonical_local_path = _canonical_cloud_local_path(entry.get("local_path"))
     if canonical_local_path is None:
         raise LutRegistryPackageError("local_path is unsafe")
-    package_sha256 = _required_package_sha256(entry)
+    _required_package_sha256(entry)
     package_bytes = _required_package_bytes(entry)
-    content_hash = _required_content_hash(entry.get("content_hash"), "catalog entry")
+    _required_content_hash(entry.get("content_hash"), "catalog entry")
 
     owns_client = client is None
     active_client = client or _make_http_client()
@@ -1176,8 +1298,27 @@ def _install_verified_catalog_entry(
         if owns_client:
             active_client.close()
 
+    return install_lut_archive_bytes(entry, package_data, source_url=package_url)
+
+
+def install_lut_archive_bytes(
+    entry: dict[str, Any], package_data: bytes, *, source_url: str,
+) -> dict[str, Any]:
+    """Install the same verified package from a download or offline collection.
+
+    Conflicting contents receive a revision path; previous project references
+    and locally edited files keep their original bytes and locations.
+    """
+    package_sha256 = _required_package_sha256(entry)
+    package_bytes = _required_package_bytes(entry)
+    content_hash = _required_content_hash(entry.get("content_hash"), "catalog entry")
+    canonical_local_path = _canonical_cloud_local_path(entry.get("local_path"))
+    if canonical_local_path is None:
+        raise LutRegistryPackageError("local_path is unsafe")
+    target = _safe_cloud_target(canonical_local_path)
+    _validate_expected_bytes(package_data, package_bytes, "LUT package")
     _validate_expected_sha256(package_data, package_sha256, "LUT package")
-    lut_bytes = _read_lut_from_package(package_data, content_hash)
+    lut_bytes = _read_lut_from_package(package_data, content_hash, local_path=canonical_local_path)
     target_relative_path = _relative_lut_preset_path(target)
     if target_relative_path is None:
         raise LutRegistryPackageError("LUT install target is outside preset root")
@@ -1191,7 +1332,7 @@ def _install_verified_catalog_entry(
         "installed_path": target_relative_path,
         "package_sha256": package_sha256,
         "package_bytes": package_bytes,
-        "source_url": package_url,
+        "source_url": source_url,
         "installed_at": installed_at,
         "channel": entry.get("channel"),
         "visibility": entry.get("visibility"),
@@ -1202,8 +1343,23 @@ def _install_verified_catalog_entry(
     with _INSTALL_LOCK:
         with _LutRegistryInstallFileLock():
             index = read_installed_index()
-            index["updated_at"] = installed_at
+            previous = index.get("luts", {}).get(_record_key(entry), {})
+            previous_path = _safe_index_installed_path(previous)
+            if previous_path is not None and previous_path.read_bytes() == lut_bytes:
+                _set_current_lut_record(index, previous)
+                _write_installed_index(index)
+                return previous
+            if target.exists() and target.read_bytes() != lut_bytes:
+                target = _safe_cloud_target(
+                    f"_revisions/{_sha256(lut_bytes)}/{Path(canonical_local_path).name}"
+                )
+                if target.exists() and target.read_bytes() != lut_bytes:
+                    # Preserve a locally edited revision even when its original
+                    # content-addressed location is occupied.
+                    target = target.with_name(f"{target.stem}-restored-{uuid.uuid4().hex[:8]}{target.suffix}")
+                record["installed_path"] = _relative_lut_preset_path(target)
             index.setdefault("luts", {})[_record_key(entry)] = record
+            _set_current_lut_record(index, record)
             temp_target = target.with_name(f".{target.name}.{uuid.uuid4().hex}.tmp")
             backup_target: Path | None = None
             try:
@@ -1235,6 +1391,68 @@ def _install_verified_catalog_entry(
                         pass
     LUTManager.invalidate_preset_cache()
     return record
+
+
+def restore_lut_revision(*, lut_id: str, revision_id: str) -> dict[str, Any]:
+    """Select a verified local revision without downloading or replacing files."""
+    with _INSTALL_LOCK:
+        with _LutRegistryInstallFileLock():
+            index = read_installed_index()
+            record = index["luts"].get(f"{lut_id}@{revision_id}")
+            if not isinstance(record, dict):
+                raise LutRegistryPackageError("This LUT revision is not in local history")
+            path = _safe_index_installed_path(record)
+            if path is None or not _local_lut_matches(path, record):
+                raise LutRegistryPackageError("This LUT revision is missing or was modified; download it again")
+            _set_current_lut_record(index, record)
+            _write_installed_index(index)
+    return record
+
+
+def _local_lut_history(index: dict[str, Any]) -> list[dict[str, Any]]:
+    groups: dict[str, dict[str, Any]] = {}
+    for record in index.get("luts", {}).values():
+        if not isinstance(record, dict) or not record.get("lut_id") or not record.get("revision_id"):
+            continue
+        lut_id = str(record["lut_id"])
+        if lut_id not in groups:
+            current = _current_lut_record(index, lut_id) or record
+            groups[lut_id] = {
+                "resource_id": lut_id,
+                "name": _catalog_item_display_name(current) or str(current.get("local_path") or lut_id),
+                "current_revision": current.get("revision_id"),
+                "revisions": [],
+            }
+        path = _safe_index_installed_path(record)
+        valid = path is not None and _local_lut_matches(path, record)
+        groups[lut_id]["revisions"].append({
+            "revision_id": record["revision_id"],
+            "installed_at": record.get("installed_at"),
+            "available": valid,
+            "local_path": _relative_lut_preset_path(path) if valid else None,
+        })
+    return list(groups.values())
+
+
+def installed_lut_versions() -> dict[str, dict[str, Any]]:
+    """Describe retained versions for local browsers without hiding project files."""
+    versions: dict[str, dict[str, Any]] = {}
+    index = _read_installed_index_safe()
+    for group in _local_lut_history(index):
+        if len(group["revisions"]) < 2:
+            continue
+        for revision in group["revisions"]:
+            if not revision["available"]:
+                continue
+            record = index["luts"][f'{group["resource_id"]}@{revision["revision_id"]}']
+            path = _safe_index_installed_path(record)
+            if path is None:
+                continue
+            current = revision["revision_id"] == group["current_revision"]
+            # Equal-content revisions can share a file; the current record wins.
+            if str(path) not in versions or current:
+                versions[str(path)] = {"current": current, "installed_at": revision["installed_at"]}
+    return versions
 
 
 def install_lut_package(
@@ -1318,6 +1536,7 @@ def registry_status() -> dict[str, Any]:
     )
     return {
         "configured": base_url is not None,
+        "source_scope": catalog_source_scope(base_url or "", config.channels, config.token),
         "base_url": base_url,
         "channels": list(config.channels),
         "installed_count": synced_installed_count,
@@ -1325,4 +1544,5 @@ def registry_status() -> dict[str, Any]:
         "local_luts": local_entries,
         "installed": local_entries,
         "synced_count": len(synced_records),
+        "history": _local_lut_history(index),
     }

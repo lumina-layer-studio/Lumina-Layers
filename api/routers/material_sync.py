@@ -24,7 +24,14 @@ from api.schemas.responses import (
     public_material_response_item,
 )
 from api.structured_logging import get_logger
+from api.services.resource_contribution import connection
 from core.registry_transport import RegistryCatalogNotFoundError, map_package_url
+from core.registry_catalog_cache import CatalogAccessDenied
+from core.public_resources import material_registry_url
+from core.single_stage.material_registry_client import (
+    configured_material_catalog_scope,
+    invalidate_material_registry_remote_catalog_cache,
+)
 from core.single_stage import (
     get_material_sync_status,
     import_saved_stage_a_material_archives,
@@ -122,7 +129,7 @@ def _select_catalog_install_entry(
             continue
         catalog_package_url = str(raw_entry.get("package_url") or "").strip()
         if catalog_package_url != requested_package_url:
-            primary = os.environ.get("LUMINA_MATERIAL_REGISTRY_URL", "").strip().rstrip("/")
+            primary = material_registry_url()
             if not primary:
                 continue
             try:
@@ -139,9 +146,26 @@ def _select_catalog_install_entry(
             continue
         return raw_entry
 
-    raise ValueError(
-        "Selected material registry package is not in current material registry catalog"
-    )
+    raise ValueError(MATERIAL_REGISTRY_PACKAGE_NOT_IN_CATALOG_DETAIL)
+
+
+def _find_catalog_install_entry(payload: MaterialRegistryInstallRequest) -> dict[str, object]:
+    """Resolve one exact selection even when the upstream registry caps its default page."""
+    catalog = list_material_registry_catalog()
+    scope = catalog.get("source_scope")
+    while True:
+        try:
+            return _select_catalog_install_entry(catalog, payload)
+        except ValueError as exc:
+            if str(exc) != MATERIAL_REGISTRY_PACKAGE_NOT_IN_CATALOG_DETAIL:
+                raise
+            entries = catalog["materials"]
+            offset = int(catalog.get("offset") or 0) + len(entries)
+            if not entries or offset >= int(catalog.get("total_count") or offset):
+                raise
+        catalog = list_material_registry_catalog(limit=500, offset=offset)
+        if catalog.get("source_scope") != scope or catalog.get("offset") != offset:
+            raise ValueError(MATERIAL_REGISTRY_PACKAGE_NOT_IN_CATALOG_DETAIL)
 
 
 @router.get("/status", response_model=MaterialSyncStatusResponse)
@@ -165,6 +189,7 @@ async def material_sync_status() -> MaterialSyncStatusResponse:
     response = MaterialSyncStatusResponse(
         status="ok",
         message="Material sync status loaded",
+        source_scope=configured_material_catalog_scope(),
         **status_payload,
     )
     log.info(
@@ -183,13 +208,17 @@ async def material_sync_catalog(
     q: str | None = Query(default=None, max_length=200),
     limit: int | None = Query(default=None, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
+    refresh: bool = Query(default=False),
 ) -> MaterialRegistryCatalogResponse:
     """Return the configured remote Registry catalog without installing.
     返回已配置远程 Registry catalog，不安装耗材。
     """
     try:
+        if refresh:
+            invalidate_material_registry_remote_catalog_cache(registry_url=material_registry_url())
         catalog = await asyncio.to_thread(
-            list_material_registry_catalog, query=q, limit=limit, offset=offset
+            list_material_registry_catalog, query=q, limit=limit, offset=offset,
+            **({"use_cache": False} if refresh else {}),
         )
     except ValueError as exc:
         _raise_material_sync_error(
@@ -213,7 +242,7 @@ async def material_sync_catalog(
         _raise_material_sync_error(
             event="material_sync_catalog_failed",
             exc=exc,
-            status_code=502,
+            status_code=exc.status_code if isinstance(exc, CatalogAccessDenied) else 502,
             detail=MATERIAL_SYNC_CATALOG_UNAVAILABLE_DETAIL,
         )
     except FileNotFoundError as exc:
@@ -338,8 +367,7 @@ async def material_sync_install_from_registry(
     将用户选中的单个远程 Registry 耗材包安装到本地耗材库。
     """
     try:
-        catalog = await asyncio.to_thread(list_material_registry_catalog)
-        catalog_entry = _select_catalog_install_entry(catalog, payload)
+        catalog_entry = await asyncio.to_thread(_find_catalog_install_entry, payload)
     except ValueError as exc:
         _raise_material_sync_error(
             event="material_sync_install_from_registry_failed",
@@ -356,7 +384,7 @@ async def material_sync_install_from_registry(
         _raise_material_sync_error(
             event="material_sync_install_from_registry_failed",
             exc=exc,
-            status_code=502,
+            status_code=exc.status_code if isinstance(exc, CatalogAccessDenied) else 502,
             detail=MATERIAL_SYNC_INSTALL_UNAVAILABLE_DETAIL,
             material_id=payload.material_id,
             revision_id=payload.revision_id,
@@ -387,6 +415,7 @@ async def material_sync_install_from_registry(
             package_sha256=str(catalog_entry.get("package_sha256") or ""),
             material_id=payload.material_id,
             revision_id=payload.revision_id,
+            display=catalog_entry.get("display"),
         )
     except (ValueError, TypeError) as exc:
         _raise_material_sync_error(
@@ -426,6 +455,7 @@ async def material_sync_install_from_registry(
         )
 
     installed_materials = result["installed_materials"]
+    activity_recorded = await asyncio.to_thread(connection.record_download, "materials", catalog_entry, payload.account_id)
     log.info(
         "Material registry package installed from catalog",
         extra={
@@ -438,6 +468,7 @@ async def material_sync_install_from_registry(
     return MaterialSyncInstallResponse(
         status="ok",
         message=f"Installed {len(installed_materials)} material packages",
+        activity_recorded=activity_recorded,
         installed_count=len(installed_materials),
         installed_materials=[
             public_material_response_item(item)

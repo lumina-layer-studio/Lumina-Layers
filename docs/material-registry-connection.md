@@ -1,12 +1,14 @@
 # Lumina 耗材服务器连接说明
 
-本文说明如何让 Lumina Studio 连接自建或已获授权的耗材 Registry。源码安装默认不配置云端服务，本地耗材档案可离线使用。上传、审批和频道权限由服务部署方管理；相关集成说明见 [耗材与 LUT Registry 运维参考](cloud-registry-handoff.md)。
+源码默认读取 GitHub 公开快照，打包版由发行层连接官方实时目录；两版均先预览、再按需下载，自建服务器配置继续有效。分发区别与尚未接通的官方服务权益见[资源分发](resource-distribution.md)。主动投稿复用 Registry 的现有账号、投稿记录与审核，操作见[资源投稿](resource-contributions.md)。
 
 ## 本地耗材目录
 
 源码仓库不附带预置的 `materials/` 档案。源码启动时会自动创建这个可写目录，其内容不纳入 Git；也可通过 `LUMINA_MATERIALS_DIR` 指定其他存储位置。
 
-首次使用可手动导入耗材包，或按下文配置 Registry 同步。部署时可通过 `LUMINA_MATERIALS_SEED_PATH` 或 `LUMINA_MATERIALS_SEED_URL` 提供 seed 包，并用可选的 `LUMINA_MATERIALS_SEED_SHA256` 校验；启动时仅在耗材库为空时安装。
+首次使用可在公开库选择安装、导入耗材包或自己校准。打包版提供固定版本离线资源；源码可运行 `python scripts/prepare_public_resources.py` 准备同一对材料/LUT资源，详见[公开资源与离线使用](public-resources.md)。部署仍支持 `LUMINA_MATERIALS_SEED_PATH` / `LUMINA_MATERIALS_SEED_URL` 和可选的 `LUMINA_MATERIALS_SEED_SHA256`。
+
+打包版首次启动也可保留空库。用户从云端或随包的离线目录查看品牌、包装名和色号，选定条目后单独安装。已有个人资料或主动删空后的工作区均沿用原有内容。
 
 更新现有检出前，请先备份旧 `materials/` 中需要保留的档案；Git 会删除原先跟踪的文件。更新后可恢复备份，或将 `LUMINA_MATERIALS_DIR` 指向仓库外的档案目录。
 
@@ -21,7 +23,7 @@ Lumina 的云端资料库分成两条并列能力：
 
 ## 服务地址
 
-源码不附带官方耗材库的服务地址或访问凭证。下面是不可用的示例地址，连接前请替换为你自行部署或已获授权的 Registry：
+源码默认读取 `https://raw.githubusercontent.com/lumina-layer-studio/Lumina-materials/master/public/v1`；`LUMINA_PUBLIC_CATALOG_URL` 可配置同格式静态镜像。打包层显式注入 `https://materials.luminastudio.com.cn/api/material-registry/v1`，读取 `official,community` 两个公开频道。该镜像不提供账号和投稿接口，当前官方读接口仍匿名开放。下面是自建实时服务的示例地址：
 
 ```text
 https://registry.example.invalid/api/material-registry/v1
@@ -33,13 +35,13 @@ https://registry.example.invalid/api/material-registry/v1
 official,community
 ```
 
-可见频道和认证要求以部署方配置为准。频道名为 `official` 或 `community` 不代表可以匿名访问；服务要求认证时，应配置 `LUMINA_MATERIAL_REGISTRY_TOKEN`。官方在线耗材库的访问授权不随源码提供。
+自建服务的频道和认证要求以部署方配置为准；需要认证时配置 `LUMINA_MATERIAL_REGISTRY_TOKEN`。旧私有令牌不会自动带到未显式配置的公共默认源。
 
-`/materials/catalog`、`/packages/upload` 等路径由独立 Material Registry 服务提供；Lumina Studio 主应用只配置连接和同步，不在主应用仓库内实现这些服务端路由。
+`/materials/catalog`、`/packages/upload` 等路径由独立 Material Registry 服务提供。Studio 负责连接、同步和本地资源整理；投稿通过单独的 `LUMINA_CONTRIBUTION_REGISTRY_URL` 连接账号主站，默认是 `https://dan5.shmx.top/api/material-registry/v1`，不把读取令牌带到投稿请求中。主应用不实现 Registry 的账号和审核服务端路由。
 
 ## 普通使用者配置
 
-仅在需要连接自己的 Registry 时设置。保持 `LUMINA_MATERIAL_REGISTRY_URL` 为空，手动和自动云端刷新都不会启用。
+仅在需要连接自己的 Registry 时设置。变量未设置时使用公共默认源；**显式设置为空字符串**可关闭耗材云端读取，LUT 未单独配置时也随之关闭。
 
 以下地址必须替换成实际获授权的服务地址：
 
@@ -59,11 +61,11 @@ LUMINA_MATERIAL_SYNC_REFRESH_INTERVAL_S
 
 私有 `team` 频道所需 token 应放在本机 `.env.local` 或受控部署环境中，不要写进脚本、提交或命令历史。
 
-配置 URL 后，Lumina 默认在启动时刷新一次，之后每 6 小时刷新一次。需要仅手工安装时，可把 `LUMINA_MATERIAL_SYNC_STARTUP_REFRESH` 设为 `false`，并把 `LUMINA_MATERIAL_SYNC_REFRESH_INTERVAL_S` 设为 `0`。同步只会读取云端 catalog 和下载 package，不会读取或上传用户本地耗材。
+Lumina 默认在启动时检查一次目录，之后每 6 小时检查一次，**不会自动下载全库**。安装由用户选择触发。将 `LUMINA_MATERIAL_SYNC_STARTUP_REFRESH=false`、`LUMINA_MATERIAL_SYNC_REFRESH_INTERVAL_S=0` 可关闭后台检查。公开目录支持持久缓存与条件请求；断网时显示缓存状态，本地已安装内容继续可用，未下载内容仍需联网。没有任何自动上传。
 
 如果同一个 `material_id` 在 catalog 中同时出现多个 revision，批量刷新会以 `ambiguous_revision` 失败关闭，不会根据 revision 字符串或返回顺序猜测最新版。用户仍可在云端耗材面板中明确选择某个 revision 手工安装。
 
-## Catalog 条件同步
+## 手动完整同步的 Catalog 条件请求
 
 支持条件请求的独立 Registry 会在 `/materials/catalog` 的成功响应中返回
 `ETag`。Lumina 在首次完整同步并确认所有 catalog 条目已经本地收敛后，将

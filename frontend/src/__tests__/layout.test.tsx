@@ -68,7 +68,7 @@ describe("Widget Workspace Layout", () => {
     expect(screen.getByTestId("tab-settings")).toBeInTheDocument();
   });
 
-  it("places Creative Workshop between Vectorizer and Settings", async () => {
+  it("keeps materials before LUTs and Workshop between Vectorizer and Settings", async () => {
     render(<App />);
     await screen.findByTestId("tab-converter");
 
@@ -79,8 +79,8 @@ describe("Widget Workspace Layout", () => {
 
     expect(primaryTabs).toEqual([
       "tab-converter",
-      "tab-lut-management",
       "tab-material-management",
+      "tab-lut-management",
       "tab-vectorizer",
       "tab-workshop",
       "tab-settings",

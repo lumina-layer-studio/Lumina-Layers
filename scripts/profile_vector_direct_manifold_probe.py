@@ -25,7 +25,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-DEFAULT_LUT_PATH = ROOT / "lut-preset" / "彩多屋" / "4色" / "RYBW" / "lumina_lut.json"
+DEFAULT_LUT_PATH = ROOT / "tests/fixtures/lut_regression" / "彩多屋" / "4色" / "RYBW" / "lumina_lut.json"
 
 
 def _iter_polygons(geometry: BaseGeometry) -> Iterable[Polygon]:

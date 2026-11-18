@@ -25,6 +25,7 @@ from api.project_workflows import resolve_project_lut
 ProjectContext = Annotated[str | None, Header(alias="X-Lumina-Project-Context")]
 from api.preview_cache_artifacts import is_preview_cache_artifact_ref
 from api.session_store import SessionStore
+from api.services.lut_registry_sync import installed_lut_displays, installed_lut_versions
 from api.services.lut_presentation import (
     build_lut_info_from_path as _build_lut_info_from_path,
     cached_preview_color_hex as _cached_preview_color_hex,
@@ -288,7 +289,7 @@ def list_luts() -> LUTListResponse:
                 path=_public_lut_path_reference(file_path),
             )
         )
-    response = LUTListResponse(luts=lut_list)
+    response = LUTListResponse(luts=lut_list, legacy_aliases=LUTManager.migrated_preset_aliases(lut_dict))
     with _lut_list_cache_lock:
         if cacheable:
             _lut_list_cache_checked_at = now
@@ -310,7 +311,7 @@ def get_source_catalog() -> LutSourceCatalogResponse:
     catalog = _public_lut_source_catalog_paths(
         _canonicalize_source_catalog_color_modes(LUTManager.get_source_catalog())
     )
-    return LutSourceCatalogResponse.model_validate(catalog)
+    return LutSourceCatalogResponse.model_validate({**catalog, "legacy_aliases": LUTManager.migrated_preset_aliases()})
 
 
 @router.post("/project-source")
@@ -349,6 +350,8 @@ def get_lut_details_catalog() -> LutDetailsCatalogResponse:
 
     try:
         catalog = _resolve_lut_details_service().get_catalog()
+        installed_displays = installed_lut_displays()
+        installed_versions = installed_lut_versions()
     except Exception as exc:
         log.error(
             "LUT details catalog failed",
@@ -368,6 +371,7 @@ def get_lut_details_catalog() -> LutDetailsCatalogResponse:
                 items=[
                     LutDetailsCatalogItem(
                         name=item.name,
+                        display=_local_lut_display(getattr(item, "display", None), installed_displays.get(item.path)),
                         path=_public_lut_path_reference(item.path),
                         color_mode=_canonicalize_public_color_mode(item.color_mode),
                         source_kind=item.source_kind,
@@ -378,6 +382,7 @@ def get_lut_details_catalog() -> LutDetailsCatalogResponse:
                         material_source=item.material_source,
                         search_tokens=list(item.search_tokens),
                         revision=item.revision,
+                        local_version=installed_versions.get(item.path),
                     )
                     for item in group.items
                     if not _is_lut_sync_index_path(item.path)
@@ -387,6 +392,13 @@ def get_lut_details_catalog() -> LutDetailsCatalogResponse:
             if any(not _is_lut_sync_index_path(item.path) for item in group.items)
         ]
     )
+
+
+def _local_lut_display(local: dict[str, Any] | None, installed: dict[str, Any] | None) -> dict[str, Any] | None:
+    display = {**(local or {}), **(installed or {})}
+    if local and "lut_board_preview" in local:
+        display["lut_board_preview"] = local["lut_board_preview"]
+    return display or None
 
 
 class _UploadedLutValidationError(ValueError):

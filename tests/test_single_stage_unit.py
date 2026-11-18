@@ -6,6 +6,7 @@ import hashlib
 import io
 import json
 import logging
+import shutil
 import zipfile
 from pathlib import Path, PurePosixPath
 from types import SimpleNamespace
@@ -6484,6 +6485,133 @@ def test_gradient_card_material_import_route_imports_multiple_archives(
     ]
     assert seen_import_paths == uploaded_paths
     assert removed_paths == uploaded_paths
+
+
+@pytest.mark.parametrize(("manifest_format", "previous_import"), [
+    ("v2", False), ("v2", True), ("v1", False), ("none", False),
+])
+def test_gradient_card_material_import_restores_legacy_internal_export(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, manifest_format: str, previous_import: bool,
+) -> None:
+    from core import material_lut_provider
+
+    source_root = tmp_path / "source"
+    target_root = tmp_path / "target"
+    legacy_name = "_sync/curation-backups/source-materials/White"
+    for directory_name, name in [("Brand/Blue", "Blue"), (legacy_name, "White")]:
+        _, parameters = _write_updatable_material_archive(
+            source_root, directory_name, material_name=name, brand="Brand",
+        )
+        parameters.write_bytes(_minimal_solver_stage_a_bytes(name))
+    exported = Path(export_saved_stage_a_material_archives(
+        directory_names=["Brand/Blue", legacy_name], materials_dir=str(source_root),
+        output_path=str(tmp_path / "legacy.zip"),
+    ).archive_path)
+    bundle_bytes = exported.read_bytes()
+    if manifest_format != "v2":
+        legacy_archive = io.BytesIO()
+        with zipfile.ZipFile(exported) as source, zipfile.ZipFile(legacy_archive, "w") as target:
+            for name in source.namelist():
+                if name.startswith("materials/") or (
+                    manifest_format == "v1" and name == "lumina_material_export.json"
+                ):
+                    target.writestr(name, source.read(name))
+        bundle_bytes = legacy_archive.getvalue()
+
+    if previous_import:
+        installed_packages = []
+        for package in validate_material_bundle_archive(archive_path=str(exported))["packages"]:
+            old_directory = package["local_directory"]
+            old_destination = target_root / old_directory
+            shutil.copytree(source_root / old_directory, old_destination)
+            installed_packages.append((package, old_destination))
+        material_sync._record_material_sync_entries(
+            target_root=target_root, installed_packages=installed_packages,
+        )
+        existing, parameters = _write_updatable_material_archive(
+            target_root, "White", material_name="Existing White", brand="Brand",
+        )
+        parameters.write_bytes(_minimal_solver_stage_a_bytes("Existing White"))
+        existing_bytes = existing.read_bytes()
+
+    monkeypatch.setattr(material_files, "MATERIALS_DIR", str(target_root))
+    monkeypatch.setattr(material_lut_provider, "MATERIALS_DIR", str(target_root))
+    monkeypatch.setattr("core.material_lut_synthesis.MATERIALS_DIR", str(target_root))
+    monkeypatch.setattr(
+        "core.single_stage.material_registry_client._official_material_registry_metadata_by_signature",
+        lambda: {},
+    )
+    client, _, _ = _client_with_state()
+    route = "/api/extractor/gradient-card-materials"
+    files = {"archives": ("legacy.zip", bundle_bytes, "application/zip")}
+
+    response = client.post(f"{route}/import", files=files)
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    if previous_import:
+        assert body["imported_count"] == 1
+        [white] = body["imported_materials"]
+        assert white["directory_name"].startswith("White_")
+        assert existing.read_bytes() == existing_bytes
+        assert (target_root / legacy_name / "material.json").is_file()
+    else:
+        assert body["imported_count"] == 2
+        blue, white = body["imported_materials"]
+        assert blue["directory_name"] == "Brand/Blue"
+        assert white["directory_name"] == "White"
+        assert not (target_root / legacy_name).exists()
+    assert white["brand"] == "Brand"
+    installed = ["Brand/Blue", white["directory_name"]]
+    listed = client.get(route)
+    assert listed.status_code == 200, listed.text
+    assert {item["directory_name"] for item in listed.json()["materials"]} == (
+        set(installed) | ({"White"} if previous_import else set())
+    )
+    assert [material.name for material in material_lut_provider.load_materials(installed)] == ["Blue", "White"]
+    for filename in ("material.json", "stage_A_parameters.json"):
+        assert (target_root / white["directory_name"] / filename).read_bytes() == (
+            source_root / legacy_name / filename
+        ).read_bytes()
+    if manifest_format == "v2":
+        repeated = client.post(f"{route}/import", files=files)
+        assert repeated.status_code == 200, repeated.text
+        assert repeated.json()["imported_count"] == 0
+
+
+def test_gradient_card_material_import_reports_unusable_legacy_archive(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source_root = tmp_path / "source"
+    target_root = tmp_path / "target"
+    legacy_name = "_solver_cache/legacy/White"
+    for directory_name, name in [("Brand/Blue", "Blue"), (legacy_name, "White")]:
+        _, parameters = _write_updatable_material_archive(
+            source_root, directory_name, material_name=name, brand="Brand",
+        )
+        parameters.write_bytes(_minimal_solver_stage_a_bytes(name))
+    # The old exporter accepts this reference, which the solver cannot load.
+    archive = source_root / legacy_name / "material.json"
+    metadata = json.loads(archive.read_text(encoding="utf-8"))
+    metadata["stage_a_params_file"] = "/stage_A_parameters.json"
+    archive.write_text(json.dumps(metadata), encoding="utf-8")
+    exported = Path(export_saved_stage_a_material_archives(
+        directory_names=["Brand/Blue", legacy_name], materials_dir=str(source_root),
+        output_path=str(tmp_path / "invalid-legacy.zip"),
+    ).archive_path)
+    monkeypatch.setattr(material_files, "MATERIALS_DIR", str(target_root))
+    client, _, _ = _client_with_state()
+
+    response = client.post(
+        "/api/extractor/gradient-card-materials/import",
+        files={"archives": ("legacy.zip", exported.read_bytes(), "application/zip")},
+    )
+
+    assert response.status_code == 422, response.text
+    assert legacy_name in response.json()["detail"]
+    assert "stage_a_params_file" in response.json()["detail"]
+    assert list(target_root.rglob("material.json")) == []
+    assert not (target_root / "_sync/index.json").exists()
 
 
 def test_gradient_card_material_import_route_rejects_invalid_stage_a_solver_parameters(

@@ -330,12 +330,18 @@ def invalidate_material_library_cache(materials_dir: str | None = None) -> None:
     _invalidate_material_library_cache(Path(materials_dir or MATERIALS_DIR))
 
 
-def _discover_saved_material_dirs(material_root: Path) -> list[Path]:
-    """Find library archives without descending into internal stores or archived runs."""
+def _is_internal_material_directory(directory_name: str) -> bool:
+    return directory_name.split("/", 1)[0].casefold() in INTERNAL_MATERIAL_ROOT_NAMES
+
+
+def _discover_saved_material_dirs(
+    material_root: Path, *, include_internal: bool = False,
+) -> list[Path]:
+    """Find archives, excluding internal stores by default and nested runs always."""
     archives: list[Path] = []
     for directory, subdirs, _ in material_root.walk():
-        if directory == material_root:
-            subdirs[:] = [name for name in subdirs if name.casefold() not in INTERNAL_MATERIAL_ROOT_NAMES]
+        if directory == material_root and not include_internal:
+            subdirs[:] = [name for name in subdirs if not _is_internal_material_directory(name)]
         if (directory / "material.json").is_file():
             archives.append(directory)
             subdirs.clear()

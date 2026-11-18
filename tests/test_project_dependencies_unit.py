@@ -138,9 +138,12 @@ def test_native_snapshot_rebinds_model_and_exact_database_without_original_paths
     np.testing.assert_array_equal(exact[1], [[0] * 5])
 
 
-def test_material_resources_use_session_directory_and_are_cleaned_with_session(tmp_path: Path) -> None:
+@pytest.mark.parametrize("directory_name", ["Brand/cyan", "_sync/curation-backups/source-materials/cyan"])
+def test_material_resources_use_session_directory_and_are_cleaned_with_session(
+    tmp_path: Path, directory_name: str,
+) -> None:
     library = tmp_path / "source-library"
-    material = library / "Brand" / "cyan"
+    material = library / directory_name
     material.mkdir(parents=True)
     (material / "material.json").write_text(json.dumps({
         "brand": "Brand", "material_name": "Cyan", "material_summary": {"estimated_rgb": [20, 120, 220]}, "stage_a_params_file": "stage_A_parameters.json",
@@ -149,13 +152,13 @@ def test_material_resources_use_session_directory_and_are_cleaned_with_session(t
         "channels": [{"color_name": "Cyan", "E": [0.1, 0.2, 0.3], "k": [1.0, 1.1, 1.2]}],
         "substrates": [{"substrate_id": "white", "C0": [1.0, 1.0, 1.0]}],
     }}))
-    exported = export_saved_stage_a_material_archives(directory_names=["Brand/cyan"], materials_dir=str(library), output_path=str(tmp_path / "materials.zip"))
+    exported = export_saved_stage_a_material_archives(directory_names=[directory_name], materials_dir=str(library), output_path=str(tmp_path / "materials.zip"))
     data = Path(exported.archive_path).read_bytes()
     shutil.rmtree(library)
-    resources = asyncio.run(stage_project_resources(None, UploadFile(file=io.BytesIO(data), filename="materials.zip"), ["Brand/cyan"]))
+    resources = asyncio.run(stage_project_resources(None, UploadFile(file=io.BytesIO(data), filename="materials.zip"), [directory_name]))
     assert resources is not None
     try:
-        actual = load_materials(["Brand/cyan"], materials_dir=resources.materials_dir, use_cache=False)
+        actual = load_materials([directory_name], materials_dir=resources.materials_dir, use_cache=False)
         assert actual[0].name == "Cyan"
         np.testing.assert_allclose(actual[0].E, [0.1, 0.2, 0.3])
         store = SessionStore()

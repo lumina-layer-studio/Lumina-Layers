@@ -282,6 +282,11 @@ export const translations: Record<string, Record<"zh" | "en", string>> = {
   resources_color_count: { zh: "{count} 色", en: "{count} colors" },
   resources_channel_name: { zh: "通道 {number}", en: "Channel {number}" },
   resources_series: { zh: "产品系列", en: "Series" },
+  resources_brand_support: { zh: "适配与支持", en: "Compatibility and support" },
+  resources_polymaker_support: {
+    zh: "Panchroma PLA 适配中，Polymaker 提供耗材与赞助支持。",
+    en: "Panchroma PLA compatibility is in progress, with filament and sponsorship support from Polymaker.",
+  },
   resources_description: { zh: "备注说明", en: "Notes" },
   resources_lut_description: { zh: "备注说明", en: "Notes" },
   resources_contributor: { zh: "贡献者", en: "Contributor" },

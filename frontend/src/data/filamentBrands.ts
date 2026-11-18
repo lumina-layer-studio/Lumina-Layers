@@ -15,7 +15,6 @@ import jayo from "../assets/filament-brands/theme/jayo.png";
 import karvax from "../assets/filament-brands/theme/karvax.png";
 import kexcelled from "../assets/filament-brands/theme/kexcelled.png";
 import kynix from "../assets/filament-brands/theme/kynix.png";
-import polymaker from "../assets/filament-brands/polymaker.svg";
 import rebirth from "../assets/filament-brands/theme/rebirth3d.png";
 import sailner from "../assets/filament-brands/theme/sailner.png";
 import snapmaker from "../assets/filament-brands/theme/snapmaker.png";
@@ -43,7 +42,7 @@ import xydDark from "../assets/filament-brands/theme/xyd-dark.png";
 export interface FilamentBrand {
   intl: string;
   cn: string;
-  logo: string;
+  logo?: string;
   logoDark?: string;
   aliases?: readonly string[];
 }
@@ -66,7 +65,7 @@ export const filamentBrands: readonly FilamentBrand[] = [
   { intl: "KARVAX", cn: "无境新材", logo: karvax, logoDark: karvaxDark },
   { intl: "Kexcelled", cn: "Kexcelled", logo: kexcelled },
   { intl: "KYNIX", cn: "KYNIX", logo: kynix, logoDark: kynixDark },
-  { intl: "Polymaker", cn: "Polymaker", logo: polymaker },
+  { intl: "Polymaker", cn: "Polymaker" },
   { intl: "REBIRTH3D", cn: "瑞贝思", logo: rebirth, logoDark: rebirthDark },
   { intl: "Sailner", cn: "赛纳", logo: sailner, logoDark: sailnerDark, aliases: ["赛纳三维"] },
   { intl: "Snapmaker", cn: "快造", logo: snapmaker, logoDark: snapmakerDark, aliases: ["快造科技", "快造3D", "Snapmaker 3D"] },
@@ -74,7 +73,19 @@ export const filamentBrands: readonly FilamentBrand[] = [
   { intl: "XYD", cn: "XYD小明", logo: xyd, logoDark: xydDark, aliases: ["XYD小明耗材", "小明电子科技", "XYD Xiaoming"] },
 ];
 
-const darkLogos = new Map(filamentBrands.map((brand) => [brand.logo, brand.logoDark ?? brand.logo]));
+const darkLogos = new Map(filamentBrands.flatMap((brand) =>
+  brand.logo && brand.logoDark ? [[brand.logo, brand.logoDark] as const] : [],
+));
+
+export const POLYMAKER_PANCHROMA_LOGO = "https://www.luminastudio.com.cn/logos/polymaker-teal.svg";
+const polymakerLogoStart = Date.parse("2026-11-18T04:58:38Z");
+const polymakerLogoEnd = Date.parse("2027-11-18T04:58:38Z");
+
+export function polymakerPanchromaLogo(brand: string | undefined, series: string, materialType: string) {
+  if (brand !== "Polymaker" || series.toLowerCase() !== "panchroma" || materialType.toLowerCase() !== "pla") return;
+  const now = Date.now();
+  return now >= polymakerLogoStart && now < polymakerLogoEnd ? POLYMAKER_PANCHROMA_LOGO : undefined;
+}
 
 export function filamentLogoSource(logo: string, theme: "light" | "dark"): string {
   return theme === "dark" ? darkLogos.get(logo) ?? logo : logo;

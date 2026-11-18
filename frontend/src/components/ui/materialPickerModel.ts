@@ -1,6 +1,6 @@
 import type { SavedMaterialLibraryItem } from "../../api/types";
 import { favoriteKeyForMaterial } from "../../utils/materialPickerPreferences";
-import { filamentMatches, type FilamentIdentity } from "../../utils/filamentIdentity";
+import { filamentBrandLogo, filamentMatches, type FilamentIdentity } from "../../utils/filamentIdentity";
 import { savedMaterialIdentity } from "../../utils/libraryFilamentIdentity";
 
 export type MaterialTypeFilter =
@@ -74,7 +74,7 @@ export function buildBrandOptions(
         key === UNASSIGNED_BRAND_KEY
           ? labels.unassigned
           : identities?.get(material.directory_name)?.brand || material.brand?.normalize("NFKC").trim() || labels.unassigned,
-      logo: identities?.get(material.directory_name)?.logo,
+      logo: filamentBrandLogo(material.brand),
       count: 1,
     });
   }

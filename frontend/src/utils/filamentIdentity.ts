@@ -1,4 +1,4 @@
-import { filamentBrands, type FilamentBrand } from "../data/filamentBrands";
+import { filamentBrands, polymakerPanchromaLogo, type FilamentBrand } from "../data/filamentBrands";
 import { bambuFilamentColors, cailabPlaColors, filamentColorDescriptions } from "../data/filamentColors";
 
 type Language = "zh" | "en";
@@ -55,6 +55,10 @@ function brandAliases(brand: FilamentBrand): string[] {
 const brandsByAlias = new Map<string, FilamentBrand>();
 for (const brand of filamentBrands) {
   for (const alias of brandAliases(brand)) brandsByAlias.set(key(alias), brand);
+}
+
+export function filamentBrandLogo(brand: string | null | undefined): string | undefined {
+  return brand ? brandsByAlias.get(key(brand))?.logo : undefined;
 }
 
 function localized(value: unknown, language: Language): string {
@@ -241,7 +245,7 @@ export function filamentIdentity(
     name: explicitName || colorName || descriptorName || name,
     originalName: name,
     brand: displayBrand,
-    logo: known?.logo,
+    logo: known?.logo ?? polymakerPanchromaLogo(known?.intl, textValue(metadata.series), textValue(metadata.material_type)),
     productCode: catalogCodes[0] ?? color?.code,
     colorDescription: descriptionText && !fold(label).includes(fold(descriptionText)) ? descriptionText : undefined,
     colorName: regionalColor || textValue(metadata.color_name) || color?.[marketLanguage] || undefined,

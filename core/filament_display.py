@@ -119,7 +119,7 @@ def filament_display(value: object) -> dict[str, Any]:
         "brand", "manufacturer", "vendor", "material_name", "name", "display_name", "lut_name", "title",
         "material_type", "color_name", "market_names", "localized_names", "aliases",
         "sku", "color_code", "fila_color_code", "brand_identity",
-        "series", "description", "contributor_name", "author", "license",
+        "series", "description", "contributor_name", "author", "license", "original_name",
         "purchase_links", "product_url", "purchase_url",
     )
     result = {**{key: value[key] for key in keys if key in value}, **filament_preview(value)}

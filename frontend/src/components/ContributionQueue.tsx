@@ -10,6 +10,7 @@ import { useCommunityStore } from "../stores/communityStore";
 import { useI18n } from "../i18n/context";
 import Button from "./ui/Button";
 import Checkbox from "./ui/Checkbox";
+import ResourceLicense from "./ui/ResourceLicense";
 import DisclosureSummary from "./ui/DisclosureSummary";
 import { cx, StatusBanner, wellClass } from "./ui/panelPrimitives";
 
@@ -126,6 +127,7 @@ export default function ContributionQueue({
                 disabled={busy || !subject || !connection?.email_verified}
                 label={t("contribution_auto_consent")}
               />
+              <ResourceLicense />
               <div>
                 <Button
                   label={t("contribution_auto_enable")}

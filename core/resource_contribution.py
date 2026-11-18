@@ -18,6 +18,7 @@ from utils.lut_manager import LUTManager
 
 ResourceKind = Literal["materials", "luts"]
 MAX_FILE_BYTES = 50 * 1024 * 1024
+DATA_LICENSE_ID = "LicenseRef-Lumina-Data-1.0"
 
 
 def json_bytes(value: object) -> bytes:
@@ -124,7 +125,7 @@ def prepare_contribution(kind: ResourceKind, key: str) -> PreparedContribution:
 def contribution_package(prepared: PreparedContribution, display: dict[str, Any],
                          subject: str) -> tuple[bytes, str, str]:
     """Keep LUT bytes untouched and assign a contributor-scoped resource identity."""
-    display = {**display, "license": "CC-BY-4.0"}
+    display = {**display, "license": prepared.display.get("license") or display.get("license") or DATA_LICENSE_ID}
     files = dict(prepared.files)
     family = "mat" if prepared.kind == "materials" else "lut"
     resource_id = prepared.resource_id or family + "_" + sha(f"{subject}\n{prepared.key}".encode())[:26]

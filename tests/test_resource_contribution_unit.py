@@ -57,6 +57,11 @@ def test_lut_package_preserves_bytes_and_contributor_identity(tmp_path, monkeypa
     assert contribution_package(prepared, display, "user1")[1:] == (resource_id, revision)
     with zipfile.ZipFile(io.BytesIO(first)) as archive:
         assert archive.read("calibration.npy") == path.read_bytes()
+        metadata = json.loads(archive.read("lumina_lut_bundle.json"))
+        assert metadata["display"]["license"] == "LicenseRef-Lumina-Data-1.0"
+    legacy, _, _ = contribution_package(prepared, {**display, "license": "CC-BY-4.0"}, "user1")
+    with zipfile.ZipFile(io.BytesIO(legacy)) as archive:
+        assert json.loads(archive.read("lumina_lut_bundle.json"))["display"]["license"] == "CC-BY-4.0"
     with pytest.raises(FileNotFoundError):
         prepare_contribution("luts", str(path))
 

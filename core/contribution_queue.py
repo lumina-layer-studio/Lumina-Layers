@@ -12,9 +12,9 @@ from typing import Any, Iterator
 import uuid
 import zipfile
 
-from core.resource_contribution import PreparedContribution, json_bytes, sha
+from core.resource_contribution import DATA_LICENSE_ID, PreparedContribution, json_bytes, sha
 
-CONSENT_VERSION = "public-calibration-v1"
+CONSENT_VERSION = "lumina-data-v1"
 MAX_PENDING = 100
 MAX_BYTES = 512 * 1024 * 1024
 
@@ -59,9 +59,12 @@ class ContributionQueue:
     def configure(self, server: str, account: str, enabled: bool) -> None:
         with self.transaction() as db:
             # Re-enabling never resumes older jobs implicitly.
+            previous = db.execute("SELECT consent_version FROM contribution_grants WHERE workspace=? AND server=?",
+                                  (self.workspace, server)).fetchone()
+            changed_terms = bool(previous and previous["consent_version"] != CONSENT_VERSION)
             db.execute("""UPDATE contribution_jobs SET state='paused'
-                WHERE workspace=? AND server=? AND state='queued' AND (account<>? OR ?=0)""",
-                (self.workspace, server, account, int(enabled)))
+                WHERE workspace=? AND server=? AND state='queued' AND (account<>? OR ?=0 OR ?=1)""",
+                (self.workspace, server, account, int(enabled), int(changed_terms)))
             db.execute("""INSERT INTO contribution_grants VALUES(?,?,?,?,?,?)
                 ON CONFLICT(workspace,server) DO UPDATE SET account=excluded.account,
                 enabled=excluded.enabled, consent_version=excluded.consent_version,
@@ -79,7 +82,11 @@ class ContributionQueue:
         with self.transaction(write=False) as db:
             row = db.execute("SELECT * FROM contribution_grants WHERE workspace=? AND server=?",
                              (self.workspace, server)).fetchone()
-            return dict(row) if row else None
+            if not row:
+                return None
+            grant = dict(row)
+            grant["enabled"] = int(bool(grant["enabled"] and grant["consent_version"] == CONSENT_VERSION))
+            return grant
 
     def owns_snapshot(self, server: str, account: str, prepared: PreparedContribution) -> bool:
         with self.transaction(write=False) as db:
@@ -93,7 +100,8 @@ class ContributionQueue:
         with zipfile.ZipFile(output, "w", compression=zipfile.ZIP_STORED) as archive:
             archive.writestr("snapshot.json", json_bytes({
                 "kind": prepared.kind, "key": prepared.key, "fingerprint": prepared.fingerprint,
-                "display": display, "compatibility": prepared.compatibility, "origin": origin,
+                "display": {**display, "license": prepared.display.get("license") or display.get("license") or DATA_LICENSE_ID},
+                "compatibility": prepared.compatibility, "origin": origin,
                 "consent_version": CONSENT_VERSION,
             }))
             for name, payload in prepared.files.items():
@@ -106,6 +114,10 @@ class ContributionQueue:
             raise ValueError("The saved contribution snapshot is damaged.")
         with zipfile.ZipFile(io.BytesIO(payload)) as archive:
             meta = json.loads(archive.read("snapshot.json"))
+            # Earlier snapshots were confirmed under CC BY 4.0, even when the
+            # license was only added later by the upload packager.
+            if not meta["display"].get("license") and meta.get("consent_version") == "public-calibration-v1":
+                meta["display"]["license"] = "CC-BY-4.0"
             prepared = PreparedContribution(meta["kind"], meta["key"], meta["fingerprint"],
                 meta["display"], meta["compatibility"],
                 {name[6:]: archive.read(name) for name in archive.namelist() if name.startswith("files/")})
@@ -193,10 +205,15 @@ class ContributionQueue:
             # Acquiring that lock proves no previous worker is still sending.
             grant = db.execute("SELECT * FROM contribution_grants WHERE workspace=? AND server=?",
                                (self.workspace, server)).fetchone()
-            resumed = bool(grant and grant["enabled"] and grant["account"] == account)
+            resumed = bool(grant and grant["enabled"] and grant["account"] == account
+                           and grant["consent_version"] == CONSENT_VERSION)
             db.execute("""UPDATE contribution_jobs SET state=? WHERE workspace=?
                 AND server=? AND account=? AND state='sending'""",
                 ("queued" if resumed else "paused", self.workspace, server, account))
+            if not resumed:
+                db.execute("""UPDATE contribution_jobs SET state='paused' WHERE workspace=?
+                    AND server=? AND account=? AND state='queued'""", (self.workspace, server, account))
+                return None
             row = db.execute("""SELECT id FROM contribution_jobs WHERE workspace=? AND server=?
                 AND account=? AND reviewed=1 AND state='queued' AND next_attempt<=? ORDER BY created_at LIMIT 1""",
                 (self.workspace, server, account, time.time())).fetchone()
@@ -214,7 +231,8 @@ class ContributionQueue:
                 return
             grant = db.execute("SELECT * FROM contribution_grants WHERE workspace=? AND server=?",
                                (self.workspace, row["server"])).fetchone()
-            enabled = grant and grant["enabled"] and grant["account"] == row["account"]
+            enabled = (grant and grant["enabled"] and grant["account"] == row["account"]
+                       and grant["consent_version"] == CONSENT_VERSION)
             state = "received" if receipt else ("queued" if enabled else "paused") if retryable else "needs_review"
             db.execute("""UPDATE contribution_jobs SET state=?,reason=?,next_attempt=?,receipt=?,
                 snapshot=CASE WHEN ? IS NOT NULL THEN NULL ELSE snapshot END WHERE id=?""",

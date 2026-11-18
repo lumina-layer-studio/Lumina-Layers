@@ -114,7 +114,7 @@ def _collection_manifest(archive: zipfile.ZipFile, release_version: str | None) 
         sync._required_package_sha256(entry)
         sync._required_content_hash(entry.get("content_hash"), "seed")
     actual_files = {info.filename for info in infos if not info.is_dir()}
-    if actual_files != {_MANIFEST, *payloads}:
+    if actual_files - {"DATA-LICENSE.md"} != {_MANIFEST, *payloads}:
         raise ValueError("LUT starter resource contains unlisted payloads")
     return manifest
 

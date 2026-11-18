@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import hashlib
+import io
 import os
 import tempfile
 import urllib.request
@@ -25,6 +27,30 @@ from core.single_stage import material_files, material_package, material_runs, m
 
 _IGNORED_MATERIAL_ROOT_NAMES = frozenset({"_sync", "_solver_cache"})
 _DEFAULT_SEED_FILENAME = "lumina-materials-seed.zip"
+_COLLECTION_MANIFEST = "lumina_material_seed.json"
+
+
+def _nested_package(archive: zipfile.ZipFile, entry: dict[str, Any]) -> tuple[bytes, dict[str, Any]]:
+    """Read one unchanged distribution ZIP, preserving its identity and filenames."""
+    relative = material_package._safe_manifest_relative_path(entry.get("path")).as_posix()
+    expected_bytes = entry.get("package_bytes")
+    if type(expected_bytes) is not int or expected_bytes <= 0 or archive.getinfo(relative).file_size != expected_bytes:
+        raise ValueError("Offline material package byte count mismatch")
+    payload = archive.read(relative)
+    if hashlib.sha256(payload).hexdigest() != str(entry.get("package_sha256", "")).removeprefix("sha256:"):
+        raise ValueError("Offline material package checksum mismatch")
+    with zipfile.ZipFile(io.BytesIO(payload)) as bundle:
+        material_package._validate_material_zip_resource_limits(bundle, archive_path=relative)
+        manifest = json.loads(bundle.read(material_package._MATERIAL_BUNDLE_MANIFEST_FILENAME))
+        if (not isinstance(manifest, dict) or manifest.get("kind") != "lumina_material_bundle"
+                or manifest.get("schema_version") != material_package._MATERIAL_PACKAGE_SCHEMA_VERSION
+                or not isinstance(manifest.get("packages"), list) or len(manifest["packages"]) != 1):
+            raise ValueError("Offline material entry needs one distribution revision")
+        package = manifest["packages"][0]
+        if not isinstance(package, dict) or any(package.get(key) != entry.get(key) for key in (
+                "material_id", "revision_id", "content_hash", "channel", "local_directory")):
+            raise ValueError("Offline material entry does not match its distribution package")
+    return payload, package
 
 
 def _materials_root_has_user_content(root: Path) -> bool:
@@ -175,23 +201,29 @@ def _material_seed_entries(
     entries = []
     identities: set[tuple[str, str]] = set()
     with zipfile.ZipFile(path) as archive:
-        material_package._validate_material_zip_resource_limits(archive, archive_path=str(path))
+        nested = _COLLECTION_MANIFEST in archive.namelist()
+        material_package._validate_material_zip_resource_limits(
+            archive, archive_path=str(path), max_entries=2002 if nested else None,
+        )
         names = [info.filename.rstrip("/").casefold() for info in archive.infolist()]
         if len(names) != len(set(names)):
             raise ValueError("Material collection contains duplicate paths")
         try:
-            manifest = json.loads(archive.read(material_package._MATERIAL_BUNDLE_MANIFEST_FILENAME))
+            manifest = json.loads(archive.read(_COLLECTION_MANIFEST if nested else material_package._MATERIAL_BUNDLE_MANIFEST_FILENAME))
         except KeyError as exc:
             raise ValueError("Material collection has no selectable revisions") from exc
         if (
             not isinstance(manifest, dict)
-            or manifest.get("kind") != "lumina_material_bundle"
-            or manifest.get("schema_version") != material_package._MATERIAL_PACKAGE_SCHEMA_VERSION
+            or manifest.get("kind") != ("lumina_material_seed" if nested else "lumina_material_bundle")
+            or manifest.get("schema_version") != ("1.0" if nested else material_package._MATERIAL_PACKAGE_SCHEMA_VERSION)
         ):
             raise ValueError("Unsupported offline material collection format")
         packages = manifest.get("packages")
-        if not isinstance(packages, list) or not packages:
+        if not isinstance(packages, list) or not packages or len(packages) > 2000:
             raise ValueError("Material collection has no selectable revisions")
+        if nested and version and manifest.get("dataset_version") != version:
+            raise ValueError("Material collection dataset version does not match its release")
+        payload_paths = set()
         for package in packages:
             if not isinstance(package, dict) or package.get("channel") not in {"official", "community"}:
                 raise ValueError("Material collection must contain public packages")
@@ -201,7 +233,20 @@ def _material_seed_entries(
             if identity in identities:
                 raise ValueError("Material collection has a missing or duplicate revision identity")
             identities.add(identity)
-            entries.append((package, _material_catalog_row(archive, package)))
+            if nested:
+                payload, original = _nested_package(archive, package)
+                if package["path"].casefold() in payload_paths:
+                    raise ValueError("Material collection contains duplicate package paths")
+                payload_paths.add(package["path"].casefold())
+                with zipfile.ZipFile(io.BytesIO(payload)) as bundle:
+                    row = _material_catalog_row(bundle, {**original, "display": package.get("display", original.get("display", {}))})
+                entries.append((package, row))
+            else:
+                entries.append((package, _material_catalog_row(archive, package)))
+        if nested:
+            allowed = {_COLLECTION_MANIFEST, "DATA-LICENSE.md", *(package["path"] for package in packages)}
+            if any(not info.is_dir() and info.filename not in allowed for info in archive.infolist()):
+                raise ValueError("Material collection contains unlisted payloads")
     return version or material_files._clean_optional_archive_text(manifest.get("dataset_version")), entries
 
 
@@ -229,7 +274,7 @@ def install_material_seed_revision(
         raise FileNotFoundError("The offline material collection is unavailable")
     _, entries = _material_seed_entries(path, seed_catalog_signature(path, "materials"))
     selected = next((
-        row for _, row in entries
+        (package, row) for package, row in entries
         if row["resource_id"] == resource_id and row["revision_id"] == revision_id
     ), None)
     if selected is None:
@@ -238,14 +283,25 @@ def install_material_seed_revision(
     with seed_lock(target_root / "_sync"), material_sync._MaterialSyncRefreshFileLock(target_root):
         verify_seed_release(path, "materials")
         try:
-            result = import_saved_stage_a_material_archives(
-                archive_path=str(path), materials_dir=str(target_root),
-                selected_material_id=resource_id, selected_revision_id=revision_id,
-                selected_display=selected["display"],
-            )
+            result = _import_seed_entry(path, selected[0], selected[1], target_root)
         except FileNotFoundError as exc:
             raise ValueError("The selected material revision is missing a required file") from exc
     return {"installed_count": len(result.imported_materials)}
+
+
+def _import_seed_entry(path: Path, package: dict[str, Any], row: dict[str, Any], target_root: Path) -> Any:
+    with tempfile.TemporaryDirectory(prefix="lumina-material-selection-") as temporary:
+        selected_path = path
+        if "path" in package:
+            with zipfile.ZipFile(path) as archive:
+                payload, _ = _nested_package(archive, package)
+            selected_path = Path(temporary) / "selected.zip"
+            selected_path.write_bytes(payload)
+        return import_saved_stage_a_material_archives(
+            archive_path=str(selected_path), materials_dir=str(target_root),
+            selected_material_id=row["resource_id"], selected_revision_id=row["revision_id"],
+            selected_display=row["display"],
+        )
 
 
 def _install_material_seed(target_root: Path) -> dict[str, Any] | None:
@@ -256,6 +312,15 @@ def _install_material_seed(target_root: Path) -> dict[str, Any] | None:
     try:
         dataset_version = verify_seed_release(seed_path, "materials")
         with material_sync._MaterialSyncRefreshFileLock(target_root):
+            with zipfile.ZipFile(seed_path) as archive:
+                nested = _COLLECTION_MANIFEST in archive.namelist()
+            if nested:
+                _, entries = _material_seed_entries(seed_path, seed_catalog_signature(seed_path, "materials"))
+                imported = []
+                for package, row in entries:
+                    imported.extend(_import_seed_entry(seed_path, package, row, target_root).imported_materials)
+                return {"seed_source": seed_source, "dataset_version": dataset_version,
+                        "installed_count": len(imported), "installed_materials": imported}
             result = import_saved_stage_a_material_archives(
                 archive_path=str(seed_path),
                 materials_dir=str(target_root),

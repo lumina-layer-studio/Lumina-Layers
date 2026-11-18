@@ -95,13 +95,15 @@ def _validate_material_zip_resource_limits(
     archive: zipfile.ZipFile,
     *,
     archive_path: str,
+    max_entries: int | None = None,
 ) -> None:
     limits = _material_package_zip_limits()
     infos = archive.infolist()
-    if len(infos) > limits["max_entries"]:
+    entry_limit = limits["max_entries"] if max_entries is None else max_entries
+    if len(infos) > entry_limit:
         raise ValueError(
             "Material package ZIP has too many entries: "
-            f"{len(infos)} > {limits['max_entries']}"
+            f"{len(infos)} > {entry_limit}"
         )
     total_uncompressed_bytes = 0
     for member in infos:

@@ -1,6 +1,9 @@
 """Queue behavior across saves, restarts, accounts and interrupted uploads."""
 import copy
+import io
+import json
 import sqlite3
+import zipfile
 
 import pytest
 from fastapi import FastAPI
@@ -55,6 +58,35 @@ def test_pause_resume_does_not_scan_or_resume_old_items(queued):
     assert queue.claim(SERVER, "maker") is None
     queue.action(SERVER, job, "retry")
     assert queue.claim(SERVER, "maker") == job
+
+
+def test_license_change_needs_fresh_consent_and_preserves_old_snapshot_terms(queued):
+    from core import contribution_queue
+    queue, prepared = queued
+    job = service.capture_calibration("materials", prepared.key)["id"]
+    with queue.transaction() as db:
+        db.execute("UPDATE contribution_grants SET consent_version='public-calibration-v1'")
+        row = db.execute("SELECT snapshot FROM contribution_jobs WHERE id=?", (job,)).fetchone()
+        previous = io.BytesIO()
+        with zipfile.ZipFile(io.BytesIO(row["snapshot"])) as source, zipfile.ZipFile(previous, "w") as target:
+            for name in source.namelist():
+                payload = source.read(name)
+                if name == "snapshot.json":
+                    metadata = json.loads(payload)
+                    metadata["consent_version"] = "public-calibration-v1"
+                    metadata["display"].pop("license", None)
+                    payload = json.dumps(metadata).encode()
+                target.writestr(name, payload)
+        from core.resource_contribution import sha
+        db.execute("UPDATE contribution_jobs SET snapshot=?,digest=? WHERE id=?",
+                   (previous.getvalue(), sha(previous.getvalue()), job))
+    assert not queue.grant(SERVER)["enabled"]
+    assert queue.claim(SERVER, "maker") is None
+    assert queue.items(SERVER)[0]["state"] == "paused"
+    queue.configure(SERVER, "maker", True)
+    assert queue.items(SERVER)[0]["state"] == "paused"
+    assert queue.grant(SERVER)["consent_version"] == contribution_queue.CONSENT_VERSION
+    assert queue.snapshot(SERVER, job)[1].display["license"] == "CC-BY-4.0"
 
 
 def test_account_service_and_workspace_are_separate(queued):

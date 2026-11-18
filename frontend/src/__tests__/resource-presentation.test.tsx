@@ -98,10 +98,11 @@ describe("resource identity and details", () => {
     expect(within(detail).getByText("原始实测档案")).toBeInTheDocument();
     expect(within(detail).getByText("旧资料署名")).toBeInTheDocument();
     const links = within(detail).getAllByRole("link");
-    expect(links).toHaveLength(1);
-    expect(links[0]).toHaveAttribute("href", "https://shop.example.cn/black");
-    expect(links[0]).toHaveTextContent("shop.example.cn");
-    expect(links[0]).toHaveAttribute("rel", "noopener noreferrer");
+    expect(links).toHaveLength(2);
+    const purchase = within(detail).getByRole("link", { name: /shop.example.cn/ });
+    expect(purchase).toHaveAttribute("href", "https://shop.example.cn/black");
+    expect(purchase).toHaveAttribute("rel", "noopener noreferrer");
+    expect(links.find(link => link.getAttribute("href") === "/data-license.html")).toBeDefined();
   });
 
   it("adapts material color details and LUT slot details without changing slot order", () => {

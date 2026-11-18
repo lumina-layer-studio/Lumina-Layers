@@ -8,6 +8,7 @@ import { resourceColors, resourceFilaments } from "../../utils/resourcePresentat
 import { useFilamentMarket } from "../../hooks/useFilamentMarket";
 import { useSettingsStore } from "../../stores/settingsStore";
 import { filamentLogoSource } from "../../data/filamentBrands";
+import ResourceLicense from "./ResourceLicense";
 
 const brandLogoSizes = {
   sm: { frame: "h-7 w-16", image: "h-7 max-w-16" },
@@ -267,6 +268,7 @@ export function LibraryIdentity({
     };
   });
   const detailRows = [
+    { label: t("resources_license"), value: <ResourceLicense license={thumbnail.display?.license} /> },
     ...(series ? [{ label: t("resources_series"), value: series }] : []),
     ...(colorName && !isLut ? [{ label: t("resources_color_name"), value: colorName }] : []),
     ...(colorDescription

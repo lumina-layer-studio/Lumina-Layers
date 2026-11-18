@@ -110,9 +110,9 @@ test("every screen gets the same layout room, limited by its tighter side", () =
 });
 
 test("manual steps multiply that room and stay ordered", () => {
-  assert.equal(resolveZoomFactor("80", SCREENS.fhd125), 0.8);
+  assert.equal(resolveZoomFactor("30", SCREENS.fhd125), 0.3);
   assert.equal(resolveZoomFactor("110", SCREENS.fhd125), 1.1);
-  assert.equal(resolveZoomFactor("175", SCREENS.qhd100), 2.917);
+  assert.equal(resolveZoomFactor("180", SCREENS.qhd100), 3);
   for (const size of Object.values(SCREENS)) {
     const factors = SCALE_STEPS.map(step => resolveZoomFactor(step, size));
     for (let index = 1; index < factors.length; index += 1) {
@@ -130,8 +130,10 @@ test("an unknown preference falls back to the 100% room", () => {
 test("zoom shortcuts move one step and stop at either end", () => {
   assert.equal(stepInterfaceScalePreference("100", "in"), "110");
   assert.equal(stepInterfaceScalePreference("100", "out"), "90");
-  assert.equal(stepInterfaceScalePreference("175", "in"), "175");
-  assert.equal(stepInterfaceScalePreference("80", "out"), "80");
+  assert.equal(stepInterfaceScalePreference("110", "in"), "120");
+  assert.equal(stepInterfaceScalePreference("180", "in"), "180");
+  assert.equal(stepInterfaceScalePreference("40", "out"), "30");
+  assert.equal(stepInterfaceScalePreference("30", "out"), "30");
   assert.equal(stepInterfaceScalePreference("150", "reset"), "100");
 });
 
@@ -157,13 +159,21 @@ test("shortcuts ignore AltGr characters, key releases and Ctrl+Insert", () => {
 test("the saved preference survives restarts and falls back to 100%", t => {
   const stateFile = tempStateFile(t);
   assert.equal(readInterfaceScalePreference(stateFile), "100");
-  writeInterfaceScalePreference(stateFile, "150");
-  assert.equal(readInterfaceScalePreference(stateFile), "150");
+  writeInterfaceScalePreference(stateFile, "30");
+  assert.equal(readInterfaceScalePreference(stateFile), "30");
   assert.deepEqual(fs.readdirSync(path.dirname(stateFile)), ["interface-scale.json"]);
   for (const contents of ["{", '{"schemaVersion":2,"preference":"150"}', '{"schemaVersion":1,"preference":"auto"}', '{"schemaVersion":1,"preference":"300"}']) {
     fs.writeFileSync(stateFile, contents);
     assert.equal(readInterfaceScalePreference(stateFile), "100");
   }
+});
+
+test("saved legacy scale preferences round up to the nearest supported step", t => {
+  const stateFile = tempStateFile(t);
+  fs.writeFileSync(stateFile, '{"schemaVersion":1,"preference":"125"}');
+  assert.equal(readInterfaceScalePreference(stateFile), "130");
+  fs.writeFileSync(stateFile, '{"schemaVersion":1,"preference":"175"}');
+  assert.equal(readInterfaceScalePreference(stateFile), "180");
 });
 
 test("the first window is the old 1440x900 scaled by the zoom, maximized when that is too big", () => {
@@ -244,7 +254,7 @@ test("raising the step grows a small window; lowering it leaves the window alone
   // A maximized window keeps the size the OS gave it.
   window.maximized = true;
   window.bounds = { x: 0, y: 25, width: 1470, height: 843 };
-  controller.choose("175");
+  assert.equal(controller.choose("180"), true);
   assert.deepEqual(window.bounds, { x: 0, y: 25, width: 1470, height: 843 });
 });
 
@@ -370,6 +380,7 @@ test("only the trusted main frame may read or change the preference", t => {
   assert.deepEqual(getInterfaceScale({ ...workshopFrame, controller }), { status: "error", code: "denied" });
   assert.deepEqual(setInterfaceScale({ ...workshopFrame, controller, preference: "150" }), { status: "error", code: "denied" });
   assert.deepEqual(setInterfaceScale({ ...trusted, controller, preference: "300" }), { status: "error", code: "invalid" });
-  assert.deepEqual(setInterfaceScale({ ...trusted, controller, preference: "125" }), { status: "ok", preference: "125" });
+  assert.deepEqual(setInterfaceScale({ ...trusted, controller, preference: "125" }), { status: "error", code: "invalid" });
+  assert.deepEqual(setInterfaceScale({ ...trusted, controller, preference: "30" }), { status: "ok", preference: "30" });
   assert.deepEqual(getInterfaceScale({ ...trusted, controller: null }), { status: "error", code: "unavailable" });
 });

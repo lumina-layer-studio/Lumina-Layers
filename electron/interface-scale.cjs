@@ -15,7 +15,7 @@ const STATE_VERSION = 1;
 const REFERENCE = { width: 1536, height: 864 };
 const DEFAULT_PREFERENCE = "100";
 // Interface first; each step scales the 100% layout room.
-const SCALE_STEPS = Object.freeze(["80", "90", "100", "110", "125", "150", "175"]);
+const SCALE_STEPS = Object.freeze(Array.from({ length: 16 }, (_, index) => String(30 + index * 10)));
 const PREFERENCES = new Set(SCALE_STEPS);
 const DEFAULT_WINDOW_SIZE = { width: 1440, height: 900 };
 // Smallest page, in CSS pixels, at which the workspace panels and the 3D
@@ -119,8 +119,11 @@ function interfaceScaleShortcut(input, platform) {
 function readInterfaceScalePreference(stateFile) {
   try {
     const parsed = JSON.parse(fs.readFileSync(stateFile, "utf8"));
-    if (parsed?.schemaVersion === STATE_VERSION && isInterfaceScalePreference(parsed.preference)) {
-      return parsed.preference;
+    if (parsed?.schemaVersion === STATE_VERSION) {
+      // Round retired settings up to the nearest current step.
+      if (parsed.preference === "125") return "130";
+      if (parsed.preference === "175") return "180";
+      if (isInterfaceScalePreference(parsed.preference)) return parsed.preference;
     }
   } catch (_) { /* Missing or unreadable state falls back to 100%. */ }
   return DEFAULT_PREFERENCE;

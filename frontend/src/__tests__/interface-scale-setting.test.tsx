@@ -71,13 +71,22 @@ describe("InterfaceScaleSetting", () => {
     fireEvent.click(await findLoadedPicker("150%"));
 
     expect(screen.getAllByRole("option").map((option) => option.textContent)).toEqual([
+      "30%",
+      "40%",
+      "50%",
+      "60%",
+      "70%",
       "80%",
       "90%",
       "100%",
       "110%",
-      "125%",
+      "120%",
+      "130%",
+      "140%",
       "150%",
-      "175%",
+      "160%",
+      "170%",
+      "180%",
     ]);
   });
 
@@ -86,10 +95,10 @@ describe("InterfaceScaleSetting", () => {
 
     const picker = await findLoadedPicker("100%");
     fireEvent.click(picker);
-    fireEvent.click(screen.getByRole("option", { name: "90%" }));
+    fireEvent.click(screen.getByRole("option", { name: "30%" }));
 
-    await waitFor(() => expect(picker).toHaveTextContent("90%"));
-    expect(desktop.setInterfaceScale).toHaveBeenCalledWith("90");
+    await waitFor(() => expect(picker).toHaveTextContent("30%"));
+    expect(desktop.setInterfaceScale).toHaveBeenCalledWith("30");
   });
 
   it("follows changes made with the keyboard shortcuts and stops listening when closed", async () => {

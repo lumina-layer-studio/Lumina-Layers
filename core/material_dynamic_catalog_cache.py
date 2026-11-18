@@ -317,6 +317,79 @@ def dynamic_catalog_cache_file_path(
     return existing or directory / f"catalog-{uuid.uuid4().hex}.npz"
 
 
+def _find_registered_catalog_record(
+    key: DynamicCatalogCacheKey,
+    cache_root: str | Path | None,
+) -> Path | None:
+    directory = default_cache_directory(cache_root) / _DYNAMIC_CACHE_SUBDIRECTORY
+    if not directory.is_dir():
+        return None
+    expected = {"schema_version": DYNAMIC_CATALOG_SCHEMA_VERSION, "key": key.as_metadata()}
+    return _find_cache_record(directory, expected)
+
+
+def find_dynamic_candidate_catalog_file(
+    key: DynamicCatalogCacheKey,
+    *,
+    cache_root: str | Path | None = None,
+) -> Path | None:
+    """Return the saved catalog file for ``key`` without creating anything.
+
+    只读地返回 ``key`` 对应的已保存目录文件，不会创建任何文件。
+
+    A record is registered before its build finishes, so only an existing
+    ``.npz`` counts as built.
+
+    记录会在构建完成前注册，因此只有 ``.npz`` 已存在才算构建完成。
+
+    Args:
+        key: Validated dynamic catalog identity. 已验证动态目录标识。
+        cache_root: Optional cache-root override. 可选缓存根目录。
+
+    Returns:
+        Path | None: Built catalog path, or ``None`` when not built yet.
+            已构建目录路径；尚未构建时为 ``None``。
+    """
+
+    path = _find_registered_catalog_record(key, cache_root)
+    if path is None or not path.is_file():
+        return None
+    return path
+
+
+def delete_dynamic_candidate_catalog(
+    key: DynamicCatalogCacheKey,
+    *,
+    cache_root: str | Path | None = None,
+) -> bool:
+    """Delete the saved catalog payload for ``key``, retaining its lock identity.
+
+    删除 ``key`` 对应的已保存目录数据，保留稳定的注册记录与锁标识。
+
+    Only the catalog is removed; per-layer candidate runtimes are managed by
+    their own cache helpers.
+
+    仅删除目录；逐层候选运行时由其自身的缓存函数管理。
+
+    Args:
+        key: Validated dynamic catalog identity. 已验证动态目录标识。
+        cache_root: Optional cache-root override. 可选缓存根目录。
+
+    Returns:
+        bool: Whether a built catalog file was removed. 是否删除了已构建目录文件。
+    """
+
+    path = _find_registered_catalog_record(key, cache_root)
+    if path is None:
+        return False
+    with _DynamicCatalogKeyLock(path, layer_count=key.max_layer_count):
+        removed = path.is_file()
+        path.unlink(missing_ok=True)
+        # A builder may already be waiting on this path. Keep its registration
+        # so a subsequent write remains discoverable and uses the same lock.
+    return removed
+
+
 def _canonical_index_maps(
     materials: list[MaterialParams],
 ) -> tuple[np.ndarray, np.ndarray]:
@@ -660,7 +733,12 @@ def _validated_loaded_catalog(
         _corruption("dynamic catalog vector field shape is invalid")
     if not np.all(np.isfinite(score_lab)):
         _corruption("dynamic catalog score_lab contains non-finite values")
-    if np.unique(score_srgb, axis=0).shape[0] != row_count:
+    packed_srgb = (
+        (score_srgb[:, 0].astype(np.uint32) << 16)
+        | (score_srgb[:, 1].astype(np.uint32) << 8)
+        | score_srgb[:, 2].astype(np.uint32)
+    )
+    if np.unique(packed_srgb).shape[0] != row_count:
         _corruption("dynamic catalog score_srgb rows are not unique")
     expected_lab = np.asarray(rgb_to_lab(score_srgb), dtype=np.float64)
     if not np.array_equal(score_lab, expected_lab):
@@ -700,12 +778,13 @@ def _validated_loaded_catalog(
         _corruption("dynamic catalog has no fixed-maximum reachable candidate")
     if np.any((minimum_counts == key.max_layer_count) & (~max_reachable)):
         _corruption("dynamic catalog maximum-layer candidates are not reachable")
-    for row_index, actual_count in enumerate(minimum_counts):
-        padding_count = key.max_layer_count - int(actual_count)
-        if padding_count and np.any(
-            canonical_recipes[row_index, :padding_count] != canonical_backing
-        ):
-            _corruption("dynamic catalog backing padding is inconsistent")
+    padding_counts = key.max_layer_count - minimum_counts.astype(np.int64)
+    padding_mask = (
+        np.arange(key.max_layer_count, dtype=np.int64)[None, :]
+        < padding_counts[:, None]
+    )
+    if np.any(padding_mask & (canonical_recipes != canonical_backing)):
+        _corruption("dynamic catalog backing padding is inconsistent")
 
     user_recipes = canonical_to_user[canonical_recipes]
     catalog = DynamicCandidateCatalog(

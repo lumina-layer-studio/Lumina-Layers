@@ -90,6 +90,21 @@ describe("conversion preferences", () => {
     expect(useConverterStore.getState()).toMatchObject({ materialLayersUnlocked: true, materialLayerCount: 24 });
   });
 
+  it.each([false, undefined])("restores a 30-layer dynamic range without enabling the fixed unlock (%s)", (unlock) => {
+    useConverterStore.getState().setMaterialDynamicLayerCountEnabled(true);
+    useConverterStore.getState().setMaterialMinLayerCount(12);
+    useConverterStore.getState().setMaterialMaxLayerCount(30);
+    const saved = captureConversionParameters(useConverterStore.getState());
+    expect(saved).toMatchObject({ materialMinLayerCount: 12, materialMaxLayerCount: 30 });
+    const prefs = normalizeConversionPreferences({ last: { ...saved, materialLayersUnlocked: unlock } });
+    useConverterStore.setState({ ...DEFAULT_STATE });
+    applyConversionParameters(useConverterStore.getState, prefs.last!);
+    expect(useConverterStore.getState()).toMatchObject({
+      materialDynamicLayerCountEnabled: true, materialMinLayerCount: 12,
+      materialMaxLayerCount: 30, materialLayersUnlocked: false,
+    });
+  });
+
   it("restores saved inputs after reconnecting without persisting session data", async () => {
     const stop = bindConversionPreferences();
     useConverterStore.getState().setStructureMode(StructureMode.SINGLE_SIDED);

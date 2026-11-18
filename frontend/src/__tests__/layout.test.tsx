@@ -68,7 +68,7 @@ describe("Widget Workspace Layout", () => {
     expect(screen.getByTestId("tab-settings")).toBeInTheDocument();
   });
 
-  it("places Creative Workshop between Vectorizer and Settings", async () => {
+  it("keeps materials before LUTs and Workshop between Vectorizer and Settings", async () => {
     render(<App />);
     await screen.findByTestId("tab-converter");
 
@@ -79,8 +79,8 @@ describe("Widget Workspace Layout", () => {
 
     expect(primaryTabs).toEqual([
       "tab-converter",
-      "tab-lut-management",
       "tab-material-management",
+      "tab-lut-management",
       "tab-vectorizer",
       "tab-workshop",
       "tab-settings",
@@ -181,6 +181,8 @@ describe("Widget Workspace Layout", () => {
     expect(screen.getByTestId("subtab-material-cloud-sync")).toBeInTheDocument();
     expect(screen.queryByTestId("subtab-lut-cloud-sync")).not.toBeInTheDocument();
     expect(screen.getByTestId("subtab-material-recipe")).toBeInTheDocument();
+    expect(screen.getByTestId("subtab-material-gamut")).toBeInTheDocument();
+    expect(screen.getByTestId("subtab-material-cache")).toBeInTheDocument();
 
     expect(screen.queryByTestId("tab-calibration")).not.toBeInTheDocument();
     expect(screen.queryByTestId("tab-extractor")).not.toBeInTheDocument();

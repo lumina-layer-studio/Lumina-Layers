@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import {
   buildMaterialSolverCache,
@@ -42,6 +42,9 @@ interface MaterialSolverCacheStatusCardProps {
 
 type Phase = "idle" | "checking" | "cached" | "missing" | "error";
 
+// The exhaustive API uses MITM_MAX_LAYER_COUNT; deeper stacks use smart caches.
+const EXHAUSTIVE_LAYER_LIMIT = 10;
+
 interface InternalState {
   phase: Phase;
   entry: MaterialSolverCacheEntry | null;
@@ -82,6 +85,7 @@ export default function MaterialSolverCacheStatusCard({
 }: MaterialSolverCacheStatusCardProps) {
   const { t } = useI18n();
   const workspace = useWorkspaceMode();
+  const supportsExhaustiveBuild = layerCount <= EXHAUSTIVE_LAYER_LIMIT;
   const [state, setState] = useState<InternalState>(INITIAL_STATE);
   const [isBuilding, setIsBuilding] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -135,6 +139,10 @@ export default function MaterialSolverCacheStatusCard({
   // responses clobbering newer ones.
   const requestIdRef = useRef(0);
   const runtimeRequestIdRef = useRef(0);
+  const cacheGenerationRef = useRef(0);
+  const runtimeGenerationRef = useRef(0);
+  const cacheIdentity = JSON.stringify([cacheKey, effectiveGridResolution]);
+  const runtimeIdentity = JSON.stringify([cacheKey, runtimeCandidateBudget]);
 
   const runtimeBudgetOptions = useMemo(
     () =>
@@ -227,21 +235,42 @@ export default function MaterialSolverCacheStatusCard({
   // to fetch the new cache's distribution.
   // 当缓存键 (调色板/层数/层厚/基底/分辨率) 变化时清空已加载的图表并收起,
   // 用户可重新展开以拉取新缓存的分布。
-  useEffect(() => {
+  useLayoutEffect(() => {
+    cacheGenerationRef.current += 1;
+    requestIdRef.current += 1;
+    setState(INITIAL_STATE);
+    setIsBuilding(false);
+    setIsDeleting(false);
+    setActionError(null);
     setChartsData(null);
     setChartsError(null);
     setChartsLoading(false);
     setChartsExpanded(false);
-  }, [cacheKey, effectiveGridResolution]);
+    return () => {
+      cacheGenerationRef.current += 1;
+      requestIdRef.current += 1;
+    };
+  }, [cacheIdentity]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
+    runtimeGenerationRef.current += 1;
+    runtimeRequestIdRef.current += 1;
+    setRuntimeState(INITIAL_RUNTIME_STATE);
+    setIsRuntimeBuilding(false);
+    setIsRuntimeDeleting(false);
+    setRuntimeActionError(null);
     setRuntimeChartsData(null);
     setRuntimeChartsError(null);
     setRuntimeChartsLoading(false);
     setRuntimeChartsExpanded(false);
-  }, [cacheKey, runtimeCandidateBudget]);
+    return () => {
+      runtimeGenerationRef.current += 1;
+      runtimeRequestIdRef.current += 1;
+    };
+  }, [runtimeIdentity]);
 
   const handleToggleCharts = useCallback(async () => {
+    const generation = cacheGenerationRef.current;
     if (chartsExpanded) {
       setChartsExpanded(false);
       return;
@@ -257,15 +286,18 @@ export default function MaterialSolverCacheStatusCard({
         gridResolution: effectiveGridResolution,
         maxPoints: 8000,
       });
+      if (generation !== cacheGenerationRef.current) return;
       setChartsData(response);
     } catch {
+      if (generation !== cacheGenerationRef.current) return;
       setChartsError(tRuntime("basic_material_cache_charts_failed"));
     } finally {
-      setChartsLoading(false);
+      if (generation === cacheGenerationRef.current) setChartsLoading(false);
     }
   }, [cacheKey, chartsData, chartsExpanded, chartsLoading, effectiveGridResolution]);
 
   const handleToggleRuntimeCharts = useCallback(async () => {
+    const generation = runtimeGenerationRef.current;
     if (runtimeChartsExpanded) {
       setRuntimeChartsExpanded(false);
       return;
@@ -281,11 +313,13 @@ export default function MaterialSolverCacheStatusCard({
         candidateBudget: runtimeCandidateBudget,
         maxPoints: 8000,
       });
+      if (generation !== runtimeGenerationRef.current) return;
       setRuntimeChartsData(response);
     } catch {
+      if (generation !== runtimeGenerationRef.current) return;
       setRuntimeChartsError(tRuntime("basic_material_runtime_charts_failed"));
     } finally {
-      setRuntimeChartsLoading(false);
+      if (generation === runtimeGenerationRef.current) setRuntimeChartsLoading(false);
     }
   }, [
     cacheKey,
@@ -296,31 +330,36 @@ export default function MaterialSolverCacheStatusCard({
   ]);
 
   const handleBuild = useCallback(async () => {
-    if (materialDirectoryNames.length === 0) return;
+    if (materialDirectoryNames.length === 0 || !supportsExhaustiveBuild) return;
+    const generation = cacheGenerationRef.current;
     setActionError(null);
     setIsBuilding(true);
     try {
       const response = await buildMaterialSolverCache(cacheKey, {
         gridResolution: effectiveGridResolution,
       });
+      if (generation !== cacheGenerationRef.current) return;
       setState({
         phase: "cached",
         entry: response.entry,
         errorMessage: null,
       });
     } catch {
+      if (generation !== cacheGenerationRef.current) return;
       setActionError(tRuntime("basic_material_cache_build_failed"));
     } finally {
-      setIsBuilding(false);
+      if (generation === cacheGenerationRef.current) setIsBuilding(false);
     }
   }, [
     cacheKey,
     materialDirectoryNames.length,
     effectiveGridResolution,
+    supportsExhaustiveBuild,
   ]);
 
   const handleDelete = useCallback(async () => {
     if (materialDirectoryNames.length === 0) return;
+    const generation = cacheGenerationRef.current;
     const confirmed = window.confirm(t("basic_material_cache_confirm_delete"));
     if (!confirmed) return;
     setActionError(null);
@@ -329,11 +368,13 @@ export default function MaterialSolverCacheStatusCard({
       await deleteMaterialSolverCache(cacheKey, {
         gridResolution: effectiveGridResolution,
       });
+      if (generation !== cacheGenerationRef.current) return;
       setState({ phase: "missing", entry: null, errorMessage: null });
     } catch {
+      if (generation !== cacheGenerationRef.current) return;
       setActionError(tRuntime("basic_material_cache_delete_failed"));
     } finally {
-      setIsDeleting(false);
+      if (generation === cacheGenerationRef.current) setIsDeleting(false);
     }
   }, [cacheKey, materialDirectoryNames.length, effectiveGridResolution, t]);
 
@@ -348,26 +389,30 @@ export default function MaterialSolverCacheStatusCard({
 
   const handleBuildRuntime = useCallback(async () => {
     if (materialDirectoryNames.length === 0) return;
+    const generation = runtimeGenerationRef.current;
     setRuntimeActionError(null);
     setIsRuntimeBuilding(true);
     try {
       const response = await buildMaterialSolverRuntime(cacheKey, {
         candidateBudget: runtimeCandidateBudget,
       });
+      if (generation !== runtimeGenerationRef.current) return;
       setRuntimeState({
         phase: "cached",
         entry: response.entry,
         errorMessage: null,
       });
     } catch {
+      if (generation !== runtimeGenerationRef.current) return;
       setRuntimeActionError(tRuntime("basic_material_runtime_build_failed"));
     } finally {
-      setIsRuntimeBuilding(false);
+      if (generation === runtimeGenerationRef.current) setIsRuntimeBuilding(false);
     }
   }, [cacheKey, materialDirectoryNames.length, runtimeCandidateBudget]);
 
   const handleDeleteRuntime = useCallback(async () => {
     if (materialDirectoryNames.length === 0) return;
+    const generation = runtimeGenerationRef.current;
     const confirmed = window.confirm(t("basic_material_runtime_confirm_delete"));
     if (!confirmed) return;
     setRuntimeActionError(null);
@@ -376,11 +421,13 @@ export default function MaterialSolverCacheStatusCard({
       await deleteMaterialSolverRuntime(cacheKey, {
         candidateBudget: runtimeCandidateBudget,
       });
+      if (generation !== runtimeGenerationRef.current) return;
       setRuntimeState({ phase: "missing", entry: null, errorMessage: null });
     } catch {
+      if (generation !== runtimeGenerationRef.current) return;
       setRuntimeActionError(tRuntime("basic_material_runtime_delete_failed"));
     } finally {
-      setIsRuntimeDeleting(false);
+      if (generation === runtimeGenerationRef.current) setIsRuntimeDeleting(false);
     }
   }, [cacheKey, materialDirectoryNames.length, runtimeCandidateBudget, t]);
 
@@ -490,7 +537,11 @@ export default function MaterialSolverCacheStatusCard({
         <CachedEntryDetails entry={state.entry} />
       ) : null}
 
-      {state.phase === "missing" && materialDirectoryNames.length > 0 ? (
+      {!supportsExhaustiveBuild ? (
+        <p className="text-[11px] text-slate-500 dark:text-slate-400">
+          {tRuntime("basic_material_cache_layer_limit_hint", { max: EXHAUSTIVE_LAYER_LIMIT })}
+        </p>
+      ) : state.phase === "missing" && materialDirectoryNames.length > 0 ? (
         <p className="text-[11px] text-slate-500 dark:text-slate-400">
           {t("basic_material_cache_fallback_hint")}
         </p>
@@ -515,7 +566,7 @@ export default function MaterialSolverCacheStatusCard({
             <Button
               label={t("basic_material_cache_rebuild_button")}
               variant="secondary"
-              disabled={materialDirectoryNames.length === 0}
+              disabled={materialDirectoryNames.length === 0 || !supportsExhaustiveBuild}
               loading={isBuilding}
               onClick={handleBuild}
               className="px-3 text-xs"
@@ -551,7 +602,7 @@ export default function MaterialSolverCacheStatusCard({
                 : t("basic_material_cache_build_button")
             }
             variant="secondary"
-            disabled={materialDirectoryNames.length === 0 || isBuilding}
+            disabled={materialDirectoryNames.length === 0 || isBuilding || !supportsExhaustiveBuild}
             loading={isBuilding}
             onClick={handleBuild}
             className="px-3 text-xs"

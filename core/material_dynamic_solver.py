@@ -46,7 +46,6 @@ from core.task_parallelism import (
 )
 from core.task_parallelism_runtime import current_demand_snapshot_path
 
-
 if TYPE_CHECKING:
     from core.material_dynamic_catalog_cache import DynamicCatalogCacheResult
 
@@ -830,37 +829,49 @@ def build_dynamic_candidate_catalog(
         | (rgb[:, 1].astype(np.uint32) << 8)
         | rgb[:, 2].astype(np.uint32)
     )
-    catalog_positions: dict[int, int] = {}
-    retained_sources: list[int] = []
-    minimum_counts: list[int] = []
-    max_reachable: list[bool] = []
-    for source_index, packed_rgb in enumerate(packed):
-        key = int(packed_rgb)
-        catalog_index = catalog_positions.get(key)
-        actual_count = int(counts[source_index])
-        if catalog_index is None:
-            catalog_positions[key] = len(retained_sources)
-            retained_sources.append(source_index)
-            minimum_counts.append(actual_count)
-            max_reachable.append(actual_count == normalized_max)
-            continue
-
-        if actual_count == normalized_max:
-            max_reachable[catalog_index] = True
-        if actual_count < minimum_counts[catalog_index]:
-            retained_sources[catalog_index] = source_index
-            minimum_counts[catalog_index] = actual_count
-
-    source_indices = np.asarray(retained_sources, dtype=np.int64)
+    source_indices, max_reachable = _deduplicate_catalog_rows(
+        packed, counts, normalized_max
+    )
     retained_rgb = np.asarray(rgb[source_indices], dtype=np.uint8)
     return DynamicCandidateCatalog(
         score_srgb=retained_rgb,
         score_lab=np.asarray(rgb_to_lab(retained_rgb), dtype=np.float64),
         print_recipes=np.asarray(recipes[source_indices], dtype=np.int32),
-        minimum_actual_layer_counts=np.asarray(minimum_counts, dtype=np.int16),
-        max_layer_reachable=np.asarray(max_reachable, dtype=np.bool_),
+        minimum_actual_layer_counts=np.asarray(counts[source_indices], dtype=np.int16),
+        max_layer_reachable=max_reachable,
         source_indices=source_indices,
     )
+
+
+def _deduplicate_catalog_rows(
+    packed_rgb: np.ndarray,
+    layer_counts: np.ndarray,
+    max_layer_count: int,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Pick one source row per exact RGB color, fully vectorized.
+
+    Catalog rows keep the order in which each color first appears. Each color
+    retains the row with the fewest layers, and the earliest such row on ties.
+    A color is max-reachable when any of its rows uses ``max_layer_count``.
+
+    Returns:
+        tuple[np.ndarray, np.ndarray]: Retained ``int64`` source indices and
+        the matching ``bool`` max-reachable flags.
+    """
+    row_indices = np.arange(packed_rgb.shape[0], dtype=np.int64)
+    # lexsort: last key is primary -> group by color, then fewest layers, then row.
+    order = np.lexsort((row_indices, layer_counts, packed_rgb))
+    sorted_colors = packed_rgb[order]
+    group_starts = np.flatnonzero(
+        np.concatenate(([True], sorted_colors[1:] != sorted_colors[:-1]))
+    )
+    retained = order[group_starts].astype(np.int64)
+    first_seen = np.minimum.reduceat(order, group_starts)
+    reaches_max = np.logical_or.reduceat(
+        layer_counts[order] == max_layer_count, group_starts
+    )
+    output_order = np.argsort(first_seen, kind="stable")
+    return retained[output_order], np.asarray(reaches_max[output_order], dtype=np.bool_)
 
 
 def search_dynamic_catalog_exact(
@@ -1341,17 +1352,42 @@ def dynamic_per_layer_candidate_budget(
     )
 
 
-def prepare_dynamic_material_catalog(
+def load_or_build_persistent_dynamic_catalog(
     materials: list[MaterialParams],
-    backing_material_index: int,
+    backing_index: int,
     layer_height_mm: float,
     substrate: str,
     config: DynamicMaterialSolveConfig,
     *,
-    material_candidate_budget: int = PREVIEW_SAFE_CANDIDATE_BUDGET,
-    catalog_cache_root: str | Path | None = None,
-) -> DynamicCatalogCacheResult:
-    """Load or build the palette's candidate recipes without matching an image."""
+    candidate_budget: int = PREVIEW_SAFE_CANDIDATE_BUDGET,
+    cache_root: str | Path | None = None,
+) -> "DynamicCatalogCacheResult":
+    """Load the saved dynamic catalog, or build and save it.
+
+    加载已保存的动态候选目录，缺失时构建并保存。
+
+    This is the single production entry point for the padded multi-layer
+    catalog, shared by conversion, cache preparation, and gamut coverage so
+    all three always see the identical candidate universe.
+
+    这是带补位多层目录的唯一生产入口，转换、缓存预构建与色域覆盖共用，
+    保证三者看到完全相同的候选集合。
+
+    Args:
+        materials: Validated material palette in user order. 用户顺序耗材。
+        backing_index: User-order backing material index. 用户顺序基板索引。
+        layer_height_mm: Validated physical layer height. 已验证物理层高。
+        substrate: Normalized ``white`` or ``black`` substrate. 规范化基底。
+        config: Dynamic layer range. 动态层数范围。
+        candidate_budget: Candidate budget pinned for every layer count.
+            所有层数统一使用的候选预算。
+        cache_root: Optional catalog and candidate-runtime cache root.
+            可选目录与候选运行时缓存根目录。
+
+    Returns:
+        DynamicCatalogCacheResult: Catalog in user order plus cache diagnostics.
+            用户顺序目录及缓存诊断。
+    """
     from core.material_dynamic_catalog_cache import (
         build_dynamic_catalog_cache_key,
         dynamic_material_canonical_order,
@@ -1360,12 +1396,12 @@ def prepare_dynamic_material_catalog(
 
     cache_key = build_dynamic_catalog_cache_key(
         materials,
-        backing_material_index=backing_material_index,
+        backing_material_index=backing_index,
         layer_height_mm=layer_height_mm,
         substrate=substrate,
         min_layer_count=config.min_layer_count,
         max_layer_count=config.max_layer_count,
-        candidate_budget=material_candidate_budget,
+        candidate_budget=candidate_budget,
     )
 
     canonical_to_user = np.asarray(
@@ -1373,13 +1409,11 @@ def prepare_dynamic_material_catalog(
         dtype=np.int32,
     )
     user_to_canonical = np.empty(len(materials), dtype=np.int32)
-    user_to_canonical[canonical_to_user] = np.arange(
-        len(materials), dtype=np.int32
-    )
+    user_to_canonical[canonical_to_user] = np.arange(len(materials), dtype=np.int32)
     canonical_materials = [materials[int(index)] for index in canonical_to_user]
-    canonical_backing_index = int(user_to_canonical[backing_material_index])
+    canonical_backing_index = int(user_to_canonical[backing_index])
     per_layer_budget = dynamic_per_layer_candidate_budget(
-        material_candidate_budget,
+        candidate_budget,
         config.max_layer_count - config.min_layer_count + 1,
     )
 
@@ -1395,7 +1429,7 @@ def prepare_dynamic_material_catalog(
             loader_height,
             loader_substrate,
             candidate_budget=per_layer_budget,
-            cache_root=catalog_cache_root,
+            cache_root=cache_root,
         )
 
     def build_catalog() -> tuple[DynamicCandidateCatalog, int]:
@@ -1413,9 +1447,7 @@ def prepare_dynamic_material_catalog(
             score_srgb=canonical_catalog.score_srgb,
             score_lab=canonical_catalog.score_lab,
             print_recipes=canonical_to_user[canonical_catalog.print_recipes],
-            minimum_actual_layer_counts=(
-                canonical_catalog.minimum_actual_layer_counts
-            ),
+            minimum_actual_layer_counts=canonical_catalog.minimum_actual_layer_counts,
             max_layer_reachable=canonical_catalog.max_layer_reachable,
             source_indices=canonical_catalog.source_indices,
         )
@@ -1425,6 +1457,24 @@ def prepare_dynamic_material_catalog(
         materials=materials,
         key=cache_key,
         builder=build_catalog,
+        cache_root=cache_root,
+    )
+
+
+def prepare_dynamic_material_catalog(
+    materials: list[MaterialParams],
+    backing_material_index: int,
+    layer_height_mm: float,
+    substrate: str,
+    config: DynamicMaterialSolveConfig,
+    *,
+    material_candidate_budget: int = PREVIEW_SAFE_CANDIDATE_BUDGET,
+    catalog_cache_root: str | Path | None = None,
+) -> DynamicCatalogCacheResult:
+    """Prepare the converter palette using the workbench's shared catalog path."""
+    return load_or_build_persistent_dynamic_catalog(
+        materials, backing_material_index, layer_height_mm, substrate, config,
+        candidate_budget=material_candidate_budget,
         cache_root=catalog_cache_root,
     )
 
@@ -1544,7 +1594,11 @@ def solve_dynamic_material_colors(
         )
     else:
         cached_catalog = prepare_dynamic_material_catalog(
-            materials, backing_index, normalized_height, normalized_substrate, config,
+            materials,
+            backing_index,
+            normalized_height,
+            normalized_substrate,
+            config,
             material_candidate_budget=candidate_budget,
             catalog_cache_root=catalog_cache_root,
         )

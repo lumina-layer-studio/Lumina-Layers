@@ -9,6 +9,7 @@ import {
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import MaterialSolverCacheStatusCard from "../components/MaterialSolverCacheStatusCard";
+import { translations } from "../i18n/translations";
 import {
   buildMaterialSolverCache,
   buildMaterialSolverRuntime,
@@ -168,6 +169,178 @@ describe("MaterialSolverCacheStatusCard", () => {
     vi.mocked(fetchMaterialSolverRuntimeDetails).mockResolvedValue(
       buildRuntimeDetailsResponse(),
     );
+  });
+
+  it.each([{ cached: false, layers: 11 }, { cached: true, layers: 30 }])(
+    "disables exhaustive build at $layers layers while keeping smart build available",
+    async ({ cached, layers }) => {
+      vi.mocked(fetchMaterialSolverCacheStatus).mockImplementation(async (key) => ({
+        status: "ok", message: "", cached, palette_hash: "x",
+        layer_count: key.layerCount, layer_height_mm: key.layerHeightMm, substrate: "white",
+        entry: cached ? buildCacheEntry({ layer_count: key.layerCount }) : null,
+      }));
+      vi.mocked(buildMaterialSolverRuntime).mockResolvedValue({
+        status: "ok", message: "", entry: buildRuntimeEntry({ layer_count: layers }),
+      });
+      const names = ["red", "white"];
+      const view = render(<MaterialSolverCacheStatusCard materialDirectoryNames={names} layerCount={layers} layerHeightMm={0.08} />);
+      const buildName = cached ? "重新构建" : "立即构建缓存";
+      await waitFor(() => expect(screen.getByRole("button", { name: buildName })).toBeDisabled());
+      expect(screen.getByText("穷举缓存最多支持 10 层。更多层数请使用下方的智能缓存。")).toBeInTheDocument();
+      fireEvent.click(screen.getByRole("button", { name: buildName }));
+      expect(buildMaterialSolverCache).not.toHaveBeenCalled();
+      fireEvent.click(screen.getByRole("button", { name: "构建智能缓存" }));
+      await waitFor(() => expect(buildMaterialSolverRuntime).toHaveBeenCalledWith(
+        expect.objectContaining({ layerCount: layers }), expect.any(Object),
+      ));
+      view.rerender(<MaterialSolverCacheStatusCard materialDirectoryNames={names} layerCount={10} layerHeightMm={0.08} />);
+      await waitFor(() => expect(screen.getByRole("button", { name: buildName })).toBeEnabled());
+    },
+  );
+
+  it.each(["exhaustive", "smart"] as const)("ignores an old %s build after changing the layer count", async (kind) => {
+    vi.mocked(fetchMaterialSolverCacheStatus).mockImplementation(async (key) => ({
+      status: "ok", message: "", cached: false, palette_hash: "x",
+      layer_count: key.layerCount, layer_height_mm: key.layerHeightMm, substrate: "white", entry: null,
+    }));
+    let finish!: () => void;
+    if (kind === "exhaustive") {
+      vi.mocked(buildMaterialSolverCache).mockImplementation(() => new Promise((resolve) => {
+        finish = () => resolve({ status: "ok", message: "", entry: buildCacheEntry() });
+      }));
+    } else {
+      vi.mocked(buildMaterialSolverRuntime).mockImplementation(() => new Promise((resolve) => {
+        finish = () => resolve({ status: "ok", message: "", entry: buildRuntimeEntry({ layer_count: 5 }) });
+      }));
+    }
+    const names = ["red", "white"];
+    const view = render(<MaterialSolverCacheStatusCard materialDirectoryNames={names} layerCount={5} layerHeightMm={0.08} />);
+    const pillId = kind === "exhaustive" ? "material-solver-cache-status-pill" : "material-solver-runtime-status-pill";
+    await waitFor(() => expect(screen.getByTestId(pillId)).toHaveAttribute("data-tone", "warn"));
+    fireEvent.click(screen.getByRole("button", { name: kind === "exhaustive" ? "立即构建缓存" : "构建智能缓存" }));
+    view.rerender(<MaterialSolverCacheStatusCard materialDirectoryNames={names} layerCount={6} layerHeightMm={0.08} />);
+    await waitFor(() => expect(screen.getByTestId(pillId)).toHaveAttribute("data-tone", "warn"));
+    await act(async () => { finish(); });
+    expect(screen.getByTestId(pillId)).toHaveAttribute("data-tone", "warn");
+  });
+
+  it.each(["exhaustive", "smart"] as const)("ignores an old %s deletion after changing the layer count", async (kind) => {
+    vi.mocked(fetchMaterialSolverCacheStatus).mockImplementation(async (key) => ({
+      status: "ok", message: "", cached: true, palette_hash: "x",
+      layer_count: key.layerCount, layer_height_mm: key.layerHeightMm, substrate: "white",
+      entry: buildCacheEntry({ layer_count: key.layerCount }),
+    }));
+    vi.mocked(fetchMaterialSolverRuntimeStatus).mockImplementation(async (key) => ({
+      status: "ok", message: "", cached: true, palette_hash: "x", candidate_budget: 33_554_432,
+      layer_count: key.layerCount, layer_height_mm: key.layerHeightMm, substrate: "white",
+      entry: buildRuntimeEntry({ layer_count: key.layerCount }),
+    }));
+    let finish!: () => void;
+    const deleted = { status: "ok", message: "", deleted: true, palette_hash: "x", layer_count: 5, layer_height_mm: 0.08, substrate: "white", candidate_budget: 33_554_432 };
+    if (kind === "exhaustive") {
+      vi.mocked(deleteMaterialSolverCache).mockImplementation(() => new Promise((resolve) => { finish = () => resolve(deleted); }));
+    } else {
+      vi.mocked(deleteMaterialSolverRuntime).mockImplementation(() => new Promise((resolve) => { finish = () => resolve(deleted); }));
+    }
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
+    const names = ["red", "white"];
+    const view = render(<MaterialSolverCacheStatusCard materialDirectoryNames={names} layerCount={5} layerHeightMm={0.08} />);
+    const pillId = kind === "exhaustive" ? "material-solver-cache-status-pill" : "material-solver-runtime-status-pill";
+    await waitFor(() => expect(screen.getByTestId(pillId)).toHaveAttribute("data-tone", "ok"));
+    fireEvent.click(screen.getByRole("button", { name: kind === "exhaustive" ? "删除缓存" : "删除智能缓存" }));
+    view.rerender(<MaterialSolverCacheStatusCard materialDirectoryNames={names} layerCount={6} layerHeightMm={0.08} />);
+    await waitFor(() => expect(screen.getByTestId(pillId)).toHaveAttribute("data-tone", "ok"));
+    await act(async () => { finish(); });
+    expect(screen.getByTestId(pillId)).toHaveAttribute("data-tone", "ok");
+    confirm.mockRestore();
+  });
+
+  it.each(["exhaustive", "smart"] as const)("keeps the new %s build busy when an old build fails", async (kind) => {
+    vi.mocked(fetchMaterialSolverCacheStatus).mockResolvedValue({
+      status: "ok", message: "", cached: false, palette_hash: "x", layer_count: 5,
+      layer_height_mm: 0.08, substrate: "white", entry: null,
+    });
+    let rejectOld!: (error: Error) => void;
+    let finishNew!: () => void;
+    if (kind === "exhaustive") {
+      vi.mocked(buildMaterialSolverCache)
+        .mockImplementationOnce(() => new Promise((_, reject) => { rejectOld = reject; }))
+        .mockImplementationOnce(() => new Promise((resolve) => { finishNew = () => resolve({ status: "ok", message: "", entry: buildCacheEntry({ layer_count: 6 }) }); }));
+    } else {
+      vi.mocked(buildMaterialSolverRuntime)
+        .mockImplementationOnce(() => new Promise((_, reject) => { rejectOld = reject; }))
+        .mockImplementationOnce(() => new Promise((resolve) => { finishNew = () => resolve({ status: "ok", message: "", entry: buildRuntimeEntry({ layer_count: 6 }) }); }));
+    }
+    const names = ["red", "white"];
+    const view = render(<MaterialSolverCacheStatusCard materialDirectoryNames={names} layerCount={5} layerHeightMm={0.08} />);
+    const label = kind === "exhaustive" ? "立即构建缓存" : "构建智能缓存";
+    await waitFor(() => expect(screen.getByRole("button", { name: label })).toBeEnabled());
+    fireEvent.click(screen.getByRole("button", { name: label }));
+    view.rerender(<MaterialSolverCacheStatusCard materialDirectoryNames={names} layerCount={6} layerHeightMm={0.08} />);
+    const newButton = await screen.findByRole("button", { name: label });
+    fireEvent.click(newButton);
+    await act(async () => { rejectOld(new Error("old build failed")); });
+    expect(newButton).toBeDisabled();
+    expect(screen.queryByText(/缓存构建失败/)).not.toBeInTheDocument();
+    await act(async () => { finishNew(); });
+  });
+
+  it.each(["exhaustive", "smart"] as const)("does not revive %s charts from a previous combination", async (kind) => {
+    vi.mocked(fetchMaterialSolverCacheStatus).mockResolvedValue({
+      status: "ok", message: "", cached: true, palette_hash: "x", layer_count: 5,
+      layer_height_mm: 0.08, substrate: "white", entry: buildCacheEntry(),
+    });
+    vi.mocked(fetchMaterialSolverRuntimeStatus).mockResolvedValue({
+      status: "ok", message: "", cached: true, palette_hash: "x", candidate_budget: 33_554_432,
+      layer_count: 5, layer_height_mm: 0.08, substrate: "white", entry: buildRuntimeEntry(),
+    });
+    let rejectOld!: (error: Error) => void;
+    if (kind === "exhaustive") {
+      vi.mocked(fetchMaterialSolverCacheDetails).mockImplementationOnce(() => new Promise((_, reject) => { rejectOld = reject; }));
+    } else {
+      vi.mocked(fetchMaterialSolverRuntimeDetails).mockImplementationOnce(() => new Promise((_, reject) => { rejectOld = reject; }));
+    }
+    const names = ["red", "white"];
+    const view = render(<MaterialSolverCacheStatusCard materialDirectoryNames={names} layerCount={5} layerHeightMm={0.08} />);
+    const toggleId = kind === "exhaustive" ? "material-solver-cache-charts-toggle" : "material-solver-runtime-charts-toggle";
+    fireEvent.click(await screen.findByTestId(toggleId));
+    view.rerender(<MaterialSolverCacheStatusCard materialDirectoryNames={names} layerCount={6} layerHeightMm={0.08} />);
+    const newToggle = await screen.findByTestId(toggleId);
+    await act(async () => { rejectOld(new Error("old chart failure")); });
+    expect(newToggle).toBeEnabled();
+    const prefix = kind === "exhaustive" ? "basic_material_cache" : "basic_material_runtime";
+    expect(newToggle).toHaveTextContent(translations[`${prefix}_charts_show_button`].zh);
+    expect(screen.queryByText(translations[`${prefix}_charts_failed`].zh)).not.toBeInTheDocument();
+  });
+
+  it.each(["exhaustive", "smart"] as const)("fetches fresh %s charts instead of reusing a late old payload", async (kind) => {
+    vi.mocked(fetchMaterialSolverCacheStatus).mockResolvedValue({
+      status: "ok", message: "", cached: true, palette_hash: "x", layer_count: 5,
+      layer_height_mm: 0.08, substrate: "white", entry: buildCacheEntry(),
+    });
+    vi.mocked(fetchMaterialSolverRuntimeStatus).mockResolvedValue({
+      status: "ok", message: "", cached: true, palette_hash: "x", candidate_budget: 33_554_432,
+      layer_count: 5, layer_height_mm: 0.08, substrate: "white", entry: buildRuntimeEntry(),
+    });
+    let finishOld!: () => void;
+    if (kind === "exhaustive") {
+      vi.mocked(fetchMaterialSolverCacheDetails)
+        .mockImplementationOnce(() => new Promise((resolve) => { finishOld = () => resolve(buildRuntimeDetailsResponse()); }))
+        .mockImplementationOnce(() => new Promise(() => {}));
+    } else {
+      vi.mocked(fetchMaterialSolverRuntimeDetails)
+        .mockImplementationOnce(() => new Promise((resolve) => { finishOld = () => resolve(buildRuntimeDetailsResponse()); }))
+        .mockImplementationOnce(() => new Promise(() => {}));
+    }
+    const names = ["red", "white"];
+    const view = render(<MaterialSolverCacheStatusCard materialDirectoryNames={names} layerCount={5} layerHeightMm={0.08} />);
+    const toggleId = kind === "exhaustive" ? "material-solver-cache-charts-toggle" : "material-solver-runtime-charts-toggle";
+    fireEvent.click(await screen.findByTestId(toggleId));
+    view.rerender(<MaterialSolverCacheStatusCard materialDirectoryNames={names} layerCount={6} layerHeightMm={0.08} />);
+    const newToggle = await screen.findByTestId(toggleId);
+    await act(async () => { finishOld(); });
+    fireEvent.click(newToggle);
+    expect(kind === "exhaustive" ? fetchMaterialSolverCacheDetails : fetchMaterialSolverRuntimeDetails).toHaveBeenCalledTimes(2);
   });
 
   it("shows the idle state when no materials are selected", async () => {

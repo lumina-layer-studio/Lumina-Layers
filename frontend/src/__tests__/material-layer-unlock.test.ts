@@ -1,19 +1,19 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { DEFAULT_STATE, useConverterStore } from "../stores/converter";
 
-describe("30-layer unlock switch", () => {
+describe("fixed 30-layer unlock switch", () => {
   beforeEach(() => {
     useConverterStore.setState({ ...DEFAULT_STATE, source_version: "material" });
   });
 
-  it("caps fixed and dynamic layer counts at 10 while locked", () => {
+  it("caps fixed layers at 10 while dynamic ranges allow 30 without unlocking", () => {
     const store = useConverterStore.getState();
     expect(store.materialLayersUnlocked).toBe(false);
     store.setMaterialLayerCount(30);
-    store.setMaterialMaxLayerCount(25);
+    store.setMaterialMaxLayerCount(35);
     store.setMaterialMinLayerCount(18);
     expect(useConverterStore.getState()).toMatchObject({
-      materialLayerCount: 10, materialMaxLayerCount: 10, materialMinLayerCount: 10,
+      materialLayerCount: 10, materialMaxLayerCount: 30, materialMinLayerCount: 18,
     });
   });
 
@@ -27,7 +27,7 @@ describe("30-layer unlock switch", () => {
     });
   });
 
-  it("pulls deeper settings back to 10 when locked again", () => {
+  it("pulls only the fixed count back to 10 when locked again", () => {
     const store = useConverterStore.getState();
     store.setMaterialLayersUnlocked(true);
     store.setMaterialLayerCount(24);
@@ -36,7 +36,7 @@ describe("30-layer unlock switch", () => {
     store.setMaterialLayersUnlocked(false);
     expect(useConverterStore.getState()).toMatchObject({
       materialLayersUnlocked: false,
-      materialLayerCount: 10, materialMinLayerCount: 10, materialMaxLayerCount: 10,
+      materialLayerCount: 10, materialMinLayerCount: 12, materialMaxLayerCount: 20,
     });
   });
 });

@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
+from threading import Lock
 from typing import Any
+from weakref import ReferenceType, ref
 
 import numpy as np
 import pytest
@@ -405,6 +407,115 @@ def test_blockwise_top_k_uses_requested_workers_for_available_blocks(
     assert observed_workers == expected_workers
     np.testing.assert_array_equal(actual_indices, expected_indices)
     np.testing.assert_array_equal(actual_distances, expected_distances)
+
+
+def test_top_k_candidate_block_retains_only_selected_indices() -> None:
+    rng = np.random.default_rng(20261118)
+    targets = rng.normal(size=(2, 3))
+    candidates = rng.normal(size=(61_014, 3))
+
+    indices, distances = material_cache_module._top_k_candidate_block(
+        targets, candidates, 8,
+    )
+
+    assert indices.shape == distances.shape == (2, 8)
+    storage = indices
+    while isinstance(storage.base, np.ndarray):
+        storage = storage.base
+    assert storage.nbytes == indices.nbytes
+
+
+def test_blockwise_top_k_shares_matrix_workspace_across_workers(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    rng = np.random.default_rng(20261118)
+    targets = rng.normal(size=(29, 3))
+    candidates = rng.normal(size=(128, 3))
+    bytes_per_row = candidates.shape[0] * (
+        np.dtype(np.float64).itemsize + np.dtype(np.intp).itemsize
+    )
+    workspace_bytes = 12 * bytes_per_row
+    observed_workers: list[int] = []
+    observed_block_rows: list[int] = []
+    real_block = material_cache_module._top_k_candidate_block
+
+    class _RecordingExecutor(ThreadPoolExecutor):
+        def __init__(self, max_workers: int) -> None:
+            observed_workers.append(max_workers)
+            super().__init__(max_workers=max_workers)
+
+    def record_block(
+        target_block: np.ndarray,
+        candidate_lab: np.ndarray,
+        top_k: int,
+    ) -> tuple[np.ndarray, np.ndarray]:
+        observed_block_rows.append(target_block.shape[0])
+        return real_block(target_block, candidate_lab, top_k)
+
+    monkeypatch.setattr(
+        material_cache_module,
+        "_NEIGHBOR_COHERENCE_WORKSPACE_BYTES",
+        workspace_bytes,
+        raising=False,
+    )
+    monkeypatch.setattr(material_cache_module, "ThreadPoolExecutor", _RecordingExecutor)
+    monkeypatch.setattr(material_cache_module, "_top_k_candidate_block", record_block)
+
+    actual = _top_k_candidate_rows_blockwise(
+        target_lab=targets,
+        candidate_lab=candidates,
+        top_k=8,
+        block_size=8,
+        parallelism=4,
+    )
+
+    assert observed_workers == [4]
+    assert max(observed_block_rows) * bytes_per_row * 4 <= workspace_bytes
+    for actual_array, expected_array in zip(
+        actual, _legacy_top_k(targets, candidates, 8), strict=True,
+    ):
+        np.testing.assert_array_equal(actual_array, expected_array)
+
+
+@pytest.mark.parametrize("parallelism", [1, 4])
+def test_blockwise_top_k_releases_completed_block_arrays(
+    monkeypatch: pytest.MonkeyPatch,
+    parallelism: int,
+) -> None:
+    rng = np.random.default_rng(20261118)
+    targets = rng.normal(size=(24, 3))
+    candidates = rng.normal(size=(128, 3))
+    real_block = material_cache_module._top_k_candidate_block
+    lock = Lock()
+    live_indices: list[ReferenceType[np.ndarray]] = []
+    peak_live = 0
+
+    def track_block(
+        target_block: np.ndarray,
+        candidate_lab: np.ndarray,
+        top_k: int,
+    ) -> tuple[np.ndarray, np.ndarray]:
+        nonlocal peak_live
+        indices, distances = real_block(target_block, candidate_lab, top_k)
+        with lock:
+            live_indices[:] = [
+                reference for reference in live_indices if reference() is not None
+            ]
+            live_indices.append(ref(indices))
+            peak_live = max(peak_live, len(live_indices))
+        return indices, distances
+
+    monkeypatch.setattr(material_cache_module, "_top_k_candidate_block", track_block)
+
+    _top_k_candidate_rows_blockwise(
+        target_lab=targets,
+        candidate_lab=candidates,
+        top_k=8,
+        block_size=2,
+        parallelism=parallelism,
+    )
+
+    assert peak_live <= parallelism
 
 
 def _coherence_fixture() -> dict[str, np.ndarray | float | int | None]:

@@ -3,7 +3,9 @@
 import numpy as np
 import pytest
 from hypothesis import given, settings, strategies as st
+from trimesh import Trimesh
 
+import core.layered_meshing as layered_meshing
 from core.layered_meshing import LayeredMeshPolicy, build_labeled_surface_mesh
 from core.mesh_generators import HighFidelityMesher
 
@@ -14,7 +16,9 @@ SOURCE_COUNTS = (
 )
 
 
-def assert_matches_expanded(labels: np.ndarray, widths: list[int], material: int) -> None:
+def assert_matches_expanded(
+    labels: np.ndarray, widths: list[int], material: int,
+) -> Trimesh | None:
     expanded = np.repeat(labels, widths, axis=0)
     expected = build_labeled_surface_mesh(expanded, material_id=material, height_px=labels.shape[1])
     actual = build_labeled_surface_mesh(
@@ -23,7 +27,7 @@ def assert_matches_expanded(labels: np.ndarray, widths: list[int], material: int
     )
     if expected is None:
         assert actual is None
-        return
+        return None
     assert actual is not None
     assert actual.is_watertight
     np.testing.assert_allclose(actual.bounds, expected.bounds, rtol=0, atol=1e-9)
@@ -31,12 +35,32 @@ def assert_matches_expanded(labels: np.ndarray, widths: list[int], material: int
     assert len(actual.split(only_watertight=False)) == len(expected.split(only_watertight=False))
     for key in SOURCE_COUNTS:
         assert actual.metadata["layered_mesh_stats"][key] == expected.metadata["layered_mesh_stats"][key]
+    return actual
 
 
 @pytest.mark.parametrize("repeat", [1, 2, 5])
 def test_repeated_diagonal_contacts_keep_logical_counts(repeat: int) -> None:
     labels = np.array([[[0, -1], [-1, 0]]], dtype=np.int16)
     assert_matches_expanded(labels, [repeat], 0)
+
+
+@pytest.mark.parametrize("block_voxels", [2, 8, 16], ids=["columns", "rows", "planes"])
+def test_diagonal_contacts_keep_counts_across_block_edges(
+    monkeypatch: pytest.MonkeyPatch, block_voxels: int,
+) -> None:
+    labels = np.full((3, 4, 4), -1, dtype=np.int16)
+    labels[0, 0, 0] = labels[0, 1, 1] = 0
+    labels[1, 2, 2] = 0
+    labels[2, 3, 1] = labels[2, 2, 3] = 0
+    monkeypatch.setattr(layered_meshing, "_CONTACT_COUNT_BLOCK_VOXELS", block_voxels)
+
+    mesh = assert_matches_expanded(labels, [3, 1, 5], 0)
+
+    assert mesh is not None
+    assert mesh.volume == pytest.approx(17.0)
+    stats = mesh.metadata["layered_mesh_stats"]
+    assert stats["source_contact_edge_pair_count"] == 4
+    assert stats["source_contact_point_pair_count"] == 6
 
 
 @pytest.mark.parametrize("material", [-3, -2, 0, 1])

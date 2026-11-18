@@ -652,6 +652,7 @@ def export_saved_stage_a_material_archives(
     """
     normalized_names = material_files._normalize_material_directory_names(directory_names)
     target_root = Path(materials_dir or material_files.MATERIALS_DIR)
+    installed_identities = material_sync._installed_package_identities(target_root)
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
     download_filename = f"lumina_materials_{len(normalized_names)}_{timestamp}.zip"
     zip_output_path = (
@@ -701,6 +702,10 @@ def export_saved_stage_a_material_archives(
                         material_dir=material_dir,
                     )
                 )
+                signature = material_sync._material_sync_signature(package_manifest)
+                installed_identity = installed_identities.get(signature) if signature else None
+                if installed_identity is not None:
+                    package_manifest["material_id"], package_manifest["revision_id"] = installed_identity
                 bundle_manifest["packages"].append(package_manifest)
                 for file_path, zip_path in files_to_write:
                     archive.write(file_path, zip_path)

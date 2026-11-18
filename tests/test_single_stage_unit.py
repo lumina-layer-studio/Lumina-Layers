@@ -5082,6 +5082,18 @@ def test_import_saved_stage_a_material_archives_accepts_v2_bundle_and_writes_syn
     assert installed["channel"] == "team"
     assert installed["local_directory"] == "BrandA/pla-basic"
 
+    shutil.copytree(materials_root / "BrandA/pla-basic", materials_root / "local-copy")
+    backup = export_saved_stage_a_material_archives(
+        directory_names=["BrandA/pla-basic", "local-copy"],
+        materials_dir=str(materials_root),
+        output_path=str(tmp_path / "backup.zip"),
+    )
+    registered, unregistered = validate_material_bundle_archive(archive_path=backup.archive_path)["packages"]
+    assert (registered["material_id"], registered["revision_id"]) == ("mat_test123", "rev_test123")
+    assert unregistered["content_hash"] == registered["content_hash"]
+    local_seed = b"local-copy\nPLA Basic Imported"
+    assert unregistered["material_id"] == f"mat_{hashlib.sha256(local_seed).hexdigest()[:26]}"
+
 
 def test_import_saved_stage_a_material_archives_rejects_v2_bundle_without_solver_parameters(
     tmp_path: Path,
@@ -6535,6 +6547,7 @@ def test_gradient_card_material_import_restores_legacy_internal_export(
         existing_bytes = existing.read_bytes()
 
     monkeypatch.setattr(material_files, "MATERIALS_DIR", str(target_root))
+    monkeypatch.setattr(material_files, "TEMP_DIR", str(tmp_path))
     monkeypatch.setattr(material_lut_provider, "MATERIALS_DIR", str(target_root))
     monkeypatch.setattr("core.material_lut_synthesis.MATERIALS_DIR", str(target_root))
     monkeypatch.setattr(
@@ -6577,6 +6590,33 @@ def test_gradient_card_material_import_restores_legacy_internal_export(
         repeated = client.post(f"{route}/import", files=files)
         assert repeated.status_code == 200, repeated.text
         assert repeated.json()["imported_count"] == 0
+
+        backup_response = client.post(f"{route}/export", json={"directory_names": installed})
+        assert backup_response.status_code == 200, backup_response.text
+        backup = client.get(backup_response.json()["download_url"])
+        assert backup.status_code == 200, backup.text
+        with zipfile.ZipFile(exported) as original_zip, zipfile.ZipFile(io.BytesIO(backup.content)) as backup_zip:
+            keys = ("material_id", "revision_id", "content_hash")
+            manifest_name = "lumina_material_bundle.json"
+            original_identities = [
+                tuple(package[key] for key in keys)
+                for package in json.loads(original_zip.read(manifest_name))["packages"]
+            ]
+            backup_identities = [
+                tuple(package[key] for key in keys)
+                for package in json.loads(backup_zip.read(manifest_name))["packages"]
+            ]
+        restored = client.post(
+            f"{route}/import", files={"archives": ("backup.zip", backup.content, "application/zip")},
+        )
+        assert restored.status_code == 200, restored.text
+        assert restored.json()["imported_count"] == 0
+        assert backup_identities == original_identities
+        final_list = client.get(route)
+        assert final_list.status_code == 200, final_list.text
+        assert {item["directory_name"] for item in final_list.json()["materials"]} == (
+            set(installed) | ({"White"} if previous_import else set())
+        )
 
 
 def test_gradient_card_material_import_reports_unusable_legacy_archive(

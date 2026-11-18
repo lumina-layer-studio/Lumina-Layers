@@ -1,7 +1,33 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { filamentIdentity, filamentMatches, materialDisplayName } from "../utils/filamentIdentity";
+import { localLutIdentity } from "../utils/libraryFilamentIdentity";
 
 describe("filament packaging and search", () => {
+  it("uses the original Polymaker artwork only for Panchroma PLA during the approved term", () => {
+    const display = { series: "Panchroma", material_type: "PLA" };
+    const logo = "https://www.luminastudio.com.cn/logos/polymaker-teal.svg";
+    try {
+      vi.setSystemTime(new Date("2026-11-18T10:00:00Z"));
+      expect(filamentIdentity("Polymaker", "Panchroma 品红", "zh", display).logo).toBe(logo);
+      expect(localLutIdentity(undefined, "PLA Panchroma · RYBW", "en", {
+        ...display, manufacturer: "Polymaker",
+      }).logo).toBe(logo);
+      expect(localLutIdentity(undefined, "Mixed PLA", "en", {
+        ...display, manufacturer: "Polymaker", filaments: [
+          { ...display, brand: "Polymaker" },
+          { ...display, brand: "Polymaker", series: "Basic" },
+        ],
+      }).logo).toBeUndefined();
+      expect(filamentIdentity("Polymaker", "Basic White", "en", { ...display, series: "Basic" }).logo).toBeUndefined();
+      expect(filamentIdentity("Polymaker", "Panchroma", "en", { ...display, material_type: "PETG" }).logo).toBeUndefined();
+      expect(filamentIdentity("Polymaker", "", "en")).toMatchObject({ brand: "Polymaker", logo: undefined });
+      vi.setSystemTime(new Date("2027-11-18T04:58:38Z"));
+      expect(filamentIdentity("Polymaker", "Panchroma 品红", "zh", display).logo).toBeUndefined();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("resolves each packaging market independently of UI language", () => {
     const original = "Bambu PLA Basic 黑色";
     const intl = filamentIdentity("拓竹", original, "zh", undefined, "INTL");

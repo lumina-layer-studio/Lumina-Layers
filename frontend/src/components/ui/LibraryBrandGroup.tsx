@@ -6,6 +6,7 @@ import { useI18n } from "../../i18n/context";
 import { tRuntime } from "../../i18n/runtime";
 import { HeaderTooltip } from "./HeaderTooltip";
 import { LibraryBrandLogo } from "./LibraryDetails";
+import { POLYMAKER_PANCHROMA_LOGO } from "../../data/filamentBrands";
 
 interface LibraryBrandHeaderProps {
   label: string;
@@ -38,7 +39,7 @@ export function LibraryBrandHeader({ label, logo, count, countLabel, testIdPrefi
         }}
         className="material-library-group flex min-w-0 flex-1 cursor-grab items-center justify-between gap-3 rounded-lg px-2 py-2 text-left active:cursor-grabbing">
         <span className="flex min-w-0 flex-wrap items-center gap-3">
-          <LibraryBrandLogo logo={logo} />
+          <LibraryBrandLogo logo={logo === POLYMAKER_PANCHROMA_LOGO ? undefined : logo} />
           <span className="truncate text-sm font-semibold text-slate-600 dark:text-slate-300">{label}</span>
           <span className="rounded-full border border-slate-200/80 px-2 py-0.5 text-xs font-semibold text-slate-500 dark:border-slate-700/80 dark:text-slate-400">{countLabel ?? tRuntime("mat_gradient_library_brand_count", { count })}</span>
         </span>

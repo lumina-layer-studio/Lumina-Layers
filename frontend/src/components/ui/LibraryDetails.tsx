@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { ArrowTopRightOnSquareIcon } from "@heroicons/react/24/outline";
 import type { LocalLutVersion } from "../../api/types";
 import { useI18n } from "../../i18n/context";
@@ -7,7 +7,7 @@ import { filamentIdentity, type FilamentIdentity } from "../../utils/filamentIde
 import { resourceColors, resourceFilaments } from "../../utils/resourcePresentation";
 import { useFilamentMarket } from "../../hooks/useFilamentMarket";
 import { useSettingsStore } from "../../stores/settingsStore";
-import { filamentLogoSource } from "../../data/filamentBrands";
+import { filamentLogoSource, POLYMAKER_PANCHROMA_LOGO } from "../../data/filamentBrands";
 import ResourceLicense from "./ResourceLicense";
 
 const brandLogoSizes = {
@@ -24,15 +24,20 @@ export function LibraryBrandLogo({
   size?: keyof typeof brandLogoSizes;
 }) {
   const theme = useSettingsStore((state) => state.theme);
+  const [failedSource, setFailedSource] = useState<string>();
+  const src = logo && filamentLogoSource(logo, theme);
   const sizing = brandLogoSizes[size];
-  return logo ? (
+  return src && src !== failedSource ? (
     <span
       className={`inline-flex shrink-0 items-center justify-center ${sizing.frame}`}
       aria-hidden="true"
     >
       <img
-        src={filamentLogoSource(logo, theme)}
+        src={src}
         alt=""
+        referrerPolicy={logo === POLYMAKER_PANCHROMA_LOGO ? "no-referrer" : undefined}
+        loading={logo === POLYMAKER_PANCHROMA_LOGO ? "lazy" : undefined}
+        onError={() => setFailedSource(src)}
         className={`w-auto object-contain ${sizing.image}`}
       />
     </span>
@@ -270,6 +275,9 @@ export function LibraryIdentity({
   const detailRows = [
     { label: t("resources_license"), value: <ResourceLicense license={thumbnail.display?.license} /> },
     ...(series ? [{ label: t("resources_series"), value: series }] : []),
+    ...(logo === POLYMAKER_PANCHROMA_LOGO || filaments.some((filament) => filament.logo === POLYMAKER_PANCHROMA_LOGO)
+      ? [{ label: t("resources_brand_support"), value: t("resources_polymaker_support") }]
+      : []),
     ...(colorName && !isLut ? [{ label: t("resources_color_name"), value: colorName }] : []),
     ...(colorDescription
       ? [{ label: t("resources_color_description"), value: colorDescription }]

@@ -2,6 +2,7 @@ import type { SavedMaterialLibraryItem } from "../api/types";
 import { filamentIdentity, materialDisplayName, type FilamentIdentity } from "./filamentIdentity";
 import { lutDisplayIdentity } from "./resourcePresentation";
 import { translations } from "../i18n/translations";
+import { POLYMAKER_PANCHROMA_LOGO } from "../data/filamentBrands";
 
 export function savedMaterialIdentity(item: SavedMaterialLibraryItem, lang: "zh" | "en", market?: string) {
   const identity = materialDisplayName(filamentIdentity(item.brand, item.material_name, lang, item.display, market));
@@ -27,9 +28,12 @@ export function localLutIdentity(brand: string | undefined, name: string, lang: 
     if (makers.every((entry) => entry?.brand)) {
       const unique = new Set(makers.map((entry) => entry!.brand));
       const common = unique.size === 1 ? makers[0]! : undefined;
-      return { ...identity, brand: common?.brand ?? translations.resources_mixed_brands[lang], logo: common?.logo,
+      const logo = common?.logo === POLYMAKER_PANCHROMA_LOGO && makers.some((entry) => entry?.logo !== common.logo)
+        ? undefined : common?.logo;
+      return { ...identity, brand: common?.brand ?? translations.resources_mixed_brands[lang], logo,
         searchText: [identity.searchText, ...makers.map((entry) => entry!.searchText)].join(" ") };
     }
+    if (identity.logo === POLYMAKER_PANCHROMA_LOGO) return { ...identity, logo: undefined };
   }
   return identity;
 }
@@ -38,6 +42,8 @@ export function lutGroupBrand(
   group: string, items: FilamentIdentity[], lang: "zh" | "en", market: string,
 ): Pick<FilamentIdentity, "brand" | "logo"> {
   const first = items[0];
-  if (first?.brand && items.every((item) => item.brand === first.brand)) return first;
+  if (first?.brand && items.every((item) => item.brand === first.brand)) {
+    return { brand: first.brand, logo: first.logo === POLYMAKER_PANCHROMA_LOGO ? undefined : first.logo };
+  }
   return filamentIdentity(group, "", lang, undefined, market);
 }

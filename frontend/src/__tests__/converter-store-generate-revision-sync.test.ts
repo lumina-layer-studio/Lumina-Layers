@@ -119,6 +119,18 @@ const generated = {
   message: "generated",
   download_url: "/api/files/result.3mf",
 };
+const readyMaterials = {
+  ready: true,
+  slicer_id: "BambuStudio",
+  machine_uid: "bbl:bambu-lab-h2d",
+  nozzle_uid: "nozzle:0.4mm",
+  device_profile_id: "BambuStudio:bbl:bambu-lab-h2d:0.4",
+  machine_profile_id: "bbl:bambu-lab-h2d",
+  build_plate_uid: "plate:textured-pei",
+  materials: [],
+  build_plates: [],
+  issues: [],
+} satisfies ExportMaterialSelection;
 
 function sentRevisions(): unknown[] {
   return mockedConvertGenerate.mock.calls.map(
@@ -128,26 +140,37 @@ function sentRevisions(): unknown[] {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mockedFetchExportMaterialSelection.mockResolvedValue({
-    ready: true,
-    slicer_id: "BambuStudio",
-    machine_uid: "bbl:bambu-lab-h2d",
-    nozzle_uid: "nozzle:0.4mm",
-    device_profile_id: "BambuStudio:bbl:bambu-lab-h2d:0.4",
-    machine_profile_id: "bbl:bambu-lab-h2d",
-    build_plate_uid: "plate:textured-pei",
-    materials: [],
-    build_plates: [],
-    issues: [],
-  } satisfies ExportMaterialSelection);
+  mockedConvertGenerate.mockReset();
+  mockedFetchExportMaterialSelection.mockReset().mockResolvedValue(readyMaterials);
 });
 
 describe("generate editor content revision", () => {
+  it("claims the generation before checking native materials", async () => {
+    const sessionId = seedEditorState();
+    useConverterStore.setState({ downloadUrl: null });
+    let finishPreflight!: (result: ExportMaterialSelection) => void;
+    mockedFetchExportMaterialSelection.mockReturnValueOnce(new Promise((resolve) => { finishPreflight = resolve; }));
+    mockedConvertGenerate.mockResolvedValue(generated as never);
+
+    const generating = useConverterStore.getState().submitGenerate();
+    await vi.waitFor(() => expect(mockedFetchExportMaterialSelection).toHaveBeenCalledOnce());
+    await useConverterStore.getState().submitGenerate();
+    finishPreflight(readyMaterials);
+    await generating;
+
+    expect(mockedFetchExportMaterialSelection).toHaveBeenCalledOnce();
+    expect(mockedConvertGenerate).toHaveBeenCalledExactlyOnceWith(
+      sessionId, expect.anything(), expect.any(Boolean),
+    );
+    expect(useConverterStore.getState().downloadUrl).toBe(generated.download_url);
+    expect(useConverterStore.getState().isGenerating).toBe(false);
+  });
+
   it.each([
     ["coating enabled", () => useConverterStore.getState().setEnableCoating(true)],
     ["coating height", () => useConverterStore.getState().setCoatingHeightMm(0.12)],
     ["backing plates", () => useConverterStore.getState().setBackingOutput("separate_project")],
-  ] as const)("discards a late download after changing %s", async (_name, change) => {
+  ] as const)("keeps the session busy but discards a late download after changing %s", async (_name, change) => {
     seedEditorState();
     useConverterStore.setState({ downloadUrl: null, enable_coating: false });
     let complete!: (value: Awaited<ReturnType<typeof convertGenerate>>) => void;
@@ -155,9 +178,17 @@ describe("generate editor content revision", () => {
     const generating = useConverterStore.getState().submitGenerate();
     await vi.waitFor(() => expect(mockedConvertGenerate).toHaveBeenCalledOnce());
     change();
+    expect(useConverterStore.getState().isGenerating).toBe(true);
+    await useConverterStore.getState().submitGenerate();
+    expect(mockedConvertGenerate).toHaveBeenCalledOnce();
     complete(generated as never);
     await generating;
     expect(useConverterStore.getState().downloadUrl).toBeNull();
+    expect(useConverterStore.getState().isGenerating).toBe(false);
+    mockedConvertGenerate.mockResolvedValueOnce(generated as never);
+    await useConverterStore.getState().submitGenerate();
+    expect(mockedConvertGenerate).toHaveBeenCalledTimes(2);
+    expect(useConverterStore.getState().downloadUrl).toBe(generated.download_url);
   });
 
   it("sends the revision confirmed by an undo response without a selection", async () => {

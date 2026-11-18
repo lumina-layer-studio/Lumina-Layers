@@ -576,13 +576,10 @@ describe("native bundle converter flow", () => {
 
     const stateAfterPlateChange = useConverterStore.getState();
 
-    const freshRequest = useConverterStore.getState().submitGenerate();
-    await vi.waitFor(() => expect(mocks.convertGenerate).toHaveBeenCalledTimes(2));
+    await useConverterStore.getState().submitGenerate();
+    expect(mocks.convertGenerate).toHaveBeenCalledOnce();
     expect(mocks.convertGenerate.mock.calls[0][1].build_plate_id).toBe(
       "engineering-plate",
-    );
-    expect(mocks.convertGenerate.mock.calls[1][1].build_plate_id).toBe(
-      "textured-pei-plate",
     );
 
     stale.resolve({
@@ -594,6 +591,11 @@ describe("native bundle converter flow", () => {
     await staleRequest;
 
     const stateAfterStaleResponse = useConverterStore.getState();
+    const freshRequest = useConverterStore.getState().submitGenerate();
+    await vi.waitFor(() => expect(mocks.convertGenerate).toHaveBeenCalledTimes(2));
+    expect(mocks.convertGenerate.mock.calls[1][1].build_plate_id).toBe(
+      "textured-pei-plate",
+    );
 
     fresh.resolve({
       status: "ok",
@@ -604,14 +606,14 @@ describe("native bundle converter flow", () => {
     await freshRequest;
 
     expect(stateAfterPlateChange).toMatchObject({
-      isGenerating: false,
+      isGenerating: true,
       downloadUrl: null,
       threemfDiskPath: null,
       modelUrl: "/api/files/previous-plate.glb",
       previewGlbUrl: "/api/files/current-preview.glb",
     });
     expect(stateAfterStaleResponse).toMatchObject({
-      isGenerating: true,
+      isGenerating: false,
       downloadUrl: null,
       modelUrl: "/api/files/previous-plate.glb",
       previewGlbUrl: "/api/files/current-preview.glb",
@@ -683,7 +685,7 @@ describe("native bundle converter flow", () => {
     useSettingsStore.getState().setPreserveUploadFilenameFor3mf(true);
 
     expect(useConverterStore.getState()).toMatchObject({
-      isGenerating: false,
+      isGenerating: true,
       downloadUrl: null,
       threemfDiskPath: null,
       modelUrl: "/api/files/existing-model.glb",
@@ -727,7 +729,7 @@ describe("native bundle converter flow", () => {
     useSettingsStore.getState().setPreserveUploadFilenameFor3mf(true);
 
     expect(useConverterStore.getState()).toMatchObject({
-      isGenerating: false,
+      isGenerating: true,
       downloadUrl: null,
       threemfDiskPath: null,
       modelUrl: "/api/files/existing-model.glb",
@@ -743,6 +745,7 @@ describe("native bundle converter flow", () => {
     await request;
 
     expect(useConverterStore.getState()).toMatchObject({
+      isGenerating: false,
       downloadUrl: null,
       threemfDiskPath: null,
       modelUrl: "/api/files/existing-model.glb",
@@ -857,31 +860,23 @@ describe("native bundle converter flow", () => {
     expect(mocks.showBrowserCompletionNotification).not.toHaveBeenCalled();
   });
 
-  it("ignores a stale regular generate response from an older request in the same session", async () => {
-    const stale = deferred<{
+  it("keeps a single regular generate request in flight for the same session", async () => {
+    const pending = deferred<{
       status: string;
       message: string;
       download_url: string;
       threemf_disk_path: string;
       preview_3d_url: string;
     }>();
-    mocks.convertGenerate
-      .mockReturnValueOnce(stale.promise)
-      .mockResolvedValueOnce({
-        status: "ok",
-        message: "second",
-        download_url: "/api/files/second.3mf",
-        threemf_disk_path: "/tmp/second.3mf",
-        preview_3d_url: "/api/files/second.glb",
-      });
+    mocks.convertGenerate.mockReturnValueOnce(pending.promise);
 
     seedLegacyGenerateState("session-same");
     const firstRequest = useConverterStore.getState().submitGenerate();
     await vi.waitFor(() => expect(mocks.convertGenerate).toHaveBeenCalledOnce());
-    const secondRequest = useConverterStore.getState().submitGenerate();
-    await secondRequest;
+    await useConverterStore.getState().submitGenerate();
+    expect(mocks.convertGenerate).toHaveBeenCalledOnce();
 
-    stale.resolve({
+    pending.resolve({
       status: "ok",
       message: "first",
       download_url: "/api/files/first.3mf",
@@ -891,13 +886,13 @@ describe("native bundle converter flow", () => {
     await firstRequest;
 
     const state = useConverterStore.getState();
-    expect(state.downloadUrl).toBe("/api/files/second.3mf");
+    expect(state.downloadUrl).toBe("/api/files/first.3mf");
     expect(state.threemfDiskPath).toBeNull();
     expect(state.modelUrl).toBeNull();
     expect(state.error).toBeNull();
   });
 
-  it("ignores stale generate failures after a newer generate succeeds", async () => {
+  it("ignores stale generate failures after generation succeeds in the new session", async () => {
     const stale = deferred<never>();
     mocks.convertGenerate
       .mockReturnValueOnce(stale.promise)
@@ -912,6 +907,7 @@ describe("native bundle converter flow", () => {
     seedLegacyGenerateState("session-error");
     const staleRequest = useConverterStore.getState().submitGenerate();
     await vi.waitFor(() => expect(mocks.convertGenerate).toHaveBeenCalledOnce());
+    useConverterStore.setState({ sessionId: "session-after-error" });
     const freshRequest = useConverterStore.getState().submitGenerate();
     await freshRequest;
 

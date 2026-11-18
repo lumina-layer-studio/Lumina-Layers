@@ -711,6 +711,10 @@ export const translations: Record<string, Record<"zh" | "en", string>> = {
     zh: "请求缺少必填数据或包含无效值。",
     en: "The request is missing required data or contains invalid values.",
   },
+  api_error_material_archive_unavailable: {
+    zh: "所选耗材已不可用或缺少校准数据。请从耗材库重新选择，或导入完整的耗材档案。",
+    en: "A selected material is unavailable or missing calibration data. Choose a material from your library or import a complete material archive.",
+  },
   api_error_vector_native_requires_svg: {
     zh: "矢量建模模式仅支持 SVG 文件。请上传 SVG，或切换到“高保真”或“像素艺术”模式。",
     en: "Vector Native mode requires an SVG file. Upload an SVG, or switch to High-Fidelity or Pixel Art mode.",
@@ -5610,6 +5614,10 @@ export const translations: Record<string, Record<"zh" | "en", string>> = {
     zh: "已选",
     en: "Selected",
   },
+  basic_material_picker_summary_more: {
+    zh: "另有 {count} 种",
+    en: "{count} more",
+  },
   basic_material_picker_close: {
     zh: "\u5173\u95ed",
     en: "Close",
@@ -6820,6 +6828,14 @@ export const translations: Record<string, Record<"zh" | "en", string>> = {
   action_batch_upload_hint_native: {
     zh: "请先添加图片并选择品牌和数据库",
     en: "Please add images and select a brand and databases first",
+  },
+  action_batch_custom_template_unsupported: {
+    zh: "批量生成需要使用内置打印配置",
+    en: "Batch generation requires a built-in print configuration",
+  },
+  action_batch_use_builtin_configuration: {
+    zh: "本工程改用内置配置",
+    en: "Use the built-in configuration for this project",
   },
   action_preview: {
     zh: "预览",

@@ -166,6 +166,7 @@ interface SlicerSelectorProps {
   threemfDiskPath: string | null;
   downloadUrl: string | null;
   canSubmit: boolean;
+  generationPending?: boolean;
   onAutoGenerate: () => Promise<string | null>;
   largeFormat?: boolean;
   getLatestDownloadUrl?: () => string | null;
@@ -177,6 +178,7 @@ export default function SlicerSelector({
   threemfDiskPath,
   downloadUrl,
   canSubmit,
+  generationPending = false,
   onAutoGenerate,
   largeFormat,
   getLatestDownloadUrl,
@@ -405,8 +407,8 @@ export default function SlicerSelector({
     await handleDownloadOrGenerate();
   };
 
-  const isDisabled = !canSubmit || isDetecting || isLaunching || isAutoGenerating || isDownloading;
-  const actionBusy = isLaunching || isAutoGenerating || isDownloading;
+  const actionBusy = isLaunching || generationPending || isAutoGenerating || isDownloading;
+  const isDisabled = !canSubmit || isDetecting || actionBusy;
   useApplicationMenuCommand('export', () => { void handleDownloadFromMenu(); }, Boolean(downloadUrl) && !isDisabled);
   const showActiveSlicerLogo = !largeFormat && activeSlicerId !== null;
 
@@ -530,10 +532,10 @@ export default function SlicerSelector({
                   onClick={() => void handleMainClick()}
                   disabled={isDisabled}
                   aria-label={getButtonLabel(false, launchArtifactSource, null, t, largeFormat)}
-                  aria-busy={(isAutoGenerating || isDownloading) || undefined}
+                  aria-busy={actionBusy || undefined}
                   className={`relative flex w-full items-center justify-center gap-2 rounded-md px-4 py-2 text-sm font-medium transition-colors ${brandStyle.bg} ${brandStyle.hover} ${brandStyle.text} disabled:opacity-40 disabled:cursor-not-allowed`}
                 >
-                  <ButtonContent loading={isAutoGenerating || isDownloading}>
+                  <ButtonContent loading={actionBusy}>
                     {getButtonLabel(false, launchArtifactSource, null, t, largeFormat)}
                   </ButtonContent>
                 </button>

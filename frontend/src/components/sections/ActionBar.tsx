@@ -51,6 +51,8 @@ export default function ActionBar() {
   const submitPreview = useConverterStore((s) => s.submitPreview)
   const openNativeMaterialSelection = useConverterStore((s) => s.openNativeMaterialSelection)
   const projectSettings = useConverterStore((s) => s.projectSettings)
+  const setProjectSettings = useConverterStore((s) => s.setProjectSettings)
+  const hasCustomTemplate = useSettingsStore((defaults) => Boolean((projectSettings ?? defaults).custom3mfTemplateId))
   const hasExternalSpool = useSettingsStore((defaults) => supportsExternalSpool(projectSettings ?? defaults))
   const nativeMaterialSelectionLoading = useConverterStore((s) => s.nativeMaterialSelectionLoading)
   const submitFullPipeline = useConverterStore((s) => s.submitFullPipeline)
@@ -112,7 +114,8 @@ export default function ActionBar() {
   const largeFormatModelSurfaceConflict = largeFormatEnabled && modelSurfaceEnabled
   // Retained downloads remain available when the current modes cannot generate.
   const canSubmitSlicerOutput = canSubmit && (!largeFormatModelSurfaceConflict || !!downloadUrl)
-  const canBatchSubmit = batchFiles.length > 0 && sourceSelection.isReady
+  const batchInputsReady = batchFiles.length > 0 && sourceSelection.isReady
+  const canBatchSubmit = batchInputsReady && !hasCustomTemplate
   const singleSourceHintKey =
     sourceVersion === "material"
       ? "action_select_material_hint"
@@ -194,7 +197,17 @@ export default function ActionBar() {
     <div className="flex flex-col gap-3">
       {batchMode ? (
         <>
-          {!canBatchSubmit && (
+          {hasCustomTemplate && (
+            <StatusBanner tone="warning" title={t(CONVERTER_ERROR_KEYS.batchCustomTemplateUnsupported)}>
+              <Button
+                label={t("action_batch_use_builtin_configuration")}
+                variant="secondary"
+                onClick={() => setProjectSettings({ custom3mfTemplateId: null })}
+                disabled={batchLoading || nativeMaterialSelectionLoading}
+              />
+            </StatusBanner>
+          )}
+          {!batchInputsReady && (
             <p className="text-xs text-slate-500 dark:text-slate-400">
               {t(batchUploadHintKey)}
             </p>
@@ -213,7 +226,7 @@ export default function ActionBar() {
                 label={t("native_material_edit_button")}
                 variant="secondary"
                 onClick={() => void openNativeMaterialSelection()}
-                disabled={!sourceSelection.isReady || isGenerating || batchLoading}
+                disabled={hasCustomTemplate || !sourceSelection.isReady || isGenerating || batchLoading}
                 loading={nativeMaterialSelectionLoading}
               />
             )}
@@ -287,7 +300,7 @@ export default function ActionBar() {
         </>
       )}
 
-      {error && (
+      {error && error !== CONVERTER_ERROR_KEYS.batchCustomTemplateUnsupported && (
         <div className="text-xs text-red-500 dark:text-red-400">{t(error)}</div>
       )}
 
@@ -360,6 +373,7 @@ export default function ActionBar() {
         <SlicerSelector
           threemfDiskPath={threemfDiskPath}
           downloadUrl={downloadUrl}
+          generationPending={batchMode ? batchLoading : isGenerating}
           canSubmit={!nativeMaterialSelectionLoading && (batchMode ? canBatchSubmit && !batchLoading : canSubmitSlicerOutput && !isLoading && !replacePreviewLoading && contentCommitStatus !== "unknown")}
           largeFormat={batchMode ? false : largeFormatEnabled || (separatedBacking && backingOutput === "separate_project")}
           onAutoGenerate={async () => {

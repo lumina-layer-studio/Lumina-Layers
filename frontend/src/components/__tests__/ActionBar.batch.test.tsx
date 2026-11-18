@@ -32,8 +32,9 @@ describe("ActionBar — auto batch mode", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     capturedSlicerSelectorProps = null;
-    useSettingsStore.setState({ autoReplaceGradientBanding: false });
+    useSettingsStore.setState({ autoReplaceGradientBanding: false, custom3mfTemplateId: null });
     useConverterStore.setState({
+      projectSettings: null,
       batchMode: false,
       batchFiles: [],
       batchLoading: false,
@@ -155,6 +156,24 @@ describe("ActionBar — auto batch mode", () => {
   });
 
   // --- Disabled conditions ---
+
+  it("offers the built-in print configuration for this project when batch mode inherits a custom template", () => {
+    useSettingsStore.setState({ custom3mfTemplateId: "saved-single-image-template" });
+    useConverterStore.setState({
+      batchMode: true,
+      batchFiles: [makeFile("a.png"), makeFile("b.png")],
+      lut_name: "test_lut",
+    });
+    render(<ActionBar />);
+
+    const generate = screen.getByRole("button", { name: "批量生成" });
+    expect(generate).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "本工程改用内置配置" }));
+
+    expect(useConverterStore.getState().projectSettings?.custom3mfTemplateId).toBeNull();
+    expect(useSettingsStore.getState().custom3mfTemplateId).toBe("saved-single-image-template");
+    expect(generate).toBeEnabled();
+  });
 
   it("disables batch generate button when batchFiles is empty", () => {
     useConverterStore.setState({

@@ -15,8 +15,9 @@ vi.mock("../api/converter", () => ({
   cropImage: vi.fn(),
 }));
 
-import { useConverterStore } from "../stores/converter";
-import { convertBatch } from "../api/converter";
+import { CONVERTER_ERROR_KEYS, useConverterStore } from "../stores/converter";
+import { useSettingsStore } from "../stores/settingsStore";
+import { convertBatch, fetchExportMaterialSelection } from "../api/converter";
 
 const mockedConvertBatch = vi.mocked(convertBatch);
 
@@ -27,6 +28,7 @@ const mockedConvertBatch = vi.mocked(convertBatch);
 
 function resetStore(overrides: Record<string, unknown> = {}): void {
   useConverterStore.setState({
+    projectSettings: null,
     batchMode: true,
     batchFiles: [new File(["a"], "img1.png", { type: "image/png" })],
     batchLoading: false,
@@ -68,7 +70,22 @@ function resetStore(overrides: Record<string, unknown> = {}): void {
 describe("submitBatch modelUrl 与 batchResult 状态管理", () => {
   beforeEach(() => {
     resetStore();
+    useSettingsStore.setState({ custom3mfTemplateId: null });
     vi.clearAllMocks();
+  });
+
+  it("leaves batch inputs intact and blocks incompatible custom templates before any request", async () => {
+    useSettingsStore.setState({ custom3mfTemplateId: "custom-template" });
+    const { batchFiles, openNativeMaterialSelection, submitBatch } = useConverterStore.getState();
+
+    await openNativeMaterialSelection();
+    await submitBatch();
+
+    expect(fetchExportMaterialSelection).not.toHaveBeenCalled();
+    expect(mockedConvertBatch).not.toHaveBeenCalled();
+    expect(useConverterStore.getState()).toMatchObject({
+      batchFiles, batchLoading: false, error: CONVERTER_ERROR_KEYS.batchCustomTemplateUnsupported,
+    });
   });
 
   it.each([

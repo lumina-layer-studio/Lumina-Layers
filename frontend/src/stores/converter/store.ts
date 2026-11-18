@@ -7935,6 +7935,7 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
     // --- 完整流水线（preview → generate）---
     submitFullPipeline: async () => {
       const state = _get();
+      if (state.isLoading || state.isGenerating) return null;
 
       // Refuse the unsupported pair before starting a preview that generation
       // would reject anyway.

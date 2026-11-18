@@ -32,7 +32,9 @@ python scripts/prepare_public_resources.py
 python scripts/prepare_public_resources.py --source-dir /path/to/resource-release
 ```
 
-该命令读取 `assets/resource-release.json`，校验两个包的版本、字节数和 SHA-256，再放入 `resources/materials`、`resources/luts`。首版资源当前先本地验收，公开 Release 发布后默认命令的固定下载地址才可用；验收期使用 `--source-dir`。
+该命令读取 `assets/resource-release.json`，校验两个包的版本、字节数和 SHA-256，再放入 `resources/materials`、`resources/luts`。当前固定资源 [2026.11.18.1](https://github.com/lumina-layer-studio/Lumina-materials/releases/tag/v2026.11.18.1) 已发布，包含全部已审核公开的 662 份耗材和 99 个 LUT，官方／社区频道按原记录保留。完整耗材合集使用 `lumina_material_seed.json` 1.0，内部保存原分发 ZIP，避免不同资源的同名目录互相覆盖；旧的平铺耗材包仍兼容。两包均含使用说明，用户仍按项添加。
+
+新增原创数据采用 [Lumina 数据协议](../DATA-LICENSE.md)：允许接单打印、销售作品；禁止倒卖数据、收费分发和搭收费资源库。历史版本保留原许可，品牌 Logo 与商标另行授权。
 
 ## 从 LUT 试用耗材档案
 

@@ -1,66 +1,32 @@
 {
   "artifacts": {
     "luts": {
-      "bytes": 1228139,
-      "download_url": "https://github.com/lumina-layer-studio/Lumina-materials/releases/download/v2026.11.06.1/lumina-luts-seed.zip",
-      "lut_count": 67,
+      "bytes": 2358075,
+      "download_url": "https://github.com/lumina-layer-studio/Lumina-materials/releases/download/v2026.11.18.1/lumina-luts-seed.zip",
+      "lut_count": 99,
       "manifest": "lumina_lut_seed.json",
       "path": "lumina-luts-seed.zip",
-      "sha256": "ddd225376e04f34d80a49b3df224367ce7c4ea0ba6151c5c5f54aedf84c3dc46"
+      "sha256": "86ee4e5493718329935012e083780f4953464d9a1c20b6662b6f81a474e68a84"
     },
     "materials": {
-      "bytes": 1157734,
-      "download_url": "https://github.com/lumina-layer-studio/Lumina-materials/releases/download/v2026.11.06.1/lumina-materials-seed.zip",
-      "manifest": "lumina_material_bundle.json",
-      "material_count": 174,
+      "bytes": 6911293,
+      "download_url": "https://github.com/lumina-layer-studio/Lumina-materials/releases/download/v2026.11.18.1/lumina-materials-seed.zip",
+      "manifest": "lumina_material_seed.json",
+      "material_count": 662,
       "path": "lumina-materials-seed.zip",
-      "sha256": "8c1f27dd4b3f635105639a948275261f564878ce6857e6c0cad7a4bde70dd9d7",
-      "source": {
-        "build_commands": [
-          "python scripts/build_packages.py --source materials-src --packages build/material-packages",
-          "python scripts/validate_packages.py --packages build/material-packages",
-          "python scripts/build_seed.py --packages build/material-packages --channel official --output build/lumina-materials-seed.zip"
-        ],
-        "builder": "scripts/material_bundle.py",
-        "builder_sha256": "bf6da18c2715a0238d9dbc84246e85ed242640903fd4526a2e6f07c8b9a117d6",
-        "directory": "materials-src/official",
-        "normalization": {
-          "compression": "ZIP_DEFLATED",
-          "compression_level": 9,
-          "create_system": 3,
-          "member_order": "lexicographic",
-          "timestamp": [
-            1980,
-            1,
-            1,
-            0,
-            0,
-            0
-          ],
-          "unix_mode": "100644"
-        },
-        "repository": "lumina-layer-studio/Lumina-materials",
-        "revision": "163103130c531260bc58ba5c913cc856f1808dea"
-      }
+      "sha256": "8ab9b2e6a55c187367f6a87b34da94989b6572ea706ae03b8024d8b35682eb87"
     }
   },
-  "dataset_version": "2026.11.06.1",
+  "dataset_version": "2026.11.18.1",
   "kind": "lumina_resource_release",
   "licenses": {
-    "existing_data": "Existing public sources preserved under maintainer-authorized migration; original license facts retained in docs/data-rights.md",
-    "new_contributions": "CC-BY-4.0 only with an explicit contributor grant"
+    "existing_data": "Original per-resource licenses and source information are retained; no retroactive relicensing",
+    "new_contributions": "LicenseRef-Lumina-Data-1.0 with explicit contributor consent"
   },
   "schema_version": 1,
   "selection": {
-    "basis": "historically_distributed",
+    "basis": "all_current_approved_public_resources",
     "calibration_review": false,
-    "lut_selection_sha256": "885b4e7d8b0c0e0a73a737b2400dfcb02069a9890519eaddb0f263e5c04c77e1",
-    "material_lock_sha256": "ead41c44748f40e8ebb1665bbb9df48308402a480f5eed4d1c90cabd515e2ada"
-  },
-  "source": {
-    "application_repository": "lumina-layer-studio/Lumina-Layers",
-    "application_revision": "1308c06fc69915e11ead7dbefa0c1e7da11504d0",
-    "repository": "lumina-layer-studio/Lumina-materials",
-    "revision": "163103130c531260bc58ba5c913cc856f1808dea"
+    "publication_review": true
   }
 }

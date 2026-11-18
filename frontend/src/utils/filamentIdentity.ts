@@ -57,6 +57,10 @@ for (const brand of filamentBrands) {
   for (const alias of brandAliases(brand)) brandsByAlias.set(key(alias), brand);
 }
 
+export function filamentBrandLogo(brand: string | null | undefined): string | undefined {
+  return brand ? brandsByAlias.get(key(brand))?.logo : undefined;
+}
+
 function localized(value: unknown, language: Language): string {
   const names = record(value);
   const locales = language === "zh" ? ["zh", "zh-CN", "zh-Hans"] : ["en", "en-US", "en-GB"];

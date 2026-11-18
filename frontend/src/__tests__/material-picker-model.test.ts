@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import type { SavedMaterialLibraryItem } from "../api/types";
+import { POLYMAKER_PANCHROMA_LOGO } from "../data/filamentBrands";
+import { savedMaterialIdentity } from "../utils/libraryFilamentIdentity";
 import {
   buildBrandOptions,
   buildMaterialProductGroups,
@@ -74,9 +76,23 @@ describe("materialPickerModel", () => {
       }),
     ).toEqual([
       { key: "all", label: "全部品牌", count: 3 },
-      { key: "brand:jayo", label: "JAYO", count: 2 },
+      { key: "brand:jayo", label: "JAYO", logo: expect.any(String), count: 2 },
       { key: "unassigned", label: "未分组", count: 1 },
     ]);
+  });
+
+  it("does not use a product-specific logo for the whole picker brand", () => {
+    const profiles = ["Panchroma PLA", "Basic PLA"].map((name) =>
+      makeMaterial({ brand: "Polymaker", directory_name: name, material_name: name }),
+    );
+    const identities = new Map(profiles.map((profile, i) => [profile.directory_name, {
+      ...savedMaterialIdentity(profile, "en"), logo: i === 0 ? POLYMAKER_PANCHROMA_LOGO : undefined,
+    }]));
+    for (const order of [profiles, [...profiles].reverse()]) {
+      const group = buildBrandOptions(order, { all: "All", unassigned: "Unassigned" }, identities)[1];
+      expect(group).toMatchObject({ label: "Polymaker", count: 2 });
+      expect(group.logo).toBeUndefined();
+    }
   });
 
   it("groups only profiles with the same explicit physical product id", () => {

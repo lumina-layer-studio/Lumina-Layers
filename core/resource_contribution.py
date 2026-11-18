@@ -122,10 +122,24 @@ def prepare_contribution(kind: ResourceKind, key: str) -> PreparedContribution:
                                 {"calibration" + path.suffix.lower(): payload})
 
 
+def with_contribution_license(prepared: PreparedContribution, display: dict[str, Any]) -> dict[str, Any]:
+    """Preserve declared terms; the new agreement applies only to declared originals."""
+    result = dict(display)
+    license_id = next((value for value in (prepared.display.get("license"), display.get("license"))
+                       if isinstance(value, str) and value.strip()), None)
+    if not license_id and (display.get("attribution") or {}).get("relationship") == "original":
+        license_id = DATA_LICENSE_ID
+    if license_id:
+        result["license"] = license_id
+    else:
+        result.pop("license", None)
+    return result
+
+
 def contribution_package(prepared: PreparedContribution, display: dict[str, Any],
                          subject: str) -> tuple[bytes, str, str]:
     """Keep LUT bytes untouched and assign a contributor-scoped resource identity."""
-    display = {**display, "license": prepared.display.get("license") or display.get("license") or DATA_LICENSE_ID}
+    display = with_contribution_license(prepared, display)
     files = dict(prepared.files)
     family = "mat" if prepared.kind == "materials" else "lut"
     resource_id = prepared.resource_id or family + "_" + sha(f"{subject}\n{prepared.key}".encode())[:26]

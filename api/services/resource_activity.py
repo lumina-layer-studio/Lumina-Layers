@@ -104,4 +104,13 @@ def local_resource_origin(kind: str, key: str) -> dict[str, Any] | None:
         "original_author": next((value for value in (attribution.get("original_author"), display.get("contributor_name"), display.get("author"))
                                  if isinstance(value, str) and value.strip()), "")[:200],
         "rights_basis": display["license"][:1000] if isinstance(display.get("license"), str) else "",
+        "license": display.get("license") if isinstance(display.get("license"), str) else None,
     }
+
+
+def preserve_origin_license(display: dict[str, Any], origin: dict[str, Any] | None) -> dict[str, Any]:
+    """Carry the installed manifest's declaration into a contribution snapshot."""
+    license_id = origin.get("license") if origin else None
+    if isinstance(license_id, str) and license_id.strip():
+        return {**display, "license": license_id}
+    return display

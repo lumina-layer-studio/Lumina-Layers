@@ -122,3 +122,31 @@ def test_migrated_preset_lookup_requires_exact_historical_bytes(monkeypatch, tmp
     target.write_bytes(_DEFAULT_LUT_BYTES + b" ")
     assert LUTManager.get_lut_path("Brand - PLA - seed") is None
     assert LUTManager.migrated_preset_aliases() == {}
+
+
+def test_migrated_names_follow_verified_bytes_at_a_different_installed_path(monkeypatch, tmp_path):
+    from utils import lut_manager
+    old_names = ["通用LUT[有色差]RYBW General for personal use", "Custom - Bambulab&PLA&RYBW&红-黄-蓝-白"]
+    digest = hashlib.sha256(_DEFAULT_LUT_BYTES).hexdigest()
+    manifest = tmp_path / "migration.json"
+    manifest.write_text(json.dumps({"luts": [
+        {"name": name, "path": f"Custom/legacy-{index}.json", "sha256": digest}
+        for index, name in enumerate(old_names)
+    ] + [{"name": "Unavailable legacy", "path": "Missing/old.json", "sha256": "0" * 64}]}))
+    monkeypatch.setattr(lut_manager, "_LEGACY_LUT_MIGRATION_PATH", manifest)
+    identity = {"lut_id": "lut_elegoo", "revision_id": "rev_elegoo", "channel": "official",
+                "local_path": "Elegoo/Elegoo_pla_RYBW.json", "content_hash": digest}
+    package = _bundle_bytes(package_extra=identity)
+    record = sync.install_lut_archive_bytes(_entry(package, **identity), package, source_url="bundled")
+    target = sync._safe_index_installed_path(record)
+    LUTManager.invalidate_preset_cache()
+    for name in old_names:
+        assert LUTManager.get_lut_path(name) == str(target.resolve())
+    aliases = LUTManager.migrated_preset_aliases()
+    assert set(aliases) == set(old_names)
+    assert len(set(aliases.values())) == 1
+    assert LUTManager.get_lut_path("Unavailable legacy") is None
+    assert LUTManager.get_lut_path("Bambu approximate name") is None
+    target.write_bytes(_DEFAULT_LUT_BYTES + b" ")
+    assert all(LUTManager.get_lut_path(name) is None for name in old_names)
+    assert LUTManager.migrated_preset_aliases() == {}

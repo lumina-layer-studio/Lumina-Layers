@@ -194,13 +194,19 @@ it("keeps the approval account and all close actions locked while submitting", a
 it("requires an origin choice and confirms permission again when that choice changes", async () => {
   render(<ContributionDialog kind="materials" resourceKey="Brand/Red" onClose={vi.fn()} />);
   await screen.findByDisplayValue("Red");
+  expect(screen.getByRole("link", { name: "resources_data_license" })).toHaveAttribute("href", "/data-license.html");
+  expect(screen.queryByRole("link", { name: "resources_lumina_license" })).toBeNull();
+  await waitFor(() => expect(screen.getByText("resources_license_unspecified")).toBeVisible());
   fireEvent.click(screen.getByRole("checkbox"));
   expect(screen.getByRole("button", { name: "contribution_submit" })).toBeDisabled();
   chooseOrigin();
+  expect(screen.getByRole("link", { name: "resources_lumina_license" })).toHaveAttribute("href", "/data-license.html");
   expect(screen.getByRole("checkbox")).not.toBeChecked();
   fireEvent.click(screen.getByRole("checkbox"));
   expect(screen.getByRole("button", { name: "contribution_submit" })).toBeEnabled();
   chooseOrigin("contribution_origin_adapted");
+  expect(screen.queryByRole("link", { name: "resources_lumina_license" })).toBeNull();
+  expect(screen.getByText("resources_license_unspecified")).toBeVisible();
   expect(screen.getByRole("checkbox")).not.toBeChecked();
   expect(screen.getByRole("button", { name: "contribution_submit" })).toBeDisabled();
   fireEvent.change(screen.getByLabelText("contribution_original_author *"), { target: { value: "Jane" } });
@@ -211,6 +217,25 @@ it("requires an origin choice and confirms permission again when that choice cha
   await waitFor(() => expect(api.submitContribution).toHaveBeenCalledWith(expect.objectContaining({
     attribution: { relationship: "adapted", original_author: "Jane", source_url: "https://example.org/source", rights_basis: "CC-BY-4.0" },
   })));
+});
+
+it.each([undefined, "CC-BY-4.0", "LicenseRef-Lumina-Data-1.0"])("shows the actual installed license %s separately from contribution terms", async (license) => {
+  const prepared = await vi.mocked(api.prepareContribution)("materials", "Brand/Red");
+  vi.mocked(api.prepareContribution).mockResolvedValue({
+    ...prepared, display: { ...prepared.display, license },
+    origin: { reference: { kind: "materials", resource_id: "mat_source", revision_id: "rev_source", content_hash: "sha256:" + "a".repeat(64) },
+      modified: false, original_author: "Original maker", rights_basis: license || "", license },
+  });
+  render(<ContributionDialog kind="materials" resourceKey="Brand/Red" onClose={vi.fn()} />);
+  await waitFor(() => expect(screen.getByDisplayValue("Original maker")).toBeVisible());
+  expect(screen.getByRole("link", { name: "resources_data_license" })).toHaveAttribute("href", "/data-license.html");
+  if (!license) {
+    expect(screen.getByText("resources_license_unspecified")).toBeVisible();
+    expect(screen.queryByRole("link", { name: "resources_lumina_license" })).toBeNull();
+  } else {
+    expect(screen.getByRole("link", { name: license === "CC-BY-4.0" ? license : "resources_lumina_license" }))
+      .toHaveAttribute("href", license === "CC-BY-4.0" ? "https://creativecommons.org/licenses/by/4.0/" : "/data-license.html");
+  }
 });
 
 it("retains public origins without offering an original-work declaration", async () => {

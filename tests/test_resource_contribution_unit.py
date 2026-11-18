@@ -1,5 +1,6 @@
 import io
 import json
+from pathlib import Path
 import zipfile
 
 import numpy as np
@@ -50,7 +51,8 @@ def test_lut_package_preserves_bytes_and_contributor_identity(tmp_path, monkeypa
     np.save(path, np.arange(96, dtype=np.uint8).reshape(32, 3))
     monkeypatch.setattr(LUTManager, "get_lut_path", lambda key: str(path) if key == "BW" else None)
     prepared = prepare_contribution("luts", "BW")
-    display = {"name": "Black and white", "brand": "Brand", "material_type": "PLA"}
+    display = {"name": "Black and white", "brand": "Brand", "material_type": "PLA",
+               "attribution": {"relationship": "original"}}
     first, resource_id, revision = contribution_package(prepared, display, "user1")
     second, other_id, _ = contribution_package(prepared, display, "user2")
     assert resource_id != other_id and first != second
@@ -192,6 +194,69 @@ def test_public_origin_cannot_be_removed_or_relabelled_as_original(tmp_path, mon
     assert client.post("/api/contributions/submit", headers=headers, json=payload).status_code == 422
     del payload["attribution"]
     assert client.post("/api/contributions/submit", headers=headers, json=payload).status_code == 422
+
+
+@pytest.mark.parametrize("source_license", ["CC-BY-4.0", "CC-BY-SA-4.0", None])
+def test_installed_manifest_license_survives_prepare_and_real_submission_packaging(tmp_path, monkeypatch, source_license):
+    import hashlib
+    from api.services import lut_registry_sync as sync
+    from api.services.resource_activity import local_resource_origin
+    from test_lut_registry_sync_unit import _bundle_bytes, _entry
+
+    cloud = tmp_path / "presets/Cloud"
+    monkeypatch.setenv("LUMINA_CLOUD_LUT_DIR", str(cloud))
+    monkeypatch.setenv("LUMINA_CUSTOM_LUT_DIR", str(tmp_path / "presets/Custom"))
+    monkeypatch.setattr(LUTManager, "LUT_PRESET_DIR", str(tmp_path / "presets"))
+    monkeypatch.setattr(LUTManager, "_scan_legacy_roots", lambda: [("Cloud", str(cloud))])
+    monkeypatch.setattr("api.routers.contributions.local_resource_origin", local_resource_origin)
+    buffer = io.BytesIO()
+    np.save(buffer, np.arange(96, dtype=np.uint8).reshape(32, 3))
+    calibration = buffer.getvalue()
+    source_display = {"name": "Source BW", "contributor_name": "Original maker"}
+    if source_license:
+        source_display["license"] = source_license
+    identity = {"lut_id": "lut_source", "revision_id": "rev_source", "channel": "community",
+                "local_path": "Brand/PLA/source.npy", "content_hash": "sha256:" + hashlib.sha256(calibration).hexdigest(),
+                "display": source_display, "compatibility": {"color_mode": "BW (Black & White)"}}
+    package = _bundle_bytes(calibration, lut_path="calibration.npy", package_extra=identity)
+    installed = sync.install_lut_archive_bytes(_entry(package, **identity), package,
+                                               source_url="https://example.test/source.zip")
+    LUTManager.invalidate_preset_cache()
+    try:
+        expected_path = (tmp_path / "presets" / installed["installed_path"]).resolve()
+        key = next(name for name, path in LUTManager.get_all_lut_files().items() if Path(path).resolve() == expected_path)
+        captured = {}
+        def receive(prepared, display, *, expected_subject):
+            payload, _, _ = contribution_package(prepared, display, expected_subject)
+            with zipfile.ZipFile(io.BytesIO(payload)) as archive:
+                captured.update(json.loads(archive.read("lumina_lut_bundle.json"))["display"])
+                assert archive.read("calibration.npy") == calibration
+            return {"status": "pending"}
+        monkeypatch.setattr("api.routers.contributions.connection.submit", receive)
+        app = FastAPI()
+        app.include_router(router)
+        with TestClient(app) as client:
+            headers = {"X-Lumina-Contribution": "1"}
+            response = client.post("/api/contributions/prepare", headers=headers, json={"kind": "luts", "key": key})
+            assert response.status_code == 200, response.text
+            prepared = response.json()
+            assert prepared["display"].get("license") == source_license
+            origin = prepared["origin"]
+            assert origin["original_author"] == "Original maker"
+            result = client.post("/api/contributions/submit", headers=headers, json={
+                "kind": "luts", "key": key, "name": "Redistributed BW", "product": {},
+                "fingerprint": prepared["fingerprint"], "consent": True, "account_id": "submitter",
+                "attribution": {"relationship": "redistributed", "original_author": origin["original_author"],
+                                "rights_basis": source_license or "Author permits redistribution"},
+                "filaments": [{"brand": "Brand", "material_type": "PLA", "color_name": slot["color_name"]}
+                              for slot in prepared["display"]["filaments"]],
+            })
+            assert result.status_code == 200, result.text
+        assert captured.get("license") == source_license
+        assert captured["attribution"]["source"] == origin["reference"]
+        assert captured["attribution"]["original_author"] == "Original maker"
+    finally:
+        LUTManager.invalidate_preset_cache()
 
 
 def test_attribution_and_raw_lut_survive_packaging_and_display_projection(tmp_path, monkeypatch):

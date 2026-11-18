@@ -45,7 +45,22 @@ def test_save_freezes_files_and_reopening_uses_same_snapshot(queued):
     assert snapshot.files["stage_A_parameters.json"] == b'{"parameters":{"k":1}}'
     assert row["account"] == "maker"
     assert snapshot.display["attribution"] == {"relationship": "original"}
+    assert snapshot.display["license"] == "LicenseRef-Lumina-Data-1.0"
     assert service.capture_calibration("materials", prepared.key)["id"] == result["id"]
+
+
+@pytest.mark.parametrize("license_id", ["CC-BY-4.0", None])
+def test_derived_snapshot_keeps_manifest_terms_without_relicensing(queued, monkeypatch, license_id):
+    queue, prepared = queued
+    origin = {"reference": {"kind": "materials", "resource_id": "mat_original", "revision_id": "rev_original",
+                            "content_hash": "sha256:" + "b" * 64}, "license": license_id,
+              "original_author": "Original maker", "rights_basis": license_id or ""}
+    monkeypatch.setattr(service, "local_resource_origin", lambda *_: origin)
+    job = service.capture_calibration("materials", prepared.key)
+    row, snapshot, frozen_origin = queue.snapshot(SERVER, job["id"])
+    assert row["state"] == "needs_review"
+    assert frozen_origin == origin
+    assert snapshot.display.get("license") == license_id
 
 
 def test_pause_resume_does_not_scan_or_resume_old_items(queued):

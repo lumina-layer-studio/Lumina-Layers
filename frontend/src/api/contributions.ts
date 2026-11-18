@@ -27,7 +27,7 @@ export interface PreparedContribution {
   compatibility: Record<string, unknown>;
   origin?: {
     reference: { kind: ResourceKind; resource_id: string; revision_id: string; content_hash: string } | null;
-    modified: boolean; original_author: string; rights_basis: string;
+    modified: boolean; original_author: string; rights_basis: string; license?: string | null;
   } | null;
 }
 export interface ContributionAttribution {

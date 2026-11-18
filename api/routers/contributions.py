@@ -13,7 +13,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 from api.services.resource_contribution import ContributionError, connection
 from core.resource_contribution import prepare_contribution
 from core.resource_attribution import normalize_attribution
-from api.services.resource_activity import local_resource_origin
+from api.services.resource_activity import local_resource_origin, preserve_origin_license
 
 
 def local_client(request: Request, response: Response, x_lumina_contribution: str = Header(default="")) -> None:
@@ -167,8 +167,10 @@ def disconnect() -> dict[str, Any]:
 @router.post("/prepare")
 def prepare(request: ResourceSelection) -> dict[str, Any]:
     with contribution_errors():
-        return {**prepare_contribution(request.kind, request.key).summary(),
-                "origin": local_resource_origin(request.kind, request.key)}
+        prepared = prepare_contribution(request.kind, request.key)
+        origin = local_resource_origin(request.kind, request.key)
+        prepared.display = preserve_origin_license(prepared.display, origin)
+        return {**prepared.summary(), "origin": origin}
 
 
 @router.get("/history")
@@ -227,6 +229,7 @@ def submit(request: ContributionRequest) -> dict[str, Any]:
         else:
             prepared = prepare_contribution(request.kind, request.key)
             origin = local_resource_origin(request.kind, request.key)
+        prepared.display = preserve_origin_license(prepared.display, origin)
         if prepared.fingerprint != request.fingerprint:
             raise HTTPException(409, "The local resource changed. Reopen the contribution form.")
         attribution = dict(request.attribution)

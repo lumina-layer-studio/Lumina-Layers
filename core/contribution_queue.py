@@ -12,7 +12,7 @@ from typing import Any, Iterator
 import uuid
 import zipfile
 
-from core.resource_contribution import DATA_LICENSE_ID, PreparedContribution, json_bytes, sha
+from core.resource_contribution import PreparedContribution, json_bytes, sha, with_contribution_license
 
 CONSENT_VERSION = "lumina-data-v1"
 MAX_PENDING = 100
@@ -100,7 +100,7 @@ class ContributionQueue:
         with zipfile.ZipFile(output, "w", compression=zipfile.ZIP_STORED) as archive:
             archive.writestr("snapshot.json", json_bytes({
                 "kind": prepared.kind, "key": prepared.key, "fingerprint": prepared.fingerprint,
-                "display": {**display, "license": prepared.display.get("license") or display.get("license") or DATA_LICENSE_ID},
+                "display": with_contribution_license(prepared, display),
                 "compatibility": prepared.compatibility, "origin": origin,
                 "consent_version": CONSENT_VERSION,
             }))

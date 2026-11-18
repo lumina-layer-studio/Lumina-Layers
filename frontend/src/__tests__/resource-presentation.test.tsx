@@ -98,11 +98,27 @@ describe("resource identity and details", () => {
     expect(within(detail).getByText("原始实测档案")).toBeInTheDocument();
     expect(within(detail).getByText("旧资料署名")).toBeInTheDocument();
     const links = within(detail).getAllByRole("link");
-    expect(links).toHaveLength(2);
+    expect(links).toHaveLength(1);
     const purchase = within(detail).getByRole("link", { name: /shop.example.cn/ });
     expect(purchase).toHaveAttribute("href", "https://shop.example.cn/black");
     expect(purchase).toHaveAttribute("rel", "noopener noreferrer");
-    expect(links.find(link => link.getAttribute("href") === "/data-license.html")).toBeDefined();
+    expect(within(detail).getByText("未标注")).toBeInTheDocument();
+    expect(links.find(link => link.getAttribute("href") === "/data-license.html")).toBeUndefined();
+  });
+
+  it("keeps unmarked, CC BY and Lumina resource licenses distinct in actual details", () => {
+    render(<>
+      <section aria-label="Historical LUT"><LibraryIdentity name="Historical LUT" subtitle="Historical" thumbnail={{ kind: "luts" }} /></section>
+      <section aria-label="CC BY LUT"><LibraryIdentity name="CC BY LUT" subtitle="CC BY" thumbnail={{ kind: "luts", display: { license: "CC-BY-4.0" } }} /></section>
+      <section aria-label="Lumina LUT"><LibraryIdentity name="Lumina LUT" subtitle="Lumina" thumbnail={{ kind: "luts", display: { license: "LicenseRef-Lumina-Data-1.0" } }} /></section>
+    </>);
+    const historical = within(screen.getByRole("region", { name: "Historical LUT" }));
+    expect(historical.getByText("未标注")).toBeInTheDocument();
+    expect(historical.queryByRole("link")).toBeNull();
+    expect(within(screen.getByRole("region", { name: "CC BY LUT" })).getByRole("link", { name: "CC-BY-4.0" }))
+      .toHaveAttribute("href", "https://creativecommons.org/licenses/by/4.0/");
+    expect(within(screen.getByRole("region", { name: "Lumina LUT" })).getByRole("link", { name: "Lumina 数据使用协议 1.0" }))
+      .toHaveAttribute("href", "/data-license.html");
   });
 
   it("adapts material color details and LUT slot details without changing slot order", () => {

@@ -34,7 +34,7 @@ import ResourceDialog from "./ui/ResourceDialog";
 import Dropdown from "./ui/Dropdown";
 import Combobox from "./ui/Combobox";
 import Checkbox from "./ui/Checkbox";
-import ResourceLicense from "./ui/ResourceLicense";
+import ResourceLicense, { DataLicenseLink } from "./ui/ResourceLicense";
 import DisclosureSummary from "./ui/DisclosureSummary";
 import CalibrationThumbnail from "./ui/CalibrationThumbnail";
 import {
@@ -1292,7 +1292,11 @@ function ContributionFormDialog({
               onChange={setConsent}
               disabled={fieldDisabled}
             />
-            <div className="mt-2"><ResourceLicense license={prepared?.display.license} /></div>
+            <div className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+              {t("resources_license")}：{" "}
+              <ResourceLicense license={prepared?.display.license || (attribution?.relationship === "original" ? "LicenseRef-Lumina-Data-1.0" : undefined)} />
+            </div>
+            <div className="mt-2"><DataLicenseLink /></div>
             {revision && (
               <p className="mt-2 text-xs leading-5 text-slate-500 dark:text-slate-400">
                 {t("contribution_revision_hint")}

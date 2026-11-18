@@ -760,7 +760,8 @@ class LUTManager:
             if index_path.is_file():
                 index = json.loads(index_path.read_text(encoding="utf-8"))
                 for record in index.get("luts", {}).values():
-                    if record.get("local_path") == entry["path"]:
+                    if (record.get("local_path") == entry["path"] or
+                            str(record.get("content_hash") or "").removeprefix("sha256:") == entry["sha256"]):
                         installed = str(record.get("installed_path") or "")
                         if installed.startswith("Cloud/"):
                             candidates.append(root / installed[len("Cloud/"):])

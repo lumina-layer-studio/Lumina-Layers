@@ -9,7 +9,7 @@ import sqlite3
 import time
 from typing import Any
 
-from api.services.resource_activity import local_resource_origin
+from api.services.resource_activity import local_resource_origin, preserve_origin_license
 from api.services.resource_contribution import ContributionError, connection
 from api.structured_logging import get_logger
 from core.contribution_queue import ContributionQueue
@@ -62,6 +62,7 @@ def capture_calibration(kind: str, key: str, *, new_calibration: bool = True) ->
             return None
         prepared = prepare_contribution(kind, key)
         origin = local_resource_origin(kind, key)
+        prepared.display = preserve_origin_license(prepared.display, origin)
         display = dict(prepared.display)
         # Remeasurements must prove ownership against the pre-save bytes.
         ready = not origin and new_calibration

@@ -250,19 +250,34 @@ def load_material_params(
     Returns:
         MaterialParams with E, k, C0_white vectors loaded.
     """
-    from core.single_stage import resolve_saved_material_dir
+    from core.single_stage import material_files
 
     root = Path(materials_dir or MATERIALS_DIR)
     try:
-        material_dir = resolve_saved_material_dir(root, directory_name)
+        material_dir = material_files.resolve_saved_material_dir(root, directory_name)
     except FileNotFoundError:
         raise FileNotFoundError(f"Material directory not found: {directory_name}")
+
+    if not materials_dir:
+        relative_path = material_dir.relative_to(root.resolve())
+        supplied_root = directory_name.strip().replace("\\", "/").split("/", 1)[0]
+        if (
+            supplied_root.casefold() in material_files.INTERNAL_MATERIAL_ROOT_NAMES
+            or (relative_path.parts and relative_path.parts[0].casefold() in material_files.INTERNAL_MATERIAL_ROOT_NAMES)
+        ):
+            raise ValueError(
+                f"Material '{directory_name}' belongs to an internal library directory. "
+                "Choose a material from your library."
+            )
 
     archive_path = material_dir / "material.json"
     if not archive_path.exists():
         raise FileNotFoundError(f"material.json not found in {directory_name}")
 
-    archive = json.loads(archive_path.read_text(encoding="utf-8"))
+    archive = material_files._load_json_object(
+        archive_path,
+        f"Material '{directory_name}' has an unreadable material.json. Import a complete material archive.",
+    )
     material_name = str(archive.get("material_name") or directory_name)
 
     # Load stage_A_parameters.json for E and k

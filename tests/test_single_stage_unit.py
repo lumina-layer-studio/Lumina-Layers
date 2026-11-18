@@ -27,6 +27,7 @@ from api.routers.single_stage import (
 from api.session_store import SessionStore
 from config import PaletteEntry
 from core.single_stage import (
+    material_files,
     material_library,
     material_package,
     material_sync,
@@ -3883,6 +3884,25 @@ def test_list_saved_stage_a_material_archives_reads_saved_material_directory(tmp
     assert results[0]["verification_history"][0]["verification_index"] == 1
     assert results[0]["verification_history"][0]["rmse_linear"] == 0.015
     assert results[0]["verification_history"][0]["white_detected_orientation"] == "identity"
+
+
+def test_saved_material_library_ignores_internal_archives(tmp_path: Path) -> None:
+    materials_root = tmp_path / "materials"
+    for directory_name in (
+        "爱丽兹/PLA 白",
+        "爱丽兹/PLA 白/runs/old-profile",
+        "_sync/curation-backups/20261117/source-materials/0.04层高/爱丽兹_PLA白",
+        "_solver_cache/staging/PLA 黑",
+    ):
+        archive = materials_root / directory_name / "material.json"
+        archive.parent.mkdir(parents=True)
+        archive.write_text(json.dumps({"material_name": archive.parent.name}), encoding="utf-8")
+    (materials_root / "爱丽兹/PLA 白/stage_A_parameters.json").write_text("{}", encoding="utf-8")
+
+    assert material_files._discover_saved_material_dirs(materials_root) == [materials_root / "爱丽兹/PLA 白"]
+    assert [entry["directory_name"] for entry in list_saved_stage_a_material_archives(
+        materials_dir=str(materials_root),
+    )] == ["爱丽兹/PLA 白"]
 
 
 def test_list_saved_stage_a_material_archives_exposes_picker_metadata(

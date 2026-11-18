@@ -25,7 +25,6 @@ from core.resource_seed import (
 from core.single_stage import import_saved_stage_a_material_archives
 from core.single_stage import material_files, material_package, material_runs, material_sync
 
-_IGNORED_MATERIAL_ROOT_NAMES = frozenset({"_sync", "_solver_cache"})
 _DEFAULT_SEED_FILENAME = "lumina-materials-seed.zip"
 _COLLECTION_MANIFEST = "lumina_material_seed.json"
 
@@ -57,7 +56,7 @@ def _materials_root_has_user_content(root: Path) -> bool:
     if not root.exists():
         return False
     for child in root.iterdir():
-        if child.name in _IGNORED_MATERIAL_ROOT_NAMES:
+        if child.name.casefold() in material_files.INTERNAL_MATERIAL_ROOT_NAMES:
             continue
         return True
     return False

@@ -951,21 +951,18 @@ def list_saved_stage_a_material_archives(
         return material_registry_client._apply_official_registry_metadata(cached_items)
 
     items: list[dict[str, Any]] = []
-    archive_paths = [
-        path for path in target_root.rglob("material.json") if path.is_file()
-    ]
-    filtered_archive_paths = material_files._filter_nested_material_archive_paths(archive_paths)
     sync_metadata_by_directory = material_sync._material_sync_metadata_by_directory(target_root)
 
-    for archive_path in sorted(
-        filtered_archive_paths,
-        key=lambda path: path.parent.stat().st_mtime,
+    for material_dir in sorted(
+        material_files._discover_saved_material_dirs(target_root),
+        key=lambda path: path.stat().st_mtime,
         reverse=True,
     ):
-        material_dir = archive_path.parent
         try:
-            archive_payload = json.loads(archive_path.read_text(encoding="utf-8"))
+            archive_payload = json.loads((material_dir / "material.json").read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError, UnicodeDecodeError):
+            continue
+        if not isinstance(archive_payload, dict):
             continue
         item = _saved_material_library_item_from_archive(
             target_root,

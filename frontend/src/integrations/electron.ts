@@ -41,18 +41,25 @@ export const electronAPI: ElectronAPI | null =
 
 /**
  * Interface scales the desktop host accepts, smallest first. Each one is a
- * direct multiple of the size the system gives the page, so 100% matches the
- * other apps on the same screen.
- * 桌面版可选的界面缩放，从小到大。每档都是系统给页面的尺寸的直接倍数，100% 与同屏其他软件一样大。
+ * multiple of the desktop host's 100% reference layout.
  */
 export const INTERFACE_SCALE_PREFERENCES = [
+  "30",
+  "40",
+  "50",
+  "60",
+  "70",
   "80",
   "90",
   "100",
   "110",
-  "125",
+  "120",
+  "130",
+  "140",
   "150",
-  "175",
+  "160",
+  "170",
+  "180",
 ] as const;
 
 export type InterfaceScalePreference =

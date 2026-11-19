@@ -79,6 +79,8 @@ LUT 保留 `.npy`、键控 `.json`、`.npz`、`.msgpack` 文件原始字节。�
 
 `LUMINA_CONTRIBUTION_REGISTRY_URL` 覆盖账号与互动主站；显式空值禁用这些功能。只允许 HTTPS，回环开发地址可用 HTTP。不继承读取令牌，不向镜像回退，不跟随投稿重定向。
 
+通过 `localhost`、回环 IP 或 `studio.localhost` 等本机别名打开 Studio，可直接连接社区账号。个人实例如果通过局域网地址或反向代理打开，在 `.env.local` 用 `LUMINA_CONTRIBUTION_ALLOWED_ORIGINS` 填写浏览器里的 Studio 地址，包含协议和非默认端口，多个地址用逗号分隔，重启后生效。同一个 Studio 后端共用一个社区连接，这项配置仅用于自己访问的实例。
+
 主站需要本次 Registry 更新：数据库自动迁移到 v19，邮箱校验、验证码限流、临时连接、设备授权、互动和私人反馈记录均存放在原 `LUMINA_REGISTRY_DATA_DIR/application.sqlite3`，用户仍使用原来的表。服务新增同目录的 `auth-secret.key`，应与数据库一并备份；它用于验证码校验与设备轮换，不进入数据仓库或公开快照。旧服务器尚未支持设备授权时，客户端保留原会话连接。
 
 连接路由为 `/auth/studio/start`、`approve`、`status`、`disconnect`，新增 `device`、`refresh`、`devices`；邮箱路由为 `/auth/email/config`、`start`、`verify`，更换邮箱为 `change/start` 与 `change/verify`。设备授权只允许本人点赞、收藏、下载记录与耗材／LUT 的创建、提交、查询、待审撤回和本人分发包下载，不继承审核或管理权限。

@@ -1,10 +1,32 @@
 """Public resource defaults never turn a catalog check into a download."""
 
 import httpx
+import pytest
 
+from api.env_loader import load_env_local
 from core.single_stage.material_registry_client import list_material_registry_catalog
 from api.services.lut_registry_sync import get_registry_config
-from core.public_resources import GITHUB_CATALOG_URL, PUBLIC_REGISTRY_URL, registry_read_token
+from core.public_resources import GITHUB_CATALOG_URL, PUBLIC_REGISTRY_URL, material_registry_url, registry_read_token
+
+
+@pytest.mark.parametrize(("value", "expected_url"), [
+    ("", GITHUB_CATALOG_URL),
+    ("   ", GITHUB_CATALOG_URL),
+    ('""', ""),
+    ("https://custom.test/api", "https://custom.test/api"),
+])
+def test_source_setup_treats_unfilled_catalog_urls_as_defaults(tmp_path, monkeypatch, value, expected_url):
+    keys = ["LUMINA_MATERIAL_REGISTRY_URL", "LUMINA_LUT_REGISTRY_URL"]
+    for key in (*keys, "LUMINA_PUBLIC_CATALOG_URL"):
+        monkeypatch.delenv(key, raising=False)
+    monkeypatch.setenv("LUMINA_SETTINGS_PATH", str(tmp_path / "user_settings.json"))
+    local_config = tmp_path / ".env.local"
+    local_config.write_text("".join(f"{key}={value}\n" for key in keys), encoding="utf-8")
+
+    load_env_local(local_config)
+
+    assert material_registry_url() == expected_url
+    assert get_registry_config().base_url == (expected_url or None)
 
 
 def test_unconfigured_source_reads_public_channels_without_old_token(monkeypatch):

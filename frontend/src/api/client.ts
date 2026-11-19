@@ -172,6 +172,7 @@ const STRUCTURED_DETAIL_TRANSLATION_KEYS: ReadonlyMap<string, string> = new Map(
   ["The contribution server returned an invalid response.", "community_err_invalid_response"],
   ["Connect your existing material account first.", "community_err_connect_first"],
   ["Connect your community account.", "community_err_connect_first"],
+  ["Open the contribution dialog in Lumina Studio.", "community_err_local_access"],
   ["Reconnect the original contribution account and reopen the form.", "community_err_wrong_account_form"],
   ["This revision does not belong to the connected account.", "community_err_not_owner"],
   ["The public activity snapshot could not be loaded.", "community_err_snapshot_failed"],

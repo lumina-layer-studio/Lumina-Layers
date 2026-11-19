@@ -79,6 +79,11 @@ function SourceDialog({ kind, onClose }: { kind: ResourceKind; onClose: () => vo
   const loading = useResourceStore((state) => state.loading);
   const loadError = useResourceStore((state) => state.error);
   const settings = status?.source_settings;
+  const defaultSourceLabel = settings && !settings.default_urls[kind]
+    ? "resources_source_default_disabled"
+    : settings?.default_provider === "registry"
+      ? "resources_source_default_hosted"
+      : "resources_source_default_github";
   const [mode, setMode] = useState<ResourceSourceSettings["mode"]>(settings?.mode ?? "default");
   const [mirror, setMirror] = useState(settings?.mirror_url ?? "");
   const [busy, setBusy] = useState(false);
@@ -172,11 +177,7 @@ function SourceDialog({ kind, onClose }: { kind: ResourceKind; onClose: () => vo
         options={[
           {
             value: "default",
-            label: t(
-              settings?.default_provider === "registry"
-                ? "resources_source_default_hosted"
-                : "resources_source_default_github",
-            ),
+            label: t(defaultSourceLabel),
           },
           { value: "github", label: t("resources_github_catalog") },
           { value: "mirror", label: t("resources_source_custom") },
@@ -223,7 +224,9 @@ function SourceDialog({ kind, onClose }: { kind: ResourceKind; onClose: () => vo
                   ? `resources_source_state_${currentHealth.state}`
                   : loading
                     ? "resources_source_loading"
-                    : "resources_source_unchecked",
+                    : settings && !settings.urls[kind]
+                      ? "resources_source_unconfigured"
+                      : "resources_source_unchecked",
               )}
             </span>
           </div>

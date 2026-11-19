@@ -37,6 +37,8 @@ official,community
 
 自建服务的频道和认证要求以部署方配置为准；需要认证时配置 `LUMINA_MATERIAL_REGISTRY_TOKEN`。旧私有令牌不会自动带到未显式配置的公共默认源。
 
+旧版 `.env.local` 示例中的空地址行沿用默认公开目录。需要停用云端目录时，在文件中明确写 `LUMINA_MATERIAL_REGISTRY_URL=""`；进程环境中的显式空值也可停用。
+
 `/materials/catalog`、`/packages/upload` 等路径由独立 Material Registry 服务提供。Studio 负责连接、同步和本地资源整理；投稿通过单独的 `LUMINA_CONTRIBUTION_REGISTRY_URL` 连接账号主站，默认是 `https://dan5.shmx.top/api/material-registry/v1`，不把读取令牌带到投稿请求中。主应用不实现 Registry 的账号和审核服务端路由。
 
 ## 普通使用者配置

@@ -2,6 +2,8 @@
 
 from collections.abc import Iterator
 from contextlib import contextmanager
+from ipaddress import ip_address
+import os
 import sqlite3
 import zipfile
 from typing import Any, Literal
@@ -16,12 +18,35 @@ from core.resource_attribution import normalize_attribution
 from api.services.resource_activity import local_resource_origin, preserve_origin_license
 
 
+def _is_allowed_browser_origin(browser_url: str) -> bool:
+    try:
+        parsed = urlsplit(browser_url)
+        host = parsed.hostname
+        _ = parsed.port
+    except ValueError:
+        return False
+    if parsed.scheme not in {"http", "https"} or not host or parsed.username is not None:
+        return False
+    host = host.rstrip(".")
+    if host == "localhost" or host.endswith(".localhost"):
+        return True
+    try:
+        if ip_address(host).is_loopback:
+            return True
+    except ValueError:
+        pass
+
+    origin = f"{parsed.scheme}://{parsed.netloc}"
+    configured = os.environ.get("LUMINA_CONTRIBUTION_ALLOWED_ORIGINS", "").split(",")
+    return any(origin == value.strip().rstrip("/") for value in configured)
+
+
 def local_client(request: Request, response: Response, x_lumina_contribution: str = Header(default="")) -> None:
-    origin = request.headers.get("Origin", "")
-    allowed_origins = {"localhost", "127.0.0.1", "::1"}
-    # The wider app permits CORS; contribution credentials must stay inaccessible
-    # to unrelated browser origins, including sandboxed null-origin documents.
-    if x_lumina_contribution != "1" or (origin and urlsplit(origin).hostname not in allowed_origins):
+    # Same-origin GET requests may carry only a Referer.
+    browser_url = request.headers.get("Origin", request.headers.get("Referer"))
+    if x_lumina_contribution != "1" or (
+        browser_url is not None and not _is_allowed_browser_origin(browser_url)
+    ):
         raise HTTPException(403, "Open the contribution dialog in Lumina Studio.")
     response.headers["Cache-Control"] = "no-store"
 

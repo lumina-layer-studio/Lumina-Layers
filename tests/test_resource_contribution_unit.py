@@ -19,6 +19,38 @@ def isolated_source_lookup(monkeypatch):
     monkeypatch.setattr("api.routers.contributions.local_resource_origin", lambda *_: None)
 
 
+@pytest.mark.parametrize(("origin", "referer", "expected"), [
+    ("http://127.0.0.1:4174", None, 200),
+    ("http://localhost:4174", None, 200),
+    ("http://[::1]:4174", None, 200),
+    ("http://studio.localhost:4174", None, 200),
+    ("https://studio.example.test:8443", None, 200),
+    (None, "https://studio.example.test:8443/", 200),
+    ("https://studio.example.test:8444", None, 403),
+    ("https://unrelated.example.test", None, 403),
+    (None, "https://unrelated.example.test/", 403),
+    ("null", None, 403),
+    ("http://[", None, 403),
+])
+def test_connect_from_local_or_trusted_studio_page(monkeypatch, origin, referer, expected):
+    monkeypatch.setenv("LUMINA_CONTRIBUTION_ALLOWED_ORIGINS", "https://studio.example.test:8443/")
+    monkeypatch.setattr("api.routers.contributions.connection.start", lambda: {"state": "pending"})
+    app = FastAPI()
+    app.include_router(router)
+    client = TestClient(app, raise_server_exceptions=False)
+    headers = {"X-Lumina-Contribution": "1"}
+    if origin is not None:
+        headers["Origin"] = origin
+    if referer is not None:
+        headers["Referer"] = referer
+
+    response = client.post("/api/contributions/connection", headers=headers, json={})
+
+    assert response.status_code == expected
+    if expected == 200:
+        assert response.json()["state"] == "pending"
+
+
 def test_material_package_keeps_calibration_but_not_local_evidence(tmp_path, monkeypatch):
     directory = tmp_path / "Brand" / "Red"
     directory.mkdir(parents=True)

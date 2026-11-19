@@ -83,31 +83,38 @@ def _material_sync_signature(entry: dict[str, Any]) -> tuple[str, str] | None:
     return local_directory, content_hash
 
 
-def has_catalog_material_origin(entry: dict[str, Any]) -> bool:
-    """Recognize catalog installs and the public channels recorded by older installers."""
+def catalog_material_source(entry: dict[str, Any]) -> str | None:
+    """Return the catalog relationship recorded for a material's revision."""
     source = entry.get("source")
-    # An exact catalog match records the identity of an already local calibration.
-    return source == "catalog" or (
-        source not in ("local", "registry_adopted")
-        and entry.get("channel") in ("official", "community", "team")
-    )
+    if source in ("catalog", "registry_adopted"):
+        return source
+    channel = entry.get("channel")
+    if (
+        source in (None, "package")
+        and isinstance(channel, str)
+        and channel not in ("local", "manual")
+        and re.fullmatch(r"[a-z0-9_-]+", channel)
+    ):
+        return "catalog"
+    return None
 
 
-def _installed_package_identities(target_root: Path) -> dict[tuple[str, str], tuple[str, str, str]]:
-    """Return installed IDs, revisions and source channels keyed by directory and content."""
+def _installed_package_identities(target_root: Path) -> dict[tuple[str, str], tuple[str, str, str, str | None]]:
+    """Return unambiguous identities and catalog relationships for backup."""
     installed = _load_material_sync_index(target_root).get("installed")
     if not isinstance(installed, dict):
         return {}
 
-    identities: dict[tuple[str, str], set[tuple[str, str, str]]] = {}
+    identities: dict[tuple[str, str], set[tuple[str, str, str, str | None]]] = {}
     for material_id, entry in installed.items():
         if not isinstance(entry, dict):
             continue
         signature = _material_sync_signature(entry)
         revision_id = entry.get("revision_id")
         if signature and material_id.strip() and isinstance(revision_id, str) and revision_id.strip():
-            channel = str(entry.get("channel") or "manual") if has_catalog_material_origin(entry) else "manual"
-            identities.setdefault(signature, set()).add((material_id, revision_id, channel))
+            source = catalog_material_source(entry)
+            channel = str(entry.get("channel") or "manual") if source else "manual"
+            identities.setdefault(signature, set()).add((material_id, revision_id, channel, source))
     return {
         signature: next(iter(matches))
         for signature, matches in identities.items()
@@ -183,6 +190,7 @@ def _material_sync_binding_projection(index: dict[str, Any]) -> dict[str, Any]:
             "content_hash": str(raw_entry.get("content_hash") or ""),
             "channel": str(raw_entry.get("channel") or ""),
             "source": str(raw_entry.get("source") or ""),
+            "catalog_source": catalog_material_source(raw_entry),
             "local_directory": str(raw_entry.get("local_directory") or ""),
         }
 
@@ -564,11 +572,17 @@ def _record_material_sync_entries(
             previous_revision_id = str(previous_entry.get("revision_id") or "")
             if previous_revision_id:
                 material_revisions[previous_revision_id] = dict(previous_entry)
+        backup_source = package.get("catalog_source")
+        entry_source = (
+            backup_source
+            if source == "package" and backup_source in ("catalog", "registry_adopted")
+            else source
+        )
         next_entry = {
             "revision_id": str(package["revision_id"]),
             "content_hash": str(package["content_hash"]),
             "channel": str(package.get("channel") or "manual"),
-            "source": source,
+            "source": entry_source,
             "local_directory": material_files._relative_directory_name(target_root, destination_dir),
             "display_brand": str(display.get("brand") or ""),
             "display_name": str(display.get("material_name") or destination_dir.name),
@@ -841,6 +855,41 @@ def _material_sync_revision_entry_path(
     if actual_content_hash == str(package.get("content_hash") or ""):
         return material_dir
     return None
+
+
+def _link_existing_catalog_revisions(
+    *, target_root: Path, matches: list[tuple[dict[str, Any], Path]],
+) -> None:
+    """Link active legacy entries after confirming their on-disk revisions."""
+    if not matches:
+        return
+    index = _load_material_sync_index(target_root)
+    installed = index.get("installed")
+    if not isinstance(installed, dict):
+        return
+    revisions = index.get("revisions")
+    changed = False
+    for package, material_dir in matches:
+        material_id = str(package["material_id"])
+        entry = installed.get(material_id)
+        if (
+            not isinstance(entry, dict)
+            or catalog_material_source(entry) is not None
+            or _material_sync_revision_entry_path(target_root=target_root, entry=entry, package=package) != material_dir
+        ):
+            continue
+        fields = {
+            "source": "registry_adopted",
+            "channel": str(package.get("channel") or entry.get("channel") or "manual"),
+        }
+        entry.update(fields)
+        if isinstance(revisions, dict) and isinstance(history := revisions.get(material_id), dict):
+            previous = history.get(str(package["revision_id"]))
+            if isinstance(previous, dict) and _material_sync_signature(previous) == _material_sync_signature(entry):
+                previous.update(fields)
+        changed = True
+    if changed:
+        _write_material_sync_index(target_root, index)
 
 
 class _MaterialSyncRefreshFileLock:

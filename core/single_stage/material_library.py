@@ -705,7 +705,10 @@ def export_saved_stage_a_material_archives(
                 signature = material_sync._material_sync_signature(package_manifest)
                 installed_identity = installed_identities.get(signature) if signature else None
                 if installed_identity is not None:
-                    package_manifest["material_id"], package_manifest["revision_id"], package_manifest["channel"] = installed_identity
+                    material_id, revision_id, channel, catalog_source = installed_identity
+                    package_manifest.update(material_id=material_id, revision_id=revision_id, channel=channel)
+                    if catalog_source is not None:
+                        package_manifest["catalog_source"] = catalog_source
                 bundle_manifest["packages"].append(package_manifest)
                 for file_path, zip_path in files_to_write:
                     archive.write(file_path, zip_path)

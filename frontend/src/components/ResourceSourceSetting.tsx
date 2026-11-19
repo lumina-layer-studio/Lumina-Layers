@@ -5,6 +5,7 @@ import {
   saveResourceSource,
   type ResourceKind,
   type ResourceSourceSettings,
+  type ResourceStatus,
 } from "../api/resources";
 import { apiErrorToVisibleMessage } from "../api/client";
 import { useResourceStore } from "../stores/resourceStore";
@@ -71,6 +72,23 @@ export default function ResourceSourceSetting({
   );
 }
 
+function defaultSourceLabel(kind: ResourceKind, status: ResourceStatus | null): string {
+  if (!status?.source_settings) return "resources_source_default";
+  const settings = status.source_settings;
+  const defaultUrl = settings.default_urls[kind];
+  if (!defaultUrl) return "resources_source_default_disabled";
+
+  const activeProvider = settings.urls[kind] === defaultUrl ? status[kind].provider : undefined;
+  // The API reports the material default's provider. It also applies to LUTs
+  // that use the same default URL.
+  const sharedProvider = settings.default_urls.materials === defaultUrl ? settings.default_provider : undefined;
+  switch (activeProvider ?? sharedProvider) {
+    case "github": return "resources_source_default_github";
+    case "registry": return "resources_source_default_registry";
+    default: return "resources_source_default";
+  }
+}
+
 function SourceDialog({ kind, onClose }: { kind: ResourceKind; onClose: () => void }) {
   const { t, lang } = useI18n();
   const mirrorInputId = useId();
@@ -79,11 +97,6 @@ function SourceDialog({ kind, onClose }: { kind: ResourceKind; onClose: () => vo
   const loading = useResourceStore((state) => state.loading);
   const loadError = useResourceStore((state) => state.error);
   const settings = status?.source_settings;
-  const defaultSourceLabel = settings && !settings.default_urls[kind]
-    ? "resources_source_default_disabled"
-    : settings?.default_provider === "registry"
-      ? "resources_source_default_hosted"
-      : "resources_source_default_github";
   const [mode, setMode] = useState<ResourceSourceSettings["mode"]>(settings?.mode ?? "default");
   const [mirror, setMirror] = useState(settings?.mirror_url ?? "");
   const [busy, setBusy] = useState(false);
@@ -177,7 +190,7 @@ function SourceDialog({ kind, onClose }: { kind: ResourceKind; onClose: () => vo
         options={[
           {
             value: "default",
-            label: t(defaultSourceLabel),
+            label: t(defaultSourceLabel(kind, status)),
           },
           { value: "github", label: t("resources_github_catalog") },
           { value: "mirror", label: t("resources_source_custom") },

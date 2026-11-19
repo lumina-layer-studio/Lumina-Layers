@@ -1618,8 +1618,10 @@ def test_material_sync_install_from_registry_endpoint_installs_selected_package(
         material_id: str,
         revision_id: str,
         display: dict[str, object],
+        channel: str,
     ) -> dict[str, object]:
         assert display == {"brand": "BrandA", "material_name": "PLA Basic"}
+        assert channel == "official"
         assert package_url == "/v1/packages/material_package.zip"
         assert package_sha256 == "a" * 64
         assert material_id == "mat_cloud_test"

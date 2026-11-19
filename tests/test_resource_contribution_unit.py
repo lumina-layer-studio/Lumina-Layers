@@ -78,6 +78,190 @@ def test_material_package_keeps_calibration_but_not_local_evidence(tmp_path, mon
         prepare_contribution("materials", "../outside")
 
 
+@pytest.mark.parametrize("catalog_channel", [None, "manual", "community", "studio-team"])
+def test_restored_material_keeps_its_original_provenance(tmp_path, monkeypatch, catalog_channel):
+    from api.routers.resource_activity import router as activity_router
+    from api.services.resource_activity import local_resource_origin
+    from core.single_stage.material_library import (
+        export_saved_stage_a_material_archives,
+        import_saved_stage_a_material_archives,
+        save_stage_a_material_archive,
+    )
+
+    original = tmp_path / "first-library"
+    restored = tmp_path / "restored-library"
+    catalog_source = catalog_channel is not None
+    saved = save_stage_a_material_archive(
+        material_name="灰阶校白后-品红", brand="Lumina-Box", materials_dir=str(original),
+        params_payload={"param_type": "stage_A", "parameters": {
+            "channels": [{"color_name": "品红", "E": [.4, .1, .3], "k": [8, 7, 9]}],
+            "substrates": [{"substrate_id": "white", "C0": [.9, .9, .9]},
+                           {"substrate_id": "black", "C0": [.025, .025, .025]}],
+        }, "meta": {"schema_version": "1"}, "source": {"spec": {"layer_height_mm": .04}}},
+        fit_summary={"mean_delta_e": 2.4}, source_summary={}, material_summary={},
+    )
+    key = saved.material_summary["directory_name"]
+    monkeypatch.setattr(material_files, "MATERIALS_DIR", str(original))
+    assert local_resource_origin("materials", key) is None
+
+    archive = export_saved_stage_a_material_archives(
+        directory_names=[key], materials_dir=str(original), output_path=str(tmp_path / "backup.zip"),
+    )
+    if catalog_source:
+        with zipfile.ZipFile(archive.archive_path) as zipped:
+            manifest = json.loads(zipped.read("lumina_material_bundle.json"))["packages"][0]
+        assert manifest["channel"] == "manual"
+        catalog = tmp_path / "catalog-library"
+        installed, = import_saved_stage_a_material_archives(
+            archive_path=archive.archive_path, materials_dir=str(catalog),
+            selected_material_id=manifest["material_id"], selected_revision_id=manifest["revision_id"],
+            selected_channel=catalog_channel,
+        ).imported_materials
+        monkeypatch.setattr(material_files, "MATERIALS_DIR", str(catalog))
+        assert local_resource_origin("materials", installed["directory_name"])["reference"]["resource_id"] == manifest["material_id"]
+        archive = export_saved_stage_a_material_archives(
+            directory_names=[installed["directory_name"]], materials_dir=str(catalog),
+            output_path=str(tmp_path / "catalog-backup.zip"),
+        )
+    imported = import_saved_stage_a_material_archives(
+        archive_path=archive.archive_path, materials_dir=str(restored),
+    )
+    material, = imported.imported_materials
+    monkeypatch.setattr(material_files, "MATERIALS_DIR", str(restored))
+    monkeypatch.setattr("api.routers.contributions.local_resource_origin", local_resource_origin)
+    received = []
+    monkeypatch.setattr("api.routers.contributions.connection.submit", lambda _, display, **kw:
+                        received.append(display["attribution"]) or {"status": "pending"})
+    app = FastAPI()
+    app.include_router(router)
+    app.include_router(activity_router)
+    client = TestClient(app)
+    headers = {"X-Lumina-Contribution": "1"}
+    selection = {"kind": "materials", "key": material["directory_name"]}
+    prepared = client.post("/api/contributions/prepare", headers=headers, json=selection)
+    assert prepared.status_code == 200, prepared.text
+    origin = prepared.json()["origin"]
+    refs = client.get("/api/community/materials/local-references", headers=headers)
+    assert refs.status_code == 200, refs.text
+    reference = refs.json()["items"].get(material["directory_name"])
+    if catalog_source:
+        assert origin["reference"]["resource_id"] == manifest["material_id"]
+        assert reference == {
+            field: origin["reference"][field] for field in ("resource_id", "revision_id", "content_hash")
+        }
+    else:
+        assert origin is None and reference is None
+    response = client.post("/api/contributions/submit", headers=headers, json={
+        **selection, "name": material["material_name"], "fingerprint": prepared.json()["fingerprint"],
+        "product": {"brand": "Lumina-Box", "material_type": "PLA"}, "account_id": "maker",
+        "attribution": {"relationship": "original"}, "consent": True,
+    })
+    assert response.status_code == (422 if catalog_source else 200), response.text
+    assert received == ([] if catalog_source else [{"relationship": "original"}])
+
+
+@pytest.mark.parametrize("legacy_backup", [False, True], ids=["current-backup", "legacy-backup"])
+def test_catalog_match_preserves_the_local_source_and_public_reference(tmp_path, monkeypatch, legacy_backup):
+    import httpx
+
+    from api.routers.resource_activity import router as activity_router
+    from api.services.resource_activity import local_resource_origin
+    from core.single_stage.material_library import (
+        export_saved_stage_a_material_archives,
+        import_saved_stage_a_material_archives,
+        save_stage_a_material_archive,
+    )
+    from core.single_stage.material_package import _build_material_bundle_package_manifest
+    from core.single_stage.material_registry_client import refresh_material_sync_from_registry
+
+    materials = tmp_path / "materials"
+    monkeypatch.setattr(material_files, "MATERIALS_DIR", str(materials))
+    monkeypatch.setattr("api.routers.contributions.local_resource_origin", local_resource_origin)
+    saved = save_stage_a_material_archive(
+        material_name="Magenta", brand="Lumina-Box", materials_dir=str(materials),
+        params_payload={"param_type": "stage_A", "parameters": {
+            "channels": [{"color_name": "Magenta", "E": [.4, .1, .3], "k": [8, 7, 9]}],
+            "substrates": [{"substrate_id": "white", "C0": [.9, .9, .9]},
+                           {"substrate_id": "black", "C0": [.025, .025, .025]}],
+        }, "meta": {"schema_version": "1"}, "source": {"spec": {"layer_height_mm": .04}}},
+        fit_summary={}, source_summary={}, material_summary={},
+    )
+    key = saved.material_summary["directory_name"]
+    manifest, _ = _build_material_bundle_package_manifest(target_root=materials, material_dir=materials / key)
+    entry = {**manifest, "channel": "community", "package_url": "/v1/packages/magenta.zip",
+             "package_sha256": "0" * 64}
+    if legacy_backup:
+        old_backup = export_saved_stage_a_material_archives(
+            directory_names=[key], materials_dir=str(materials), output_path=str(tmp_path / "legacy.zip"),
+        )
+    else:
+        entry.update(material_id="mat_public", revision_id="rev_public")
+
+    def catalog(request):
+        assert request.url.path == "/v1/materials/catalog"
+        return httpx.Response(200, json={"schema_version": "1.0", "materials": [entry]})
+
+    result = refresh_material_sync_from_registry(
+        registry_url="https://registry.example.test/v1", channels=["community"],
+        materials_dir=str(materials), transport=httpx.MockTransport(catalog),
+    )
+    assert result["skipped_count"] == 1 and result["installed_count"] == 0
+
+    submitted = []
+    monkeypatch.setattr("api.routers.contributions.connection.submit", lambda _, display, **kwargs:
+                        submitted.append(display["attribution"]) or {"status": "pending"})
+    app = FastAPI()
+    app.include_router(router)
+    app.include_router(activity_router)
+    client = TestClient(app)
+    headers = {"X-Lumina-Contribution": "1"}
+    selection = {"kind": "materials", "key": key}
+    response = client.post("/api/contributions/prepare", headers=headers, json=selection)
+    assert response.status_code == 200, response.text
+    prepared = response.json()
+    assert prepared["origin"] is None
+    response = client.post("/api/contributions/submit", headers=headers, json={
+        **selection, "name": "Magenta", "fingerprint": prepared["fingerprint"],
+        "product": {"brand": "Lumina-Box", "material_type": "PLA"}, "account_id": "maker",
+        "attribution": {"relationship": "original"}, "consent": True,
+    })
+    assert response.status_code == 200, response.text
+    assert submitted == [{"relationship": "original"}]
+    expected_reference = {field: entry[field] for field in ("revision_id", "content_hash")}
+    expected_reference["resource_id"] = entry["material_id"]
+
+    def references():
+        response = client.get("/api/community/materials/local-references", headers=headers)
+        assert response.status_code == 200, response.text
+        return response.json()["items"]
+
+    assert references()[key] == expected_reference
+    backup = old_backup if legacy_backup else export_saved_stage_a_material_archives(
+        directory_names=[key], materials_dir=str(materials), output_path=str(tmp_path / "backup.zip"),
+    )
+    with zipfile.ZipFile(backup.archive_path) as zipped:
+        package, = json.loads(zipped.read("lumina_material_bundle.json"))["packages"]
+    assert (package["material_id"], package["revision_id"]) == (entry["material_id"], entry["revision_id"])
+    restored = tmp_path / "restored"
+    restored_archive, = import_saved_stage_a_material_archives(
+        archive_path=backup.archive_path, materials_dir=str(restored),
+    ).imported_materials
+    restored_key = restored_archive["directory_name"]
+    monkeypatch.setattr(material_files, "MATERIALS_DIR", str(restored))
+    if legacy_backup:
+        assert references() == {}
+        refreshed = refresh_material_sync_from_registry(
+            registry_url="https://registry.example.test/v1", channels=["community"],
+            materials_dir=str(restored), transport=httpx.MockTransport(catalog),
+        )
+        assert refreshed["skipped_count"] == 1 and refreshed["installed_count"] == 0
+    assert references()[restored_key] == expected_reference
+    response = client.post("/api/contributions/prepare", headers=headers,
+                           json={"kind": "materials", "key": restored_key})
+    assert response.status_code == 200, response.text
+    assert response.json()["origin"] is None
+
+
 def test_lut_package_preserves_bytes_and_contributor_identity(tmp_path, monkeypatch):
     path = tmp_path / "BW.npy"
     np.save(path, np.arange(96, dtype=np.uint8).reshape(32, 3))

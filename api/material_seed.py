@@ -300,6 +300,7 @@ def _import_seed_entry(path: Path, package: dict[str, Any], row: dict[str, Any],
             archive_path=str(selected_path), materials_dir=str(target_root),
             selected_material_id=row["resource_id"], selected_revision_id=row["revision_id"],
             selected_display=row["display"],
+            selected_channel=package.get("channel"),
         )
 
 

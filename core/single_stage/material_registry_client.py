@@ -834,6 +834,7 @@ def install_material_registry_package(
     timeout_s: float | None = None,
     transport: Any = None,
     display: dict[str, Any] | None = None,
+    channel: str | None = None,
 ) -> dict[str, Any]:
     """Install one selected Registry package into the local material library.
     将用户选择的单个 Registry 耗材包安装到本地耗材库。
@@ -896,6 +897,7 @@ def install_material_registry_package(
                 selected_material_id=material_id,
                 selected_revision_id=revision_id,
                 selected_display=display,
+                selected_channel=channel,
             )
         finally:
             try:
@@ -1082,8 +1084,14 @@ def refresh_material_sync_from_registry(
                 if len(material_ids) > 1
             }
             local_paths_by_signature = material_sync._local_material_paths_by_sync_signature(target_root)
+            installed_index = sync_index.get("installed")
+            unlinked_material_ids = {
+                material_id for material_id, row in installed_index.items()
+                if isinstance(row, dict) and material_sync.catalog_material_source(row) is None
+            } if isinstance(installed_index, dict) else set()
 
             installed_materials: list[dict[str, Any]] = []
+            existing_catalog_matches: list[tuple[dict[str, Any], Path]] = []
             failures: list[dict[str, str]] = []
             skipped_count = 0
             for entry in catalog_entries:
@@ -1096,7 +1104,8 @@ def refresh_material_sync_from_registry(
                         raise ValueError(
                             "Material registry catalog entry is missing material identity"
                         )
-                    if material_sync._installed_material_bundle_revision_path(
+                    entry_signature = material_sync._material_sync_signature(entry)
+                    installed_path = material_sync._installed_material_bundle_revision_path(
                         target_root=target_root,
                         package={
                             "material_id": material_id,
@@ -1104,14 +1113,20 @@ def refresh_material_sync_from_registry(
                             "content_hash": content_hash,
                         },
                         include_revision_history=True,
-                    ) is not None:
+                    )
+                    if installed_path is not None:
+                        if (
+                            material_id in unlinked_material_ids
+                            and material_id not in ambiguous_material_ids
+                            and entry_signature not in ambiguous_catalog_signatures
+                        ):
+                            existing_catalog_matches.append((entry, installed_path))
                         skipped_count += 1
                         continue
                     if material_id in ambiguous_material_ids:
                         raise ValueError(
                             _MATERIAL_REGISTRY_AMBIGUOUS_REVISION_FAILURE_DETAIL
                         )
-                    entry_signature = material_sync._material_sync_signature(entry)
                     if (
                         entry_signature in ambiguous_catalog_signatures
                         and local_paths_by_signature.get(entry_signature)
@@ -1152,6 +1167,7 @@ def refresh_material_sync_from_registry(
                             selected_material_id=material_id,
                             selected_revision_id=revision_id,
                             selected_display=entry.get("display"),
+                            selected_channel=entry.get("channel"),
                         )
                     finally:
                         try:
@@ -1181,6 +1197,7 @@ def refresh_material_sync_from_registry(
                         }
                     )
 
+        material_sync._link_existing_catalog_revisions(target_root=target_root, matches=existing_catalog_matches)
         checked_count = len(catalog_entries)
         installed_count = len(installed_materials)
         failed_count = len(failures)

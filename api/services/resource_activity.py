@@ -32,12 +32,12 @@ def local_resource_references(kind: str) -> dict[str, Any]:
             except OSError:
                 continue
     else:
-        from core.single_stage.material_sync import get_material_sync_status
+        from core.single_stage.material_sync import catalog_material_source, get_material_sync_status
         from core.single_stage.material_files import MATERIALS_DIR, resolve_saved_material_dir
         from core.single_stage.material_package import _local_material_content_hash
         for row in get_material_sync_status()["installed"]:
             try:
-                if not row.get("material_file_exists") or row.get("source") == "local":
+                if not row.get("material_file_exists") or catalog_material_source(row) is None:
                     continue
                 directory = resolve_saved_material_dir(Path(MATERIALS_DIR), row["local_directory"])
                 metadata = json.loads((directory / "material.json").read_text(encoding="utf-8"))
@@ -53,12 +53,12 @@ def local_resource_references(kind: str) -> dict[str, Any]:
 def local_resource_origin(kind: str, key: str) -> dict[str, Any] | None:
     """Retain the installed source even after local edits; inspect only this item."""
     if kind == "materials":
-        from core.single_stage.material_sync import get_material_sync_status
+        from core.single_stage.material_sync import catalog_material_source, get_material_sync_status
         from core.single_stage.material_files import MATERIALS_DIR, resolve_saved_material_dir
         from core.single_stage.material_package import _local_material_content_hash
 
         rows = get_material_sync_status()["installed"]
-        row = next((row for row in rows if row.get("local_directory") == key and row.get("source") != "local"), None)
+        row = next((row for row in rows if row.get("local_directory") == key and catalog_material_source(row) == "catalog"), None)
         if row is None:
             return None
         directory = resolve_saved_material_dir(Path(MATERIALS_DIR), key)

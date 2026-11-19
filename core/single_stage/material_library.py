@@ -705,7 +705,10 @@ def export_saved_stage_a_material_archives(
                 signature = material_sync._material_sync_signature(package_manifest)
                 installed_identity = installed_identities.get(signature) if signature else None
                 if installed_identity is not None:
-                    package_manifest["material_id"], package_manifest["revision_id"] = installed_identity
+                    material_id, revision_id, channel, catalog_source = installed_identity
+                    package_manifest.update(material_id=material_id, revision_id=revision_id, channel=channel)
+                    if catalog_source is not None:
+                        package_manifest["catalog_source"] = catalog_source
                 bundle_manifest["packages"].append(package_manifest)
                 for file_path, zip_path in files_to_write:
                     archive.write(file_path, zip_path)
@@ -734,6 +737,7 @@ def import_saved_stage_a_material_archives(
     selected_material_id: str | None = None,
     selected_revision_id: str | None = None,
     selected_display: dict[str, Any] | None = None,
+    selected_channel: str | None = None,
     preserve_internal_paths: bool = False,
 ) -> MaterialArchiveImportResult:
     """Import one ZIP file containing one or more saved Stage A material archives.
@@ -746,6 +750,7 @@ def import_saved_stage_a_material_archives(
             bundle. (可选：从 bundle 中只导入指定 material_id)
         selected_revision_id: Optional package revision_id to import from a
             bundle. (可选：从 bundle 中只导入指定 revision_id)
+        selected_channel: Channel from the verified catalog entry, when available.
         preserve_internal_paths: Keep old directory IDs when staging private
             project resources. (项目私有资源暂存时保留旧目录 ID)
 
@@ -930,8 +935,11 @@ def import_saved_stage_a_material_archives(
                     raise
                 created_material_dirs.append(destination_dir)
                 if package is not None:
-                    if selected_material_id and selected_display:
-                        package = {**package, "display": {**filament_display(package.get("display")), **filament_display(selected_display)}}
+                    if selected_material_id:
+                        if selected_display:
+                            package = {**package, "display": {**filament_display(package.get("display")), **filament_display(selected_display)}}
+                        if selected_channel:
+                            package = {**package, "channel": selected_channel}
                     installed_packages.append((package, destination_dir))
                 imported_materials.append(
                     _material_summary_from_saved_archive(
@@ -943,6 +951,7 @@ def import_saved_stage_a_material_archives(
             material_sync._record_material_sync_entries(
                 target_root=target_root,
                 installed_packages=installed_packages,
+                source="catalog" if selected_material_id else "package",
             )
             material_files._invalidate_material_library_cache(target_root)
         except Exception:

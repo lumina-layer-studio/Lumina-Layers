@@ -416,6 +416,7 @@ async def material_sync_install_from_registry(
             material_id=payload.material_id,
             revision_id=payload.revision_id,
             display=catalog_entry.get("display"),
+            channel=catalog_entry.get("channel"),
         )
     except (ValueError, TypeError) as exc:
         _raise_material_sync_error(

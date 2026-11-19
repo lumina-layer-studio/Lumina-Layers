@@ -834,6 +834,7 @@ def install_material_registry_package(
     timeout_s: float | None = None,
     transport: Any = None,
     display: dict[str, Any] | None = None,
+    channel: str | None = None,
 ) -> dict[str, Any]:
     """Install one selected Registry package into the local material library.
     将用户选择的单个 Registry 耗材包安装到本地耗材库。
@@ -896,6 +897,7 @@ def install_material_registry_package(
                 selected_material_id=material_id,
                 selected_revision_id=revision_id,
                 selected_display=display,
+                selected_channel=channel,
             )
         finally:
             try:
@@ -1152,6 +1154,7 @@ def refresh_material_sync_from_registry(
                             selected_material_id=material_id,
                             selected_revision_id=revision_id,
                             selected_display=entry.get("display"),
+                            selected_channel=entry.get("channel"),
                         )
                     finally:
                         try:

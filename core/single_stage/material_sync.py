@@ -83,20 +83,31 @@ def _material_sync_signature(entry: dict[str, Any]) -> tuple[str, str] | None:
     return local_directory, content_hash
 
 
-def _installed_package_identities(target_root: Path) -> dict[tuple[str, str], tuple[str, str]]:
-    """Return installed IDs and revisions keyed by their directory and content."""
+def has_catalog_material_origin(entry: dict[str, Any]) -> bool:
+    """Recognize catalog installs and the public channels recorded by older installers."""
+    source = entry.get("source")
+    # An exact catalog match records the identity of an already local calibration.
+    return source == "catalog" or (
+        source not in ("local", "registry_adopted")
+        and entry.get("channel") in ("official", "community", "team")
+    )
+
+
+def _installed_package_identities(target_root: Path) -> dict[tuple[str, str], tuple[str, str, str]]:
+    """Return installed IDs, revisions and source channels keyed by directory and content."""
     installed = _load_material_sync_index(target_root).get("installed")
     if not isinstance(installed, dict):
         return {}
 
-    identities: dict[tuple[str, str], set[tuple[str, str]]] = {}
+    identities: dict[tuple[str, str], set[tuple[str, str, str]]] = {}
     for material_id, entry in installed.items():
         if not isinstance(entry, dict):
             continue
         signature = _material_sync_signature(entry)
         revision_id = entry.get("revision_id")
         if signature and material_id.strip() and isinstance(revision_id, str) and revision_id.strip():
-            identities.setdefault(signature, set()).add((material_id, revision_id))
+            channel = str(entry.get("channel") or "manual") if has_catalog_material_origin(entry) else "manual"
+            identities.setdefault(signature, set()).add((material_id, revision_id, channel))
     return {
         signature: next(iter(matches))
         for signature, matches in identities.items()

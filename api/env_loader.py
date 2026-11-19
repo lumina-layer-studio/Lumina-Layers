@@ -34,6 +34,7 @@ import os
 from pathlib import Path
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
+_CATALOG_URL_KEYS = {"LUMINA_MATERIAL_REGISTRY_URL", "LUMINA_LUT_REGISTRY_URL"}
 
 
 def _strip_inline_quotes(value: str) -> str:
@@ -151,7 +152,12 @@ def load_env_local(
         key = key.strip()
         if not key or not key.replace("_", "").isalnum():
             continue
-        value = _strip_inline_quotes(value.strip())
+        value = value.strip()
+        # Older sample files left these URLs unfilled. Keep the built-in catalog
+        # in that case. Operators can still disable it with a quoted empty URL.
+        if key in _CATALOG_URL_KEYS and not value:
+            continue
+        value = _strip_inline_quotes(value)
         parsed[key] = value
         if override_existing or key not in os.environ:
             os.environ[key] = value

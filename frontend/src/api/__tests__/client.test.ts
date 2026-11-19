@@ -553,6 +553,11 @@ describe("apiClient", () => {
     ).toBe("Vectorizer dependency missing");
   });
 
+  it("explains how to retry blocked account and source requests on the local Studio page", () => {
+    const error = {response: {status: 403, data: {detail: "Open the contribution dialog in Lumina Studio."}}};
+    expect(apiErrorToVisibleMessage(error)).toMatch(/localhost.*127\.0\.0\.1/);
+  });
+
   it("normalizes bare network and timeout errors for visible UI callers", () => {
     for (const error of [
       new Error("Network Error"),

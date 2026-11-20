@@ -66,6 +66,34 @@ describe("continuing a resource search between catalogs", () => {
     expect(installMaterialRegistryCatalogEntry).not.toHaveBeenCalled();
   });
 
+  it("shows a neutral disabled source state and lets unconfigured banners open source settings", async () => {
+    vi.mocked(fetchResourceStatus).mockResolvedValue({
+      materials: { configured: false, seed: { state: "uninitialized", available: false } },
+      luts: { configured: false, seed: { state: "uninitialized", available: false } },
+      source_repository: "",
+      source_settings: {
+        mode: "default",
+        mirror_url: "",
+        error: null,
+        urls: { materials: "", luts: "" },
+        default_urls: { materials: "", luts: "" },
+        default_provider: "github",
+      },
+    });
+    vi.mocked(fetchMaterialRegistryCatalog).mockRejectedValue(Object.assign(
+      new Error("Request failed with status code 422"),
+      { response: { status: 422, data: { detail: "Material registry URL is not configured" } } },
+    ));
+    render(<ResourceCatalogPanel kind="materials" />);
+    const disabledLabel = await screen.findByText("云端目录未启用");
+    expect(disabledLabel.querySelector(".bg-emerald-500")).toBeNull();
+    const notice = await screen.findByTestId("material-cloud-sync-notice");
+    expect(notice).not.toHaveTextContent("LUMINA_MATERIAL_REGISTRY_URL");
+    expect(screen.queryByText("共 0 项")).not.toBeInTheDocument();
+    fireEvent.click(within(notice).getByRole("button", { name: "来源设置" }));
+    expect(await screen.findByRole("dialog", { name: "来源设置" })).toBeVisible();
+  });
+
   it.each<ResourceKind>(["materials", "luts"])("preserves the %s search in both directions without installing", async (kind) => {
     const onQueryChange = vi.fn();
     render(<ResourceCatalogPanel kind={kind} initialQuery="Bambu" onQueryChange={onQueryChange} />);

@@ -47,7 +47,24 @@ def owns_calibration(kind: str, key: str) -> bool:
         return False
 
 
-def capture_calibration(kind: str, key: str, *, new_calibration: bool = True) -> dict[str, Any] | None:
+def _print_images_ready(kind: str, print_images: list[Any] | None) -> bool:
+    if not print_images:
+        return False
+    if all(isinstance(entry, str) for entry in print_images):
+        return True
+    if all(isinstance(entry, dict) for entry in print_images):
+        roles = {str(entry.get("role") or "") for entry in print_images}
+        required = (
+            {"white_card", "black_card", "finished_print"}
+            if kind == "materials"
+            else {"calibration_board", "finished_print"}
+        )
+        return required.issubset(roles)
+    return False
+
+
+def capture_calibration(kind: str, key: str, *, new_calibration: bool = True,
+                        print_images: list[Any] | None = None) -> dict[str, Any] | None:
     """Freeze only a just-saved calibration. No account or other network calls."""
     try:
         queue = queue_store()
@@ -65,19 +82,22 @@ def capture_calibration(kind: str, key: str, *, new_calibration: bool = True) ->
         prepared.display = preserve_origin_license(prepared.display, origin)
         display = dict(prepared.display)
         # Remeasurements must prove ownership against the pre-save bytes.
-        ready = not origin and new_calibration
-        if ready:
+        details_ready = not origin and new_calibration
+        if details_ready:
             display["attribution"] = {"relationship": "original"}
         if kind == "materials":
-            ready = ready and bool(display.get("brand") and display.get("material_type"))
+            details_ready = details_ready and bool(display.get("brand") and display.get("material_type"))
         else:
             slots = display.get("filaments", [])
             # Extraction records a whole-board brand/material. A mixed-board
             # calibration needs explicit per-channel details before publication.
-            ready = ready and bool(slots) and all(
+            details_ready = details_ready and bool(slots) and all(
                 row.get("brand") and row.get("material_type") and row.get("color_name") for row in slots)
-        job_id = queue.add(server, grant["account"], prepared, display, origin, ready=bool(ready),
-                           reason="" if ready else "details")
+        photos_ready = _print_images_ready(kind, print_images)
+        ready = bool(details_ready and photos_ready)
+        reason = "" if ready else ("print_photo" if details_ready else "details")
+        job_id = queue.add(server, grant["account"], prepared, display, origin, ready=ready,
+                           reason=reason, print_images=print_images)
         return {"id": job_id, "state": "queued" if ready else "needs_review"} if job_id else None
     except (OSError, ValueError, TypeError, KeyError, sqlite3.Error) as exc:
         log.warning("Calibration saved; contribution could not be queued", extra={
@@ -111,7 +131,9 @@ def process_one() -> None:
                     return
                 try:
                     _, prepared, _ = queue.snapshot(server, job_id)
-                    receipt = connection.submit(prepared, prepared.display, expected_subject=account)
+                    photos = queue.print_images(server, job_id)
+                    submit_kwargs = {"print_images": photos} if photos else {}
+                    receipt = connection.submit(prepared, prepared.display, expected_subject=account, **submit_kwargs)
                     queue.finish(job_id, receipt=receipt)
                 except ContributionError as exc:
                     queue.finish(job_id, reason="connection" if exc.status in (401, 403) else "upload",

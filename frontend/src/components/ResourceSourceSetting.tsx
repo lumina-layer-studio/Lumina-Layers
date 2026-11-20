@@ -16,21 +16,44 @@ import Dropdown from "./ui/Dropdown";
 import ResourceDialog from "./ui/ResourceDialog";
 import DisclosureSummary from "./ui/DisclosureSummary";
 import {
+  cx,
   StatusBanner,
   wellClass,
   workstationFieldLabelClass,
   workstationInputClass,
 } from "./ui/panelPrimitives";
 
+function sourceStateBadgeClass(state: "ready" | "cached" | "error" | "idle"): string {
+  if (state === "ready") {
+    return "bg-emerald-500/12 text-emerald-700 dark:bg-emerald-400/15 dark:text-emerald-300";
+  }
+  if (state === "cached") {
+    return "bg-amber-500/12 text-amber-700 dark:bg-amber-400/15 dark:text-amber-300";
+  }
+  if (state === "error") {
+    return "bg-red-500/12 text-red-700 dark:bg-red-400/15 dark:text-red-300";
+  }
+  return "bg-slate-500/12 text-slate-600 dark:bg-slate-400/15 dark:text-slate-300";
+}
+
 export default function ResourceSourceSetting({
   compact = false,
   kind = "materials",
+  open: controlledOpen,
+  onOpenChange,
 }: {
   compact?: boolean;
   kind?: ResourceKind;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }) {
   const { t } = useI18n();
-  const [open, setOpen] = useState(false);
+  const [internalOpen, setInternalOpen] = useState(false);
+  const open = controlledOpen ?? internalOpen;
+  const setOpen = (next: boolean) => {
+    if (controlledOpen === undefined) setInternalOpen(next);
+    onOpenChange?.(next);
+  };
   const status = useResourceStore((state) => state.status);
   const refresh = useResourceStore((state) => state.refresh);
 
@@ -61,7 +84,13 @@ export default function ResourceSourceSetting({
               {t("resources_catalog_source")}
             </span>
             <span className="text-xs text-slate-500 dark:text-slate-400">
-              {t(catalogSourceLabel(status?.source_settings?.mode, status?.[kind].provider))}
+              {t(
+                catalogSourceLabel(
+                  status?.source_settings?.mode,
+                  status?.[kind].provider,
+                  status?.[kind].configured,
+                ),
+              )}
             </span>
           </div>
           {button}
@@ -104,10 +133,12 @@ function SourceDialog({ kind, onClose }: { kind: ResourceKind; onClose: () => vo
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState("");
 
+  const activeUrl = settings?.urls[kind] ?? "";
+  const activeConfigured = Boolean(activeUrl);
   const changed =
     mode !== settings?.mode ||
     (mode === "mirror" && mirror.trim().replace(/\/+$/, "") !== settings?.mirror_url);
-  const currentHealth = health && health.sourceUrl === settings?.urls[kind] ? health : null;
+  const currentHealth = health && activeConfigured && health.sourceUrl === activeUrl ? health : null;
   const date = currentHealth?.fetchedAt ? new Date(currentHealth.fetchedAt) : null;
 
   useEffect(() => {
@@ -121,12 +152,13 @@ function SourceDialog({ kind, onClose }: { kind: ResourceKind; onClose: () => vo
     void useResourceStore.getState().refresh();
   }, []);
 
+  const healthState: "ready" | "cached" | "error" | "idle" = currentHealth?.state ?? "idle";
   const dotTone =
-    currentHealth?.state === "ready"
+    healthState === "ready"
       ? "bg-emerald-500"
-      : currentHealth?.state === "cached"
+      : healthState === "cached"
         ? "bg-amber-500"
-        : currentHealth?.state === "error"
+        : healthState === "error"
           ? "bg-red-500"
           : "bg-slate-400 dark:bg-slate-500";
 
@@ -205,6 +237,7 @@ function SourceDialog({ kind, onClose }: { kind: ResourceKind; onClose: () => vo
             id={mirrorInputId}
             type="url"
             name="mirror_url"
+            autoComplete="url"
             autoCorrect="off"
             autoCapitalize="none"
             spellCheck={false}
@@ -225,19 +258,30 @@ function SourceDialog({ kind, onClose }: { kind: ResourceKind; onClose: () => vo
         className={`${wellClass} flex flex-wrap items-center justify-between gap-3 px-3.5 py-3`}
         role="status"
       >
-        <div className="min-w-0 flex-1 space-y-1 text-xs">
+        <div className="min-w-0 flex-1 space-y-1.5 text-xs">
           <div className="flex flex-wrap items-center gap-2 font-medium text-slate-800 dark:text-slate-100">
             <span aria-hidden="true" className={`h-2 w-2 shrink-0 rounded-full ${dotTone}`} />
             <span>
-              {t(catalogSourceLabel(settings?.mode, status?.[kind].provider))}
+              {t(
+                catalogSourceLabel(
+                  settings?.mode,
+                  status?.[kind].provider,
+                  settings ? activeConfigured : undefined,
+                ),
+              )}
             </span>
-            <span className="font-normal text-slate-500 dark:text-slate-400">
+            <span
+              className={cx(
+                "inline-flex items-center rounded-md px-2 py-0.5 text-[11px] font-medium",
+                sourceStateBadgeClass(healthState),
+              )}
+            >
               {t(
                 currentHealth
                   ? `resources_source_state_${currentHealth.state}`
                   : loading
                     ? "resources_source_loading"
-                    : settings && !settings.urls[kind]
+                    : settings && !activeConfigured
                       ? "resources_source_unconfigured"
                       : "resources_source_unchecked",
               )}
@@ -251,28 +295,39 @@ function SourceDialog({ kind, onClose }: { kind: ResourceKind; onClose: () => vo
               </time>
             </p>
           )}
+          {changed ? (
+            <p className="pl-4 text-[11px] leading-5 text-slate-500 dark:text-slate-400">
+              {t("resources_source_pending_apply")}
+            </p>
+          ) : settings && !activeConfigured ? (
+            <p className="pl-4 text-[11px] leading-5 text-slate-500 dark:text-slate-400">
+              {t("resources_source_disabled_hint")}
+            </p>
+          ) : null}
         </div>
-        <Button
-          label={t("resources_source_check")}
-          variant="secondary"
-          size="sm"
-          disabled={busy || !settings || changed || !settings.urls[kind]}
-          loading={checking}
-          onClick={() => {
-            if (!settings) return;
-            setChecking(true);
-            setError("");
-            void checkResourceSource(kind, settings.urls[kind])
-              .then((value) => useResourceStore.getState().observeCatalog(kind, value))
-              .catch((err) => {
-                useResourceStore
-                  .getState()
-                  .observeCatalog(kind, { sourceUrl: settings.urls[kind], state: "error" });
-                setError(apiErrorToVisibleMessage(err, t("resources_source_check_failed")));
-              })
-              .finally(() => setChecking(false));
-          }}
-        />
+        {(!settings || activeConfigured) && (
+          <Button
+            label={t("resources_source_check")}
+            variant="secondary"
+            size="sm"
+            disabled={busy || !settings || changed || !activeConfigured}
+            loading={checking}
+            onClick={() => {
+              if (!settings || !activeUrl) return;
+              setChecking(true);
+              setError("");
+              void checkResourceSource(kind, activeUrl)
+                .then((value) => useResourceStore.getState().observeCatalog(kind, value))
+                .catch((err) => {
+                  useResourceStore
+                    .getState()
+                    .observeCatalog(kind, { sourceUrl: activeUrl, state: "error" });
+                  setError(apiErrorToVisibleMessage(err, t("resources_source_check_failed")));
+                })
+                .finally(() => setChecking(false));
+            }}
+          />
+        )}
       </div>
       <details className="min-w-0 text-xs text-slate-500 dark:text-slate-400">
         <DisclosureSummary className="py-1">{t("resources_source_addresses")}</DisclosureSummary>

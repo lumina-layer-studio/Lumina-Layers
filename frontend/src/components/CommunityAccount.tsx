@@ -73,7 +73,7 @@ export function CommunityConnection({
             </div>
             <Button
               label={t("contribution_disconnect")}
-              variant="ghost"
+              variant="secondary"
               size="sm"
               disabled={busy}
               loading={action === "disconnect"}
@@ -81,7 +81,7 @@ export function CommunityConnection({
             />
           </div>
           {(!compact || needsVerification) && (
-            <div className="flex flex-wrap items-center gap-2 border-t border-[var(--surface-divider)] pt-2">
+            <div className="flex flex-wrap items-center gap-2 border-t panel-divider pt-2.5">
               <a
                 className={`${actionLinkClass} ghost-control -ml-2.5 min-h-8 px-2.5 py-1 text-xs`}
                 href={connection.web_url + "/#/account"}

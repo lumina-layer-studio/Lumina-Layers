@@ -782,6 +782,7 @@ export function useMaterialCloudCatalog(market: string, onInstalled?: () => void
     rollbackCandidates,
     searchQuery,
     isLoading,
+    isNotConfigured: availability === "not_configured",
     isPageLoading,
     isSearchPending,
     isRefreshing,

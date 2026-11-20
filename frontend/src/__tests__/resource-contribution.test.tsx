@@ -1,15 +1,21 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, expect, it, vi } from "vitest";
 import * as api from "../api/contributions";
 import { ContributionDialog } from "../components/ResourceContribution";
 import { useCommunityStore } from "../stores/communityStore";
+import { prepareFeedbackImage } from "../utils/feedbackImages";
 
 vi.mock("../api/contributions", () => ({
   getContributionConnection: vi.fn(), startContributionConnection: vi.fn(), disconnectContribution: vi.fn(),
   prepareContribution: vi.fn(), submitContribution: vi.fn(), fetchContributionHistory: vi.fn(),
+  checkOriginalSource: vi.fn(),
   getContributionQueue: vi.fn().mockResolvedValue({ enabled: false, account_id: null, items: [] }),
   prepareQueuedContribution: vi.fn(),
   prepareContributionRevision: vi.fn(), changeContributionReview: vi.fn(),
+}));
+vi.mock("../utils/feedbackImages", async () => ({
+  ...(await vi.importActual("../utils/feedbackImages")),
+  prepareFeedbackImage: vi.fn(),
 }));
 vi.mock("../api/extractor", () => ({ listGradientCardMaterials: vi.fn().mockResolvedValue({ materials: [] }), installExtractedLut: vi.fn() }));
 vi.mock("../i18n/context", () => ({ useI18n: () => ({ lang: "zh", t: translate }) }));
@@ -18,6 +24,36 @@ const translate = (key: string) => key;
 function chooseOrigin(option = "contribution_origin_original") {
   fireEvent.click(screen.getByRole("combobox", { name: "contribution_origin" }));
   fireEvent.click(screen.getByRole("option", { name: option }));
+}
+
+const EXPECTED_MATERIAL_PRINT_IMAGES = [
+  { role: "white_card", data: "cHJpbnQtcGhvdG8=" },
+  { role: "black_card", data: "cHJpbnQtcGhvdG8=" },
+  { role: "finished_print", data: "cHJpbnQtcGhvdG8=" },
+];
+
+const EXPECTED_LUT_PRINT_IMAGES = [
+  { role: "calibration_board", data: "cHJpbnQtcGhvdG8=" },
+  { role: "finished_print", data: "cHJpbnQtcGhvdG8=" },
+];
+
+async function attachSlotPhoto(role: api.PrintImageRole, name = `${role}.jpg`, expectedAlt?: string) {
+  const file = new File(["photo"], name, { type: "image/jpeg" });
+  fireEvent.change(screen.getByTestId(`contribution-print-photo-input-${role}`), {
+    target: { files: [file] },
+  });
+  await screen.findByAltText(expectedAlt ?? new RegExp(`contribution_print_slot_${role}`));
+}
+
+async function attachPrintPhoto(kind: "materials" | "luts" = "materials") {
+  if (kind === "materials") {
+    await attachSlotPhoto("white_card");
+    await attachSlotPhoto("black_card");
+    await attachSlotPhoto("finished_print", "finished.jpg", "contribution_print_slot_finished_print 1");
+    return;
+  }
+  await attachSlotPhoto("calibration_board", "board.jpg", "contribution_print_slot_calibration_board 1");
+  await attachSlotPhoto("finished_print", "finished.jpg", "contribution_print_slot_finished_print 1");
 }
 
 beforeEach(() => {
@@ -29,6 +65,8 @@ beforeEach(() => {
     display: { material_name: "Red", brand: "Brand", material_type: "PLA" }, compatibility: {},
   });
   vi.mocked(api.submitContribution).mockResolvedValue({ kind: "materials", status: "pending" });
+  vi.mocked(api.checkOriginalSource).mockResolvedValue({ eligible: false });
+  vi.mocked(prepareFeedbackImage).mockResolvedValue("cHJpbnQtcGhvdG8=");
 });
 
 it("withdraws a pending review only after confirmation and reloads the account history", async () => {
@@ -69,12 +107,18 @@ it("requires explicit permission and submits the selected resource with product 
   fireEvent.change(screen.getByLabelText("resources_series"), { target: { value: "Basic" } });
   chooseOrigin();
   fireEvent.click(screen.getByRole("checkbox"));
+  expect(submit).toBeDisabled();
+  await attachSlotPhoto("white_card");
+  await attachSlotPhoto("black_card");
+  expect(submit).toBeDisabled();
+  await attachSlotPhoto("finished_print", "finished.jpg", "contribution_print_slot_finished_print 1");
   expect(submit).toBeEnabled();
   fireEvent.click(submit);
   await waitFor(() => expect(api.submitContribution).toHaveBeenCalledWith(expect.objectContaining({
     kind: "materials", key: "Brand/Red", consent: true, account_id: "maker",
     product: expect.objectContaining({ brand: "Brand", material_type: "PLA", series: "Basic" }),
     attribution: { relationship: "original" },
+    print_images: EXPECTED_MATERIAL_PRINT_IMAGES,
   })));
   await waitFor(() => expect(screen.getByText(/contribution_received/)).toBeVisible());
 });
@@ -90,11 +134,13 @@ it("submits optional regional names and several purchase links without flattenin
   fireEvent.click(screen.getByRole("button", { name: "contribution_add_link" }));
   fireEvent.change(screen.getAllByLabelText(/resources_product_page/)[1], { target: { value: "https://shop.test/global" } });
   chooseOrigin();
+  await attachPrintPhoto();
   fireEvent.click(screen.getByRole("checkbox"));
   fireEvent.click(screen.getByRole("button", { name: "contribution_submit" }));
   await waitFor(() => expect(api.submitContribution).toHaveBeenCalledWith(expect.objectContaining({
     product: expect.objectContaining({ market_names: { CN: "中国商品名", INTL: "International name" },
       purchase_url: "https://shop.test/cn", purchase_links: [{ url: "https://shop.test/global", market: "ALL" }] }),
+    print_images: EXPECTED_MATERIAL_PRINT_IMAGES,
   })));
 });
 
@@ -111,6 +157,9 @@ it("prefills structured LUT products by channel instead of metadata array order"
   }} />);
   await screen.findByDisplayValue("10100");
   chooseOrigin();
+  await attachSlotPhoto("calibration_board", "board.jpg", "contribution_print_slot_calibration_board 1");
+  expect(screen.getByRole("button", { name: "contribution_submit" })).toBeDisabled();
+  await attachSlotPhoto("finished_print", "finished.jpg", "contribution_print_slot_finished_print 1");
   fireEvent.click(screen.getByRole("checkbox"));
   fireEvent.click(screen.getByRole("button", { name: "contribution_submit" }));
   await waitFor(() => expect(api.submitContribution).toHaveBeenCalledWith(expect.objectContaining({
@@ -118,6 +167,7 @@ it("prefills structured LUT products by channel instead of metadata array order"
       expect.objectContaining({ color_name: "White", series: "Basic", color_code: "10100", purchase_url: "https://example.com/white", market: "INTL" }),
       expect.objectContaining({ color_name: "Black", series: "Matte", color_code: "10102" }),
     ],
+    print_images: EXPECTED_LUT_PRINT_IMAGES,
   })));
 });
 
@@ -141,6 +191,7 @@ it("retains the form after a failed submission and allows a retry", async () => 
   render(<ContributionDialog kind="materials" resourceKey="Brand/Red" onClose={vi.fn()} />);
   await screen.findByDisplayValue("Red");
   chooseOrigin();
+  await attachPrintPhoto();
   fireEvent.click(screen.getByRole("checkbox"));
   fireEvent.click(screen.getByRole("button", { name: "contribution_submit" }));
   await waitFor(() => expect(screen.getByRole("button", { name: "contribution_submit" })).toBeEnabled());
@@ -180,6 +231,7 @@ it("keeps the approval account and all close actions locked while submitting", a
   render(<ContributionDialog kind="materials" resourceKey="Brand/Red" onClose={close} />);
   await screen.findByDisplayValue("Red");
   chooseOrigin();
+  await attachPrintPhoto();
   fireEvent.click(screen.getByRole("checkbox"));
   fireEvent.click(screen.getByRole("button", { name: "contribution_submit" }));
   expect(screen.getByRole("button", { name: "contribution_disconnect" })).toBeDisabled();
@@ -197,6 +249,7 @@ it("requires an origin choice and confirms permission again when that choice cha
   expect(screen.getByRole("link", { name: "resources_data_license" })).toHaveAttribute("href", "/data-license.html");
   expect(screen.queryByRole("link", { name: "resources_lumina_license" })).toBeNull();
   await waitFor(() => expect(screen.getByText("resources_license_unspecified")).toBeVisible());
+  await attachPrintPhoto();
   fireEvent.click(screen.getByRole("checkbox"));
   expect(screen.getByRole("button", { name: "contribution_submit" })).toBeDisabled();
   chooseOrigin();
@@ -218,6 +271,7 @@ it("requires an origin choice and confirms permission again when that choice cha
   fireEvent.click(screen.getByRole("button", { name: "contribution_submit" }));
   await waitFor(() => expect(api.submitContribution).toHaveBeenCalledWith(expect.objectContaining({
     attribution: { relationship: "adapted", original_author: "Jane", source_url: "https://example.org/source", rights_basis: "CC-BY-4.0" },
+    print_images: EXPECTED_MATERIAL_PRINT_IMAGES,
   })));
 });
 
@@ -264,9 +318,62 @@ it("retains public origins without offering an original-work declaration", async
   fireEvent.click(screen.getByRole("combobox", { name: "contribution_origin" }));
   expect(screen.queryByRole("option", { name: "contribution_origin_original" })).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole("option", { name: "contribution_origin_redistributed" }));
+  await attachPrintPhoto();
   fireEvent.click(screen.getByRole("checkbox"));
   fireEvent.click(screen.getByRole("button", { name: "contribution_submit" }));
   await waitFor(() => expect(api.submitContribution).toHaveBeenCalledWith(expect.objectContaining({
     attribution: expect.objectContaining({ relationship: "redistributed", original_author: "Jane" }),
+    print_images: EXPECTED_MATERIAL_PRINT_IMAGES,
   })));
+});
+
+it("lets the account owner choose their original public source and submit an update", async () => {
+  const prepared = await api.prepareContribution("materials", "Brand/Red");
+  const reference = {
+    kind: "materials" as const, resource_id: "mat_original", revision_id: "rev_1",
+    content_hash: "sha256:" + "a".repeat(64),
+  };
+  vi.mocked(api.prepareContribution).mockResolvedValue({
+    ...prepared, origin: { reference, original_author: "Maker", rights_basis: "CC-BY-4.0", modified: false },
+  });
+  vi.mocked(api.checkOriginalSource).mockResolvedValue({ eligible: true });
+  render(<ContributionDialog kind="materials" resourceKey="Brand/Red" onClose={vi.fn()} />);
+  const source = await screen.findByRole("combobox", { name: "contribution_origin" });
+  fireEvent.click(source);
+  fireEvent.click(await screen.findByRole("option", { name: "contribution_origin_original" }));
+  expect(api.checkOriginalSource).toHaveBeenCalledWith(reference, "maker");
+  expect(screen.getByText("contribution_origin_update_original")).toBeInTheDocument();
+  expect(screen.queryByRole("textbox", { name: /contribution_original_author/ })).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole("checkbox"));
+  fireEvent.click(screen.getByRole("button", { name: "contribution_submit" }));
+  await waitFor(() => expect(api.submitContribution).toHaveBeenCalledWith(expect.objectContaining({
+    attribution: { relationship: "original" },
+    account_id: "maker",
+  })));
+});
+
+it("disables submit when any required slot photo is removed and clears photos on account switch", async () => {
+  render(<ContributionDialog kind="materials" resourceKey="Brand/Red" onClose={vi.fn()} />);
+  await screen.findByDisplayValue("Red");
+  chooseOrigin();
+  fireEvent.click(screen.getByRole("checkbox"));
+  const submit = screen.getByRole("button", { name: "contribution_submit" });
+  expect(submit).toBeDisabled();
+  await attachPrintPhoto("materials");
+  expect(submit).toBeEnabled();
+  fireEvent.click(
+    screen.getByRole("button", {
+      name: "contribution_print_photos_remove · contribution_print_slot_finished_print",
+    }),
+  );
+  expect(screen.queryByAltText("contribution_print_slot_finished_print 1")).not.toBeInTheDocument();
+  expect(submit).toBeDisabled();
+  await attachSlotPhoto("finished_print", "second.jpg", "contribution_print_slot_finished_print 1");
+  expect(submit).toBeEnabled();
+  act(() => {
+    useCommunityStore.setState({
+      connection: { state: "connected", subject: "second_maker", display_name: "Second", web_url: "http://localhost:8018" },
+    });
+  });
+  await waitFor(() => expect(screen.queryByAltText("contribution_print_slot_white_card")).not.toBeInTheDocument());
 });

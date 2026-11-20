@@ -1,11 +1,17 @@
 import type { ReactNode } from "react";
+import { ArrowTopRightOnSquareIcon } from "@heroicons/react/24/outline";
 import { useI18n } from "../../i18n/context";
 
 function LicenseLink({ href, children }: { href: string; children: ReactNode }) {
   return (
-    <a href={href} target="_blank" rel="noopener noreferrer"
-      className="rounded text-xs text-blue-600 hover:underline focus-visible:outline-2 focus-visible:outline-[var(--focus-ring)] dark:text-blue-400">
-      {children}
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="inline-flex max-w-full items-center gap-1 rounded text-xs font-medium text-blue-600 hover:underline focus-visible:outline-2 focus-visible:outline-[var(--focus-ring)] dark:text-blue-400"
+    >
+      <span className="min-w-0 break-words">{children}</span>
+      <ArrowTopRightOnSquareIcon className="h-3 w-3 shrink-0" aria-hidden="true" />
     </a>
   );
 }

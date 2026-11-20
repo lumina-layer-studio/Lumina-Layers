@@ -5,7 +5,7 @@ import { useCommunityStore } from "../stores/communityStore";
 import { useI18n } from "../i18n/context";
 import Button from "./ui/Button";
 import DisclosureSummary from "./ui/DisclosureSummary";
-import { StatusBanner } from "./ui/panelPrimitives";
+import { StatusBanner, wellClass } from "./ui/panelPrimitives";
 import { ResourceReportCard } from "./ResourceReportSupplements";
 
 export default function ResourceReportHistory() {
@@ -76,12 +76,12 @@ export default function ResourceReportHistory() {
         if (event.currentTarget.open) setOffset(0);
         setOpen(event.currentTarget.open);
       }}
-      className="border-t border-[var(--surface-divider)] pt-3.5"
+      className={`${wellClass} px-3.5 py-2.5`}
     >
-      <DisclosureSummary className="py-1 text-sm font-semibold text-slate-800 dark:text-slate-100">
+      <DisclosureSummary className="py-0.5 text-sm font-medium text-slate-800 dark:text-slate-100">
         {t("resource_feedback_receipts")}
       </DisclosureSummary>
-      <div className="flex flex-col gap-2.5 pt-3">
+      <div className="mt-3 flex flex-col gap-2.5 border-t border-[var(--surface-divider)] pt-3">
         {!subject ? (
           <p className="text-xs text-slate-500 dark:text-slate-400">
             {t("resource_feedback_verify")}

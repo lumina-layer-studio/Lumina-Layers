@@ -95,13 +95,15 @@ class ContributionQueue:
                 (self.workspace, server, account, prepared.kind, prepared.key, prepared.fingerprint)).fetchone() is not None
 
     @staticmethod
-    def encode(prepared: PreparedContribution, display: dict[str, Any], origin: Any) -> bytes:
+    def encode(prepared: PreparedContribution, display: dict[str, Any], origin: Any,
+               print_images: list[Any] | None = None) -> bytes:
         output = io.BytesIO()
         with zipfile.ZipFile(output, "w", compression=zipfile.ZIP_STORED) as archive:
             archive.writestr("snapshot.json", json_bytes({
                 "kind": prepared.kind, "key": prepared.key, "fingerprint": prepared.fingerprint,
                 "display": with_contribution_license(prepared, display),
                 "compatibility": prepared.compatibility, "origin": origin,
+                "print_images": list(print_images or []),
                 "consent_version": CONSENT_VERSION,
             }))
             for name, payload in prepared.files.items():
@@ -124,8 +126,9 @@ class ContributionQueue:
         return prepared, meta["origin"]
 
     def add(self, server: str, account: str, prepared: PreparedContribution,
-            display: dict[str, Any], origin: Any, *, ready: bool, reason: str = "") -> str | None:
-        payload = self.encode(prepared, display, origin)
+            display: dict[str, Any], origin: Any, *, ready: bool, reason: str = "",
+            print_images: list[Any] | None = None) -> str | None:
+        payload = self.encode(prepared, display, origin, print_images=print_images)
         with self.transaction() as db:
             grant = db.execute("""SELECT * FROM contribution_grants
                 WHERE workspace=? AND server=? AND account=? AND enabled=1""",
@@ -170,11 +173,38 @@ class ContributionQueue:
             prepared, origin = self.decode(row["snapshot"], row["digest"])
             return dict(row), prepared, origin
 
-    def review(self, server: str, job_id: str, account: str, display: dict[str, Any]) -> None:
+    def print_images(self, server: str, job_id: str) -> list[Any]:
+        with self.transaction(write=False) as db:
+            row = db.execute("""SELECT snapshot, digest FROM contribution_jobs WHERE workspace=? AND server=? AND id=?""",
+                             (self.workspace, server, job_id)).fetchone()
+            if not row or row["snapshot"] is None:
+                raise ValueError("The pending contribution no longer exists.")
+            if sha(row["snapshot"]) != row["digest"]:
+                raise ValueError("The saved contribution snapshot is damaged.")
+            with zipfile.ZipFile(io.BytesIO(row["snapshot"])) as archive:
+                meta = json.loads(archive.read("snapshot.json"))
+            raw_images = meta.get("print_images")
+            if not isinstance(raw_images, list):
+                return []
+            normalized: list[Any] = []
+            for entry in raw_images:
+                if (
+                    isinstance(entry, dict)
+                    and isinstance(entry.get("role"), str)
+                    and isinstance(entry.get("data"), str)
+                ):
+                    normalized.append({"role": entry["role"], "data": entry["data"]})
+                elif isinstance(entry, str):
+                    normalized.append(entry)
+            return normalized
+
+    def review(self, server: str, job_id: str, account: str, display: dict[str, Any],
+               *, print_images: list[Any] | None = None) -> None:
         row, prepared, origin = self.snapshot(server, job_id)
         if row["account"] != account:
             raise ValueError("Reconnect the account that created this contribution.")
-        payload = self.encode(prepared, display, origin)
+        saved_images = print_images if print_images is not None else self.print_images(server, job_id)
+        payload = self.encode(prepared, display, origin, print_images=saved_images)
         with self.transaction() as db:
             usage = db.execute("SELECT COALESCE(SUM(LENGTH(snapshot)),0) FROM contribution_jobs WHERE id<>?",
                                (job_id,)).fetchone()[0]

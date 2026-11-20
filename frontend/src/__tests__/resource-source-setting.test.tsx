@@ -136,3 +136,35 @@ it("keeps the LUT default label neutral when a saved mirror hides its provider",
 
   expect(screen.getByRole("option", { name: /^默认线路$/ })).toBeInTheDocument();
 });
+
+it("describes a disabled default source honestly and guides applying a new source", async () => {
+  const disabled: ResourceStatus = {
+    materials: { configured: false, seed: { available: false, state: "ready" } },
+    luts: { configured: false, seed: { available: false, state: "ready" } },
+    source_repository: "https://github.test/repo",
+    source_settings: {
+      mode: "default",
+      mirror_url: "",
+      error: null,
+      urls: { materials: "", luts: "" },
+      default_urls: { materials: "", luts: "" },
+      default_provider: "github",
+    },
+  };
+  vi.mocked(fetchResourceStatus).mockResolvedValue(disabled);
+  useResourceStore.setState({ status: disabled, error: null, generation: 0, catalogHealth: {} });
+
+  render(<ResourceSourceSetting />);
+  expect(screen.getByText("云端目录未启用")).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "来源设置" }));
+  const dialog = await screen.findByRole("dialog");
+  expect(dialog).toHaveTextContent("云端目录未启用");
+  expect(dialog).toHaveTextContent("未配置");
+  expect(dialog).toHaveTextContent("当前默认停用云端目录");
+  expect(screen.queryByRole("button", { name: "测试连接" })).not.toBeInTheDocument();
+
+  fireEvent.click(screen.getByRole("combobox", { name: "资源来源" }));
+  fireEvent.click(screen.getByRole("option", { name: "GitHub 目录" }));
+  expect(dialog).toHaveTextContent("已修改来源，点击「应用来源」后生效。");
+  expect(screen.getByRole("button", { name: "应用来源" })).toBeEnabled();
+});

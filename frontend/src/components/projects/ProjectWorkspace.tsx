@@ -15,6 +15,7 @@ import Button from "../ui/Button";
 import { ProjectResourceLeases } from "./ProjectResourceLeases";
 import { workstationInputClass } from "../ui/panelPrimitives";
 import ProjectToolbar from "./ProjectToolbar";
+import { ResourceCatalogSourceControls } from "../ResourceCatalogPanel";
 import { useProjectShareCard } from "./useProjectShareCard";
 import TransientBanner from "../ui/TransientBanner";
 import EditorHistoryControls from "./EditorHistoryControls";
@@ -52,15 +53,22 @@ export default function ProjectWorkspace({ children, className = "px-4", style }
   busyRef.current = busy;
   useLayoutEffect(() => {
     const row = toolbarRow.current;
+    if (!row) return;
     const actions = toolbarActions.current;
-    if (!row || !actions) return;
-    const measure = () => row.style.setProperty("--project-actions-width", `${actions.getBoundingClientRect().width + 16}px`);
+    if (!actions) {
+      row.style.setProperty("--project-actions-width", "0px");
+      return;
+    }
+    const measure = () => {
+      const width = actions.getBoundingClientRect().width;
+      row.style.setProperty("--project-actions-width", width > 0 ? `${width + 16}px` : "0px");
+    };
     measure();
     if (typeof ResizeObserver === "undefined") return;
     const observer = new ResizeObserver(measure);
     observer.observe(actions);
     return () => observer.disconnect();
-  }, []);
+  }, [activeTab]);
   const error = (cause: unknown) => useProjectSessionStore.getState().setStatus("error", cause instanceof Error ? cause.message : String(cause));
   const perform = useCallback((action: () => Promise<unknown> | void) => { void Promise.resolve().then(action).catch(error); }, []);
   const guard = useCallback(async (action: () => Promise<unknown> | void, opened?: OpenedProjectFile) => {
@@ -177,16 +185,32 @@ export default function ProjectWorkspace({ children, className = "px-4", style }
   const recoveries = availableRecoveries(ui.recoveries, ui.entries);
   const projectError = session.lastError || ui.recoveryError;
   const filtered = ui.entries.filter((entry) => `${entry.name} ${entry.path ?? ""} ${entry.workflowKinds?.join(" ") ?? ""}`.toLowerCase().includes(query.toLowerCase()));
+  const catalogKind =
+    activeTab === "material-cloud-sync"
+      ? "materials"
+      : activeTab === "lut-cloud-sync"
+        ? "luts"
+        : null;
+  const showProjectToolbar =
+    catalogKind === null && activeTab !== "material-library" && activeTab !== "lut-library";
   const panel = "m-auto rounded-2xl border panel-divider bg-[var(--surface-panel-strong)] p-6 text-slate-900 dark:text-slate-100 backdrop:bg-slate-950/50";
   return <>
     <ProjectResourceLeases />
     {deviceKind && <ProjectDeviceDialog kind={deviceKind} onClose={() => setDeviceKind(null)} />}
     <div ref={toolbarRow} data-testid="workspace-toolbar" style={style} className={`relative z-40 flex min-h-11 shrink-0 items-center gap-4 border-b panel-divider bg-slate-200 py-1 dark:bg-slate-950 ${className}`}>
       <div data-testid="sub-tab-row" className={`flex min-w-0 flex-1 items-center ${subTabRowJustifyClass(alignment)}`}>{children}</div>
-      <div ref={toolbarActions} className="flex shrink-0 items-center gap-2">
-        {activeTab === "converter" && <EditorHistoryControls disabled={busy} />}
-        <ProjectToolbar name={ui.name} dirty={session.dirty} busy={busy} saving={session.status === "saving"} status={busy ? t("project_working") : session.dirty ? t("project_unsaved") : session.savedRevisionId ? t("project_saved") : t("project_draft")} notice={ui.notice && (!session.dirty || ui.notice !== "project_saved") ? t(ui.notice) : null} onCenter={showCenter} onNew={showNew} onOpen={open} onSave={save} onSaveAs={saveAs} onExport={() => perform(exportCurrentProject)} shareCard={sharing.available ? { onExport: () => { void sharing.exportCard(); }, disabledReason: sharing.disabledReason } : undefined} />
-      </div>
+      {(catalogKind || showProjectToolbar) && (
+        <div ref={toolbarActions} className="flex shrink-0 items-center gap-2">
+          {catalogKind ? (
+            <ResourceCatalogSourceControls kind={catalogKind} />
+          ) : (
+            <>
+              {activeTab === "converter" && <EditorHistoryControls disabled={busy} />}
+              <ProjectToolbar name={ui.name} dirty={session.dirty} busy={busy} saving={session.status === "saving"} status={busy ? t("project_working") : session.dirty ? t("project_unsaved") : session.savedRevisionId ? t("project_saved") : t("project_draft")} notice={ui.notice && (!session.dirty || ui.notice !== "project_saved") ? t(ui.notice) : null} onCenter={showCenter} onNew={showNew} onOpen={open} onSave={save} onSaveAs={saveAs} onExport={() => perform(exportCurrentProject)} shareCard={sharing.available ? { onExport: () => { void sharing.exportCard(); }, disabledReason: sharing.disabledReason } : undefined} />
+            </>
+          )}
+        </div>
+      )}
     </div>
     {(sharing.error || session.lastError || ui.recoveryError) && <div role="alert" className="flex items-center gap-3 bg-amber-50 px-4 py-2 text-sm text-amber-900 dark:bg-amber-950 dark:text-amber-100"><span className="flex-1">{sharing.error || (projectError && <>{projectErrorMessage(projectError, t)}<details className="mt-1 text-xs"><summary className="cursor-pointer">{t("project_error_details")}</summary><p className="mt-1 break-words">{projectError}</p></details></>)}</span><Button label={t("common_close")} size="sm" variant="ghost" onClick={() => { sharing.dismissError(); useProjectSessionStore.getState().setStatus("idle"); useProjectUi.setState({ recoveryError: null }); }} /></div>}
     <TransientBanner message={sharing.notice} onDismiss={sharing.dismissNotice} />

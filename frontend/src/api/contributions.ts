@@ -26,7 +26,7 @@ export interface PreparedContribution {
   display: Record<string, unknown> & { filaments?: Record<string, unknown>[] };
   compatibility: Record<string, unknown>;
   origin?: {
-    reference: { kind: ResourceKind; resource_id: string; revision_id: string; content_hash: string } | null;
+    reference: ContributionSourceReference | null;
     modified: boolean; original_author: string; rights_basis: string; license?: string | null;
   } | null;
 }
@@ -41,7 +41,19 @@ export interface ContributionReceipt {
   revision_id?: string; display?: Record<string, unknown>;
   latest_decision?: { comment?: string };
 }
+export type PrintImageRole =
+  | "white_card"
+  | "black_card"
+  | "calibration_board"
+  | "finished_print";
+export interface PrintImageSubmission {
+  role: PrintImageRole;
+  data: string;
+}
 export interface OwnedRevision { kind: ResourceKind; resource_id: string; revision_id: string }
+export interface ContributionSourceReference extends OwnedRevision { content_hash: string }
+export const checkOriginalSource = async (reference: ContributionSourceReference, account_id: string) =>
+  (await apiClient.post<{ eligible: boolean }>("/contributions/original-source", { ...reference, account_id }, config)).data;
 export const prepareContributionRevision = async (revision: OwnedRevision, account_id: string) =>
   (await apiClient.post<PreparedContribution>("/contributions/prepare-revision", { ...revision, account_id }, config)).data;
 export const changeContributionReview = async (revision: OwnedRevision, account_id: string, action: "withdraw" | "submit") =>
@@ -66,6 +78,7 @@ export const submitContribution = async (payload: {
   queue_id?: string;
   revision?: OwnedRevision;
   updates_resource_id?: string;
+  print_images?: (string | PrintImageSubmission)[];
 }) => (await apiClient.post<ContributionReceipt>("/contributions/submit", payload, config)).data;
 
 export interface QueuedContribution {

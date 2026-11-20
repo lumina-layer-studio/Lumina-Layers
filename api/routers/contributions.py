@@ -1,15 +1,20 @@
 """Prepare, confirm and follow up manual public resource contributions."""
 
+import base64
+import binascii
 from collections.abc import Iterator
 from contextlib import contextmanager
+from io import BytesIO
 from ipaddress import ip_address
 import os
 import sqlite3
-import zipfile
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 from urllib.parse import urlsplit
+import warnings
+import zipfile
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response
+from PIL import Image
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from api.services.resource_contribution import ContributionError, connection
@@ -128,6 +133,93 @@ class OwnedRevision(BaseModel):
     revision_id: str = Field(min_length=1, max_length=200)
 
 
+PrintImageRole = Literal["white_card", "black_card", "calibration_board", "finished_print"]
+
+
+class PrintImagePayload(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+    role: PrintImageRole
+    data: str = Field(min_length=1, max_length=1_500_000)
+
+
+def _clean_and_verify_print_photo(raw_val: str) -> str:
+    cleaned = raw_val.split(",", 1)[1] if raw_val.startswith("data:image/") and "," in raw_val else raw_val
+    try:
+        decoded = base64.b64decode(cleaned, validate=True)
+    except binascii.Error as exc:
+        raise ValueError("Could not read this print photo. Use JPG, PNG or WebP.") from exc
+    if not decoded or len(decoded) > 1024 * 1024:
+        raise ValueError("Each print photo must be under 1 MB.")
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", Image.DecompressionBombWarning)
+            with Image.open(BytesIO(decoded)) as img:
+                if (
+                    img.format not in {"JPEG", "PNG", "WEBP"}
+                    or getattr(img, "is_animated", False)
+                    or img.width * img.height > 16_000_000
+                ):
+                    raise ValueError("Use a static JPG, PNG or WebP print photo.")
+                img.load()
+    except ValueError:
+        raise
+    except (OSError, SyntaxError, Image.DecompressionBombError, Image.DecompressionBombWarning) as exc:
+        raise ValueError("Could not read this print photo. Use JPG, PNG or WebP.") from exc
+    return cleaned
+
+
+_ALLOWED_PRINT_ROLES: dict[str, set[str]] = {
+    "materials": {"white_card", "black_card", "finished_print"},
+    "luts": {"calibration_board", "finished_print"},
+}
+_REQUIRED_PRINT_ROLES: dict[str, tuple[str, ...]] = {
+    "materials": ("white_card", "black_card", "finished_print"),
+    "luts": ("calibration_board", "finished_print"),
+}
+_MAX_PRINT_ROLE_COUNTS: dict[str, int] = {
+    "white_card": 1,
+    "black_card": 1,
+    "calibration_board": 2,
+    "finished_print": 2,
+}
+
+
+def _validate_contribution_print_images(
+    kind: Literal["materials", "luts"],
+    photos: list[Any],
+    *,
+    require_present: bool,
+) -> None:
+    if not photos:
+        if require_present:
+            raise HTTPException(422, "Attach at least one actual print photo for review.")
+        return
+    if all(isinstance(entry, str) for entry in photos):
+        return
+    if not all(isinstance(entry, dict) for entry in photos):
+        raise HTTPException(422, "Use a consistent print photo format.")
+    allowed = _ALLOWED_PRINT_ROLES[kind]
+    counts: dict[str, int] = {}
+    for entry in photos:
+        role = str(entry.get("role") or "")
+        if role not in allowed:
+            raise HTTPException(422, "Print photo slot does not match this resource kind.")
+        counts[role] = counts.get(role, 0) + 1
+        if counts[role] > _MAX_PRINT_ROLE_COUNTS.get(role, 4):
+            raise HTTPException(422, "Too many print photos in a single slot.")
+    required = _REQUIRED_PRINT_ROLES[kind]
+    if any(counts.get(req, 0) < 1 for req in required):
+        if kind == "materials":
+            raise HTTPException(
+                422,
+                "Attach photos of the white-backing gradient card, black-backing gradient card, and at least one finished print.",
+            )
+        raise HTTPException(
+            422,
+            "Attach at least one calibration board photo and at least one finished print photo.",
+        )
+
+
 class ContributionRequest(ResourceSelection):
     queue_id: str | None = Field(default=None, pattern=r"^[a-f0-9]{32}$")
     fingerprint: str = Field(pattern=r"^[a-f0-9]{64}$")
@@ -140,6 +232,24 @@ class ContributionRequest(ResourceSelection):
     attribution: dict[str, Any]
     revision: OwnedRevision | None = None
     updates_resource_id: str | None = Field(default=None, min_length=1, max_length=200)
+    print_images: list[
+        Annotated[str, Field(min_length=1, max_length=1_500_000)] | PrintImagePayload
+    ] = Field(default_factory=list, max_length=4)
+
+    @field_validator("print_images")
+    @classmethod
+    def valid_print_images(cls, values: list[str | PrintImagePayload]) -> list[Any]:
+        if not values:
+            return []
+        if all(isinstance(item, str) for item in values):
+            return [_clean_and_verify_print_photo(item) for item in values if isinstance(item, str)]
+        if all(isinstance(item, PrintImagePayload) for item in values):
+            return [
+                {"role": item.role, "data": _clean_and_verify_print_photo(item.data)}
+                for item in values
+                if isinstance(item, PrintImagePayload)
+            ]
+        raise ValueError("Use a consistent print photo format.")
 
     @field_validator("attribution")
     @classmethod
@@ -208,6 +318,16 @@ class PrepareRevisionRequest(OwnedRevision):
     account_id: str = Field(min_length=1, max_length=200)
 
 
+class OriginalSourceRequest(PrepareRevisionRequest):
+    content_hash: str = Field(pattern=r"^(sha256:)?[a-f0-9]{64}$")
+
+
+@router.post("/original-source")
+def original_source(request: OriginalSourceRequest) -> dict[str, bool]:
+    with contribution_errors():
+        return {"eligible": connection.owns_original_source(**request.model_dump())}
+
+
 @router.post("/prepare-revision")
 def prepare_revision(request: PrepareRevisionRequest) -> dict[str, Any]:
     with contribution_errors():
@@ -259,10 +379,16 @@ def submit(request: ContributionRequest) -> dict[str, Any]:
             raise HTTPException(409, "The local resource changed. Reopen the contribution form.")
         attribution = dict(request.attribution)
         if origin:
+            reference = origin["reference"]
             if attribution["relationship"] == "original":
-                raise HTTPException(422, "This resource has a public source. Preserve its original attribution.")
-            if origin["reference"]:
-                attribution["source"] = origin["reference"]
+                if (request.revision or request.queue_id or not reference
+                        or not connection.owns_original_source(**reference, account_id=request.account_id)):
+                    raise HTTPException(422, "This resource has a public source. Preserve its original attribution.")
+                if request.updates_resource_id and request.updates_resource_id != reference["resource_id"]:
+                    raise HTTPException(422, "An original public contribution can only update its own resource.")
+                prepared.resource_id = reference["resource_id"]
+            elif reference:
+                attribution["source"] = reference
         attribution = normalize_attribution(attribution)
         if request.kind == "materials" and (not request.product.brand or not request.product.material_type):
             raise HTTPException(422, "Brand and material type are required.")
@@ -295,11 +421,13 @@ def submit(request: ContributionRequest) -> dict[str, Any]:
                 raise HTTPException(409, "Reconnect the account that created this contribution.")
             if not status.get("email_verified"):
                 raise HTTPException(403, "Verify your email in the material library first.")
-            queue.review(connection.source(), request.queue_id, request.account_id, display)
+            stored_photos = request.print_images or queue.print_images(connection.source(), request.queue_id)
+            _validate_contribution_print_images(request.kind, stored_photos, require_present=True)
+            queue.review(connection.source(), request.queue_id, request.account_id, display, print_images=stored_photos)
             return {"kind": request.kind, "status": "queued", "queue_id": request.queue_id}
-        if request.updates_resource_id:
-            if request.revision:
-                raise HTTPException(422, "The correction is already bound to its original resource.")
+        if request.updates_resource_id and request.revision:
+            raise HTTPException(422, "The correction is already bound to its original resource.")
+        if request.updates_resource_id and prepared.resource_id is None:
             with connection.lock:
                 rows = connection.history()
                 field = "material_id" if request.kind == "materials" else "lut_id"
@@ -308,7 +436,14 @@ def submit(request: ContributionRequest) -> dict[str, Any]:
                     raise HTTPException(404, "The selected resource does not belong to the connected account.")
                 connection.owned_revision(request.kind, target[field], target["revision_id"], request.account_id)
                 prepared.resource_id = target[field]
-        return connection.submit(prepared, display, expected_subject=request.account_id)
+        is_existing_owned = bool(request.revision or prepared.resource_id)
+        _validate_contribution_print_images(
+            request.kind,
+            request.print_images,
+            require_present=not is_existing_owned,
+        )
+        submit_kwargs = {"print_images": request.print_images} if request.print_images else {}
+        return connection.submit(prepared, display, expected_subject=request.account_id, **submit_kwargs)
 
 
 class AutomaticContributionRequest(BaseModel):

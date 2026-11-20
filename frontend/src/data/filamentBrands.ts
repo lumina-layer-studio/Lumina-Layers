@@ -62,7 +62,7 @@ export const filamentBrands: readonly FilamentBrand[] = [
   { intl: "eSUN", cn: "易生", logo: esun, logoDark: esunDark },
   { intl: "Inslogic", cn: "Inslogic", logo: inslogic, logoDark: inslogicDark },
   { intl: "JAYO", cn: "JAYO", logo: jayo, logoDark: jayoDark },
-  { intl: "KARVAX", cn: "无境新材", logo: karvax, logoDark: karvaxDark },
+  { intl: "KARVAX", cn: "无境新材", logo: karvax, logoDark: karvaxDark, aliases: ["wjxc", "无境"] },
   { intl: "Kexcelled", cn: "Kexcelled", logo: kexcelled },
   { intl: "KYNIX", cn: "KYNIX", logo: kynix, logoDark: kynixDark },
   { intl: "Polymaker", cn: "Polymaker" },
@@ -78,11 +78,22 @@ const darkLogos = new Map(filamentBrands.flatMap((brand) =>
 ));
 
 export const POLYMAKER_PANCHROMA_LOGO = "https://www.luminastudio.com.cn/logos/polymaker-teal.svg";
-const polymakerLogoStart = Date.parse("2026-11-18T04:58:38Z");
-const polymakerLogoEnd = Date.parse("2027-11-18T04:58:38Z");
+// One-year term from Polymaker's email confirmation on 2026-11-18 17:06:41 +08:00.
+const polymakerLogoStart = Date.parse("2026-11-18T09:06:41Z");
+const polymakerLogoEnd = Date.parse("2027-11-18T09:06:41Z");
+/** Approved Polymaker (series, materialType) entries confirmed with Polymaker before display. */
+const approvedPolymakerSeries: readonly { series: string; materialType: string }[] = [
+  { series: "panchroma", materialType: "pla" },
+];
 
 export function polymakerPanchromaLogo(brand: string | undefined, series: string, materialType: string) {
-  if (brand !== "Polymaker" || series.toLowerCase() !== "panchroma" || materialType.toLowerCase() !== "pla") return;
+  if (brand !== "Polymaker") return;
+  const normalizedSeries = series.toLowerCase();
+  const normalizedMaterial = materialType.toLowerCase();
+  const approved = approvedPolymakerSeries.some(
+    (entry) => entry.series === normalizedSeries && entry.materialType === normalizedMaterial,
+  );
+  if (!approved) return;
   const now = Date.now();
   return now >= polymakerLogoStart && now < polymakerLogoEnd ? POLYMAKER_PANCHROMA_LOGO : undefined;
 }

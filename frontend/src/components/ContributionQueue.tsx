@@ -127,8 +127,8 @@ export default function ContributionQueue({
                 disabled={busy || !subject || !connection?.email_verified}
                 label={t("contribution_auto_consent")}
               />
-              <DataLicenseLink />
-              <div>
+              <div className="flex flex-wrap items-center justify-between gap-3 pt-0.5">
+                <DataLicenseLink />
                 <Button
                   label={t("contribution_auto_enable")}
                   variant="primary"

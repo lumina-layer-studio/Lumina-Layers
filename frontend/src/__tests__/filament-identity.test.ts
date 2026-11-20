@@ -21,7 +21,9 @@ describe("filament packaging and search", () => {
       expect(filamentIdentity("Polymaker", "Basic White", "en", { ...display, series: "Basic" }).logo).toBeUndefined();
       expect(filamentIdentity("Polymaker", "Panchroma", "en", { ...display, material_type: "PETG" }).logo).toBeUndefined();
       expect(filamentIdentity("Polymaker", "", "en")).toMatchObject({ brand: "Polymaker", logo: undefined });
-      vi.setSystemTime(new Date("2027-11-18T04:58:38Z"));
+      vi.setSystemTime(new Date("2027-11-18T09:06:40Z"));
+      expect(filamentIdentity("Polymaker", "Panchroma 品红", "zh", display).logo).toBe(logo);
+      vi.setSystemTime(new Date("2027-11-18T09:06:41Z"));
       expect(filamentIdentity("Polymaker", "Panchroma 品红", "zh", display).logo).toBeUndefined();
     } finally {
       vi.useRealTimers();
@@ -77,6 +79,12 @@ describe("filament packaging and search", () => {
     expect(filamentIdentity("KARVAX", "Basic 烟笼紫霞", "en", {
       material_type: "PLA", series: "Basic", color_name: "烟笼紫霞",
     }, "INTL").name).toBe("Basic 烟笼紫霞");
+    expect(filamentIdentity("wjxc", "PLA · CMYWGK", "zh", {
+      brand_identity: { key: "wjxc", label: "wjxc" },
+    }, "CN")).toMatchObject({ brand: "无境新材" });
+    expect(filamentIdentity("wjxc", "PLA · CMYWGK", "zh", {
+      brand_identity: { key: "wjxc", label: "wjxc" },
+    }, "CN").logo).toBeTruthy();
     expect(filamentIdentity("Bambu Lab", "Basic 黑色", "en", {
       material_type: "PLA", series: "Basic", color_name: "黑色", color_code: "10203",
     }, "INTL").name).toBe("Basic 黑色");

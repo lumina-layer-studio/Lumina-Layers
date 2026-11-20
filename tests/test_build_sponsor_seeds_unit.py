@@ -5,6 +5,8 @@ from __future__ import annotations
 import hashlib
 import io
 import json
+import subprocess
+import sys
 import zipfile
 from pathlib import Path
 
@@ -13,11 +15,9 @@ import pytest
 from api.lut_seed import lut_seed_catalog
 from api.material_seed import material_seed_catalog
 from scripts.build_sponsor_seeds import (
-    build_seed_release,
     canonical_sponsor_brand,
     is_eligible_for_starter_seed,
 )
-from scripts.prepare_public_resources import prepare_resources
 
 
 def _make_material_bundle(material_id: str, revision_id: str, channel: str, brand: str) -> tuple[bytes, str, str]:
@@ -182,9 +182,9 @@ def test_build_seed_release_filters_to_sponsors_and_passes_runtime_verification(
     )
 
     sponsor_lut, sponsor_lut_sha, sponsor_lut_content = _make_lut_bundle("lut_liushuo", "rev_1", "community", "六朔", "liushuo/cmyw.json")
-    other_lut, other_lut_sha, other_lut_content = _make_lut_bundle("lut_jayo", "rev_1", "community", "JAYO", "jayo/rybw.json")
+    mixed_lut, mixed_lut_sha, mixed_lut_content = _make_lut_bundle("lut_mixed", "rev_1", "community", "六朔", "liushuo/mixed.json")
     (public_dir / "luts/packages" / f"{sponsor_lut_sha}.zip").write_bytes(sponsor_lut)
-    (public_dir / "luts/packages" / f"{other_lut_sha}.zip").write_bytes(other_lut)
+    (public_dir / "luts/packages" / f"{mixed_lut_sha}.zip").write_bytes(mixed_lut)
 
     (public_dir / "luts/catalog.json").write_text(
         json.dumps(
@@ -199,17 +199,25 @@ def test_build_seed_release_filters_to_sponsors_and_passes_runtime_verification(
                         "package_url": f"luts/packages/{sponsor_lut_sha}.zip",
                         "package_sha256": f"sha256:{sponsor_lut_sha}",
                         "package_bytes": len(sponsor_lut),
-                        "display": {"brand": "六朔", "name": "PETG · CMYW"},
+                        "display": {
+                            "brand": "六朔",
+                            "name": "PETG · CMYW",
+                            "filaments": [{"brand": name} for name in ("六朔", "Liu Shuo", "六朔", "liushuo")],
+                        },
                     },
                     {
-                        "lut_id": "lut_jayo",
+                        "lut_id": "lut_mixed",
                         "revision_id": "rev_1",
-                        "content_hash": other_lut_content,
+                        "content_hash": mixed_lut_content,
                         "channel": "community",
-                        "package_url": f"luts/packages/{other_lut_sha}.zip",
-                        "package_sha256": f"sha256:{other_lut_sha}",
-                        "package_bytes": len(other_lut),
-                        "display": {"brand": "JAYO", "name": "PETG · RYBW"},
+                        "package_url": f"luts/packages/{mixed_lut_sha}.zip",
+                        "package_sha256": f"sha256:{mixed_lut_sha}",
+                        "package_bytes": len(mixed_lut),
+                        "display": {
+                            "brand": "六朔",
+                            "name": "PETG · CMYW",
+                            "filaments": [{"brand": name} for name in ("六朔", "拓竹", "六朔", "六朔")],
+                        },
                     },
                 ],
             },
@@ -220,12 +228,24 @@ def test_build_seed_release_filters_to_sponsors_and_passes_runtime_verification(
 
     release_dir = tmp_path / "release"
     staged_dir = tmp_path / "staged"
-    release = build_seed_release(public_dir, release_dir, "2026.11.20.test")
+    result = subprocess.run(
+        [
+            sys.executable, "-m", "scripts.build_sponsor_seeds",
+            "--public-dir", str(public_dir),
+            "--output", str(release_dir),
+            "--dataset-version", "2026.11.20.test",
+            "--stage-runtime", str(staged_dir),
+        ],
+        cwd=Path(__file__).resolve().parents[1],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    release = json.loads(result.stdout)
     assert release["selection"]["basis"] == "official_and_sponsor_brands"
     assert release["artifacts"]["materials"]["material_count"] == 1
     assert release["artifacts"]["luts"]["lut_count"] == 1
 
-    prepare_resources(release_dir / "resource-release.json", staged_dir, source_dir=release_dir)
     monkeypatch.setenv("LUMINA_MATERIALS_SEED_PATH", str(staged_dir / "materials/lumina-materials-seed.zip"))
     monkeypatch.setenv("LUMINA_LUTS_SEED_PATH", str(staged_dir / "luts/lumina-luts-seed.zip"))
 

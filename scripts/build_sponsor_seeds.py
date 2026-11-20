@@ -1,10 +1,9 @@
 """Build sponsor-only starter seed collections from a verified public/v1 snapshot.
 
-The bundled offline starter packs (`lumina-materials-seed.zip` and
-`lumina-luts-seed.zip`) include only `official` channel calibrations and
-approved single-brand calibrations from Lumina's official sponsor and partner
-roster. All other approved community brands remain available on demand in the
-cloud/GitHub public catalog (`public/v1`).
+By default the generated starter packs (`lumina-materials-seed.zip` and
+`lumina-luts-seed.zip`) contain `official` channel calibrations and approved
+single-brand calibrations from Lumina's sponsor and partner roster. Run from
+the repository root with `python -m scripts.build_sponsor_seeds` to stage them.
 
 Original distribution package ZIPs remain byte-for-byte intact. This script
 never contacts any remote server.
@@ -108,7 +107,7 @@ def canonical_sponsor_brand(row: dict[str, Any]) -> str | None:
         return None
     sponsor_key = next(iter(matched))
 
-    # Reject multi-brand LUTs whose per-slot filaments include any non-sponsor brand.
+    # Every named slot must resolve to the same sponsor as the LUT.
     filaments = display.get("filaments")
     if isinstance(filaments, list):
         for slot in filaments:
@@ -117,9 +116,7 @@ def canonical_sponsor_brand(row: dict[str, Any]) -> str | None:
             slot_brand = _norm_token(slot.get("brand"))
             if not slot_brand:
                 continue
-            if slot_brand in DISALLOWED_MIXED_TOKENS:
-                return None
-            if slot_brand not in SPONSOR_ALIAS_TO_CANONICAL:
+            if SPONSOR_ALIAS_TO_CANONICAL.get(slot_brand) != sponsor_key:
                 return None
 
     return sponsor_key

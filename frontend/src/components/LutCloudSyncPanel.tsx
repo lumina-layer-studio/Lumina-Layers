@@ -121,11 +121,12 @@ const mergeCatalogPage = (
   };
 };
 
-export default function LutCloudSyncPanel({ initialPersonalFilter = "all", initialQuery = "", onQueryChange, onBrowseOffline, onInstalled, ...filterProps }: {
+export default function LutCloudSyncPanel({ initialPersonalFilter = "all", initialQuery = "", onQueryChange, onBrowseOffline, onOpenSourceSettings, onInstalled, ...filterProps }: {
   initialPersonalFilter?: PersonalFilter;
   initialQuery?: string;
   onQueryChange?: (query: string) => void;
   onBrowseOffline?: () => void;
+  onOpenSourceSettings?: () => void;
   onInstalled?: () => void | Promise<unknown>;
 } & ResourceFilterProps = {}) {
   const { t, lang } = useI18n();
@@ -361,13 +362,22 @@ export default function LutCloudSyncPanel({ initialPersonalFilter = "all", initi
     return () => { window.clearTimeout(timer); controller.abort(); };
   }, [scope, channels, visibleItems, boards, previewAttempt]);
 
+  const isNotConfigured = status?.configured === false;
   const catalogLoadedCount = catalog?.items.length ?? 0;
-  useCatalogHealth("luts", !!catalog && !isLoading, catalog?.cached, catalog?.fetched_at, error);
+  useCatalogHealth("luts", !!catalog && !isLoading && !isNotConfigured, catalog?.cached, catalog?.fetched_at, error);
   const catalogTotalCount = catalog?.total ?? catalogLoadedCount;
   const hasMoreCatalogEntries = status?.configured === true && offset.current < catalogTotalCount;
   const offlineAction = onBrowseOffline
-    ? <Button label={t("resources_browse_offline")} onClick={onBrowseOffline} />
+    ? <Button label={t("resources_browse_offline")} size="sm" onClick={onBrowseOffline} />
     : undefined;
+  const unconfiguredAction = onOpenSourceSettings || offlineAction ? (
+    <div className="flex flex-wrap items-center gap-2">
+      {onOpenSourceSettings && (
+        <Button label={t("resources_source_settings")} variant="secondary" size="sm" onClick={onOpenSourceSettings} />
+      )}
+      {offlineAction}
+    </div>
+  ) : undefined;
 
   // Complete the lightweight catalog before presenting search as complete.
   useEffect(() => {
@@ -390,11 +400,11 @@ export default function LutCloudSyncPanel({ initialPersonalFilter = "all", initi
           count: isLoading || hasMoreCatalogEntries ? null : matchingItems.filter(({ entry }) => matchesInstallFilter(resolveCatalogInstallState(entry), filter)).length }))} />}>
       <ResourceCatalogFilters kind="luts" facets={facets} filters={filters} onChange={setFilters} complete={!isLoading && !hasMoreCatalogEntries} />
     </ResourceCatalogToolbar>}
-    footer={<><span className="text-xs text-slate-500 dark:text-slate-400">{t("cloud_library_results_count").replace("{count}", String(filteredItems.length))}</span>
+    footer={!isNotConfigured && <><span className="text-xs text-slate-500 dark:text-slate-400">{t("cloud_library_results_count").replace("{count}", String(filteredItems.length))}</span>
       {pageCount > 1 && <Pagination page={currentPage} pageCount={pageCount} onPageChange={setPage} />}</>}
     emptyMessage={error || notice ? "" : hasMoreCatalogEntries ? t("resources_search_incomplete") : undefined}
     emptyAction={!error && !notice && (searchQuery.trim() || hasResourceFilters(filters) || installFilter !== "all") && <Button label={t(hasResourceFilters(filters) || installFilter !== "all" ? "resources_clear_filters" : "resources_clear_search")} onClick={() => { changeQuery(""); setFilters(EMPTY_RESOURCE_FILTERS); setInstallFilter("all"); }} />}
-    notices={<><CommunityNotice kind="luts" ids={visibleItems.map(({ entry }) => entry.lut_id)} />{notice && <StatusBanner tone="warning">{notice}</StatusBanner>}{error && <StatusBanner tone="error" action={offlineAction}>{error}</StatusBanner>}{previewError && <StatusBanner tone="warning" action={<Button label={t("resources_retry")} variant="secondary" onClick={() => setPreviewAttempt((value) => value + 1)} />}>{t("resources_lut_preview_failed")}</StatusBanner>}{catalog?.cached && <StatusBanner tone="info" action={!error ? offlineAction : undefined}>{t("resources_cached_catalog")}{catalogCheckedTime(catalog?.fetched_at, lang) && <span className="mt-1 block text-xs">{t("resources_source_checked_at")} · {catalogCheckedTime(catalog?.fetched_at, lang)}</span>}</StatusBanner>}{error && catalog && <StatusBanner tone="info">{t("resources_previous_catalog")}</StatusBanner>}<TransientBanner message={success} onDismiss={() => setSuccess(null)} /><TransientBanner tone="info" autoDismiss={false} message={hasMoreCatalogEntries ? t("cloud_library_loading_index") : null} action={<Button label={t("lut_sync_load_more_btn")} variant="secondary" loading={isLoadingMore} onClick={() => void loadMoreCatalog()} />} /></>}
+    notices={<><CommunityNotice kind="luts" ids={visibleItems.map(({ entry }) => entry.lut_id)} />{notice && <StatusBanner tone="warning" action={isNotConfigured ? unconfiguredAction : undefined}>{notice}</StatusBanner>}{error && <StatusBanner tone="error" action={offlineAction}>{error}</StatusBanner>}{previewError && <StatusBanner tone="warning" action={<Button label={t("resources_retry")} variant="secondary" onClick={() => setPreviewAttempt((value) => value + 1)} />}>{t("resources_lut_preview_failed")}</StatusBanner>}{catalog?.cached && <StatusBanner tone="info" action={!error ? offlineAction : undefined}>{t("resources_cached_catalog")}{catalogCheckedTime(catalog?.fetched_at, lang) && <span className="mt-1 block text-xs">{t("resources_source_checked_at")} · {catalogCheckedTime(catalog?.fetched_at, lang)}</span>}</StatusBanner>}{error && catalog && <StatusBanner tone="info">{t("resources_previous_catalog")}</StatusBanner>}<TransientBanner message={success} onDismiss={() => setSuccess(null)} /><TransientBanner tone="info" autoDismiss={false} message={hasMoreCatalogEntries ? t("cloud_library_loading_index") : null} action={<Button label={t("lut_sync_load_more_btn")} variant="secondary" loading={isLoadingMore} onClick={() => void loadMoreCatalog()} />} /></>}
     items={visibleItems.map(({ entry, identity, mode: rawMode, materialType }) => {
       const maker = identity.brand || t("lut_sync_unknown");
       const mode = resourceColorMode(rawMode, lang) || t("lut_sync_unknown");

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import threading
 import time
@@ -243,6 +244,25 @@ class ContributionConnection:
             raise ContributionError(404, "This revision does not belong to the connected account.")
         return row
 
+    def owns_original_source(self, kind: str, resource_id: str, revision_id: str,
+                             content_hash: str, account_id: str) -> bool:
+        with self.lock:
+            try:
+                row = self.owned_revision(kind, resource_id, revision_id, account_id)
+                attribution = (row.get("display") or {}).get("attribution")
+                if attribution and (not isinstance(attribution, dict) or attribution.get("relationship") != "original"):
+                    return False
+                # The public lookup verifies the revision's hash on the same
+                # Registry. Ownership comes from the owner's record above.
+                self.resource_feedback(kind, {
+                    "resource_id": resource_id, "revision_id": revision_id, "content_hash": content_hash,
+                }, "contributor")
+            except ContributionError as exc:
+                if exc.status in {401, 403, 404, 409}:
+                    return False
+                raise
+        return True
+
     @staticmethod
     def _revision_path(kind: str, row: dict[str, Any]) -> str:
         if kind == "materials":
@@ -372,7 +392,8 @@ class ContributionConnection:
             return False
 
     def submit(self, prepared: PreparedContribution, display: dict[str, Any],
-               expected_subject: str | None = None) -> dict[str, Any]:
+               expected_subject: str | None = None,
+               print_images: list[Any] | None = None) -> dict[str, Any]:
         # Serialize submissions and account switching. A retry checks server receipts
         # first, including after a connection loss between upload and acknowledgement.
         with self.lock:
@@ -385,9 +406,11 @@ class ContributionConnection:
             field = "material_id" if prepared.kind == "materials" else "lut_id"
             existing = next((row for row in self.history() if row["kind"] == prepared.kind
                              and row.get(field) == resource_id and row.get("revision_id") == revision_id), None)
+            submit_json_kw = {"json": {"print_images": print_images}} if print_images else {}
             if existing:
                 if existing.get("status") in {"draft", "withdrawn"}:
-                    return {**self._request("POST", self._revision_path(prepared.kind, existing) + "/submit"), "kind": prepared.kind}
+                    extra = submit_json_kw if prepared.kind == "materials" else {}
+                    return {**self._request("POST", self._revision_path(prepared.kind, existing) + "/submit", **extra), "kind": prepared.kind}
                 if existing.get("status") in {"needs_changes", "rejected", "unpublished"}:
                     raise ContributionError(409, "Revise the submission before sending it for review again.")
                 return existing
@@ -396,10 +419,12 @@ class ContributionConnection:
                     files={"archive": ("material.zip", payload, "application/zip")},
                     data={"visibility": "private", "calibration_method": "gradient_card",
                           "publish_calibrator_name": "true"})
-                return {**self._request("POST", f"/me/material-submissions/{receipt['submission_id']}/submit"),
+                return {**self._request("POST", f"/me/material-submissions/{receipt['submission_id']}/submit", **submit_json_kw),
                         "kind": "materials"}
+            lut_data_kw = {"data": {"print_images": json.dumps(print_images)}} if print_images else {}
             return {**self._request("POST", "/me/lut-submissions",
-                                   files={"archive": ("lut.zip", payload, "application/zip")}),
+                                   files={"archive": ("lut.zip", payload, "application/zip")},
+                                   **lut_data_kw),
                     "kind": "luts"}
 
 

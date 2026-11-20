@@ -1,9 +1,11 @@
+import base64
 import io
 import json
 from pathlib import Path
 import zipfile
 
 import numpy as np
+from PIL import Image
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -12,6 +14,15 @@ from api.routers.contributions import router
 from core.resource_contribution import contribution_package, prepare_contribution
 from core.single_stage import material_files
 from utils.lut_manager import LUTManager
+
+
+def _sample_print_photo() -> str:
+    buf = io.BytesIO()
+    Image.new("RGB", (4, 4), (210, 48, 48)).save(buf, format="PNG")
+    return base64.b64encode(buf.getvalue()).decode("ascii")
+
+
+SAMPLE_PRINT_PHOTO = _sample_print_photo()
 
 
 @pytest.fixture(autouse=True)
@@ -129,6 +140,7 @@ def test_restored_material_keeps_its_original_provenance(tmp_path, monkeypatch, 
     material, = imported.imported_materials
     monkeypatch.setattr(material_files, "MATERIALS_DIR", str(restored))
     monkeypatch.setattr("api.routers.contributions.local_resource_origin", local_resource_origin)
+    monkeypatch.setattr("api.routers.contributions.connection.owns_original_source", lambda **_: False)
     received = []
     monkeypatch.setattr("api.routers.contributions.connection.submit", lambda _, display, **kw:
                         received.append(display["attribution"]) or {"status": "pending"})
@@ -155,6 +167,7 @@ def test_restored_material_keeps_its_original_provenance(tmp_path, monkeypatch, 
         **selection, "name": material["material_name"], "fingerprint": prepared.json()["fingerprint"],
         "product": {"brand": "Lumina-Box", "material_type": "PLA"}, "account_id": "maker",
         "attribution": {"relationship": "original"}, "consent": True,
+        "print_images": [SAMPLE_PRINT_PHOTO],
     })
     assert response.status_code == (422 if catalog_source else 200), response.text
     assert received == ([] if catalog_source else [{"relationship": "original"}])
@@ -224,6 +237,7 @@ def test_catalog_match_preserves_the_local_source_and_public_reference(tmp_path,
         **selection, "name": "Magenta", "fingerprint": prepared["fingerprint"],
         "product": {"brand": "Lumina-Box", "material_type": "PLA"}, "account_id": "maker",
         "attribution": {"relationship": "original"}, "consent": True,
+        "print_images": [SAMPLE_PRINT_PHOTO],
     })
     assert response.status_code == 200, response.text
     assert submitted == [{"relationship": "original"}]
@@ -397,6 +411,7 @@ def test_public_origin_cannot_be_removed_or_relabelled_as_original(tmp_path, mon
     assert prepared["origin"] == origin
     payload = {"kind": "luts", "key": "BW", "name": "BW", "fingerprint": prepared["fingerprint"],
                "product": {}, "consent": True, "account_id": "maker", "attribution": {"relationship": "original"},
+               "print_images": [SAMPLE_PRINT_PHOTO],
                "filaments": [{"brand": "Brand", "material_type": "PLA", "color_name": row["color_name"]}
                              for row in prepared["display"]["filaments"]]}
     assert client.post("/api/contributions/submit", headers=headers, json=payload).status_code == 422
@@ -410,6 +425,67 @@ def test_public_origin_cannot_be_removed_or_relabelled_as_original(tmp_path, mon
     assert client.post("/api/contributions/submit", headers=headers, json=payload).status_code == 422
     del payload["attribution"]
     assert client.post("/api/contributions/submit", headers=headers, json=payload).status_code == 422
+
+
+@pytest.mark.parametrize(("relationship", "owns_revision", "same_content", "allowed"), [
+    ("original", True, True, True),
+    (None, True, True, True),
+    ("redistributed", True, True, False),
+    ("adapted", True, True, False),
+    ("original", False, True, False),
+    ("original", True, False, False),
+])
+def test_public_source_can_update_only_the_current_accounts_original(
+    tmp_path, monkeypatch, relationship, owns_revision, same_content, allowed,
+):
+    from api.services.resource_contribution import ContributionError, connection
+
+    path = tmp_path / "BW.npy"
+    np.save(path, np.arange(96, dtype=np.uint8).reshape(32, 3))
+    monkeypatch.setattr(LUTManager, "get_lut_path", lambda _: str(path))
+    reference = {"kind": "luts", "resource_id": "lut_source", "revision_id": "rev_source",
+                 "content_hash": "sha256:" + "f" * 64}
+    origin = {"reference": reference, "modified": True, "license": "CC-BY-4.0"}
+    monkeypatch.setattr("api.routers.contributions.local_resource_origin", lambda *_: origin)
+    monkeypatch.setattr(connection, "status", lambda: {"state": "connected", "subject": "maker"})
+    row = {"kind": "luts", "lut_id": "lut_source", "revision_id": "rev_source",
+           "display": {"attribution": {"relationship": relationship}} if relationship else {}}
+    monkeypatch.setattr(connection, "history", lambda: [row] if owns_revision else [])
+
+    def lookup(kind, payload, action):
+        assert (kind, action) == ("luts", "contributor")
+        assert payload == {key: reference[key] for key in ("resource_id", "revision_id", "content_hash")}
+        if not same_content:
+            raise ContributionError(404, "Revision unavailable")
+        return {"contributor": None}
+
+    monkeypatch.setattr(connection, "resource_feedback", lookup)
+    submitted = []
+    monkeypatch.setattr(connection, "submit", lambda prepared, display, **_:
+                        submitted.append((prepared.resource_id, display)) or {"status": "pending"})
+    app = FastAPI()
+    app.include_router(router)
+    client = TestClient(app)
+    headers = {"X-Lumina-Contribution": "1"}
+    ownership = client.post("/api/contributions/original-source", headers=headers,
+                            json={**reference, "account_id": "maker"})
+    assert ownership.status_code == 200
+    assert ownership.json() == {"eligible": allowed}
+    prepared = client.post("/api/contributions/prepare", headers=headers, json={"kind": "luts", "key": "BW"}).json()
+    payload = {"kind": "luts", "key": "BW", "name": "Updated BW", "fingerprint": prepared["fingerprint"],
+               "product": {}, "consent": True, "account_id": "maker", "attribution": {"relationship": "original"},
+               "filaments": [{"brand": "Brand", "material_type": "PLA", "color_name": slot["color_name"]}
+                             for slot in prepared["display"]["filaments"]]}
+    response = client.post("/api/contributions/submit", headers=headers, json=payload)
+    assert response.status_code == (200 if allowed else 422), response.text
+    if allowed:
+        resource_id, display = submitted.pop()
+        assert resource_id == reference["resource_id"]
+        assert display["attribution"] == {"relationship": "original"}
+        assert prepared["display"]["license"] == "CC-BY-4.0"
+        assert client.post("/api/contributions/submit", headers=headers,
+                           json={**payload, "updates_resource_id": "lut_other"}).status_code == 422
+    assert not submitted
 
 
 @pytest.mark.parametrize("source_license", ["CC-BY-4.0", "CC-BY-SA-4.0", None])
@@ -442,7 +518,8 @@ def test_installed_manifest_license_survives_prepare_and_real_submission_packagi
         expected_path = (tmp_path / "presets" / installed["installed_path"]).resolve()
         key = next(name for name, path in LUTManager.get_all_lut_files().items() if Path(path).resolve() == expected_path)
         captured = {}
-        def receive(prepared, display, *, expected_subject):
+        def receive(prepared, display, *, expected_subject, **kwargs):
+            assert kwargs["print_images"] == [SAMPLE_PRINT_PHOTO]
             payload, _, _ = contribution_package(prepared, display, expected_subject)
             with zipfile.ZipFile(io.BytesIO(payload)) as archive:
                 captured.update(json.loads(archive.read("lumina_lut_bundle.json"))["display"])
@@ -464,6 +541,7 @@ def test_installed_manifest_license_survives_prepare_and_real_submission_packagi
                 "fingerprint": prepared["fingerprint"], "consent": True, "account_id": "submitter",
                 "attribution": {"relationship": "redistributed", "original_author": origin["original_author"],
                                 "rights_basis": source_license or "Author permits redistribution"},
+                "print_images": [SAMPLE_PRINT_PHOTO],
                 "filaments": [{"brand": "Brand", "material_type": "PLA", "color_name": slot["color_name"]}
                               for slot in prepared["display"]["filaments"]],
             })
@@ -503,3 +581,211 @@ def test_invalid_source_declarations_are_rejected(value):
     from core.resource_attribution import normalize_attribution
     with pytest.raises(ValueError):
         normalize_attribution(value)
+
+
+def test_new_submission_requires_valid_print_photo_and_forwards_to_registry(tmp_path, monkeypatch):
+    from api.services.resource_contribution import ContributionConnection
+    from core.resource_contribution import PreparedContribution
+
+    path = tmp_path / "BW.npy"
+    np.save(path, np.arange(96, dtype=np.uint8).reshape(32, 3))
+    monkeypatch.setattr(LUTManager, "get_lut_path", lambda _: str(path))
+    received_kwargs = []
+    monkeypatch.setattr(
+        "api.routers.contributions.connection.submit",
+        lambda prepared, display, **kwargs: received_kwargs.append(kwargs) or {"status": "pending"},
+    )
+    app = FastAPI()
+    app.include_router(router)
+    client = TestClient(app)
+    headers = {"X-Lumina-Contribution": "1"}
+    prepared = client.post("/api/contributions/prepare", headers=headers, json={"kind": "luts", "key": "BW"}).json()
+    base_payload = {
+        "kind": "luts",
+        "key": "BW",
+        "name": "BW",
+        "fingerprint": prepared["fingerprint"],
+        "product": {},
+        "consent": True,
+        "account_id": "maker",
+        "attribution": {"relationship": "original"},
+        "filaments": [
+            {"brand": "Brand", "material_type": "PLA", "color_name": slot["color_name"]}
+            for slot in prepared["display"]["filaments"]
+        ],
+    }
+    missing = client.post("/api/contributions/submit", headers=headers, json=base_payload)
+    assert missing.status_code == 422
+    assert "print photo" in missing.json()["detail"].lower()
+
+    corrupt = client.post("/api/contributions/submit", headers=headers, json={**base_payload, "print_images": ["bm90LWFuLWltYWdl"]})
+    assert corrupt.status_code == 422
+
+    accepted = client.post(
+        "/api/contributions/submit",
+        headers=headers,
+        json={**base_payload, "print_images": [f"data:image/png;base64,{SAMPLE_PRINT_PHOTO}"]},
+    )
+    assert accepted.status_code == 200, accepted.text
+    assert received_kwargs[-1]["print_images"] == [SAMPLE_PRINT_PHOTO]
+
+    service = ContributionConnection()
+    monkeypatch.setattr(service, "status", lambda: {"state": "connected", "subject": "maker"})
+    monkeypatch.setattr(service, "history", lambda: [])
+    calls = []
+
+    def fake_request(method, endpoint, **kwargs):
+        calls.append((method, endpoint, kwargs))
+        if endpoint == "/me/material-submissions":
+            return {"submission_id": "sub_1", "status": "draft"}
+        return {"submission_id": "sub_1", "status": "pending"}
+
+    monkeypatch.setattr(service, "_request", fake_request)
+    mat_prepared = PreparedContribution(
+        "materials", "fixture", "a" * 64, {}, {}, {"material.json": b"{}", "stage_A_parameters.json": b"{}"}
+    )
+    service.submit(mat_prepared, {"brand": "B", "material_name": "Red", "material_type": "PLA"}, print_images=[SAMPLE_PRINT_PHOTO])
+    assert calls[-1][1] == "/me/material-submissions/sub_1/submit"
+    assert calls[-1][2]["json"] == {"print_images": [SAMPLE_PRINT_PHOTO]}
+
+    calls.clear()
+    lut_prepared = PreparedContribution("luts", "fixture", "b" * 64, {}, {}, {"calibration.npy": b"data"})
+    service.submit(lut_prepared, {"brand": "B", "name": "BW", "material_type": "PLA"}, print_images=[SAMPLE_PRINT_PHOTO])
+    assert calls[-1][1] == "/me/lut-submissions"
+    assert json.loads(calls[-1][2]["data"]["print_images"]) == [SAMPLE_PRINT_PHOTO]
+
+
+def test_structured_print_image_slots_enforced_for_materials_and_luts(tmp_path, monkeypatch):
+    from core.single_stage import material_files
+    from core.single_stage.material_library import save_stage_a_material_archive
+
+    mat_dir = tmp_path / "structured-materials"
+    saved = save_stage_a_material_archive(
+        material_name="Red",
+        brand="Brand",
+        materials_dir=str(mat_dir),
+        params_payload={
+            "param_type": "stage_A",
+            "parameters": {
+                "channels": [{"color_name": "Red", "E": [0.4, 0.1, 0.3], "k": [8, 7, 9]}],
+                "substrates": [
+                    {"substrate_id": "white", "C0": [0.9, 0.9, 0.9]},
+                    {"substrate_id": "black", "C0": [0.025, 0.025, 0.025]},
+                ],
+            },
+            "meta": {"schema_version": "1"},
+            "source": {"spec": {"layer_height_mm": 0.08}},
+        },
+        fit_summary={"mean_delta_e": 1.8},
+        source_summary={},
+        material_summary={},
+    )
+    mat_key = saved.material_summary["directory_name"]
+    monkeypatch.setattr(material_files, "MATERIALS_DIR", str(mat_dir))
+
+    lut_path = tmp_path / "BW.npy"
+    np.save(lut_path, np.arange(96, dtype=np.uint8).reshape(32, 3))
+    monkeypatch.setattr(LUTManager, "get_lut_path", lambda _: str(lut_path))
+
+    received_kwargs = []
+    monkeypatch.setattr(
+        "api.routers.contributions.connection.submit",
+        lambda prepared, display, **kwargs: (
+            received_kwargs.append(kwargs) or {"kind": prepared.kind, "status": "pending"}
+        ),
+    )
+
+    test_app = FastAPI()
+    test_app.include_router(router)
+    client = TestClient(test_app)
+    headers = {"X-Lumina-Contribution": "1"}
+
+    mat_prep = client.post("/api/contributions/prepare", headers=headers, json={"kind": "materials", "key": mat_key}).json()
+    mat_base = {
+        "kind": "materials",
+        "key": mat_key,
+        "fingerprint": mat_prep["fingerprint"],
+        "name": "Red",
+        "description": "",
+        "consent": True,
+        "account_id": "maker",
+        "attribution": {"relationship": "original"},
+        "product": {"brand": "Brand", "material_type": "PLA"},
+        "filaments": [],
+    }
+    missing_finished = client.post(
+        "/api/contributions/submit",
+        headers=headers,
+        json={
+            **mat_base,
+            "print_images": [
+                {"role": "white_card", "data": SAMPLE_PRINT_PHOTO},
+                {"role": "black_card", "data": SAMPLE_PRINT_PHOTO},
+            ],
+        },
+    )
+    assert missing_finished.status_code == 422
+    assert "finished print" in missing_finished.json()["detail"].lower()
+
+    wrong_slot = client.post(
+        "/api/contributions/submit",
+        headers=headers,
+        json={
+            **mat_base,
+            "print_images": [
+                {"role": "calibration_board", "data": SAMPLE_PRINT_PHOTO},
+                {"role": "finished_print", "data": SAMPLE_PRINT_PHOTO},
+            ],
+        },
+    )
+    assert wrong_slot.status_code == 422
+
+    mat_full = [
+        {"role": "white_card", "data": SAMPLE_PRINT_PHOTO},
+        {"role": "black_card", "data": SAMPLE_PRINT_PHOTO},
+        {"role": "finished_print", "data": SAMPLE_PRINT_PHOTO},
+    ]
+    mat_ok = client.post(
+        "/api/contributions/submit",
+        headers=headers,
+        json={**mat_base, "print_images": mat_full},
+    )
+    assert mat_ok.status_code == 200, mat_ok.text
+    assert received_kwargs[-1]["print_images"] == mat_full
+
+    lut_prep = client.post("/api/contributions/prepare", headers=headers, json={"kind": "luts", "key": "BW"}).json()
+    lut_base = {
+        "kind": "luts",
+        "key": "BW",
+        "fingerprint": lut_prep["fingerprint"],
+        "name": "BW",
+        "description": "",
+        "consent": True,
+        "account_id": "maker",
+        "attribution": {"relationship": "original"},
+        "product": {},
+        "filaments": [
+            {"brand": "Brand", "material_type": "PLA", "color_name": slot["color_name"]}
+            for slot in lut_prep["display"]["filaments"]
+        ],
+    }
+    lut_missing_finished = client.post(
+        "/api/contributions/submit",
+        headers=headers,
+        json={**lut_base, "print_images": [{"role": "calibration_board", "data": SAMPLE_PRINT_PHOTO}]},
+    )
+    assert lut_missing_finished.status_code == 422
+
+    lut_dual_boards = [
+        {"role": "calibration_board", "data": SAMPLE_PRINT_PHOTO},
+        {"role": "calibration_board", "data": SAMPLE_PRINT_PHOTO},
+        {"role": "finished_print", "data": SAMPLE_PRINT_PHOTO},
+        {"role": "finished_print", "data": SAMPLE_PRINT_PHOTO},
+    ]
+    lut_ok = client.post(
+        "/api/contributions/submit",
+        headers=headers,
+        json={**lut_base, "print_images": lut_dual_boards},
+    )
+    assert lut_ok.status_code == 200, lut_ok.text
+    assert received_kwargs[-1]["print_images"] == lut_dual_boards

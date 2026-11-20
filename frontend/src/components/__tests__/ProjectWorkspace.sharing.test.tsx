@@ -123,4 +123,32 @@ describe("ProjectWorkspace sharing", () => {
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: translations.project_save.zh })).toBeEnabled();
   });
+
+  it("renders the export menu chevron as an SVG icon without raw Unicode markers", () => {
+    render(<ProjectWorkspace />);
+    const exportButton = screen.getByRole("button", { name: translations.project_export.zh });
+    expect(exportButton.querySelector("svg")).toBeInTheDocument();
+    expect(exportButton.textContent).not.toContain("⌄");
+  });
+
+  it.each(["material-cloud-sync", "lut-cloud-sync"] as const)(
+    "replaces project toolbar controls with catalog source controls on %s",
+    (activeTab) => {
+      useWidgetStore.setState({ activeTab });
+      render(<ProjectWorkspace />);
+      expect(screen.queryByTestId("project-bar")).not.toBeInTheDocument();
+      expect(screen.getByTestId("catalog-source-bar")).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: translations.resources_source_settings.zh })).toBeInTheDocument();
+    },
+  );
+
+  it.each(["material-library", "lut-library"] as const)(
+    "omits project toolbar controls on local library tab %s",
+    (activeTab) => {
+      useWidgetStore.setState({ activeTab });
+      render(<ProjectWorkspace />);
+      expect(screen.queryByTestId("project-bar")).not.toBeInTheDocument();
+      expect(screen.queryByTestId("catalog-source-bar")).not.toBeInTheDocument();
+    },
+  );
 });

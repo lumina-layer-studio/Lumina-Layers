@@ -577,7 +577,7 @@ function AppContent({ connected }: { connected: boolean | null }) {
         {activeTab === 'gradient-card-generate' && <GradientCardGeneratePanel />}
         {activeTab === 'gradient-card-extract' && <GradientCardExtractPanel />}
         {activeTab === 'material-library' && <MaterialLibraryPanel />}
-        {activeTab === 'material-cloud-sync' && <ResourceCatalogPanel kind="materials" />}
+        {activeTab === 'material-cloud-sync' && <ResourceCatalogPanel kind="materials" hideSourceBar={!reproMode.enabled} />}
         {activeTab === 'material-recipe' && <MaterialRecipeQueryPanel />}
         {activeTab === 'material-gamut' && <MaterialGamutPanel />}
         {activeTab === 'material-cache' && <MaterialCachePanel />}
@@ -593,7 +593,7 @@ function AppContent({ connected }: { connected: boolean | null }) {
 
         {activeTab === 'lut-library' && <LutLibraryPanel />}
         {activeTab === 'lut-manager' && <LutManagerPanel />}
-        {activeTab === 'lut-cloud-sync' && <ResourceCatalogPanel kind="luts" />}
+        {activeTab === 'lut-cloud-sync' && <ResourceCatalogPanel kind="luts" hideSourceBar={!reproMode.enabled} />}
         {activeTab === 'lut-details' && <LutDetailsPanel />}
         {activeTab === 'lut-compare' && <LutComparePanel />}
         {activeTab === 'five-color' && (

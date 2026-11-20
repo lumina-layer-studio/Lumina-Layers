@@ -81,3 +81,90 @@ it("does not let an older status request overwrite a source that has just been s
   expect(useResourceStore.getState().status?.source_settings?.mode).toBe("mirror");
   expect(useResourceStore.getState().generation).toBe(1);
 });
+
+const defaultUrls = {
+  github: "https://github.test/public/v1",
+  registry: "https://registry.test/api/material-registry/v1",
+  disabled: "",
+} as const;
+
+type DefaultProvider = keyof typeof defaultUrls;
+
+function statusWithDefaults(materials: DefaultProvider, luts: DefaultProvider, mode: "default" | "mirror" = "default"): ResourceStatus {
+  const current = status(mode);
+  const source = current.source_settings!;
+  const urls = { materials: defaultUrls[materials], luts: defaultUrls[luts] };
+  return {
+    ...current,
+    materials: mode === "default" ? { ...current.materials, provider: materials, configured: !!urls.materials } : current.materials,
+    luts: mode === "default" ? { ...current.luts, provider: luts, configured: !!urls.luts } : current.luts,
+    source_settings: {
+      ...source,
+      urls: mode === "default" ? urls : source.urls,
+      default_urls: urls,
+      default_provider: materials === "github" ? "github" : "registry",
+    },
+  };
+}
+
+it.each([
+  ["materials", "github", "registry", "GitHub（默认）"],
+  ["luts", "github", "registry", "耗材服务器（默认）"],
+  ["materials", "registry", "github", "耗材服务器（默认）"],
+  ["luts", "registry", "github", "GitHub（默认）"],
+  ["materials", "disabled", "github", "停用云端目录（默认）"],
+  ["luts", "github", "disabled", "停用云端目录（默认）"],
+] as const)("labels the %s default with material source %s and LUT source %s", async (kind, materials, luts, label) => {
+  const value = statusWithDefaults(materials, luts);
+  vi.mocked(fetchResourceStatus).mockResolvedValue(value);
+  useResourceStore.setState({ status: value });
+
+  render(<ResourceSourceSetting compact kind={kind} />);
+  fireEvent.click(screen.getByRole("button", { name: "来源设置" }));
+
+  expect(await screen.findByRole("combobox", { name: "资源来源" })).toHaveTextContent(label);
+});
+
+it("keeps the LUT default label neutral when a saved mirror hides its provider", async () => {
+  const value = statusWithDefaults("github", "registry", "mirror");
+  vi.mocked(fetchResourceStatus).mockResolvedValue(value);
+  useResourceStore.setState({ status: value });
+
+  render(<ResourceSourceSetting compact kind="luts" />);
+  fireEvent.click(screen.getByRole("button", { name: "来源设置" }));
+  fireEvent.click(await screen.findByRole("combobox", { name: "资源来源" }));
+
+  expect(screen.getByRole("option", { name: /^默认线路$/ })).toBeInTheDocument();
+});
+
+it("describes a disabled default source honestly and guides applying a new source", async () => {
+  const disabled: ResourceStatus = {
+    materials: { configured: false, seed: { available: false, state: "ready" } },
+    luts: { configured: false, seed: { available: false, state: "ready" } },
+    source_repository: "https://github.test/repo",
+    source_settings: {
+      mode: "default",
+      mirror_url: "",
+      error: null,
+      urls: { materials: "", luts: "" },
+      default_urls: { materials: "", luts: "" },
+      default_provider: "github",
+    },
+  };
+  vi.mocked(fetchResourceStatus).mockResolvedValue(disabled);
+  useResourceStore.setState({ status: disabled, error: null, generation: 0, catalogHealth: {} });
+
+  render(<ResourceSourceSetting />);
+  expect(screen.getByText("云端目录未启用")).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "来源设置" }));
+  const dialog = await screen.findByRole("dialog");
+  expect(dialog).toHaveTextContent("云端目录未启用");
+  expect(dialog).toHaveTextContent("未配置");
+  expect(dialog).toHaveTextContent("当前默认停用云端目录");
+  expect(screen.queryByRole("button", { name: "测试连接" })).not.toBeInTheDocument();
+
+  fireEvent.click(screen.getByRole("combobox", { name: "资源来源" }));
+  fireEvent.click(screen.getByRole("option", { name: "GitHub 目录" }));
+  expect(dialog).toHaveTextContent("已修改来源，点击「应用来源」后生效。");
+  expect(screen.getByRole("button", { name: "应用来源" })).toBeEnabled();
+});

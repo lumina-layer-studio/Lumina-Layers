@@ -1,8 +1,14 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react";
-import { ArrowPathIcon, ArrowTopRightOnSquareIcon } from "@heroicons/react/24/outline";
+import {
+  ArrowPathIcon,
+  ArrowTopRightOnSquareIcon,
+  PhotoIcon,
+  XMarkIcon,
+} from "@heroicons/react/24/outline";
 import { apiErrorToVisibleMessage } from "../api/client";
 import {
   changeContributionReview,
+  checkOriginalSource,
   fetchContributionHistory,
   prepareContribution,
   prepareContributionRevision,
@@ -13,8 +19,10 @@ import type {
   ContributionAttribution,
   ContributionProduct,
   ContributionReceipt,
+  ContributionSourceReference,
   OwnedRevision,
   PreparedContribution,
+  PrintImageRole,
   QueuedContribution,
 } from "../api/contributions";
 import type { ResourceKind } from "../api/resources";
@@ -24,6 +32,7 @@ import { filamentBrands } from "../data/filamentBrands";
 import { bambuFilamentColors } from "../data/filamentColors";
 import { useI18n } from "../i18n/context";
 import { filamentIdentity } from "../utils/filamentIdentity";
+import { prepareFeedbackImage } from "../utils/feedbackImages";
 import { resourceColorMode } from "../utils/resourcePresentation";
 import Button from "./ui/Button";
 import { CommunityConnection } from "./CommunityAccount";
@@ -49,6 +58,60 @@ import {
 const MATERIAL_TYPE_OPTIONS = ["PLA", "PETG", "ABS", "ASA", "TPU", "PCTG", "PA", "PC"].map(
   (item) => ({ label: item, value: item }),
 );
+
+const MAX_PRINT_IMAGES = 4;
+
+interface PrintEvidenceSlotSpec {
+  role: PrintImageRole;
+  labelKey: string;
+  hintKey: string;
+  max: number;
+  spanFull?: boolean;
+}
+
+const MATERIAL_PRINT_SLOTS: readonly PrintEvidenceSlotSpec[] = [
+  {
+    role: "white_card",
+    labelKey: "contribution_print_slot_white_card",
+    hintKey: "contribution_print_slot_white_card_hint",
+    max: 1,
+  },
+  {
+    role: "black_card",
+    labelKey: "contribution_print_slot_black_card",
+    hintKey: "contribution_print_slot_black_card_hint",
+    max: 1,
+  },
+  {
+    role: "finished_print",
+    labelKey: "contribution_print_slot_finished_print",
+    hintKey: "contribution_print_slot_finished_print_hint",
+    max: 2,
+    spanFull: true,
+  },
+];
+
+const LUT_PRINT_SLOTS: readonly PrintEvidenceSlotSpec[] = [
+  {
+    role: "calibration_board",
+    labelKey: "contribution_print_slot_calibration_board",
+    hintKey: "contribution_print_slot_calibration_board_hint",
+    max: 2,
+  },
+  {
+    role: "finished_print",
+    labelKey: "contribution_print_slot_finished_print",
+    hintKey: "contribution_print_slot_finished_print_hint",
+    max: 2,
+  },
+];
+
+let nextPrintPhotoSeq = 0;
+
+function nextPrintPhotoKey(): string {
+  nextPrintPhotoSeq += 1;
+  return `print-photo-${nextPrintPhotoSeq}`;
+}
 
 function text(value: unknown): string {
   return typeof value === "string" ? value : "";
@@ -586,7 +649,7 @@ function ContributionHistoryDialog({ onClose }: { onClose: () => void }) {
                     {row.latest_decision.comment}
                   </p>
                 )}
-                <div className="flex flex-wrap items-center justify-between gap-2 pt-0.5">
+                <div className="flex flex-wrap items-center justify-between gap-2 border-t panel-divider pt-2.5">
                   <a
                     href={`${connection.web_url}/#/${row.kind === "luts" ? "luts" : "submissions"}`}
                     target="_blank"
@@ -600,7 +663,7 @@ function ContributionHistoryDialog({ onClose }: { onClose: () => void }) {
                     <div className="flex flex-wrap items-center gap-1.5">
                       <Button
                         label={t("contribution_edit_revision")}
-                        variant="ghost"
+                        variant={["draft", "withdrawn"].includes(row.status) ? "ghost" : "secondary"}
                         size="sm"
                         disabled={busy || historyLoading}
                         onClick={() => {
@@ -620,6 +683,7 @@ function ContributionHistoryDialog({ onClose }: { onClose: () => void }) {
                         <Button
                           label={t("contribution_withdraw")}
                           variant="ghost"
+                          tone="danger"
                           size="sm"
                           disabled={busy || historyLoading}
                           onClick={() => {
@@ -731,6 +795,10 @@ function ContributionFormDialog({
   const { t, lang } = useI18n();
   const descriptionId = useId();
   const rightsBasisId = useId();
+  const printPhotoPrivacyId = useId();
+  const printSlotInputRefs = useRef<Partial<Record<PrintImageRole, HTMLInputElement | null>>>({});
+  const mountedRef = useRef(true);
+  const accountEpochRef = useRef(0);
   const initial = useRef(initialDisplay);
   const connection = useCommunityStore((state) => state.connection);
   const [prepared, setPrepared] = useState<PreparedContribution | null>(null);
@@ -744,13 +812,20 @@ function ContributionFormDialog({
   const [attribution, setAttribution] = useState<ContributionAttribution | null>(null);
   const [consent, setConsent] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [preparingSlot, setPreparingSlot] = useState<PrintImageRole | null>(null);
+  const [printImages, setPrintImages] = useState<
+    { key: string; role: PrintImageRole; data: string }[]
+  >([]);
   const [error, setError] = useState("");
   const [receipt, setReceipt] = useState<ContributionReceipt | null>(null);
   const [profileSelections, setProfileSelections] = useState<Record<number, string>>({});
   const [updatesResourceId, setUpdatesResourceId] = useState("");
   const [updateHistory, setUpdateHistory] = useState<ContributionReceipt[] | null>(null);
   const [updateHistoryLoading, setUpdateHistoryLoading] = useState(false);
+  const [ownSource, setOwnSource] = useState<{ reference: ContributionSourceReference; accountId: string } | null>(null);
   const revisionAccount = revision ? connection?.subject : undefined;
+  const linkedSource = !revision && !queueId ? prepared?.origin?.reference : null;
+  const connectedAccount = connection?.state === "connected" ? connection.subject : undefined;
 
   const brandOptions = useMemo(
     () =>
@@ -874,17 +949,53 @@ function ContributionFormDialog({
   }, [kind, resourceKey, queueId, t, prepareAttempt, revision, revisionAccount]);
 
   useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    accountEpochRef.current += 1;
     setConsent(false);
     setReceipt(null);
     setUpdateHistory(null);
     setUpdatesResourceId("");
+    setPrintImages([]);
+    setPreparingSlot(null);
   }, [connection?.subject]);
 
+  useEffect(() => {
+    setOwnSource(null);
+    if (!linkedSource || !connectedAccount) return;
+    let active = true;
+    void checkOriginalSource(linkedSource, connectedAccount)
+      .then(({ eligible }) => {
+        if (active && eligible) setOwnSource({ reference: linkedSource, accountId: connectedAccount });
+      })
+      .catch(() => {
+        // The public-source choices remain available if verification is offline.
+      });
+    return () => { active = false; };
+  }, [linkedSource, connectedAccount]);
+
+  const printSlots = kind === "materials" ? MATERIAL_PRINT_SLOTS : LUT_PRINT_SLOTS;
+  const preparingImages = preparingSlot !== null;
+  const ownsLinkedSource = !!ownSource && ownSource.reference === linkedSource && ownSource.accountId === connectedAccount;
+  const canChooseOriginal = !prepared?.origin || ownsLinkedSource;
+  const updatesOwnOriginal = ownsLinkedSource && attribution?.relationship === "original";
+  const isExistingOwnedRevision = Boolean(revision || updatesResourceId || updatesOwnOriginal);
+  const allSlotsPopulated = printSlots.every((slot) =>
+    printImages.some((img) => img.role === slot.role),
+  );
+  const printPhotoReady =
+    isExistingOwnedRevision && printImages.length === 0 ? true : allSlotsPopulated;
   const fieldDisabled = busy || !!receipt;
   const attributionReady =
     attribution &&
-    (attribution.relationship === "original" ||
-      (attribution.original_author?.trim() &&
+    (attribution.relationship === "original"
+      ? canChooseOriginal
+      : (attribution.original_author?.trim() &&
         attribution.rights_basis?.trim() &&
         (prepared?.origin?.reference || attribution.source_url?.trim())));
   const changeAttribution = (next: ContributionAttribution) => {
@@ -892,16 +1003,88 @@ function ContributionFormDialog({
     setConsent(false);
   };
 
+  const addPrintPhotosForSlot = async (slot: PrintEvidenceSlotSpec, files: File[]) => {
+    if (!files.length || busy || preparingImages || receipt) return;
+    const existingForSlot = printImages.filter((img) => img.role === slot.role);
+    const otherSlotsCount = printImages.length - existingForSlot.length;
+    const filesToProcess =
+      slot.max === 1
+        ? files.slice(0, 1)
+        : files.slice(0, Math.min(slot.max - existingForSlot.length, MAX_PRINT_IMAGES - printImages.length));
+    if (!filesToProcess.length) {
+      setError(t("resource_feedback_image_limit"));
+      return;
+    }
+    if (slot.max > 1 && otherSlotsCount + existingForSlot.length + files.length > MAX_PRINT_IMAGES) {
+      setError(t("resource_feedback_image_limit"));
+      return;
+    }
+    const epoch = accountEpochRef.current;
+    setPreparingSlot(slot.role);
+    setError("");
+    try {
+      const nextBatch: { key: string; role: PrintImageRole; data: string }[] = [];
+      for (const file of filesToProcess) {
+        nextBatch.push({
+          key: nextPrintPhotoKey(),
+          role: slot.role,
+          data: await prepareFeedbackImage(file),
+        });
+      }
+      if (mountedRef.current && epoch === accountEpochRef.current) {
+        setPrintImages((previous) =>
+          slot.max === 1
+            ? [...previous.filter((item) => item.role !== slot.role), ...nextBatch]
+            : [...previous, ...nextBatch],
+        );
+      }
+    } catch (err) {
+      if (mountedRef.current && epoch === accountEpochRef.current) {
+        setError(
+          t(
+            err instanceof Error && err.message.startsWith("resource_feedback_image_")
+              ? err.message
+              : "resource_feedback_image_failed",
+          ),
+        );
+      }
+    } finally {
+      if (mountedRef.current && epoch === accountEpochRef.current) {
+        setPreparingSlot(null);
+      }
+    }
+  };
+
+  const orderedPrintImages = useMemo(
+    () =>
+      printSlots.flatMap((slot) =>
+        printImages
+          .filter((img) => img.role === slot.role)
+          .map((img) => ({ role: img.role, data: img.data })),
+      ),
+    [printImages, printSlots],
+  );
+
   return (
     <ResourceDialog
       title={t(revision ? "contribution_edit_revision" : "contribution_open")}
       width="lg"
-      busy={busy}
+      busy={busy || preparingImages}
       onClose={onClose}
       onSubmit={(event) => {
         event.preventDefault();
         const accountId = connection?.subject;
-        if (!prepared || !consent || !attribution || !attributionReady || !accountId || busy || receipt) {
+        if (
+          !prepared ||
+          !consent ||
+          !attribution ||
+          !attributionReady ||
+          !printPhotoReady ||
+          !accountId ||
+          busy ||
+          preparingImages ||
+          receipt
+        ) {
           return;
         }
         setBusy(true);
@@ -916,10 +1099,11 @@ function ContributionFormDialog({
           filaments,
           consent: true,
           account_id: accountId,
-          attribution,
+          attribution: attribution.relationship === "original" ? { relationship: "original" } : attribution,
           ...(queueId ? { queue_id: queueId } : {}),
           ...(revision ? { revision } : {}),
-          ...(updatesResourceId ? { updates_resource_id: updatesResourceId } : {}),
+          ...(updatesResourceId && !updatesOwnOriginal ? { updates_resource_id: updatesResourceId } : {}),
+          ...(orderedPrintImages.length ? { print_images: orderedPrintImages } : {}),
         })
           .then((result) => {
             if (useCommunityStore.getState().connection?.subject === accountId) setReceipt(result);
@@ -949,7 +1133,15 @@ function ContributionFormDialog({
               type="submit"
               className="w-full sm:w-auto"
               loading={busy}
-              disabled={!prepared || !attributionReady || !consent || connection?.state !== "connected"}
+              disabled={
+                !prepared ||
+                !attributionReady ||
+                !printPhotoReady ||
+                !consent ||
+                busy ||
+                preparingImages ||
+                connection?.state !== "connected"
+              }
             />
           </div>
         ) : undefined
@@ -1152,7 +1344,7 @@ function ContributionFormDialog({
           <div className="flex flex-col gap-3 border-t border-[var(--surface-divider)] pt-4">
             <Dropdown
               label={t("contribution_origin")}
-              value={attribution?.relationship || ""}
+              value={attribution?.relationship === "original" && !canChooseOriginal ? "" : attribution?.relationship || ""}
               disabled={fieldDisabled}
               placeholder={t("contribution_origin_choose")}
               onChange={(relationship) =>
@@ -1162,13 +1354,18 @@ function ContributionFormDialog({
                 })
               }
               options={[
-                ...(!prepared.origin
+                ...(canChooseOriginal
                   ? [{ value: "original", label: t("contribution_origin_original") }]
                   : []),
                 { value: "adapted", label: t("contribution_origin_adapted") },
                 { value: "redistributed", label: t("contribution_origin_redistributed") },
               ]}
             />
+            {updatesOwnOriginal && (
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                {t("contribution_origin_update_original")}
+              </p>
+            )}
             {prepared.origin &&
               (prepared.origin.reference ? (
                 <details className="text-xs text-slate-500 dark:text-slate-400">
@@ -1222,7 +1419,7 @@ function ContributionFormDialog({
             )}
           </div>
 
-          {!revision && !queueId && connection?.state === "connected" && (
+          {!revision && !queueId && !updatesOwnOriginal && connection?.state === "connected" && (
             <details
               className={`${wellClass} px-3.5 py-2.5 text-sm`}
               onToggle={(event) => {
@@ -1284,6 +1481,171 @@ function ContributionFormDialog({
             </details>
           )}
 
+          <fieldset className="m-0 flex min-w-0 flex-col gap-2.5 border-0 border-t border-[var(--surface-divider)] p-0 pt-4">
+            <div className="flex flex-wrap items-baseline justify-between gap-2">
+              <legend className={`${workstationFieldLabelClass} p-0`}>
+                {t(
+                  isExistingOwnedRevision
+                    ? "contribution_print_photos_optional"
+                    : kind === "materials"
+                      ? "contribution_print_photos_materials"
+                      : "contribution_print_photos_luts",
+                )}
+                {!isExistingOwnedRevision ? " *" : ""}
+              </legend>
+              <span className="text-xs tabular-nums text-slate-500 dark:text-slate-400">
+                {printImages.length} / {MAX_PRINT_IMAGES}
+              </span>
+            </div>
+            <p
+              id={printPhotoPrivacyId}
+              className="text-xs leading-5 text-slate-500 dark:text-slate-400"
+            >
+              {t("contribution_print_photos_privacy_note")}
+            </p>
+            <div className="grid gap-3 sm:grid-cols-2">
+              {printSlots.map((slot) => {
+                const slotImages = printImages.filter((img) => img.role === slot.role);
+                const slotReady = slotImages.length >= 1;
+                const slotFull = slotImages.length >= slot.max || (slot.max > 1 && printImages.length >= MAX_PRINT_IMAGES);
+                const slotHintId = `${printPhotoPrivacyId}-${slot.role}-hint`;
+                const slotInputId = `${printPhotoPrivacyId}-${slot.role}-input`;
+                const buttonLabelKey =
+                  slotImages.length === 0
+                    ? "contribution_print_slot_upload"
+                    : slot.max === 1
+                      ? "contribution_print_slot_replace"
+                      : "contribution_print_slot_add_more";
+                return (
+                  <div
+                    key={slot.role}
+                    data-testid={`contribution-print-slot-${slot.role}`}
+                    onDragOver={(event) => {
+                      if (!fieldDisabled && !preparingImages) event.preventDefault();
+                    }}
+                    onDrop={(event) => {
+                      if (fieldDisabled || preparingImages) return;
+                      const files = Array.from(event.dataTransfer?.files || []);
+                      if (files.length) {
+                        event.preventDefault();
+                        void addPrintPhotosForSlot(slot, files);
+                      }
+                    }}
+                    onPaste={(event) => {
+                      if (fieldDisabled || preparingImages) return;
+                      const files = Array.from(event.clipboardData?.files || []);
+                      if (files.length) {
+                        event.preventDefault();
+                        void addPrintPhotosForSlot(slot, files);
+                      }
+                    }}
+                    className={cx(
+                      wellClass,
+                      "flex min-w-0 flex-col gap-2.5 rounded-xl border px-3.5 py-3 transition-colors",
+                      slotReady
+                        ? "border-emerald-500/35 dark:border-emerald-400/30"
+                        : "border-dashed border-slate-300 dark:border-slate-700",
+                      slot.spanFull && "sm:col-span-2",
+                    )}
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex min-w-0 flex-wrap items-center gap-2">
+                        <label
+                          htmlFor={slotInputId}
+                          className="text-xs font-semibold text-slate-800 dark:text-slate-100"
+                        >
+                          {t(slot.labelKey)}
+                        </label>
+                        <span
+                          className={cx(
+                            "inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium tabular-nums",
+                            slotReady
+                              ? "bg-emerald-500/12 text-emerald-700 dark:text-emerald-300"
+                              : "bg-amber-500/12 text-amber-700 dark:text-amber-300",
+                          )}
+                        >
+                          {slotReady
+                            ? `${t("contribution_print_slot_ready")} ${slotImages.length}/${slot.max}`
+                            : t("contribution_print_slot_required")}
+                        </span>
+                      </div>
+                      <input
+                        ref={(el) => {
+                          printSlotInputRefs.current[slot.role] = el;
+                        }}
+                        id={slotInputId}
+                        name={`print_images_${slot.role}`}
+                        type="file"
+                        accept="image/jpeg,image/png,image/webp"
+                        multiple={slot.max > 1}
+                        aria-describedby={`${slotHintId} ${printPhotoPrivacyId}`}
+                        data-testid={`contribution-print-photo-input-${slot.role}`}
+                        className="sr-only"
+                        disabled={fieldDisabled || preparingImages || (slot.max > 1 && slotFull)}
+                        onChange={(event) => {
+                          const files = Array.from(event.target.files || []);
+                          event.target.value = "";
+                          void addPrintPhotosForSlot(slot, files);
+                        }}
+                      />
+                      {(!slotFull || slot.max === 1) && (
+                        <Button
+                          label={t(buttonLabelKey)}
+                          type="button"
+                          variant="secondary"
+                          size="sm"
+                          leadingIcon={<PhotoIcon className="h-4 w-4" />}
+                          loading={preparingSlot === slot.role}
+                          disabled={fieldDisabled || preparingImages || (slot.max > 1 && slotFull)}
+                          onClick={() => printSlotInputRefs.current[slot.role]?.click()}
+                        />
+                      )}
+                    </div>
+                    <p
+                      id={slotHintId}
+                      className="text-xs leading-5 text-slate-500 dark:text-slate-400"
+                    >
+                      {t(slot.hintKey)}
+                    </p>
+                    {slotImages.length > 0 && (
+                      <div className={cx("grid gap-2.5", slot.max > 1 ? "grid-cols-2" : "grid-cols-1")}>
+                        {slotImages.map((image, index) => (
+                          <figure
+                            key={image.key}
+                            className="group relative overflow-hidden rounded-lg bg-[var(--surface-card)] p-1"
+                          >
+                            <img
+                              src={`data:image/jpeg;base64,${image.data}`}
+                              alt={
+                                slot.max > 1
+                                  ? `${t(slot.labelKey)} ${index + 1}`
+                                  : t(slot.labelKey)
+                              }
+                              className="h-24 w-full rounded object-contain"
+                            />
+                            <button
+                              type="button"
+                              aria-label={`${t("contribution_print_photos_remove")} · ${t(slot.labelKey)}`}
+                              disabled={fieldDisabled || preparingImages}
+                              onClick={() =>
+                                setPrintImages((previous) =>
+                                  previous.filter((value) => value.key !== image.key),
+                                )
+                              }
+                              className="absolute right-1.5 top-1.5 inline-flex h-6 w-6 items-center justify-center rounded-full bg-slate-900/70 text-slate-50 transition-colors hover:bg-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)] disabled:opacity-45"
+                            >
+                              <XMarkIcon className="h-3.5 w-3.5" aria-hidden="true" />
+                            </button>
+                          </figure>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </fieldset>
+
           <div className="border-t border-[var(--surface-divider)] pt-3">
             <Checkbox
               label={t(attribution?.relationship === "original" && !text(prepared?.display.license).trim()
@@ -1293,11 +1655,24 @@ function ContributionFormDialog({
               onChange={setConsent}
               disabled={fieldDisabled}
             />
-            <div className="mt-2 text-xs text-slate-500 dark:text-slate-400">
-              {t("resources_license")}：{" "}
-              <ResourceLicense license={prepared?.display.license || (attribution?.relationship === "original" ? "LicenseRef-Lumina-Data-1.0" : undefined)} />
+            <div
+              className={`${wellClass} mt-2.5 flex flex-wrap items-center justify-between gap-x-4 gap-y-1.5 px-3 py-2 text-xs text-slate-500 dark:text-slate-400`}
+            >
+              <span className="inline-flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5">
+                <span>{t("resources_license")}</span>
+                <span className="font-medium text-slate-700 dark:text-slate-200">
+                  <ResourceLicense
+                    license={
+                      prepared?.display.license ||
+                      (attribution?.relationship === "original"
+                        ? "LicenseRef-Lumina-Data-1.0"
+                        : undefined)
+                    }
+                  />
+                </span>
+              </span>
+              <DataLicenseLink />
             </div>
-            <div className="mt-2"><DataLicenseLink /></div>
             {revision && (
               <p className="mt-2 text-xs leading-5 text-slate-500 dark:text-slate-400">
                 {t("contribution_revision_hint")}

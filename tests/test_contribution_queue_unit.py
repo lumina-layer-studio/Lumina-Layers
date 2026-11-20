@@ -1,10 +1,12 @@
 """Queue behavior across saves, restarts, accounts and interrupted uploads."""
+import base64
 import copy
 import io
 import json
 import sqlite3
 import zipfile
 
+from PIL import Image
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -16,6 +18,15 @@ from api.services import contribution_queue as service
 from api.services.resource_contribution import ContributionError
 
 SERVER = "https://community.example/api/material-registry/v1"
+
+
+def _sample_print_photo() -> str:
+    buf = io.BytesIO()
+    Image.new("RGB", (4, 4), (40, 140, 210)).save(buf, format="PNG")
+    return base64.b64encode(buf.getvalue()).decode("ascii")
+
+
+SAMPLE_PRINT_PHOTO = _sample_print_photo()
 
 
 @pytest.fixture
@@ -65,7 +76,7 @@ def test_derived_snapshot_keeps_manifest_terms_without_relicensing(queued, monke
 
 def test_pause_resume_does_not_scan_or_resume_old_items(queued):
     queue, prepared = queued
-    job = service.capture_calibration("materials", prepared.key)["id"]
+    job = service.capture_calibration("materials", prepared.key, print_images=[SAMPLE_PRINT_PHOTO])["id"]
     queue.pause(SERVER)
     assert service.capture_calibration("materials", "Another") is None
     queue.configure(SERVER, "maker", True)
@@ -78,7 +89,7 @@ def test_pause_resume_does_not_scan_or_resume_old_items(queued):
 def test_license_change_needs_fresh_consent_and_preserves_old_snapshot_terms(queued):
     from core import contribution_queue
     queue, prepared = queued
-    job = service.capture_calibration("materials", prepared.key)["id"]
+    job = service.capture_calibration("materials", prepared.key, print_images=[SAMPLE_PRINT_PHOTO])["id"]
     with queue.transaction() as db:
         db.execute("UPDATE contribution_grants SET consent_version='public-calibration-v1'")
         row = db.execute("SELECT snapshot FROM contribution_jobs WHERE id=?", (job,)).fetchone()
@@ -106,7 +117,7 @@ def test_license_change_needs_fresh_consent_and_preserves_old_snapshot_terms(que
 
 def test_account_service_and_workspace_are_separate(queued):
     queue, prepared = queued
-    job = service.capture_calibration("materials", prepared.key)["id"]
+    job = service.capture_calibration("materials", prepared.key, print_images=[SAMPLE_PRINT_PHOTO])["id"]
     queue.configure(SERVER, "other", True)
     assert queue.claim(SERVER, "other") is None
     assert queue.items(SERVER)[0]["state"] == "paused"
@@ -172,23 +183,35 @@ def test_metadata_gap_waits_for_review_of_the_frozen_snapshot(queued):
     prepared.display["material_type"] = ""
     job = service.capture_calibration("materials", prepared.key)["id"]
     assert queue.claim(SERVER, "maker") is None
-    queue.review(SERVER, job, "maker", {**prepared.display, "material_type": "PLA"})
+    queue.review(SERVER, job, "maker", {**prepared.display, "material_type": "PLA"}, print_images=[SAMPLE_PRINT_PHOTO])
     assert queue.claim(SERVER, "maker") == job
     assert queue.snapshot(SERVER, job)[1].display["material_type"] == "PLA"
+    assert queue.print_images(SERVER, job) == [SAMPLE_PRINT_PHOTO]
+
+
+def test_capture_without_print_photo_waits_in_needs_review_with_print_photo_reason(queued):
+    queue, prepared = queued
+    result = service.capture_calibration("materials", prepared.key)
+    assert result["state"] == "needs_review"
+    assert queue.items(SERVER)[0]["reason"] == "print_photo"
+    assert queue.claim(SERVER, "maker") is None
+    queue.review(SERVER, result["id"], "maker", prepared.display, print_images=[SAMPLE_PRINT_PHOTO])
+    assert queue.claim(SERVER, "maker") == result["id"]
 
 
 def test_success_records_receipt_and_releases_blob(queued, monkeypatch):
     queue, prepared = queued
-    job = service.capture_calibration("materials", prepared.key)["id"]
+    job = service.capture_calibration("materials", prepared.key, print_images=[SAMPLE_PRINT_PHOTO])["id"]
     sent = []
-    def submit(snapshot, display, expected_subject):
-        sent.append((snapshot, display, expected_subject))
+    def submit(snapshot, display, expected_subject, **kwargs):
+        sent.append((snapshot, display, expected_subject, kwargs.get("print_images")))
         return {"kind": "materials", "status": "pending", "submission_id": "receipt"}
     monkeypatch.setattr(service.connection, "submit", submit)
     service.process_one()
     service.process_one()
     assert len(sent) == 1
     assert sent[0][2] == "maker"
+    assert sent[0][3] == [SAMPLE_PRINT_PHOTO]
     assert queue.items(SERVER)[0]["state"] == "received"
     with pytest.raises(ValueError):
         queue.snapshot(SERVER, job)
@@ -196,7 +219,7 @@ def test_success_records_receipt_and_releases_blob(queued, monkeypatch):
 
 def test_transient_retry_keeps_bytes_and_crash_recovers_sending(queued, monkeypatch):
     queue, prepared = queued
-    job = service.capture_calibration("materials", prepared.key)["id"]
+    job = service.capture_calibration("materials", prepared.key, print_images=[SAMPLE_PRINT_PHOTO])["id"]
     def offline(*args, **kwargs):
         raise ContributionError(502, "offline")
     monkeypatch.setattr(service.connection, "submit", offline)
@@ -214,7 +237,7 @@ def test_transient_retry_keeps_bytes_and_crash_recovers_sending(queued, monkeypa
 
 def test_worker_never_uploads_under_other_or_unverified_account(queued, monkeypatch):
     queue, prepared = queued
-    service.capture_calibration("materials", prepared.key)
+    service.capture_calibration("materials", prepared.key, print_images=[SAMPLE_PRINT_PHOTO])
     monkeypatch.setattr(service.connection, "submit", lambda *a, **kw: pytest.fail("unexpected upload"))
     for account, verified in (("other", True), ("maker", False)):
         monkeypatch.setattr(service.connection, "status", lambda: {
@@ -225,7 +248,7 @@ def test_worker_never_uploads_under_other_or_unverified_account(queued, monkeypa
 
 def test_worker_lock_prevents_parallel_upload_and_pause_during_send_is_retained(queued, monkeypatch):
     queue, prepared = queued
-    service.capture_calibration("materials", prepared.key)
+    service.capture_calibration("materials", prepared.key, print_images=[SAMPLE_PRINT_PHOTO])
     def submit(*args, **kwargs):
         queue.pause(SERVER)
         raise ContributionError(502, "response lost")
@@ -294,7 +317,10 @@ def test_api_requires_verified_consent_and_uses_immutable_review(queued, monkeyp
                "consent": True, "account_id": "other", "attribution": {"relationship": "original"}}
     assert client.post("/api/contributions/submit", json=request, headers=headers).status_code == 409
     request["account_id"] = "maker"
+    assert client.post("/api/contributions/submit", json=request, headers=headers).status_code == 422
+    request["print_images"] = [SAMPLE_PRINT_PHOTO]
     response = client.post("/api/contributions/submit", json=request, headers=headers)
     assert response.status_code == 200, response.text
     assert response.json()["status"] == "queued"
     assert queue.snapshot(SERVER, job)[1].files["material.json"] == b"{}"
+    assert queue.print_images(SERVER, job) == [SAMPLE_PRINT_PHOTO]

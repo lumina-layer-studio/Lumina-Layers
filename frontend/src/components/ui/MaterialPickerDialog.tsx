@@ -555,24 +555,32 @@ export default function MaterialPickerDialog({
               </span>
             </span>
             <span className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-slate-500 dark:text-slate-400">
-              {profile.mean_delta_e != null && (
-                <span>
-                  {formatMessage(t("basic_material_picker_delta_e"), {
-                    value: profile.mean_delta_e.toFixed(1),
+              {identity.productCode &&
+                !identity.name
+                  .toLowerCase()
+                  .includes(identity.productCode.replace(/^#+/, "").toLowerCase()) && (
+                  <span className="tabular-nums">
+                    #{identity.productCode.replace(/^#+/, "")}
+                  </span>
+                )}
+              {(profile.sync_official || profile.sync_channel === "official") ? (
+                <span>{t("mat_gradient_library_card_official")}</span>
+              ) : profile.contributor_name?.trim() ? (
+                <span className="truncate">{profile.contributor_name.trim()}</span>
+              ) : null}
+              {Number(profile.usage_total ?? 0) > 0 && (
+                <span className="tabular-nums">
+                  {formatMessage(t("mat_gradient_library_card_used_count"), {
+                    count: Number(profile.usage_total ?? 0),
                   })}
                 </span>
               )}
-              {profile.verification_count != null && (
+              {profile.verification_count != null && profile.verification_count > 1 && (
                 <span>
                   {formatMessage(
                     t("basic_material_picker_verification_count"),
                     { count: profile.verification_count },
                   )}
-                </span>
-              )}
-              {profile.contributor_name?.trim() && (
-                <span className="truncate">
-                  {profile.contributor_name.trim()}
                 </span>
               )}
             </span>
@@ -652,9 +660,9 @@ export default function MaterialPickerDialog({
                 { material: materialName, author },
               );
               const detailParts = [
-                profile.mean_delta_e != null
-                  ? formatMessage(t("basic_material_picker_delta_e"), {
-                      value: profile.mean_delta_e.toFixed(1),
+                Number(profile.usage_total ?? 0) > 0
+                  ? formatMessage(t("mat_gradient_library_card_used_count"), {
+                      count: Number(profile.usage_total ?? 0),
                     })
                   : null,
                 formatMessage(

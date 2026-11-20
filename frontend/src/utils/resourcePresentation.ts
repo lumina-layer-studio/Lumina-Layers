@@ -130,6 +130,11 @@ export function resourceColors(input: CalibrationPreviewInput, language: "zh" | 
     return { label: entry[language === "zh" ? 0 : 1], hex: entry[2] };
   });
 }
-export function catalogSourceLabel(mode: string | undefined, provider: string | undefined): string {
+export function catalogSourceLabel(
+  mode: string | undefined,
+  provider: string | undefined,
+  configured?: boolean,
+): string {
+  if (configured === false) return "resources_source_disabled_catalog";
   return mode === "mirror" ? "resources_mirror_catalog" : provider === "github" ? "resources_github_catalog" : "resources_cloud_catalog";
 }

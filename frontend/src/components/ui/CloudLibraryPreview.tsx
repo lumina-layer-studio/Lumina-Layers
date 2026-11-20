@@ -3,7 +3,7 @@ import { CheckIcon } from "@heroicons/react/20/solid";
 import { useI18n } from "../../i18n/context";
 import CloseButton from "./CloseButton";
 import CalibrationThumbnail, { type CalibrationThumbnailProps } from "./CalibrationThumbnail";
-import { LibraryCardIdentity } from "./LibraryDetails";
+import { LibraryCardIdentity, LibraryCardPalette } from "./LibraryDetails";
 import ResourceDetailsPanel from "./ResourceDetailsPanel";
 import "./CloudLibraryPreview.css";
 
@@ -161,16 +161,19 @@ export default function CloudLibraryPreview({
                       if (selected === item.key) close();
                       else setSelected(item.key);
                     }}
-                    className="flex flex-1 items-start gap-3.5 rounded text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                    className="flex w-full flex-1 flex-col items-stretch gap-3 rounded text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
                   >
-                    <CalibrationThumbnail {...item.thumbnail} />
-                    <LibraryCardIdentity
-                      name={item.name}
-                      subtitle={item.subtitle}
-                      logo={item.logo}
-                      thumbnail={item.thumbnail}
-                      metric={item.metric}
-                    />
+                    <span className="flex min-w-0 items-start gap-3.5">
+                      <CalibrationThumbnail {...item.thumbnail} />
+                      <LibraryCardIdentity
+                        name={item.name}
+                        subtitle={item.subtitle}
+                        logo={item.logo}
+                        thumbnail={item.thumbnail}
+                        showMeta={false}
+                      />
+                    </span>
+                    <LibraryCardPalette thumbnail={item.thumbnail} metric={item.metric} />
                   </button>
                   {(item.activity || item.state || item.action) && (
                     <div className="mt-auto flex flex-col gap-2 pt-3.5">
@@ -200,17 +203,21 @@ export default function CloudLibraryPreview({
                 </article>
               ))}
             </div>
-            {!items.length && (
-              <div className="grid justify-items-center gap-3 py-12 text-center text-sm text-slate-500 dark:text-slate-400">
-                <p>
-                  {busy
-                    ? loadingMessage ?? t("lut_sync_loading")
-                    : emptyMessage ?? t("lut_sync_catalog_empty")}
-                </p>
-                {!busy && emptyAction}
-              </div>
+            {!items.length && (() => {
+              const resolvedEmptyText = busy
+                ? loadingMessage ?? t("lut_sync_loading")
+                : emptyMessage ?? t("lut_sync_catalog_empty");
+              if (!resolvedEmptyText && (busy || !emptyAction)) return null;
+              return (
+                <div className="grid justify-items-center gap-3 py-12 text-center text-sm text-slate-500 dark:text-slate-400">
+                  {resolvedEmptyText && <p>{resolvedEmptyText}</p>}
+                  {!busy && emptyAction}
+                </div>
+              );
+            })()}
+            {footer && (
+              <div className="mt-5 flex flex-wrap items-center justify-between gap-3">{footer}</div>
             )}
-            <div className="mt-5 flex flex-wrap items-center justify-between gap-3">{footer}</div>
           </div>
           {/* Removed entries clear immediately; an explicit close plays the exit. */}
           {(!selected || detail) && (

@@ -64,11 +64,12 @@ function CatalogSkeleton({ label }: { label: string }) {
  * install or update materials, and roll back local revisions.
  * 云端耗材库页面：分页浏览 Registry 目录，安装/更新耗材，回滚本地版本。
  */
-export default function MaterialCloudSyncPanel({ initialPersonalFilter = "all", initialQuery = "", onQueryChange, onBrowseOffline, onInstalled, ...filterProps }: {
+export default function MaterialCloudSyncPanel({ initialPersonalFilter = "all", initialQuery = "", onQueryChange, onBrowseOffline, onOpenSourceSettings, onInstalled, ...filterProps }: {
   initialPersonalFilter?: PersonalFilter;
   initialQuery?: string;
   onQueryChange?: (query: string) => void;
   onBrowseOffline?: () => void;
+  onOpenSourceSettings?: () => void;
   onInstalled?: () => void | Promise<unknown>;
 } & ResourceFilterProps = {}) {
   const { t, lang } = useI18n();
@@ -93,8 +94,16 @@ export default function MaterialCloudSyncPanel({ initialPersonalFilter = "all", 
     onQueryChange?.(value);
   };
   const offlineAction = onBrowseOffline
-    ? <Button label={t("resources_browse_offline")} onClick={onBrowseOffline} />
+    ? <Button label={t("resources_browse_offline")} size="sm" onClick={onBrowseOffline} />
     : undefined;
+  const unconfiguredAction = onOpenSourceSettings || offlineAction ? (
+    <div className="flex flex-wrap items-center gap-2">
+      {onOpenSourceSettings && (
+        <Button label={t("resources_source_settings")} variant="secondary" size="sm" onClick={onOpenSourceSettings} />
+      )}
+      {offlineAction}
+    </div>
+  ) : undefined;
 
   const renderCatalogBody = () => {
     if (view.kind === "loading") {
@@ -122,7 +131,7 @@ export default function MaterialCloudSyncPanel({ initialPersonalFilter = "all", 
   };
 
   const entries = view.kind === "entries" ? view.entries : [];
-  useCatalogHealth("materials", !catalog.isLoading && view.kind === "entries", catalog.cached, catalog.fetchedAt, catalog.error);
+  useCatalogHealth("materials", !catalog.isLoading && view.kind === "entries" && !catalog.isNotConfigured, catalog.cached, catalog.fetchedAt, catalog.error);
   useResourceActivity("materials", entries.map((entry) => entry.material_id));
   const findingAliases = Boolean(catalog.searchQuery.trim() && catalog.isFullCatalogLoading);
   return <><CloudLibraryPreview emptyMessage={catalog.error || catalog.notice || view.kind === "full_catalog_failed" ? "" : t(findingAliases ? "resources_search_incomplete" : "mat_sync_catalog_empty")} busy={isListBusy || view.kind === "loading"} loadingMessage={view.kind === "loading" ? "" : t("mat_gradient_library_loading")} resetKey={`${catalog.searchQuery}:${catalog.activeFilter}:${JSON.stringify(filters)}:${catalog.navigationKey}`}
@@ -149,8 +158,8 @@ export default function MaterialCloudSyncPanel({ initialPersonalFilter = "all", 
       {catalog.aliasLookupFailed && <StatusBanner tone="warning" action={<Button label={t("resources_retry")} onClick={catalog.retryFullCatalog} />}>{t("resources_alias_search_partial")}</StatusBanner>}
       {catalog.facetLookupFailed && !catalog.aliasLookupFailed && view.kind !== "full_catalog_failed" && <StatusBanner tone="warning"
         action={<Button label={t("resources_retry")} onClick={catalog.retryFullCatalog} />}>{t("resources_filter_failed")}</StatusBanner>}
-      <TransientBanner data-testid="material-cloud-sync-notice" tone="info" autoDismiss={false} message={catalog.notice} /><TransientBanner data-testid="material-cloud-sync-success" message={success} onDismiss={dismissSuccess} />{view.kind !== "entries" && renderCatalogBody()}</>}
-    footer={view.kind === "entries" && <><span className="text-xs text-slate-500 dark:text-slate-400">{t("cloud_library_results_count").replace("{count}", String(view.total))}</span>{view.pageCount > 1 && <Pagination page={view.page} pageCount={view.pageCount} onPageChange={handlePageChange} disabled={paginationDisabled} showJump={view.pageCount > 7} />}</>}
+      <TransientBanner data-testid="material-cloud-sync-notice" tone={catalog.isNotConfigured ? "warning" : "info"} autoDismiss={false} message={catalog.notice} action={catalog.isNotConfigured ? unconfiguredAction : undefined} /><TransientBanner data-testid="material-cloud-sync-success" message={success} onDismiss={dismissSuccess} />{view.kind !== "entries" && renderCatalogBody()}</>}
+    footer={view.kind === "entries" && !catalog.isNotConfigured && <><span className="text-xs text-slate-500 dark:text-slate-400">{t("cloud_library_results_count").replace("{count}", String(view.total))}</span>{view.pageCount > 1 && <Pagination page={view.page} pageCount={view.pageCount} onPageChange={handlePageChange} disabled={paginationDisabled} showJump={view.pageCount > 7} />}</>}
     items={entries.map((entry) => {
       const display = regionalCatalogDisplay(entry, lang, market);
       const fit = resolveCatalogFitError(entry);

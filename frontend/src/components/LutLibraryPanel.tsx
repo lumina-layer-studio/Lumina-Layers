@@ -1,4 +1,4 @@
-import { LibraryIdentity, LibraryFields, LibraryCardIdentity } from "./ui/LibraryDetails";
+import { LibraryIdentity, LibraryFields, LibraryCardIdentity, LibraryCardPalette } from "./ui/LibraryDetails";
 import ResourceDetailsPanel from "./ui/ResourceDetailsPanel";
 import { resourceColorMode } from "../utils/resourcePresentation";
 import CalibrationThumbnail from "./ui/CalibrationThumbnail";
@@ -276,13 +276,17 @@ export default function LutLibraryPanel() {
                     {isExpanded(group.manufacturer) && <div className="grid auto-rows-fr items-stretch gap-4 [grid-template-columns:repeat(auto-fill,min(100%,15rem))]">
                       {group.items.map((item) => {
                         const identity = identities.get(item.path)!;
+                        const thumbnail = { kind: "luts" as const, name: item.name, mode: item.color_mode, display: item.display };
+                        const metric = resourceColorMode(item.color_mode, lang) || undefined;
                         return <button key={item.path} type="button" data-testid="lut-library-card" aria-expanded={selectedPath === item.path}
                         onClick={(event) => { triggerRef.current = event.currentTarget; if (selectedPath === item.path) closeDetails(); else setSelectedPath(item.path); }}
-                        className={`${cardPadClass} material-library-card flex min-w-0 items-start gap-4 text-left transition-colors`}>
-                        <CalibrationThumbnail kind="luts" name={item.name} mode={item.color_mode} display={item.display} />
-                        <LibraryCardIdentity {...identity} subtitle={[identity.brand, item.material_type || identity.materialType].filter(Boolean).join(" · ")}
-                          thumbnail={{ kind: "luts", name: item.name, mode: item.color_mode, display: item.display }}
-                          metric={resourceColorMode(item.color_mode, lang) || undefined} localVersion={item.local_version} />
+                        className={`${cardPadClass} material-library-card flex min-w-0 flex-col items-stretch gap-3 text-left transition-colors`}>
+                        <span className="flex min-w-0 items-start gap-3.5">
+                          <CalibrationThumbnail {...thumbnail} />
+                          <LibraryCardIdentity {...identity} subtitle={[identity.brand, item.material_type || identity.materialType].filter(Boolean).join(" · ")}
+                            thumbnail={thumbnail} localVersion={item.local_version} showMeta={false} />
+                        </span>
+                        <LibraryCardPalette thumbnail={thumbnail} metric={metric} />
                       </button>; })}
                     </div>}
                   </SortableLibraryBrand>)}

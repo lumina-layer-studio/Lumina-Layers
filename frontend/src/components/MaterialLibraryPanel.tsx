@@ -903,6 +903,29 @@ export default function MaterialLibraryPanel() {
                 {items.map((item) => {
                   const identity = identities.get(item.directory_name)!;
                   const selected = selectedDirectoryNames.includes(item.directory_name);
+                  const layerHeightLabel =
+                    typeof item.layer_height_mm === "number" && Number.isFinite(item.layer_height_mm)
+                      ? `${item.layer_height_mm.toFixed(2)} mm`
+                      : null;
+                  const normalizedCode = identity.productCode?.replace(/^#+/, "").trim();
+                  const codeTag =
+                    normalizedCode && !identity.name.toLowerCase().includes(normalizedCode.toLowerCase())
+                      ? `#${normalizedCode}`
+                      : null;
+                  const sourceTag =
+                    item.sync_official || item.sync_channel === "official"
+                      ? t("mat_gradient_library_card_official")
+                      : identity.contributor?.trim() ||
+                        (!item.sync_material_id &&
+                        (Boolean(item.stage_a_params_url) || (item.verification_count ?? 0) > 0)
+                          ? t("mat_gradient_library_card_self_calibrated")
+                          : null);
+                  const usageTotal = Number(item.usage_total ?? 0);
+                  const usageTag =
+                    usageTotal > 0
+                      ? tRuntime("mat_gradient_library_card_used_count", { count: usageTotal })
+                      : null;
+                  const cardMeta = [codeTag, sourceTag, usageTag].filter(Boolean).join(" · ");
                   return (
                     <button
                       type="button"
@@ -925,9 +948,9 @@ export default function MaterialLibraryPanel() {
                       <CalibrationThumbnail kind="materials" rgb={item.estimated_rgb} display={item.display} />
                       <span className="min-w-0 flex-1">
                         <LibraryCardIdentity {...identity}
-                          subtitle={[identity.brand, item.material_type?.trim()].filter(Boolean).join(" · ")}
+                          subtitle={[identity.brand, item.material_type?.trim(), layerHeightLabel].filter(Boolean).join(" · ")}
                           thumbnail={{ kind: "materials", rgb: item.estimated_rgb, display: item.display }} />
-                        <span data-testid="material-library-card-fit-error" className="material-library-card-meta mt-1 block text-xs tabular-nums">{t("mat_gradient_library_fit_error_label")} {formatNumericValue(item.mean_delta_e, 2)}</span>
+                        {cardMeta && <span data-testid="material-library-card-meta" className="material-library-card-meta mt-1 block truncate text-xs tabular-nums">{cardMeta}</span>}
                         {(materialDuplicateCounts.get(getMaterialIdentityKey(item)) ?? 0) > 1 && <span data-testid="material-library-duplicate-badge" className="material-library-card-meta mt-1 block text-[11px] tabular-nums">{formatCreatedAt(item.updated_at || item.created_at)}</span>}
                       </span>
                     </button>

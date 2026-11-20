@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, within } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { filamentIdentity, materialDisplayName } from "../utils/filamentIdentity";
 import { localLutIdentity } from "../utils/libraryFilamentIdentity";
 import { resourceColorMode, resourceColors } from "../utils/resourcePresentation";
@@ -145,5 +145,45 @@ describe("resource identity and details", () => {
       thumbnail={{ kind, display: { original_name: "PLA red 16200 by 原作者" } }} />);
     expect(screen.getByText("PLA red 16200 by 原作者")).toBeInTheDocument();
     expect(screen.queryByText("规范后的颜色名")).toBeNull();
+  });
+
+  it("shows Polymaker support notice and orders product attributes ahead of usage license", () => {
+    try {
+      vi.setSystemTime(new Date("2026-11-19T00:00:00Z"));
+      const identity = filamentIdentity("Polymaker", "Panchroma PLA Magenta", "zh", {
+        series: "Panchroma",
+        material_type: "PLA",
+        color_name: "品红",
+        description: "高饱和度品红测试耗材，适合四色 CMYW 混色方案。",
+      }, "CN");
+      const { container } = render(
+        <LibraryIdentity
+          {...identity}
+          subtitle="Polymaker · PLA"
+          thumbnail={{
+            kind: "materials",
+            display: {
+              attribution: {
+                relationship: "adapted",
+                original_author: "Polymaker Team",
+                rights_basis: "Authorized test profile under Lumina Data License 1.0.",
+                source: { resource_id: "mat_7b5c34be46654f6c", revision_id: "rev_dd1d19bb279144cc" },
+              },
+            },
+          }}
+        />,
+      );
+      expect(screen.getByText("适配与支持")).toBeInTheDocument();
+      expect(screen.getByText(/Panchroma PLA 适配中/)).toBeInTheDocument();
+      expect(screen.getByText(/不代表 Polymaker 对 Lumina Studio 软件整体或打印效果的认证或保证/)).toBeInTheDocument();
+      const terms = Array.from(container.querySelectorAll("dt")).map((node) => node.textContent);
+      expect(terms.indexOf("产品系列")).toBeGreaterThanOrEqual(0);
+      expect(terms.indexOf("颜色名称")).toBeGreaterThan(terms.indexOf("产品系列"));
+      expect(terms.indexOf("使用许可")).toBeGreaterThan(terms.indexOf("颜色名称"));
+      const revisionDd = screen.getByText("mat_7b5c34be46654f6c · rev_dd1d19bb279144cc");
+      expect(revisionDd.className).not.toContain("text-right");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

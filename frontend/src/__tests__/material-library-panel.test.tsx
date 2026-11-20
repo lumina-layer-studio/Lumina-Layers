@@ -112,7 +112,8 @@ describe("MaterialLibraryPanel", () => {
     expect(screen.queryByText(/下载 material\.json|download material\.json/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/下载 stage_A_parameters\.json|download stage_a_parameters\.json/i)).not.toBeInTheDocument();
     expect(screen.getAllByTestId("material-library-item")).toHaveLength(1);
-    expect(screen.getByText("PETG")).toBeInTheDocument();
+    expect(screen.getByText(/PETG · 0\.\d{2} mm/)).toBeInTheDocument();
+    expect(screen.getByTestId("material-library-card-meta")).toHaveTextContent(/官方|Official/);
     expect(screen.queryByRole("button", { name: /编辑信息|edit details/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /导出所选耗材|export selected/i })).not.toBeInTheDocument();
     fireEvent.click(screen.getAllByTestId("material-library-item")[0]);
@@ -665,6 +666,7 @@ describe("MaterialLibraryPanel", () => {
           material_name: "PLA Basic",
           directory_name: "Brand/PLA Basic_20260709_145858",
           brand: "Brand",
+          display: { color_code: "10100" },
           created_at: "2026-07-09T14:58:58Z",
           updated_at: "2026-07-09T15:30:00Z",
           material_file_url: "/api/files/material-json-new",
@@ -673,6 +675,7 @@ describe("MaterialLibraryPanel", () => {
           layer_height_mm: 0.04,
           mean_delta_e: 1.23,
           verification_count: 3,
+          usage_total: 5,
           verification_history: [
             {
               verification_index: 3,
@@ -738,10 +741,18 @@ describe("MaterialLibraryPanel", () => {
     const cards = screen.getAllByTestId("material-library-item");
     expect(within(cards[0]).getByTestId("material-library-duplicate-badge")).toHaveTextContent("2026");
     expect(within(cards[1]).getByTestId("material-library-duplicate-badge")).toHaveTextContent("2026");
-    expect(within(cards[0]).getByTestId("material-library-card-fit-error")).toHaveTextContent("拟合误差");
+    expect(within(cards[0]).queryByTestId("material-library-card-fit-error")).not.toBeInTheDocument();
+    expect(cards[0]).not.toHaveTextContent(/拟合误差|Fit Error/);
+    expect(cards[0]).toHaveTextContent("0.04 mm");
+    expect(within(cards[0]).getByTestId("material-library-card-meta")).toHaveTextContent("#10100 · 自测校准 · 已用 5 次");
+    expect(within(cards[1]).getByTestId("material-library-card-meta")).toHaveTextContent("自测校准");
+    expect(within(cards[1]).getByTestId("material-library-card-meta")).not.toHaveTextContent(/已用/);
     expect(cards[0]).not.toHaveTextContent("PLA Basic_");
     fireEvent.click(cards[0]);
-    expect(within(screen.getByTestId("material-library-details")).getByText("Brand/PLA Basic_20260709_145858")).toBeInTheDocument();
+    const detailsPanel = screen.getByTestId("material-library-details");
+    expect(within(detailsPanel).getByText("Brand/PLA Basic_20260709_145858")).toBeInTheDocument();
+    expect(within(detailsPanel).getByText("拟合误差")).toBeInTheDocument();
+    expect(within(detailsPanel).getByText("1.23")).toBeInTheDocument();
     fireEvent.click(cards[1]);
     fireEvent.click(screen.getByRole("button", { name: /删除耗材|delete material/i }));
 

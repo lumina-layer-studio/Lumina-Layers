@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
+import { ChevronDownIcon } from "@heroicons/react/20/solid";
 import { useI18n } from "../../i18n/context";
 import { useOutsideInteraction } from "../../hooks/useOutsideInteraction";
 import Button from "../ui/Button";
@@ -56,12 +57,46 @@ function ProjectMenu({ label, iconOnly = false, items }: { label: string; iconOn
     const next = event.key === "Home" ? 0 : event.key === "End" ? items.length - 1 : (current + (event.key === "ArrowDown" ? 1 : -1) + items.length) % items.length;
     items[next]?.focus();
   };
+  const triggerButton = (
+    <button
+      ref={trigger}
+      type="button"
+      className={`${toolbarButtonClass} ${iconOnly ? "w-8 px-0" : "gap-1 px-2.5"}`}
+      aria-label={iconOnly ? label : undefined}
+      aria-haspopup="menu"
+      aria-expanded={menuOpen}
+      aria-controls={menuOpen ? menuId : undefined}
+      onClick={() => setMenuOpen(value => !value)}
+      onKeyDown={event => {
+        if (event.key === "ArrowDown") {
+          event.preventDefault();
+          setMenuOpen(true);
+        }
+      }}
+    >
+      {iconOnly ? (
+        <svg aria-hidden="true" className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">
+          <circle cx="5" cy="12" r="1.7" />
+          <circle cx="12" cy="12" r="1.7" />
+          <circle cx="19" cy="12" r="1.7" />
+        </svg>
+      ) : (
+        <>
+          <span>{label}</span>
+          <ChevronDownIcon
+            aria-hidden="true"
+            className={`h-3.5 w-3.5 shrink-0 opacity-75 transition-transform duration-150 ${menuOpen ? "rotate-180" : ""}`}
+          />
+        </>
+      )}
+    </button>
+  );
   return <div ref={root} className="relative">
-    <HeaderTooltip label={label} suppressed={menuOpen}>
-      <button ref={trigger} type="button" className={`${toolbarButtonClass} ${iconOnly ? "w-8 px-0" : ""}`} aria-label={label} aria-haspopup="menu" aria-expanded={menuOpen} aria-controls={menuOpen ? menuId : undefined} onClick={() => setMenuOpen(value => !value)} onKeyDown={event => { if (event.key === "ArrowDown") { event.preventDefault(); setMenuOpen(true); } }}>
-        {iconOnly ? <svg aria-hidden="true" className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.7" /><circle cx="12" cy="12" r="1.7" /><circle cx="19" cy="12" r="1.7" /></svg> : <>{label}<span aria-hidden="true">⌄</span></>}
-      </button>
-    </HeaderTooltip>
+    {iconOnly ? (
+      <HeaderTooltip label={label} suppressed={menuOpen}>{triggerButton}</HeaderTooltip>
+    ) : (
+      triggerButton
+    )}
     {menuOpen && <div ref={menu} id={menuId} role="menu" aria-label={label} onKeyDown={onMenuKeyDown} className={`${HEADER_MENU_PANEL_CLASS} w-64`}>
       {items.map((item, index) => <div key={item.label}>
         {index > 0 && <div className={HEADER_MENU_DIVIDER_CLASS} />}

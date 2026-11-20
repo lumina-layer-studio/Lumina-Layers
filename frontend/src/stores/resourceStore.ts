@@ -20,6 +20,8 @@ interface ResourceState {
   sourceChanged: (status: ResourceStatus) => void;
   catalogSource: Record<ResourceKind, ResourceSource>;
   setCatalogSource: (kind: ResourceKind, source: ResourceSource) => void;
+  sourceDialogKind: ResourceKind | null;
+  setSourceDialogKind: (kind: ResourceKind | null) => void;
   observedContent: Partial<Record<ResourceKind, boolean>>;
   observeLibrary: (kind: ResourceKind, count: number) => void;
   refresh: () => Promise<void>;
@@ -40,6 +42,8 @@ export const useResourceStore = create<ResourceState>((set, get) => ({
   },
   catalogSource: { materials: "cloud", luts: "cloud" },
   setCatalogSource: (kind, source) => set((state) => ({ catalogSource: { ...state.catalogSource, [kind]: source } })),
+  sourceDialogKind: null,
+  setSourceDialogKind: (sourceDialogKind) => set({ sourceDialogKind }),
   observedContent: {},
   observeLibrary: (kind, count) => {
     if (count > 0 && !get().observedContent[kind]) set((state) => ({ observedContent: { ...state.observedContent, [kind]: true } }));

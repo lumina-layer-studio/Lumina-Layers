@@ -160,6 +160,10 @@ export const translations: Record<string, Record<"zh" | "en", string>> = {
   contribution_unavailable: { zh: "当前未配置投稿服务，本地资源仍可正常使用。", en: "Submission service not configured; local files work normally." },
   contribution_code: { zh: "授权连接码", en: "Verification code" },
   contribution_browser: { zh: "打开耗材库", en: "Open web library" },
+  contribution_browser_error: {
+    zh: "无法打开系统浏览器。请检查默认浏览器设置后重试。",
+    en: "Could not open the system browser. Check your default browser settings and try again.",
+  },
   contribution_approve_hint: { zh: "前往耗材库网页登录，核对下方连接码并确认授权。", en: "Sign in on the web library, verify the code below, and approve." },
   contribution_waiting: { zh: "等待网页确认，授权后将自动连接…", en: "Waiting for web approval…" },
   contribution_restart: { zh: "重新连接", en: "New code" },

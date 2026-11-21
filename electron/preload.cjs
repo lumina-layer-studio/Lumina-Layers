@@ -53,6 +53,7 @@ contextBridge.exposeInMainWorld("electronAPI", {
     ipcRenderer.invoke("get-workshop-runtime-mode"),
   openWiki: (url) => ipcRenderer.invoke("open-wiki", url),
   openGradientModel: (url) => ipcRenderer.invoke("open-gradient-model", url),
+  openCommunityPage: (url) => ipcRenderer.invoke("open-community-page", url),
   pickWorkshopImage: () =>
     ipcRenderer.invoke("pick-workshop-image"),
 });

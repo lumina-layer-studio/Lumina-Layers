@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type MouseEvent } from "react";
 import { ArrowPathIcon, ArrowTopRightOnSquareIcon, UserCircleIcon } from "@heroicons/react/24/outline";
 import { useCommunityStore } from "../stores/communityStore";
 import { useI18n } from "../i18n/context";
@@ -20,6 +20,7 @@ export function CommunityConnection({
   const connection = useCommunityStore((state) => state.connection);
   const error = useCommunityStore((state) => state.connectionError);
   const [action, setAction] = useState<"start" | "check" | "disconnect" | "restart" | null>(null);
+  const [linkError, setLinkError] = useState(false);
   const busy = disabled || action !== null;
   const needsVerification =
     requireVerifiedEmail && connection?.state === "connected" && !connection.email_verified;
@@ -37,12 +38,24 @@ export function CommunityConnection({
   }, [connection?.state]);
 
   const run = async (name: Exclude<typeof action, null>, task: () => Promise<void>) => {
+    setLinkError(false);
     setAction(name);
     try {
       await task();
     } finally {
       setAction(null);
     }
+  };
+
+  const openWebLink = (event: MouseEvent<HTMLAnchorElement>) => {
+    const openCommunityPage = (window as Window & {
+      electronAPI?: { openCommunityPage?: (url: string) => Promise<void> };
+    }).electronAPI?.openCommunityPage;
+    const url = event.currentTarget.getAttribute("href");
+    if (!openCommunityPage || !url) return;
+    event.preventDefault();
+    setLinkError(false);
+    void openCommunityPage(url).catch(() => setLinkError(true));
   };
 
   return (
@@ -87,6 +100,7 @@ export function CommunityConnection({
                 href={connection.web_url + "/#/account"}
                 target="_blank"
                 rel="noreferrer"
+                onClick={openWebLink}
               >
                 <ArrowTopRightOnSquareIcon className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
                 {t(needsVerification ? "community_verify_email" : "community_web_account")}
@@ -127,6 +141,7 @@ export function CommunityConnection({
             aria-disabled={busy || undefined}
             target="_blank"
             rel="noreferrer"
+            onClick={openWebLink}
           >
             <ArrowTopRightOnSquareIcon className="h-4 w-4 shrink-0" aria-hidden="true" />
             <span>{t("contribution_browser")}</span>
@@ -187,6 +202,9 @@ export function CommunityConnection({
       )}
       {connection?.disconnect_incomplete && (
         <StatusBanner tone="warning">{t("community_disconnect_incomplete")}</StatusBanner>
+      )}
+      {linkError && (
+        <StatusBanner tone="error" role="alert">{t("contribution_browser_error")}</StatusBanner>
       )}
       {error && (
         <StatusBanner tone="error" role="alert">

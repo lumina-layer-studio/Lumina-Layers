@@ -57,6 +57,7 @@ const {
   isAllowedWikiIpcSender,
   isAllowedWikiUrl,
   isWorkshopFrameProcessIsolated,
+  resolveCommunityPageUrl,
   resolveWorkshopRuntimeRequest,
   shouldBlockWorkshopNavigation,
   shouldBlockWorkshopRedirect,
@@ -883,6 +884,15 @@ ipcMain.handle("open-wiki", async (event, url) => {
   }
   await shell.openExternal(url);
   return { opened: true };
+});
+
+ipcMain.handle("open-community-page", async (event, url) => {
+  if (!isTrustedMainFrameSender(event, win, trustedMainFrameUrl)) {
+    throw new Error("Community external link denied.");
+  }
+  const target = resolveCommunityPageUrl(url, process.env.LUMINA_CONTRIBUTION_REGISTRY_URL);
+  if (!target) throw new Error("Community external link denied.");
+  await shell.openExternal(target);
 });
 
 ipcMain.handle("save-generated-file", (event, payload) => saveGeneratedFile({

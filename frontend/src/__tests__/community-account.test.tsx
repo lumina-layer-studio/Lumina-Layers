@@ -1,5 +1,5 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { beforeEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import "./communityTestMocks";
 import * as api from "../api/contributions";
 import { CommunityAccountDialog, CommunityConnection } from "../components/CommunityAccount";
@@ -9,6 +9,7 @@ const web_url = "http://localhost:8018";
 const pending = { state: "pending" as const, web_url, code: "ABCDEFGH23", connect_url: `${web_url}/#/studio-connect?code=ABCDEFGH23` };
 const connected = { state: "connected" as const, web_url, subject: "maker", display_name: "Maker" };
 beforeEach(() => vi.clearAllMocks());
+afterEach(() => vi.unstubAllGlobals());
 
 it("replaces the start action with approval and can explicitly restart a pending connection", async () => {
   vi.mocked(api.getContributionConnection).mockResolvedValue(pending);
@@ -23,6 +24,28 @@ it("replaces the start action with approval and can explicitly restart a pending
   await screen.findByText("NEWCODE123");
   expect(api.disconnectContribution).toHaveBeenCalledOnce();
   expect(api.startContributionConnection).toHaveBeenCalledOnce();
+});
+
+it("opens the pending approval link through the desktop browser bridge", async () => {
+  vi.mocked(api.getContributionConnection).mockResolvedValue(pending);
+  const openCommunityPage = vi.fn().mockResolvedValue(undefined);
+  vi.stubGlobal("electronAPI", { openCommunityPage });
+  render(<CommunityAccountDialog onClose={vi.fn()} />);
+
+  const link = await screen.findByRole("link", { name: "打开耗材库" });
+  expect(fireEvent.click(link)).toBe(false);
+  expect(openCommunityPage).toHaveBeenCalledExactlyOnceWith(pending.connect_url);
+});
+
+it("reports a browser launch failure when opening the connected account page", async () => {
+  vi.mocked(api.getContributionConnection).mockResolvedValue(connected);
+  const openCommunityPage = vi.fn().mockRejectedValue(new Error("browser unavailable"));
+  vi.stubGlobal("electronAPI", { openCommunityPage });
+  render(<CommunityAccountDialog onClose={vi.fn()} />);
+
+  fireEvent.click(await screen.findByRole("link", { name: "管理邮箱与设备" }));
+  expect(openCommunityPage).toHaveBeenCalledExactlyOnceWith(web_url + "/#/account");
+  expect(await screen.findByRole("alert")).toHaveTextContent("无法打开系统浏览器");
 });
 
 it("uses one start request during loading and updates the same dialog after approval", async () => {

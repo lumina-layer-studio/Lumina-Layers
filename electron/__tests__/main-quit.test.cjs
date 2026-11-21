@@ -18,7 +18,7 @@ async function until(check) {
   }
 }
 
-async function fixture(t, platform, mode = "healthy", prepareUserData = () => {}, { pythonPaths, argv = ["electron"] } = {}) {
+async function fixture(t, platform, mode = "healthy", prepareUserData = () => {}, { pythonPaths, argv = ["electron"], env = {} } = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "lumina-source-desktop-"));
   prepareUserData(root);
   const windows = [], children = [], dialogs = [], errors = [], commands = [], signals = [];
@@ -156,7 +156,7 @@ async function fixture(t, platform, mode = "healthy", prepareUserData = () => {}
     __dirname: path.dirname(mainPath), console: { log() {} }, URL, Response, Headers,
     setTimeout(callback, delay) { const timer = setTimeout(callback, delay); timers.add(timer); return timer; },
     clearTimeout,
-    process: { platform, argv, env: { LUMINA_MATERIAL_REGISTRY_URL: "https://custom.example/materials" },
+    process: { platform, argv, env: { LUMINA_MATERIAL_REGISTRY_URL: "https://custom.example/materials", ...env },
       kill(pid, signal) { signals.push({ pid, signal }); } },
   }, { filename: mainPath });
   await until(() => healthCallback || app.quitted);
@@ -398,7 +398,38 @@ test("source desktop reopens at the interface scale saved last time", async t =>
   assert.equal(window.maximized, undefined);
 });
 
- test("gradient model links open externally only for trusted UI and approved URLs", async t => {
+test("community account links open externally from the trusted main frame", async t => {
+  const f = await fixture(t, "win32");
+  await f.healthy();
+  const contents = f.mainWindow().webContents;
+  const sender = { sender: contents, senderFrame: contents.mainFrame };
+  const open = f.ipcHandlers.get("open-community-page");
+  const registry = "https://dan5.shmx.top";
+  const urls = [registry + "/#/studio-connect?code=ABCDEFGH23", registry + "/#/account"];
+  for (const url of urls) await open(sender, url);
+  await assert.rejects(open({ sender: contents, senderFrame: { url: contents.mainFrame.url } }, urls[0]), /denied/);
+  await assert.rejects(open(sender, "https://example.com/#/account"), /denied/);
+  await assert.rejects(open(sender, registry + "/#/catalog"), /denied/);
+  await assert.rejects(open(sender, registry + "/#/studio-connect?code="), /denied/);
+  assert.deepEqual(f.externalUrls, urls);
+});
+
+test("community account links honor the configured Registry web base", async t => {
+  const f = await fixture(t, "darwin", "healthy", undefined, {
+    env: { LUMINA_CONTRIBUTION_REGISTRY_URL: " http://localhost:8018/materials/api/material-registry/v1/ " },
+  });
+  await f.healthy();
+  const contents = f.mainWindow().webContents;
+  const sender = { sender: contents, senderFrame: contents.mainFrame };
+  const open = f.ipcHandlers.get("open-community-page");
+  const url = "http://localhost:8018/materials/#/account";
+  await open(sender, url);
+  await assert.rejects(open(sender, "http://localhost:8018/#/account"), /denied/);
+  await assert.rejects(open(sender, "https://dan5.shmx.top/#/account"), /denied/);
+  assert.deepEqual(f.externalUrls, [url]);
+});
+
+test("gradient model links open externally only for trusted UI and approved URLs", async t => {
   const f = await fixture(t, "darwin");
   await f.healthy();
   const contents = f.mainWindow().webContents;

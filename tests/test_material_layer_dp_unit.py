@@ -7,6 +7,7 @@ import itertools
 import numpy as np
 import pytest
 
+from core import material_layer_dp
 from core.material_candidate_cache import (
     MaterialCandidateCacheConfig,
     _candidate_cache_parameters,
@@ -122,6 +123,65 @@ def test_memo_returns_same_object():
     second = generate_layer_dp_recipes_cached(PALETTE, 12, 0.04, max_states=50_000)
     assert first is second
     clear_layer_dp_memo()
+
+
+def test_dense_cell_merging_keeps_the_sorted_recipe_choices(monkeypatch: pytest.MonkeyPatch) -> None:
+    palette = [
+        _mat(str(index), (value,) * 3, (8.0,) * 3)
+        for index, value in enumerate(np.linspace(0.03, 0.99, 9))
+    ]
+    monkeypatch.setattr(material_layer_dp, "_DENSE_SELECTION_MIN_CANDIDATES", 10**9, raising=False)
+    reference = generate_layer_dp_recipes(palette, 8, 0.08, state_cell_lab=1.7, max_states=500)
+    monkeypatch.setattr(material_layer_dp, "_DENSE_SELECTION_MIN_CANDIDATES", 64)
+    sorted_counts: list[int] = []
+    lexsort = np.lexsort
+
+    def record_sort(keys: tuple[np.ndarray, ...]) -> np.ndarray:
+        sorted_counts.append(len(keys[0]))
+        return lexsort(keys)
+
+    monkeypatch.setattr(np, "lexsort", record_sort)
+    result = generate_layer_dp_recipes(palette, 8, 0.08, state_cell_lab=1.7, max_states=500)
+
+    assert sorted_counts == [len(palette)]
+    np.testing.assert_array_equal(result.recipes, reference.recipes)
+    np.testing.assert_array_equal(result.linear_rgb, reference.linear_rgb)
+    np.testing.assert_array_equal(result.switch_counts, reference.switch_counts)
+    assert result.states_per_layer == reference.states_per_layer
+
+
+def test_cached_dp_continues_a_coarsened_prefix_without_changing_the_results(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    clear_layer_dp_memo()
+    try:
+        reference = generate_layer_dp_recipes(PALETTE, 12, 0.04, max_states=2_500)
+        prefix = generate_layer_dp_recipes_cached(PALETTE, 11, 0.04, max_states=2_500)
+        assert prefix.state_cell_lab > 0.5
+        # The reusable state must be independent of the arrays given to callers.
+        prefix.recipes.fill(0)
+        prefix.linear_rgb.fill(0.0)
+        prefix.switch_counts.fill(0)
+
+        lab_conversion = material_layer_dp._linear_to_lab
+        expanded_layers = 0
+
+        def count_layers(colors: np.ndarray) -> np.ndarray:
+            nonlocal expanded_layers
+            expanded_layers += 1
+            return lab_conversion(colors)
+
+        monkeypatch.setattr(material_layer_dp, "_linear_to_lab", count_layers)
+        result = generate_layer_dp_recipes_cached(PALETTE, 12, 0.04, max_states=2_500)
+
+        assert expanded_layers == 1
+        assert result.state_cell_lab == reference.state_cell_lab
+        assert result.states_per_layer == reference.states_per_layer
+        np.testing.assert_array_equal(result.recipes, reference.recipes)
+        np.testing.assert_array_equal(result.linear_rgb, reference.linear_rgb)
+        np.testing.assert_array_equal(result.switch_counts, reference.switch_counts)
+    finally:
+        clear_layer_dp_memo()
 
 
 def test_candidate_runtime_uses_layer_dp_for_deep_stacks():

@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import errno
 import hashlib
 import json
 import math
@@ -439,11 +440,14 @@ def _thread_lock_for(path: Path) -> threading.RLock:
 
 
 class _DynamicCatalogKeyLock:
-    """Serialize one cache key across threads and operating-system processes."""
+    """Serialize one cache key until its owner publishes the catalog or exits."""
 
-    def __init__(self, path: Path, *, layer_count: int) -> None:
+    def __init__(
+        self, path: Path, *, layer_count: int, timeout_seconds: float | None = None,
+    ) -> None:
         self._lock_path = path.with_name(path.name + ".lock")
         self._layer_count = int(layer_count)
+        self._timeout_seconds = timeout_seconds
         self._thread_lock = _thread_lock_for(self._lock_path)
         self._thread_acquired = False
         self._handle = None
@@ -451,8 +455,9 @@ class _DynamicCatalogKeyLock:
     def __enter__(self) -> "_DynamicCatalogKeyLock":
         try:
             self._lock_path.parent.mkdir(parents=True, exist_ok=True)
+            timeout = self._timeout_seconds
             self._thread_acquired = self._thread_lock.acquire(
-                timeout=_CACHE_LOCK_TIMEOUT_SECONDS
+                timeout=-1 if timeout is None else timeout,
             )
             if not self._thread_acquired:
                 raise TimeoutError("thread lock timed out")
@@ -461,14 +466,18 @@ class _DynamicCatalogKeyLock:
             if self._handle.tell() == 0:
                 self._handle.write(b"\0")
                 self._handle.flush()
-            deadline = time.monotonic() + _CACHE_LOCK_TIMEOUT_SECONDS
+            deadline = None if timeout is None else time.monotonic() + timeout
             while True:
                 try:
                     self._acquire_process_lock()
                     return self
-                except (BlockingIOError, PermissionError):
-                    if time.monotonic() >= deadline:
-                        raise TimeoutError("process lock timed out")
+                except OSError as exc:
+                    # msvcrt reports a byte-range lock collision as EACCES.
+                    windows_contention = os.name == "nt" and exc.errno == errno.EACCES
+                    if exc.errno not in (errno.EAGAIN, errno.EWOULDBLOCK) and not windows_contention:
+                        raise
+                    if deadline is not None and time.monotonic() >= deadline:
+                        raise TimeoutError("process lock timed out") from exc
                     time.sleep(0.05)
         except Exception as exc:
             self._release_resources()
@@ -498,7 +507,10 @@ class _DynamicCatalogKeyLock:
         else:
             import fcntl
 
-            fcntl.flock(self._handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            mode = fcntl.LOCK_EX
+            if self._timeout_seconds is not None:
+                mode |= fcntl.LOCK_NB
+            fcntl.flock(self._handle.fileno(), mode)
 
     def _release_process_lock(self) -> None:
         if self._handle is None:
@@ -594,7 +606,12 @@ def _resolve_catalog_record(
     key: DynamicCatalogCacheKey, cache_root: str | Path | None, *, register: bool,
 ) -> Path:
     directory = default_cache_directory(cache_root) / _DYNAMIC_CACHE_SUBDIRECTORY
-    with _DynamicCatalogKeyLock(directory / "catalog", layer_count=key.max_layer_count):
+    # The registry only publishes metadata. A per-key lock can instead cover
+    # a full catalog build, so its consumers wait for the same result.
+    with _DynamicCatalogKeyLock(
+        directory / "catalog", layer_count=key.max_layer_count,
+        timeout_seconds=_CACHE_LOCK_TIMEOUT_SECONDS,
+    ):
         path = dynamic_catalog_cache_file_path(key, cache_root=cache_root)
         meta_path = path.with_suffix(".meta.json")
         if register and not meta_path.exists():

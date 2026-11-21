@@ -43,7 +43,7 @@ import logging
 import threading
 from collections import OrderedDict
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
 import cv2
@@ -65,6 +65,8 @@ _CELL_GROWTH: float = 1.26  # ~2**(1/3): halves state count per step in 3-D
 _CANDIDATE_CHUNK: int = 2_000_000
 _KEY_BITS: int = 21
 _KEY_MASK: int = (1 << _KEY_BITS) - 1
+_DENSE_SELECTION_MIN_CANDIDATES = 65_536
+_DENSE_SELECTION_MAX_CELLS = 8_000_000  # At most 64 MB for the winning ranks.
 
 
 @dataclass(frozen=True)
@@ -98,6 +100,26 @@ class LayerDpResult:
         }
 
 
+@dataclass(frozen=True)
+class _LayerDpState:
+    """A continuation before the final clipping of the simulated colors."""
+
+    colors: np.ndarray
+    recipes: np.ndarray
+    switches: np.ndarray
+    cell: float
+    states_per_layer: tuple[int, ...]
+
+    def result(self) -> LayerDpResult:
+        return LayerDpResult(
+            recipes=self.recipes,
+            linear_rgb=np.clip(self.colors, 0.0, 1.0),
+            switch_counts=self.switches,
+            state_cell_lab=self.cell,
+            states_per_layer=self.states_per_layer,
+        )
+
+
 def _linear_to_lab(linear_rgb: np.ndarray) -> np.ndarray:
     srgb = linear_to_srgb_float(linear_rgb).astype(np.float32, copy=False)
     lab = cv2.cvtColor(srgb.reshape(-1, 1, 3), cv2.COLOR_RGB2LAB)
@@ -115,6 +137,52 @@ def _cell_keys(lab: np.ndarray, cell: float) -> np.ndarray:
         | ((a_idx & _KEY_MASK) << _KEY_BITS)
         | (b_idx & _KEY_MASK)
     )
+
+
+def _dense_cell_winners(keys: np.ndarray, switches: np.ndarray) -> np.ndarray | None:
+    shifts = (2 * _KEY_BITS, _KEY_BITS, 0)
+    minima: list[int] = []
+    widths: list[int] = []
+    axis = np.empty_like(keys)
+    for shift in shifts:
+        np.right_shift(keys, shift, out=axis)
+        axis &= _KEY_MASK
+        minima.append(int(axis.min()))
+        widths.append(int(axis.max()) - minima[-1] + 1)
+    del axis
+    cell_count = widths[0] * widths[1] * widths[2]
+    if cell_count > min(keys.size, _DENSE_SELECTION_MAX_CELLS):
+        return None
+
+    # Compact cell indices retain packed-key order. Within each cell,
+    # prefer fewer switches, then the earliest candidate in expansion order.
+    empty = np.iinfo(np.int64).max
+    best = np.full(cell_count, empty, dtype=np.int64)
+    for start in range(0, keys.size, _CANDIDATE_CHUNK):
+        end = min(start + _CANDIDATE_CHUNK, keys.size)
+        chunk = keys[start:end]
+        indices = (chunk >> shifts[0]) - minima[0]
+        for shift, minimum, width in zip(shifts[1:], minima[1:], widths[1:]):
+            indices *= width
+            indices += ((chunk >> shift) & _KEY_MASK) - minimum
+        rank = switches[start:end].astype(np.int64)
+        rank *= keys.size
+        rank += np.arange(start, end, dtype=np.int64)
+        np.minimum.at(best, indices, rank)
+    return best[best != empty] % keys.size
+
+
+def _cell_winners(keys: np.ndarray, switches: np.ndarray) -> np.ndarray:
+    if keys.size >= _DENSE_SELECTION_MIN_CANDIDATES:
+        winners = _dense_cell_winners(keys, switches)
+        if winners is not None:
+            return winners
+    order = np.lexsort((switches, keys))
+    sorted_keys = keys[order]
+    first = np.empty(sorted_keys.shape, dtype=bool)
+    first[0] = True
+    np.not_equal(sorted_keys[1:], sorted_keys[:-1], out=first[1:])
+    return order[first]
 
 
 def _substrate_linear(substrate: str) -> np.ndarray:
@@ -155,6 +223,30 @@ def generate_layer_dp_recipes(
     Returns:
         LayerDpResult with recipes sorted by Lab cell key.
     """
+    return _generate_layer_dp_state(
+        materials,
+        layer_count,
+        layer_height_mm,
+        substrate,
+        state_cell_lab=state_cell_lab,
+        max_states=max_states,
+        recipe_dtype=recipe_dtype,
+        progress_callback=progress_callback,
+    ).result()
+
+
+def _generate_layer_dp_state(
+    materials: list[MaterialParams],
+    layer_count: int,
+    layer_height_mm: float,
+    substrate: str,
+    *,
+    state_cell_lab: float,
+    max_states: int,
+    recipe_dtype: np.dtype | type,
+    progress_callback: Callable[[float, dict[str, Any]], None] | None = None,
+    prefix: _LayerDpState | None = None,
+) -> _LayerDpState:
     if not materials:
         raise ValueError("materials must not be empty")
     n_layers = int(layer_count)
@@ -174,14 +266,19 @@ def generate_layer_dp_recipes(
     b = e_stack * (1.0 - a)  # (M, 3)
     m_count = a.shape[0]
 
-    colors = _substrate_linear(substrate)[None, :].copy()
-    recipes = np.zeros((1, 0), dtype=dtype)
-    switches = np.zeros(1, dtype=np.int16)
-    cell = float(state_cell_lab)
-    states_per_layer: list[int] = []
+    if prefix is None:
+        colors = _substrate_linear(substrate)[None, :].copy()
+        recipes = np.zeros((1, 0), dtype=dtype)
+        switches = np.zeros(1, dtype=np.int16)
+        cell = float(state_cell_lab)
+        states_per_layer: list[int] = []
+    else:
+        colors, recipes, switches = prefix.colors, prefix.recipes, prefix.switches
+        cell = prefix.cell
+        states_per_layer = list(prefix.states_per_layer)
     mat_ids = np.arange(m_count, dtype=np.int64)
 
-    for depth in range(n_layers):
+    for depth in range(len(states_per_layer), n_layers):
         s_count = colors.shape[0]
         # Candidate (parent, material) pairs are indexed as parent*M + material.
         cand_total = s_count * m_count
@@ -203,14 +300,7 @@ def generate_layer_dp_recipes(
             )
 
         while True:
-            keys = _cell_keys(cand_lab, cell)
-            # Primary: key; secondary: fewest switches; tertiary: stable index.
-            order = np.lexsort((cand_switch, keys))
-            sorted_keys = keys[order]
-            first = np.empty(sorted_keys.shape, dtype=bool)
-            first[0] = True
-            np.not_equal(sorted_keys[1:], sorted_keys[:-1], out=first[1:])
-            winners = order[first]
+            winners = _cell_winners(_cell_keys(cand_lab, cell), cand_switch)
             if winners.size <= max_states:
                 break
             cell *= _CELL_GROWTH
@@ -221,7 +311,7 @@ def generate_layer_dp_recipes(
                 depth + 1,
                 cell,
             )
-        del cand_lab, keys, order, sorted_keys, first
+        del cand_lab
 
         parent = winners // m_count
         mat = (winners % m_count).astype(np.int64)
@@ -240,11 +330,11 @@ def generate_layer_dp_recipes(
                 {"layer": depth + 1, "states": int(winners.size), "cell": cell},
             )
 
-    return LayerDpResult(
+    return _LayerDpState(
+        colors=colors,
         recipes=recipes,
-        linear_rgb=np.clip(colors, 0.0, 1.0),
-        switch_counts=switches,
-        state_cell_lab=cell,
+        switches=switches,
+        cell=cell,
         states_per_layer=tuple(states_per_layer),
     )
 
@@ -252,18 +342,18 @@ def generate_layer_dp_recipes(
 # ---------------------------------------------------------------------------
 # In-process memo
 # ---------------------------------------------------------------------------
-# Preview requests rebuild an in-memory candidate runtime on every call; for
-# deep stacks the DP is the expensive part, so keep the last few results.
-# 预览每次都会重建内存候选运行时；深叠层下 DP 是主要耗时，缓存最近几次结果。
+# Keep exact-depth results and one bounded continuation for sequential layers.
+# 缓存指定层数的结果，另保留一份有内存上限的状态用于继续计算更多层。
 
 _MEMO_MAX_ENTRIES: int = 4
-_memo: "OrderedDict[str, LayerDpResult]" = OrderedDict()
+_MEMO_MAX_PREFIX_BYTES = 64 * 1024**2
+_memo: OrderedDict[tuple[str, int], LayerDpResult] = OrderedDict()
+_memo_prefix: tuple[str, _LayerDpState] | None = None
 _memo_lock = threading.Lock()
 
 
 def _memo_key(
     materials: list[MaterialParams],
-    layer_count: int,
     layer_height_mm: float,
     substrate: str,
     state_cell_lab: float,
@@ -277,7 +367,6 @@ def _memo_key(
     h.update(
         repr(
             (
-                int(layer_count),
                 float(layer_height_mm),
                 str(substrate),
                 float(state_cell_lab),
@@ -299,39 +388,61 @@ def generate_layer_dp_recipes_cached(
     max_states: int = DEFAULT_MAX_STATES,
     recipe_dtype: np.dtype | type = np.uint8,
 ) -> LayerDpResult:
-    """Memoized :func:`generate_layer_dp_recipes` (last few palettes).
-    带进程内缓存的 :func:`generate_layer_dp_recipes`。"""
+    """Memoize exact depths and continue from a compatible shallower result."""
+    global _memo_prefix
+
     key = _memo_key(
         materials,
-        layer_count,
         layer_height_mm,
         substrate,
         state_cell_lab,
         max_states,
         np.dtype(recipe_dtype),
     )
+    depth = int(layer_count)
+    result_key = (key, depth)
     with _memo_lock:
-        hit = _memo.get(key)
+        hit = _memo.get(result_key)
         if hit is not None:
-            _memo.move_to_end(key)
+            _memo.move_to_end(result_key)
             return hit
-    result = generate_layer_dp_recipes(
+        prefix = None
+        if _memo_prefix is not None and _memo_prefix[0] == key:
+            candidate = _memo_prefix[1]
+            if len(candidate.states_per_layer) < depth:
+                prefix = candidate
+    state = _generate_layer_dp_state(
         materials,
-        layer_count,
+        depth,
         layer_height_mm,
         substrate,
         state_cell_lab=state_cell_lab,
         max_states=max_states,
         recipe_dtype=recipe_dtype,
+        prefix=prefix,
     )
+    result = state.result()
+    prefix_size = state.colors.nbytes + state.recipes.nbytes + state.switches.nbytes
     with _memo_lock:
-        _memo[key] = result
-        _memo.move_to_end(key)
+        _memo[result_key] = result
+        _memo.move_to_end(result_key)
         while len(_memo) > _MEMO_MAX_ENTRIES:
             _memo.popitem(last=False)
+        if prefix_size <= _MEMO_MAX_PREFIX_BYTES and (
+            _memo_prefix is None
+            or _memo_prefix[0] != key
+            or len(_memo_prefix[1].states_per_layer) < depth
+        ):
+            # Keep the continuation independent of the returned recipe arrays.
+            _memo_prefix = key, replace(
+                state, recipes=state.recipes.copy(), switches=state.switches.copy(),
+            )
     return result
 
 
 def clear_layer_dp_memo() -> None:
+    global _memo_prefix
+
     with _memo_lock:
         _memo.clear()
+        _memo_prefix = None

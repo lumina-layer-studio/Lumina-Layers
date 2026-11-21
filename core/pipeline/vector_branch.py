@@ -46,7 +46,12 @@ from core.geometry_utils import (
     keychain_loop_hole_clearance,
     resolve_keychain_contact_anchor_y,
 )
+from core.material_dynamic_solver import (
+    DynamicMaterialCandidateError,
+    DynamicMaterialSolverError,
+)
 from core.pipeline import p06_bed_rendering, s09_export_3mf
+from core.pipeline.material_dynamic_layers import _record_dynamic_material_error
 from core.pipeline.pipeline_utils import extract_color_palette
 from core.pipeline.processing_ops.svg_rasterizer import rasterize_svg
 from core.pipeline.s08_auxiliary_meshes import (
@@ -1773,6 +1778,8 @@ def _run_vector_preview_branch(ctx: dict) -> dict:
         return ctx
     except MemoryError:
         raise
+    except (DynamicMaterialCandidateError, DynamicMaterialSolverError) as exc:
+        return _record_dynamic_material_error(ctx, exc)
     except Exception as exc:
         ctx["error"] = f"[VECTOR_PREVIEW] {exc}"
         log.exception("Vector preview branch failed: %s", exc)

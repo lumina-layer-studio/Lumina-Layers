@@ -887,10 +887,17 @@ ipcMain.handle("open-wiki", async (event, url) => {
 });
 
 ipcMain.handle("open-community-page", async (event, url) => {
-  if (!isTrustedMainFrameSender(event, win, trustedMainFrameUrl)) {
+  if (!isTrustedMainFrameSender(event, win, trustedMainFrameUrl) || !backendEndpoint) {
     throw new Error("Community external link denied.");
   }
-  const target = resolveCommunityPageUrl(url, process.env.LUMINA_CONTRIBUTION_REGISTRY_URL);
+  const response = await electronNet.fetch(`${backendEndpoint.origin}/api/contributions/connection/server`, {
+    headers: { "X-Lumina-Contribution": "1" },
+    redirect: "error",
+    signal: AbortSignal.timeout(3000),
+  });
+  if (!response.ok) throw new Error("Community server configuration unavailable.");
+  const { server } = await response.json();
+  const target = resolveCommunityPageUrl(url, server);
   if (!target) throw new Error("Community external link denied.");
   await shell.openExternal(target);
 });

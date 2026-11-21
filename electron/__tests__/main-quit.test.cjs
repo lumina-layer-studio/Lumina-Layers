@@ -18,7 +18,11 @@ async function until(check) {
   }
 }
 
-async function fixture(t, platform, mode = "healthy", prepareUserData = () => {}, { pythonPaths, argv = ["electron"], env = {} } = {}) {
+async function fixture(t, platform, mode = "healthy", prepareUserData = () => {}, {
+  pythonPaths,
+  argv = ["electron"],
+  contributionServer = "https://dan5.shmx.top/api/material-registry/v1",
+} = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "lumina-source-desktop-"));
   prepareUserData(root);
   const windows = [], children = [], dialogs = [], errors = [], commands = [], signals = [];
@@ -102,7 +106,16 @@ async function fixture(t, platform, mode = "healthy", prepareUserData = () => {}
         showMessageBox(_window, options) { return new Promise(resolve => dialogs.push({ options, resolve })); },
       },
       protocol: { registerSchemesAsPrivileged() {}, handle() {} },
-      session: { defaultSession }, net: {}, webFrameMain: {},
+      session: { defaultSession },
+      net: {
+        async fetch(url, options) {
+          assert.equal(url, "http://127.0.0.1:8001/api/contributions/connection/server");
+          assert.equal(options.headers["X-Lumina-Contribution"], "1");
+          assert.equal(options.redirect, "error");
+          return Response.json({ server: contributionServer });
+        },
+      },
+      webFrameMain: {},
     },
     "./backend-endpoint.cjs": {
       ...nativeRequire("./backend-endpoint.cjs"),
@@ -153,10 +166,10 @@ async function fixture(t, platform, mode = "healthy", prepareUserData = () => {}
   });
   vm.runInNewContext(fs.readFileSync(mainPath, "utf8"), {
     require: name => modules[name] || nativeRequire(name),
-    __dirname: path.dirname(mainPath), console: { log() {} }, URL, Response, Headers,
+    __dirname: path.dirname(mainPath), console: { log() {} }, URL, Response, Headers, AbortSignal,
     setTimeout(callback, delay) { const timer = setTimeout(callback, delay); timers.add(timer); return timer; },
     clearTimeout,
-    process: { platform, argv, env: { LUMINA_MATERIAL_REGISTRY_URL: "https://custom.example/materials", ...env },
+    process: { platform, argv, env: { LUMINA_MATERIAL_REGISTRY_URL: "https://custom.example/materials" },
       kill(pid, signal) { signals.push({ pid, signal }); } },
   }, { filename: mainPath });
   await until(() => healthCallback || app.quitted);
@@ -414,9 +427,9 @@ test("community account links open externally from the trusted main frame", asyn
   assert.deepEqual(f.externalUrls, urls);
 });
 
-test("community account links honor the configured Registry web base", async t => {
+test("community account links honor the Registry configured in the local backend", async t => {
   const f = await fixture(t, "darwin", "healthy", undefined, {
-    env: { LUMINA_CONTRIBUTION_REGISTRY_URL: " http://localhost:8018/materials/api/material-registry/v1/ " },
+    contributionServer: "http://localhost:8018/materials/api/material-registry/v1",
   });
   await f.healthy();
   const contents = f.mainWindow().webContents;

@@ -21,7 +21,6 @@ const DEVICE_PROFILE_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$/;
 const WIKI_HOST = "wiki.luminastudio.com.cn";
 const WIKI_DOC_PATH_PATTERN = /^\/(?:zh|en)\/docs(?:\/|$)/;
 const CONTRIBUTION_API_PATH = "/api/material-registry/v1";
-const DEFAULT_CONTRIBUTION_REGISTRY = `https://dan5.shmx.top${CONTRIBUTION_API_PATH}`;
 const NON_NETWORK_RESOURCE_TYPES = new Set([
   "font",
   "image",
@@ -289,8 +288,8 @@ function isAllowedWikiUrl(value) {
   );
 }
 
-function resolveCommunityPageUrl(value, registryUrl = DEFAULT_CONTRIBUTION_REGISTRY) {
-  const registry = parseUrl(registryUrl.trim().replace(/\/+$/, ""));
+function resolveCommunityPageUrl(value, registryUrl) {
+  const registry = parseUrl(registryUrl);
   const target = parseUrl(value);
   if (!registry || !target ||
       registry.username || registry.password || registry.search || registry.hash ||

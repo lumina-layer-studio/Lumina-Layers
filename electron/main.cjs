@@ -36,7 +36,13 @@ const {
   setGeneratedFileDirectory,
   isTrustedMainFrameSender,
 } = require("./generated-file-directory.cjs");
-const { assertPortsAvailable, selectBackendEndpoint, commitBackendEndpoint, validateHealthResponse } = require("./backend-endpoint.cjs");
+const {
+  assertPortsAvailable,
+  selectBackendEndpoint,
+  commitBackendEndpoint,
+  validateHealthResponse,
+  readCommunityServerConfiguration,
+} = require("./backend-endpoint.cjs");
 const {
   createInterfaceScaleController,
   getInterfaceScale,
@@ -890,13 +896,7 @@ ipcMain.handle("open-community-page", async (event, url) => {
   if (!isTrustedMainFrameSender(event, win, trustedMainFrameUrl) || !backendEndpoint) {
     throw new Error("Community external link denied.");
   }
-  const response = await electronNet.fetch(`${backendEndpoint.origin}/api/contributions/connection/server`, {
-    headers: { "X-Lumina-Contribution": "1" },
-    redirect: "error",
-    signal: AbortSignal.timeout(3000),
-  });
-  if (!response.ok) throw new Error("Community server configuration unavailable.");
-  const { server } = await response.json();
+  const server = await readCommunityServerConfiguration(backendEndpoint.port);
   const target = resolveCommunityPageUrl(url, server);
   if (!target) throw new Error("Community external link denied.");
   await shell.openExternal(target);

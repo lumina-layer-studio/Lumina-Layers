@@ -108,18 +108,17 @@ async function fixture(t, platform, mode = "healthy", prepareUserData = () => {}
       protocol: { registerSchemesAsPrivileged() {}, handle() {} },
       session: { defaultSession },
       net: {
-        async fetch(url, options) {
-          assert.equal(url, "http://127.0.0.1:8001/api/contributions/connection/server");
-          assert.equal(options.headers["X-Lumina-Contribution"], "1");
-          assert.equal(options.redirect, "error");
-          return Response.json({ server: contributionServer });
-        },
+        async fetch() { throw new Error("net::ERR_BLOCKED_BY_CLIENT"); },
       },
       webFrameMain: {},
     },
     "./backend-endpoint.cjs": {
       ...nativeRequire("./backend-endpoint.cjs"),
       assertPortsAvailable: async () => {},
+      async readCommunityServerConfiguration(port) {
+        assert.equal(port, 8001);
+        return contributionServer;
+      },
       selectBackendEndpoint: async () => {
         if (mode === "port-busy") throw new Error("port_in_use");
         return { port: 8001, origin: "http://127.0.0.1:8001", healthUrl: "http://127.0.0.1:8001/api/health", instanceId: "source-test", previousPort: null, previousOrigin: null };
@@ -411,7 +410,7 @@ test("source desktop reopens at the interface scale saved last time", async t =>
   assert.equal(window.maximized, undefined);
 });
 
-test("community account links open externally from the trusted main frame", async t => {
+test("community account links open from the trusted main frame when the default session blocks the configuration request", async t => {
   const f = await fixture(t, "win32");
   await f.healthy();
   const contents = f.mainWindow().webContents;

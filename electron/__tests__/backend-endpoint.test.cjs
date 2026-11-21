@@ -154,3 +154,40 @@ test("valid JSON with charset and split chunks is accepted", async t => {
   });
   assert.equal(await probe(`http://127.0.0.1:${instance.address().port}/api/health`, "owned"), true);
 });
+
+test("reads the Registry configuration from the selected loopback backend", async t => {
+  const registry = "http://localhost:8018/materials/api/material-registry/v1";
+  const requests = [];
+  const instance = await server(t, (req, res) => {
+    requests.push([req.method, req.url, req.headers["x-lumina-contribution"]]);
+    res.setHeader("Content-Type", "application/json; charset=utf-8");
+    res.end(JSON.stringify({ server: registry }));
+  });
+  assert.equal(await helper().readCommunityServerConfiguration(instance.address().port), registry);
+  assert.deepEqual(requests, [["GET", "/api/contributions/connection/server", "1"]]);
+});
+
+test("rejects a Registry configuration redirect without following it", async t => {
+  const paths = [];
+  const instance = await server(t, (req, res) => {
+    paths.push(req.url);
+    if (req.url === "/redirected") {
+      res.setHeader("Content-Type", "application/json");
+      res.end(JSON.stringify({ server: "https://example.com/api/material-registry/v1" }));
+      return;
+    }
+    res.writeHead(302, { Location: "/redirected" });
+    res.end();
+  });
+  await assert.rejects(helper().readCommunityServerConfiguration(instance.address().port), /configuration unavailable/);
+  assert.deepEqual(paths, ["/api/contributions/connection/server"]);
+});
+
+test("rejects a Registry configuration response over the size limit without Content-Length", async t => {
+  const instance = await server(t, (_req, res) => {
+    res.setHeader("Content-Type", "application/json");
+    res.write(" ".repeat(16 * 1024));
+    res.end(JSON.stringify({ server: "https://example.com/api/material-registry/v1" }));
+  });
+  await assert.rejects(helper().readCommunityServerConfiguration(instance.address().port), /configuration unavailable/);
+});

@@ -1,10 +1,12 @@
 "use strict";
 const fs = require("node:fs");
+const http = require("node:http");
 const net = require("node:net");
 const path = require("node:path");
 const { randomBytes } = require("node:crypto");
 
 const PORT_STATE_VERSION = 1;
+const LOCAL_JSON_LIMIT = 16 * 1024;
 
 function validatePort(value) {
   return Number.isInteger(value) && value >= 1024 && value <= 65535;
@@ -122,18 +124,52 @@ function makeEndpoint(port, previousPort) {
   };
 }
 
+function isSmallJsonResponse(response) {
+  return response.statusCode === 200 &&
+    /^application\/json(?:\s*;|$)/i.test(response.headers?.["content-type"] || "") &&
+    !(Number(response.headers?.["content-length"]) > LOCAL_JSON_LIMIT);
+}
+
+/** Read a fixed API route on the owned backend outside Chromium's renderer session. */
+async function readCommunityServerConfiguration(port) {
+  if (!validatePort(port)) throw new TypeError("Invalid backend port.");
+  const response = await new Promise((resolve, reject) => {
+    http.get({
+      hostname: "127.0.0.1",
+      port,
+      path: "/api/contributions/connection/server",
+      headers: { "X-Lumina-Contribution": "1", Accept: "application/json" },
+      agent: false,
+      signal: AbortSignal.timeout(3000),
+    }, resolve).once("error", reject);
+  });
+  if (!isSmallJsonResponse(response)) {
+    response.destroy();
+    throw new Error("Community server configuration unavailable.");
+  }
+  const chunks = [];
+  let bytes = 0;
+  for await (const chunk of response) {
+    bytes += chunk.length;
+    if (bytes > LOCAL_JSON_LIMIT) throw new Error("Community server configuration unavailable.");
+    chunks.push(chunk);
+  }
+  const configuration = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+  if (typeof configuration?.server !== "string" || !configuration.server) {
+    throw new Error("Invalid community server configuration.");
+  }
+  return configuration.server;
+}
+
 /** Read only a small JSON health document and verify this launch, not just HTTP success. */
 function validateHealthResponse(response, instanceId, done) {
-  const limit = 16 * 1024;
   let finished = false;
   const finish = valid => {
     if (finished) return;
     finished = true;
     done(valid);
   };
-  if (response.statusCode !== 200 ||
-      !/^application\/json(?:\s*;|$)/i.test(response.headers?.["content-type"] || "") ||
-      Number(response.headers?.["content-length"]) > limit || !instanceId) {
+  if (!isSmallJsonResponse(response) || !instanceId) {
     finish(false);
     return;
   }
@@ -142,7 +178,7 @@ function validateHealthResponse(response, instanceId, done) {
   response.on("data", chunk => {
     if (finished) return;
     bytes += chunk.length;
-    if (bytes > limit) { finish(false); return; }
+    if (bytes > LOCAL_JSON_LIMIT) { finish(false); return; }
     chunks.push(chunk);
   });
   response.once("aborted", () => finish(false));
@@ -156,4 +192,10 @@ function validateHealthResponse(response, instanceId, done) {
   });
 }
 
-module.exports = { assertPortsAvailable, selectBackendEndpoint, commitBackendEndpoint, validateHealthResponse };
+module.exports = {
+  assertPortsAvailable,
+  selectBackendEndpoint,
+  commitBackendEndpoint,
+  validateHealthResponse,
+  readCommunityServerConfiguration,
+};

@@ -5,13 +5,16 @@
 
 from __future__ import annotations
 
-import pickle
+import json
 import math
 import os
+import pickle
+from pathlib import Path
 
 import numpy as np
 import pytest
-from fastapi import HTTPException
+from fastapi import FastAPI, HTTPException
+from fastapi.testclient import TestClient
 
 
 def test_shared_dynamic_material_validator_normalizes_and_rejects_conflicts() -> None:
@@ -120,6 +123,66 @@ def test_dynamic_candidate_error_is_pickle_safe_with_context() -> None:
     assert restored.layer_count == 6
     assert restored.phase == "exact_search"
     assert str(restored) == str(original)
+
+
+def test_svg_preview_returns_the_dynamic_catalog_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from api.dependencies import get_worker_pool
+    from api.routers.converter import preview
+    from core import material_lut_synthesis
+    from core.material_dynamic_solver import DynamicMaterialCandidateError
+    from core.pipeline import vector_branch
+
+    class InlinePool:
+        async def submit_timed(self, worker, *args):
+            return worker(*args), {}
+
+    def unavailable_catalog(*_args, **_kwargs):
+        raise DynamicMaterialCandidateError(
+            "private storage path",
+            layer_count=12,
+            phase="dynamic_catalog_cache_lock",
+        )
+
+    monkeypatch.setattr(material_lut_synthesis, "MATERIALS_DIR", str(tmp_path))
+    for name, reflectance in (("red", [0.6, 0.05, 0.05]), ("white", [0.95, 0.95, 0.95])):
+        material = tmp_path / name
+        material.mkdir()
+        (material / "material.json").write_text(json.dumps({"material_name": name}), encoding="utf-8")
+        (material / "stage_A_parameters.json").write_text(json.dumps({"parameters": {
+            "channels": [{"E": reflectance, "k": [4.0, 4.0, 4.0]}],
+            "substrates": [{"substrate_id": "white", "C0": [0.99, 0.98, 0.97]}],
+        }}), encoding="utf-8")
+    monkeypatch.setattr(vector_branch, "_build_vector_processor", unavailable_catalog)
+    app = FastAPI()
+    app.include_router(preview.router)
+    app.dependency_overrides[get_worker_pool] = InlinePool
+    svg = (
+        '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20">'
+        '<rect width="20" height="20" fill="red"/></svg>'
+    )
+    with TestClient(app) as client:
+        response = client.post(
+            "/preview",
+            data={
+                "material_source": "material_archive",
+                "selected_materials": ["red", "white"],
+                "modeling_mode": "vector",
+                "material_dynamic_layer_count_enabled": "true",
+                "material_min_layer_count": "5",
+                "material_max_layer_count": "12",
+                "material_layer_height_mm": "0.08",
+            },
+            files={"image": ("source.svg", svg, "image/svg+xml")},
+        )
+
+    assert response.status_code == 503, response.text
+    detail = response.json()["detail"]
+    assert detail["code"] == "dynamic_material_solver_unavailable"
+    assert detail["stage"] == "dynamic_catalog_cache_lock"
+    assert detail["layer_count"] == 12
+    assert "private storage path" not in response.text
 
 
 def test_preview_response_dynamic_fields_are_optional_for_old_clients() -> None:

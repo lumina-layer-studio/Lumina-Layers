@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import json
+import multiprocessing
 import os
 import struct
 import threading
@@ -13,6 +14,7 @@ import time
 import zipfile
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
+from multiprocessing.synchronize import Event as ProcessEvent
 from pathlib import Path
 
 import numpy as np
@@ -837,6 +839,82 @@ def test_concurrent_miss_builds_once_and_second_caller_hits(tmp_path: Path) -> N
 
     assert build_calls == 1
     assert sorted(result.cache_hit for result in results) == [False, True]
+
+
+def _hold_catalog_build(
+    cache_root: Path,
+    started: ProcessEvent | threading.Event,
+    release: ProcessEvent | threading.Event,
+) -> None:
+    materials = _materials()
+
+    def build() -> tuple[dynamic_solver.DynamicCandidateCatalog, int]:
+        started.set()
+        assert release.wait(15), "consumer did not release the builder"
+        return _catalog(), 3
+
+    result = load_or_build_dynamic_candidate_catalog(
+        materials=materials,
+        key=_key(materials),
+        builder=build,
+        cache_root=cache_root,
+    )
+    assert not result.cache_hit
+
+
+@pytest.mark.parametrize("separate_process", [False, True], ids=["thread", "process"])
+def test_waiting_consumer_reuses_a_slow_catalog_build(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, separate_process: bool,
+) -> None:
+    monkeypatch.setattr(catalog_cache, "_CACHE_LOCK_TIMEOUT_SECONDS", 0.1)
+    if separate_process:
+        context = multiprocessing.get_context("spawn")
+        started, release = context.Event(), context.Event()
+        owner = context.Process(target=_hold_catalog_build, args=(tmp_path, started, release))
+    else:
+        started, release = threading.Event(), threading.Event()
+        owner = threading.Thread(target=_hold_catalog_build, args=(tmp_path, started, release))
+
+    waiting = threading.Event()
+    enter = catalog_cache._DynamicCatalogKeyLock.__enter__
+
+    def observe_lock(lock):
+        if lock._lock_path.name.startswith("catalog-"):
+            waiting.set()
+        return enter(lock)
+
+    materials = _materials()
+    owner.start()
+    try:
+        assert started.wait(10)
+        monkeypatch.setattr(catalog_cache._DynamicCatalogKeyLock, "__enter__", observe_lock)
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            preview = executor.submit(
+                load_or_build_dynamic_candidate_catalog,
+                materials=materials,
+                key=_key(materials),
+                builder=lambda: pytest.fail("the waiting consumer must reuse the first build"),
+                cache_root=tmp_path,
+            )
+            try:
+                assert waiting.wait(5)
+                with pytest.raises(TimeoutError):
+                    preview.result(timeout=0.4)
+            finally:
+                release.set()
+            result = preview.result(timeout=5)
+        assert result.cache_hit
+        np.testing.assert_array_equal(result.catalog.print_recipes, _catalog().print_recipes)
+    finally:
+        release.set()
+        owner.join(timeout=10)
+        if isinstance(owner, multiprocessing.process.BaseProcess):
+            if owner.is_alive():
+                owner.terminate()
+                owner.join(timeout=5)
+            assert owner.exitcode == 0
+        else:
+            assert not owner.is_alive()
 
 
 def test_blocked_build_does_not_block_another_catalog_cache_hit(tmp_path: Path) -> None:

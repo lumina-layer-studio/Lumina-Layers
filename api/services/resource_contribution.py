@@ -21,6 +21,22 @@ class ContributionError(ValueError):
         self.status = status
 
 
+def configured_contribution_server() -> str:
+    # The public-read mirror has no account API. Account requests use this
+    # server only, without read tokens or fallback mirrors.
+    value = os.environ.get("LUMINA_CONTRIBUTION_REGISTRY_URL",
+                           "https://dan5.shmx.top/api/material-registry/v1").strip().rstrip("/")
+    if not value:
+        return ""
+    parsed = urlsplit(value)
+    if (parsed.scheme not in ("http", "https") or not parsed.hostname
+            or parsed.username or parsed.password or parsed.query or parsed.fragment
+            or not parsed.path.endswith("/api/material-registry/v1")
+            or (parsed.scheme != "https" and parsed.hostname not in {"127.0.0.1", "localhost", "::1"})):
+        raise ContributionError(503, "The contribution server URL is invalid.")
+    return value
+
+
 class ContributionConnection:
     def __init__(self) -> None:
         self.lock = threading.RLock()
@@ -37,21 +53,12 @@ class ContributionConnection:
         self._device_supported = True
 
     def source(self) -> str:
-        # The default public-read mirror has no account API. Writes go to the
-        # account server only and never inherit read tokens or fallback mirrors.
-        value = os.environ.get("LUMINA_CONTRIBUTION_REGISTRY_URL",
-                               "https://dan5.shmx.top/api/material-registry/v1").strip().rstrip("/")
+        value = configured_contribution_server()
         if not value:
             self._source, self._token, self._code = "", "", ""
             self.subject = ""
             self._device = None
             return ""
-        parsed = urlsplit(value)
-        if (parsed.scheme not in ("http", "https") or not parsed.hostname
-                or parsed.username or parsed.password or parsed.query or parsed.fragment
-                or not parsed.path.endswith("/api/material-registry/v1")
-                or (parsed.scheme != "https" and parsed.hostname not in {"127.0.0.1", "localhost", "::1"})):
-            raise ContributionError(503, "The contribution server URL is invalid.")
         if value != self._source:
             self.subject = ""
             self._token, self._code = "", ""

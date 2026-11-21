@@ -17,7 +17,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response
 from PIL import Image
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from api.services.resource_contribution import ContributionError, connection
+from api.services.resource_contribution import ContributionError, configured_contribution_server, connection
 from core.resource_contribution import prepare_contribution
 from core.resource_attribution import normalize_attribution
 from api.services.resource_activity import local_resource_origin, preserve_origin_license
@@ -281,6 +281,12 @@ def contribution_errors() -> Iterator[None]:
 def status() -> dict[str, Any]:
     with contribution_errors():
         return connection.status()
+
+
+@router.get("/connection/server")
+def contribution_server() -> dict[str, str]:
+    with contribution_errors():
+        return {"server": configured_contribution_server()}
 
 
 @router.post("/connection")

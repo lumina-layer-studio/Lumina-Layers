@@ -20,6 +20,7 @@ const BACKEND_BED_MODEL_PATH =
 const DEVICE_PROFILE_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$/;
 const WIKI_HOST = "wiki.luminastudio.com.cn";
 const WIKI_DOC_PATH_PATTERN = /^\/(?:zh|en)\/docs(?:\/|$)/;
+const CONTRIBUTION_API_PATH = "/api/material-registry/v1";
 const NON_NETWORK_RESOURCE_TYPES = new Set([
   "font",
   "image",
@@ -287,6 +288,22 @@ function isAllowedWikiUrl(value) {
   );
 }
 
+function resolveCommunityPageUrl(value, registryUrl) {
+  const registry = parseUrl(registryUrl);
+  const target = parseUrl(value);
+  if (!registry || !target ||
+      registry.username || registry.password || registry.search || registry.hash ||
+      !registry.pathname.endsWith(CONTRIBUTION_API_PATH) ||
+      target.origin !== registry.origin || target.username || target.password || target.search) {
+    return null;
+  }
+  const webPath = registry.pathname.slice(0, -CONTRIBUTION_API_PATH.length) + "/";
+  const secureUrl = target.protocol === "https:" ||
+    (target.protocol === "http:" && ["localhost", "127.0.0.1", "[::1]"].includes(target.hostname));
+  const accountRoute = target.hash === "#/account" || /^#\/studio-connect\?code=[A-Za-z0-9_-]+$/.test(target.hash);
+  return secureUrl && target.pathname === webPath && accountRoute ? target.href : null;
+}
+
 /**
  * Require the current trusted main window and its top-level frame for Wiki IPC.
  *
@@ -363,6 +380,7 @@ module.exports = {
   isAllowedWikiIpcSender,
   isAllowedWikiUrl,
   isWorkshopFrameProcessIsolated,
+  resolveCommunityPageUrl,
   resolveWorkshopRuntimeRequest,
   shouldBlockWorkshopNavigation,
   shouldBlockWorkshopRedirect,

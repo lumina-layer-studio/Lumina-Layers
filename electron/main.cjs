@@ -36,7 +36,13 @@ const {
   setGeneratedFileDirectory,
   isTrustedMainFrameSender,
 } = require("./generated-file-directory.cjs");
-const { assertPortsAvailable, selectBackendEndpoint, commitBackendEndpoint, validateHealthResponse } = require("./backend-endpoint.cjs");
+const {
+  assertPortsAvailable,
+  selectBackendEndpoint,
+  commitBackendEndpoint,
+  validateHealthResponse,
+  readCommunityServerConfiguration,
+} = require("./backend-endpoint.cjs");
 const {
   createInterfaceScaleController,
   getInterfaceScale,
@@ -57,6 +63,7 @@ const {
   isAllowedWikiIpcSender,
   isAllowedWikiUrl,
   isWorkshopFrameProcessIsolated,
+  resolveCommunityPageUrl,
   resolveWorkshopRuntimeRequest,
   shouldBlockWorkshopNavigation,
   shouldBlockWorkshopRedirect,
@@ -883,6 +890,16 @@ ipcMain.handle("open-wiki", async (event, url) => {
   }
   await shell.openExternal(url);
   return { opened: true };
+});
+
+ipcMain.handle("open-community-page", async (event, url) => {
+  if (!isTrustedMainFrameSender(event, win, trustedMainFrameUrl) || !backendEndpoint) {
+    throw new Error("Community external link denied.");
+  }
+  const server = await readCommunityServerConfiguration(backendEndpoint.port);
+  const target = resolveCommunityPageUrl(url, server);
+  if (!target) throw new Error("Community external link denied.");
+  await shell.openExternal(target);
 });
 
 ipcMain.handle("save-generated-file", (event, payload) => saveGeneratedFile({

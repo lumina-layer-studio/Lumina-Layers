@@ -10,6 +10,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from api.env_loader import load_env_local
 from api.routers.contributions import router
 from core.resource_contribution import contribution_package, prepare_contribution
 from core.single_stage import material_files
@@ -60,6 +61,24 @@ def test_connect_from_local_or_trusted_studio_page(monkeypatch, origin, referer,
     assert response.status_code == expected
     if expected == 200:
         assert response.json()["state"] == "pending"
+
+
+def test_contribution_server_endpoint_uses_the_backend_env_file(tmp_path, monkeypatch):
+    key = "LUMINA_CONTRIBUTION_REGISTRY_URL"
+    monkeypatch.setenv(key, "")
+    monkeypatch.delenv(key)
+    env_file = tmp_path / ".env.local"
+    registry = "http://localhost:8018/materials/api/material-registry/v1"
+    env_file.write_text(f"{key}={registry}/\n", encoding="utf-8")
+    load_env_local(env_file)
+    app = FastAPI()
+    app.include_router(router)
+    client = TestClient(app)
+
+    response = client.get("/api/contributions/connection/server", headers={"X-Lumina-Contribution": "1"})
+
+    assert response.status_code == 200
+    assert response.json() == {"server": registry}
 
 
 def test_material_package_keeps_calibration_but_not_local_evidence(tmp_path, monkeypatch):

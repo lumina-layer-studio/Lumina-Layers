@@ -182,18 +182,27 @@ def read_outer_demand(
 
 
 def _write_json_atomically(
-    directory: Path,
     target: Path,
     payload: dict,
     *,
     attempts: int = 6,
 ) -> None:
-    """Replace one JSON file atomically, retrying reader-held replacements.
+    """Publish a complete snapshot, retrying once if temp cleanup races it.
 
-    原子替换一个 JSON 文件；读取方短暂占用目标时按次退避重试。
+    原子发布快照；临时目录或暂存文件被清理时重新写入一次。
     """
 
-    temporary_path = directory / f".{target.name}-{uuid.uuid4().hex}.tmp"
+    try:
+        _write_json_once(target, payload, attempts=attempts)
+    except FileNotFoundError:
+        # Recreate the directory and stage the whole payload again; the first
+        # temporary file may have been removed before the atomic replacement.
+        _write_json_once(target, payload, attempts=attempts)
+
+
+def _write_json_once(target: Path, payload: dict, *, attempts: int) -> None:
+    target.parent.mkdir(parents=True, exist_ok=True)
+    temporary_path = target.with_name(f".{target.name}-{uuid.uuid4().hex}.tmp")
     try:
         with temporary_path.open("w", encoding="utf-8") as handle:
             json.dump(
@@ -283,8 +292,6 @@ def read_worker_leases(
         return {}, False
     try:
         table_path = Path(os.fspath(path))
-        if not table_path.exists():
-            return {}, False
         with table_path.open("r", encoding="utf-8") as handle:
             payload = json.load(handle)
         if not isinstance(payload, dict) or set(payload) != _WORKER_LEASE_FIELDS:
@@ -335,6 +342,8 @@ def read_worker_leases(
                 ),
             }
         return leases, False
+    except FileNotFoundError:
+        return {}, False
     except (
         json.JSONDecodeError,
         OSError,
@@ -370,7 +379,13 @@ def _exclusive_file_lock(
     handle = None
     acquired = False
     try:
-        handle = open(lock_path, "a+b")
+        try:
+            lock_path.parent.mkdir(parents=True, exist_ok=True)
+            handle = open(lock_path, "a+b")
+        except FileNotFoundError:
+            # A temp cleaner may remove the directory between mkdir and open.
+            lock_path.parent.mkdir(parents=True, exist_ok=True)
+            handle = open(lock_path, "a+b")
         if handle.seek(0, os.SEEK_END) == 0:
             handle.write(b"\0")
             handle.flush()
@@ -494,7 +509,6 @@ class WorkerLeaseStore:
     def _write_locked(self, leases: dict[str, dict]) -> None:
         self._generation += 1
         _write_json_atomically(
-            self._path.parent,
             self._path,
             _worker_lease_payload(leases, self._generation),
         )
@@ -782,11 +796,10 @@ class OuterDemandPublisher:
             "outer_max_workers": int(self._max_workers),
             "updated_monotonic_ns": int(time.monotonic_ns()),
         }
-        _write_json_atomically(self._directory, self._snapshot_path, payload)
+        _write_json_atomically(self._snapshot_path, payload)
 
     def _publish_worker_leases_locked(self, leases: dict[str, dict]) -> None:
         _write_json_atomically(
-            self._directory,
             self._worker_lease_path,
             _worker_lease_payload(leases, self._worker_lease_generation),
         )

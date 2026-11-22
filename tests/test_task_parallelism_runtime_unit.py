@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import shutil
 import threading
 
 import pytest
@@ -70,6 +71,71 @@ def test_publisher_round_trip_tracks_outstanding_tasks(
             fallback_outer_workers=4,
         ).outer_demand == 1
         assert publisher.outstanding == 1
+    finally:
+        publisher.cleanup()
+
+
+def test_demand_recreates_the_runtime_directory_without_resetting_counts(tmp_path: Path) -> None:
+    runtime = _runtime_module()
+    publisher = runtime.OuterDemandPublisher(max_workers=4, parent_dir=tmp_path)
+    snapshot = publisher.snapshot_path
+    try:
+        publisher.increment()
+        shutil.rmtree(snapshot.parent)
+        publisher.increment()
+        assert json.loads(snapshot.read_text(encoding="utf-8"))["outstanding"] == 2
+
+        shutil.rmtree(snapshot.parent)
+        publisher.decrement()
+        state = runtime.read_outer_demand(snapshot, fallback_outer_workers=4)
+        assert (state.outer_demand, state.generation, state.snapshot_fallback) == (1, 3, False)
+        publisher.decrement()
+        assert json.loads(snapshot.read_text(encoding="utf-8"))["outstanding"] == 0
+
+        shutil.rmtree(snapshot.parent)
+        publisher.cleanup()
+        publisher.cleanup()
+        assert not snapshot.parent.exists()
+    finally:
+        publisher.cleanup()
+
+
+@pytest.mark.parametrize("disappears_at", ["open", "replace"])
+def test_demand_publish_recovers_when_the_directory_disappears_mid_write(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, disappears_at: str,
+) -> None:
+    runtime = _runtime_module()
+    publisher = runtime.OuterDemandPublisher(max_workers=2, parent_dir=tmp_path)
+    snapshot = publisher.snapshot_path
+    original_open = Path.open
+    original_replace = runtime.os.replace
+    attempts = 0
+
+    def prune_once() -> None:
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            shutil.rmtree(snapshot.parent)
+
+    def open_temp(path, *args, **kwargs):
+        if path.parent == snapshot.parent and path.name.startswith(".demand.json-"):
+            prune_once()
+        return original_open(path, *args, **kwargs)
+
+    def replace_temp(source, target):
+        if target == snapshot:
+            prune_once()
+        return original_replace(source, target)
+
+    if disappears_at == "open":
+        monkeypatch.setattr(Path, "open", open_temp)
+    else:
+        monkeypatch.setattr(runtime.os, "replace", replace_temp)
+    try:
+        publisher.increment()
+        assert attempts == 2
+        assert json.loads(snapshot.read_text(encoding="utf-8"))["outstanding"] == 1
+        assert not list(snapshot.parent.glob("*.tmp"))
     finally:
         publisher.cleanup()
 
@@ -291,6 +357,43 @@ def test_publisher_owns_a_worker_lease_table_beside_the_snapshot(
 
     assert not lease_path.exists()
     assert not publisher.snapshot_path.parent.exists()
+
+
+@pytest.mark.parametrize("remove_during_open", [False, True], ids=["before-lock", "during-lock-open"])
+def test_worker_lease_recovers_the_lock_and_table_after_directory_deletion(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, remove_during_open: bool,
+) -> None:
+    runtime = _runtime_module()
+    publisher = runtime.OuterDemandPublisher(max_workers=2, parent_dir=tmp_path)
+    store = runtime.WorkerLeaseStore(publisher.worker_lease_path)
+    lock = runtime.worker_lease_lock_path(store.path)
+    old_grant = store.reserve(requested_workers=2, effective_cpu_capacity=4, stage="fixture")
+    opens = 0
+
+    def open_lock(path, mode):
+        nonlocal opens
+        if path == lock:
+            opens += 1
+            if opens == 1:
+                shutil.rmtree(lock.parent)
+        return open(path, mode)
+
+    if remove_during_open:
+        monkeypatch.setattr(runtime, "open", open_lock, raising=False)
+    else:
+        shutil.rmtree(lock.parent)
+    try:
+        grant = store.reserve(requested_workers=2, effective_cpu_capacity=4, stage="fixture")
+        assert (grant.state, grant.workers) == ("granted", 2)
+        if remove_during_open:
+            assert opens == 2
+        assert lock.is_file() and store.path.is_file()
+        assert store.release(old_grant.token)
+        assert runtime.read_worker_leases(store.path)[0].keys() == {grant.token}
+        assert store.release(grant.token)
+        assert runtime.read_worker_leases(store.path) == ({}, False)
+    finally:
+        publisher.cleanup()
 
 
 def test_runtime_scope_installs_and_restores_the_worker_lease_path(

@@ -14,6 +14,7 @@ is still salvageable rather than the ticket assembler crashing half-way.
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -51,6 +52,20 @@ def _safe_str(value: Any) -> str:
         return _MISSING
     # Escape pipes so markdown tables don't break.
     return text.replace("|", "\\|")
+
+
+def _reply_contact(payload: dict[str, Any]) -> tuple[bool, str | None]:
+    value = payload.get("user_contact") or payload.get("user_email")
+    contact = value.strip() if isinstance(value, str) else ""
+    needs_reply = payload.get("needs_reply", bool(contact)) is True
+    return needs_reply, (contact or None) if needs_reply else None
+
+
+def _contact_markdown(value: Any) -> str:
+    # Render user-provided handles as plain text, including Markdown/HTML punctuation.
+    if not isinstance(value, str) or not value:
+        return _MISSING
+    return re.sub(r"([\\`*_{}\[\]<>!&~|])", r"\\\1", value)
 
 
 def _iter_list(value: Any) -> Iterable[Any]:
@@ -578,7 +593,8 @@ def generate_index_markdown(
     """
     context = payload.get("context") or {}
     received_cst = _safe_str(payload.get("received_at_cst"))
-    user_email = _safe_str(payload.get("user_email"))
+    needs_reply, contact = _reply_contact(payload)
+    email = payload.get("user_email") if needs_reply else None
     description = _safe_str(payload.get("description"))
     attachments = payload.get("attachments") or {}
     session_history = context.get("session_history") or []
@@ -624,7 +640,9 @@ def generate_index_markdown(
         f"# Bug Ticket {ticket_id}",
         "",
         f"Received (Beijing): {received_cst}  ",
-        f"User email: {user_email}",
+        f"User email: {_contact_markdown(email)}  ",
+        f"Needs reply: {'Yes' if needs_reply else 'No'}  ",
+        f"Contact: {_contact_markdown(contact)}",
         "",
         "## Description",
         "",
@@ -683,6 +701,10 @@ def generate_summary_text(ticket_id: str, payload: dict[str, Any]) -> str:
     context = payload.get("context") or {}
     received = payload.get("received_at_cst") or "(未知时间)"
     description = payload.get("description") or "(无描述)"
+    needs_reply, contact = _reply_contact(payload)
+    reply_details = f"需要回复：{'是' if needs_reply else '否'}"
+    if contact:
+        reply_details += f"。联系方式：{contact}"
     active_tab = context.get("active_tab") or "unknown"
     source_version = context.get("source_version") or "legacy"
     color_mode = context.get("color_mode") or "(无)"
@@ -795,6 +817,7 @@ def generate_summary_text(ticket_id: str, payload: dict[str, Any]) -> str:
     summary = (
         f"工单 {ticket_id} 于 {received} 受理。用户描述：\n"
         f"\"{description}\"\n\n"
+        f"{reply_details}。\n\n"
         f"提交时工作流：{active_tab} Tab / {source_version} 模式 / "
         f"颜色模式 {color_mode} / LUT {lut_name}。{material_block}\n\n"
         f"{upload_filename_line}\n\n"

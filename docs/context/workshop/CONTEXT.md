@@ -84,6 +84,23 @@ restore keeps using the exact lock. Existing assets and digests are immutable.
 The Python *host* never imports module code. Routes validate requests and
 translate domain errors; installed bytes remain under `LUMINA_WORKSHOP_DATA_DIR`.
 
+### Optional Workshop download mirror
+
+Distribution can inject `LUMINA_WORKSHOP_MIRROR_URL` as a credential-free
+HTTPS base URL, for example `https://materials.luminastudio.com.cn/api/workshop-mirror/v1`.
+The mirror serves `registry-v1.json`, `registry-v1.sig`, and
+`packages/{module_id}/{version}/{asset_name}` with each path segment URL-encoded.
+Set `LUMINA_WORKSHOP_MIRROR_TOKEN` when the mirror requires a Bearer token.
+Credentials are used only on direct mirror requests. A redirect, timeout, or
+other non-200 mirror response falls back to GitHub. A catalog fallback fetches
+both the index and signature from the upstream path. With the URL unset, the
+client goes directly to GitHub.
+
+The app verifies the downloaded index against its bundled Ed25519 keys and
+compares each package's SHA-256, size, and manifest against the signed catalog.
+A signature failure uses the existing verified catalog cache or bundled
+snapshot. A package digest mismatch rejects the download.
+
 ### Module backends (Workshop API 1.1.0, manifest v2)
 
 A module may declare a backend: a Python entry under `backend/`, a wheels-only

@@ -140,6 +140,11 @@ function expectFullDiagnosticText(text: string): void {
   expect(text).toContain("error_stack");
 }
 
+function submitDiagnosticsOnly(): void {
+  fireEvent.click(screen.getByRole("switch", { name: "需要人工回复 / 修复后通知我" }));
+  fireEvent.click(screen.getByRole("button", { name: "发送" }));
+}
+
 describe("BugReportModal", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -175,7 +180,7 @@ describe("BugReportModal", () => {
     });
     render(<BugReportModal open onClose={() => {}} />);
     fireEvent.change(screen.getByLabelText("问题描述"), { target: { value: "Model failed" } });
-    fireEvent.click(screen.getByRole("button", { name: "发送" }));
+    submitDiagnosticsOnly();
     expect(await screen.findByTestId("bug-report-collection-incomplete", {}, { timeout: 3500 })).toHaveTextContent("资料采集不完整");
     vi.mocked(collectBugReportOriginalImage).mockReturnValue(null);
     vi.mocked(collectBugReportSourceFiles).mockReturnValue([]);
@@ -198,6 +203,50 @@ describe("BugReportModal", () => {
       target: { value: "Preview failed" },
     });
     expect(screen.getByRole("button", { name: "发送" })).not.toBeDisabled();
+  });
+
+  it.each(["", "  ", "a b", "x".repeat(321)])("requires a reply contact by default", (contact) => {
+    render(<BugReportModal open onClose={() => {}} />);
+    fireEvent.change(screen.getByLabelText("问题描述"), { target: { value: "Preview failed" } });
+    expect(screen.getByRole("switch", { name: "需要人工回复 / 修复后通知我" })).toBeChecked();
+    const input = screen.getByLabelText("联系方式（邮箱、QQ 或微信）");
+    expect(input).toBeRequired();
+    fireEvent.change(input, { target: { value: contact } });
+    fireEvent.click(screen.getByRole("button", { name: "发送" }));
+    expect(screen.getByText(/请填写.+邮箱、QQ 或微信/)).toBeInTheDocument();
+    expect(input).toHaveFocus();
+    expect(submitBugReport).not.toHaveBeenCalled();
+  });
+
+  it.each(["123456789", "  wx_fixture  "])("accepts QQ and WeChat for replies", async (contact) => {
+    vi.mocked(submitBugReport).mockResolvedValueOnce({
+      ticket_id: "LUM-test", submission_status: "disabled", dump_path: "feedback/test",
+    });
+    render(<BugReportModal open onClose={() => {}} />);
+    fireEvent.change(screen.getByLabelText("问题描述"), { target: { value: "Preview failed" } });
+    fireEvent.change(screen.getByLabelText("联系方式（邮箱、QQ 或微信）"), { target: { value: contact } });
+    fireEvent.click(screen.getByRole("button", { name: "发送" }));
+    await screen.findByTestId("bug-report-ticket-id");
+    expect(submitBugReport).toHaveBeenCalledWith(expect.objectContaining({
+      needs_reply: true, user_contact: contact.trim(), user_email: null,
+    }));
+  });
+
+  it("submits a diagnostic-only report when the user opts out of a reply", async () => {
+    vi.mocked(submitBugReport).mockResolvedValueOnce({
+      ticket_id: "LUM-test", submission_status: "disabled", dump_path: "feedback/test",
+    });
+    render(<BugReportModal open onClose={() => {}} />);
+    fireEvent.change(screen.getByLabelText("问题描述"), { target: { value: "Preview failed" } });
+    fireEvent.change(screen.getByLabelText("联系方式（邮箱、QQ 或微信）"), { target: { value: "wx_fixture" } });
+    fireEvent.click(screen.getByRole("switch", { name: "需要人工回复 / 修复后通知我" }));
+    expect(screen.getByText("仅上报诊断信息，无需回复")).toBeInTheDocument();
+    expect(screen.queryByLabelText("联系方式（邮箱、QQ 或微信）")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "发送" }));
+    await screen.findByTestId("bug-report-ticket-id");
+    expect(submitBugReport).toHaveBeenCalledWith(expect.objectContaining({
+      needs_reply: false, user_contact: null, user_email: null,
+    }));
   });
 
   it("summarizes recent API client errors from the captured context", () => {
@@ -300,7 +349,7 @@ describe("BugReportModal", () => {
     fireEvent.change(screen.getByLabelText("问题描述"), {
       target: { value: "Preview failed after generate." },
     });
-    fireEvent.change(screen.getByLabelText("你的邮箱（可选，方便我们回复你）"), {
+    fireEvent.change(screen.getByLabelText("联系方式（邮箱、QQ 或微信）"), {
       target: { value: "user@example.com" },
     });
     fireEvent.click(screen.getByRole("button", { name: "发送" }));
@@ -309,6 +358,8 @@ describe("BugReportModal", () => {
       expect(submitBugReport).toHaveBeenCalledWith({
         description: "Preview failed after generate.",
         user_email: "user@example.com",
+        user_contact: "user@example.com",
+        needs_reply: true,
         context: vi.mocked(collectBugReportContext).mock.results[0]?.value,
         screenshot_data_url: null,
       });
@@ -341,7 +392,7 @@ describe("BugReportModal", () => {
     fireEvent.change(screen.getByLabelText("问题描述"), {
       target: { value: "Preview failed before a session existed." },
     });
-    fireEvent.click(screen.getByRole("button", { name: "发送" }));
+    submitDiagnosticsOnly();
 
     await waitFor(() => {
       expect(submitBugReport).toHaveBeenCalledWith(
@@ -380,7 +431,7 @@ describe("BugReportModal", () => {
     fireEvent.change(screen.getByLabelText("问题描述"), {
       target: { value: "Large source failed." },
     });
-    fireEvent.click(screen.getByRole("button", { name: "发送" }));
+    submitDiagnosticsOnly();
 
     const status = await screen.findByTestId("bug-report-original-image-status");
     expect(status).toHaveAttribute("data-status", "too_large");
@@ -403,7 +454,7 @@ describe("BugReportModal", () => {
     fireEvent.change(screen.getByLabelText("问题描述"), {
       target: { value: "Check source attachment status." },
     });
-    fireEvent.click(screen.getByRole("button", { name: "发送" }));
+    submitDiagnosticsOnly();
 
     const status = await screen.findByTestId("bug-report-original-image-status");
     expect(status).toHaveAttribute("data-status", imageStatus);
@@ -429,7 +480,7 @@ describe("BugReportModal", () => {
 
     expect(await screen.findByText("preview.png")).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "发送" }));
+    submitDiagnosticsOnly();
 
     await waitFor(() => {
       expect(submitBugReport).toHaveBeenCalledWith(
@@ -465,7 +516,7 @@ describe("BugReportModal", () => {
     fireEvent.change(screen.getByLabelText("问题描述"), {
       target: { value: "Preview failed after generate." },
     });
-    fireEvent.click(screen.getByRole("button", { name: "发送" }));
+    submitDiagnosticsOnly();
 
     expect(await screen.findByTestId("bug-report-ticket-id")).toHaveTextContent("abc12345");
     expect(screen.queryByTestId("bug-report-dump-path")).not.toBeInTheDocument();
@@ -509,7 +560,7 @@ describe("BugReportModal", () => {
     fireEvent.change(screen.getByLabelText("问题描述"), {
       target: { value: "Crash after generate." },
     });
-    fireEvent.click(screen.getByRole("button", { name: "发送" }));
+    submitDiagnosticsOnly();
 
     const status = await screen.findByTestId("bug-report-upload-status");
     expect(status).toHaveAttribute("data-status", "pending");
@@ -540,7 +591,7 @@ describe("BugReportModal", () => {
     fireEvent.change(screen.getByLabelText("问题描述"), {
       target: { value: "Crash after generate." },
     });
-    fireEvent.click(screen.getByRole("button", { name: "发送" }));
+    submitDiagnosticsOnly();
 
     const uploadStatus = await screen.findByTestId("bug-report-upload-status");
     expect(uploadStatus).toHaveAttribute("data-status", "pending");
@@ -575,7 +626,7 @@ describe("BugReportModal", () => {
     fireEvent.change(screen.getByLabelText("问题描述"), {
       target: { value: "Crash after generate." },
     });
-    fireEvent.click(screen.getByRole("button", { name: "发送" }));
+    submitDiagnosticsOnly();
 
     const retry = await screen.findByTestId("bug-report-upload-retry", {}, { timeout: 5000 });
     expect(screen.getByText("报告已保存在本机。工单号：LUM-202609-0000abcd")).toBeInTheDocument();
@@ -607,7 +658,7 @@ describe("BugReportModal", () => {
     fireEvent.change(screen.getByLabelText("问题描述"), {
       target: { value: "Crash after generate." },
     });
-    fireEvent.click(screen.getByRole("button", { name: "发送" }));
+    submitDiagnosticsOnly();
 
     const fallbackText = await screen.findByTestId(
       "bug-report-submitted-fallback-text",
@@ -661,7 +712,7 @@ describe("BugReportModal", () => {
     fireEvent.change(screen.getByLabelText("问题描述"), {
       target: { value: "Preview redirected after generate." },
     });
-    fireEvent.click(screen.getByRole("button", { name: "发送" }));
+    submitDiagnosticsOnly();
 
     const fallbackText = await screen.findByTestId(
       "bug-report-submitted-fallback-text",
@@ -683,7 +734,7 @@ describe("BugReportModal", () => {
     fireEvent.change(screen.getByLabelText("问题描述"), {
       target: { value: "Crash after generate." },
     });
-    fireEvent.click(screen.getByRole("button", { name: "发送" }));
+    submitDiagnosticsOnly();
     fireEvent.click(await screen.findByTestId("bug-report-upload-retry"));
 
     expect(await screen.findByText("仍然失败，请稍后再试。")).toBeInTheDocument();
@@ -707,7 +758,7 @@ describe("BugReportModal", () => {
     fireEvent.change(screen.getByLabelText("问题描述"), {
       target: { value: "Preview failed." },
     });
-    fireEvent.click(screen.getByRole("button", { name: "发送" }));
+    submitDiagnosticsOnly();
 
     await screen.findByTestId("bug-report-ticket-id");
     expect(onClose).not.toHaveBeenCalled();
@@ -731,7 +782,7 @@ describe("BugReportModal", () => {
     fireEvent.change(screen.getByLabelText("问题描述"), {
       target: { value: "Preview failed." },
     });
-    fireEvent.click(screen.getByRole("button", { name: "发送" }));
+    submitDiagnosticsOnly();
     await screen.findByTestId("bug-report-ticket-id");
 
     fireEvent.click(screen.getByTestId("bug-report-copy-ticket"));
@@ -761,7 +812,7 @@ describe("BugReportModal", () => {
     fireEvent.change(screen.getByLabelText("问题描述"), {
       target: { value: "Preview failed." },
     });
-    fireEvent.click(screen.getByRole("button", { name: "发送" }));
+    submitDiagnosticsOnly();
     await screen.findByTestId("bug-report-ticket-id");
 
     fireEvent.click(screen.getByTestId("bug-report-copy-ticket"));
@@ -794,7 +845,7 @@ describe("BugReportModal", () => {
     fireEvent.change(screen.getByLabelText("问题描述"), {
       target: { value: "Preview failed." },
     });
-    fireEvent.click(screen.getByRole("button", { name: "发送" }));
+    submitDiagnosticsOnly();
     await screen.findByTestId("bug-report-ticket-id");
 
     fireEvent.click(screen.getByTestId("bug-report-copy-ticket"));
@@ -817,7 +868,7 @@ describe("BugReportModal", () => {
     fireEvent.change(screen.getByLabelText("问题描述"), {
       target: { value: "Preview failed." },
     });
-    fireEvent.click(screen.getByRole("button", { name: "发送" }));
+    submitDiagnosticsOnly();
     await screen.findByTestId("bug-report-ticket-id");
 
     rerender(<BugReportModal open={false} onClose={onClose} />);
@@ -836,7 +887,7 @@ describe("BugReportModal", () => {
     fireEvent.change(screen.getByLabelText("问题描述"), {
       target: { value: "Preview failed" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "发送" }));
+    submitDiagnosticsOnly();
 
     expect(await screen.findByRole("alert")).toHaveTextContent("提交失败，请稍后再试。");
     expect(screen.getByText("如果多次失败，请复制下面的反馈内容，通过邮箱或即时通讯发给开发者。")).toBeInTheDocument();
@@ -863,7 +914,7 @@ describe("BugReportModal", () => {
     fireEvent.change(screen.getByLabelText("问题描述"), {
       target: { value: userDescription },
     });
-    fireEvent.click(screen.getByRole("button", { name: "发送" }));
+    submitDiagnosticsOnly();
 
     const fallbackText = await screen.findByTestId("bug-report-fallback-text");
     expectManualFallbackTextComplete(fallbackText.textContent ?? "", userDescription);
@@ -894,7 +945,7 @@ describe("BugReportModal", () => {
     fireEvent.change(screen.getByLabelText("问题描述"), {
       target: { value: "Preview failed" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "发送" }));
+    submitDiagnosticsOnly();
     await screen.findByTestId("bug-report-fallback-text");
 
     fireEvent.click(screen.getByTestId("bug-report-copy-failed-report"));
@@ -912,7 +963,7 @@ describe("BugReportModal", () => {
     fireEvent.change(screen.getByLabelText("问题描述"), {
       target: { value: "Preview failed" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "发送" }));
+    submitDiagnosticsOnly();
     await screen.findByTestId("bug-report-fallback-text");
 
     fireEvent.change(screen.getByLabelText("问题描述"), {

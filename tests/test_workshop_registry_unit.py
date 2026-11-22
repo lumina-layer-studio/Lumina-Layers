@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 from typing import Callable
 
+import httpx
 import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import (
     Ed25519PrivateKey,
@@ -22,6 +23,8 @@ from core.workshop import (
     load_registry_keys,
 )
 from core.workshop.registry_client import (
+    DEFAULT_REGISTRY_INDEX_URL,
+    DEFAULT_REGISTRY_SIGNATURE_URL,
     parse_registry_index,
     select_install_candidate,
     verify_registry_signature,
@@ -405,6 +408,80 @@ def test_network_failure_uses_bundled_snapshot(tmp_path: Path) -> None:
     assert result.source == "snapshot"
     assert result.verified is True
     assert result.index.modules == ()
+
+
+@pytest.mark.parametrize(
+    "scenario",
+    ["mirror", "anonymous", "index-timeout", "signature-503", "redirect", "tampered", "unset", "github-alias"],
+)
+def test_signed_registry_prefers_mirror_and_falls_back_as_a_pair(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, scenario: str,
+) -> None:
+    mirror = "https://mirror.example/api/workshop-mirror/v1"
+    mirror_index = f"{mirror}/registry-v1.json"
+    mirror_signature = f"{mirror}/registry-v1.sig"
+    if scenario == "unset":
+        monkeypatch.delenv("LUMINA_WORKSHOP_MIRROR_URL", raising=False)
+    elif scenario == "github-alias":
+        monkeypatch.setenv("LUMINA_WORKSHOP_MIRROR_URL", DEFAULT_REGISTRY_INDEX_URL.rsplit("/", 1)[0])
+    else:
+        monkeypatch.setenv("LUMINA_WORKSHOP_MIRROR_URL", f" {mirror}/ ")
+    if scenario == "anonymous":
+        monkeypatch.delenv("LUMINA_WORKSHOP_MIRROR_TOKEN", raising=False)
+    else:
+        monkeypatch.setenv("LUMINA_WORKSHOP_MIRROR_TOKEN", "mirror-test-token")
+    key = Ed25519PrivateKey.generate()
+    mirror_payload = canonical_registry_bytes(registry_fixture(version="1.1.0"))
+    upstream_payload = canonical_registry_bytes(registry_fixture())
+    calls: list[tuple[str, str | None]] = []
+
+    def respond(request: httpx.Request) -> httpx.Response:
+        url = str(request.url)
+        calls.append((url, request.headers.get("Authorization")))
+        if url == mirror_index:
+            if scenario == "index-timeout":
+                raise httpx.ConnectTimeout("mirror timed out", request=request)
+            if scenario == "redirect":
+                return httpx.Response(302, headers={"Location": DEFAULT_REGISTRY_INDEX_URL})
+            return httpx.Response(200, content=mirror_payload, headers={"ETag": '"mirror"'})
+        if url == mirror_signature:
+            if scenario == "signature-503":
+                return httpx.Response(503)
+            signed_bytes = upstream_payload if scenario == "tampered" else mirror_payload
+            return httpx.Response(200, content=signature_bytes(signed_bytes, key))
+        if url == DEFAULT_REGISTRY_INDEX_URL:
+            assert "If-None-Match" not in request.headers
+            return httpx.Response(200, content=upstream_payload, headers={"ETag": '"upstream"'})
+        assert url == DEFAULT_REGISTRY_SIGNATURE_URL
+        return httpx.Response(200, content=signature_bytes(upstream_payload, key))
+
+    original_client = httpx.Client
+    monkeypatch.setattr(httpx, "Client", lambda **kwargs: original_client(
+        transport=httpx.MockTransport(respond), **kwargs,
+    ))
+    client = RegistryClient(
+        keys={"test-key": key.public_key()},
+        cache_dir=tmp_path / "cache",
+        snapshot_path=write_snapshot(tmp_path),
+    )
+    result = client.refresh()
+
+    mirror_token = None if scenario == "anonymous" else "Bearer mirror-test-token"
+    expected = [] if scenario in {"unset", "github-alias"} else [(mirror_index, mirror_token)]
+    if scenario in {"mirror", "anonymous", "signature-503", "tampered"}:
+        expected.append((mirror_signature, mirror_token))
+    if scenario in {"index-timeout", "signature-503", "redirect", "unset", "github-alias"}:
+        expected.extend([(DEFAULT_REGISTRY_INDEX_URL, None), (DEFAULT_REGISTRY_SIGNATURE_URL, None)])
+    assert calls == expected
+    assert result.verified is True
+    if scenario == "tampered":
+        assert result.source == "snapshot" and not result.index.modules
+        assert not (tmp_path / "cache" / "registry-v1.json").exists()
+    else:
+        expected_version = "1.1.0" if scenario in {"mirror", "anonymous"} else "1.0.0"
+        assert result.source == "remote"
+        assert client.last_error is None
+        assert result.index.modules[0].versions[0].version == expected_version
 
 
 def test_tampered_cache_is_not_used(tmp_path: Path) -> None:

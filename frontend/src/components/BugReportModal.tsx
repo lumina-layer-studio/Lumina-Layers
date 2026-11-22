@@ -1,6 +1,6 @@
 import CloseButton from "./ui/CloseButton";
 import DisclosureSummary from "./ui/DisclosureSummary";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent, FormEvent, JSX } from "react";
 import { createPortal } from "react-dom";
 import { apiStatusCodeToVisibleMessage } from "../api/client";
@@ -18,8 +18,12 @@ import { loadPersistedLogs } from "../utils/clientLog";
 import { isUnsafeVisibleErrorText } from "../utils/visibleErrorText";
 import { useActionHistoryStore } from "../stores/actionHistoryStore";
 import Button from "./ui/Button";
+import Checkbox from "./ui/Checkbox";
 import { StatusBanner, workstationInputClass } from "./ui/panelPrimitives";
 
+const MAX_CONTACT_LENGTH = 320;
+const EMAIL_PATTERN = /^[^@\s]+@[^@\s]+\.[^@\s]+$/u;
+const CONTACT_CONTROL_PATTERN = /[\p{Cc}\p{Zl}\p{Zp}]/u;
 
 /**
  * Schedule ``callback`` on the idle-callback queue, falling back to
@@ -257,7 +261,10 @@ export function BugReportModal({
 }: BugReportModalProps): JSX.Element | null {
   const { t } = useI18n();
   const [description, setDescription] = useState(presetDescription);
-  const [email, setEmail] = useState("");
+  const [needsReply, setNeedsReply] = useState(true);
+  const [contact, setContact] = useState("");
+  const [contactError, setContactError] = useState<string | null>(null);
+  const contactInput = useRef<HTMLInputElement>(null);
   const [submitting, setSubmitting] = useState(false);
   const [descriptionError, setDescriptionError] = useState<string | null>(null);
   const [notice, setNotice] = useState<NoticeState | null>(null);
@@ -284,7 +291,9 @@ export function BugReportModal({
 
   const resetForm = useCallback(() => {
     setDescription(presetDescription);
-    setEmail("");
+    setNeedsReply(true);
+    setContact("");
+    setContactError(null);
     setSubmitting(false);
     setDescriptionError(null);
     setNotice(null);
@@ -446,14 +455,29 @@ export function BugReportModal({
       return;
     }
 
+    const replyContact = needsReply ? contact.trim() : null;
+    if (needsReply && (
+      !replyContact ||
+      [...replyContact.replace(/\s/gu, "")].length < 3 ||
+      [...replyContact].length > MAX_CONTACT_LENGTH ||
+      CONTACT_CONTROL_PATTERN.test(contact)
+    )) {
+      setContactError(t("bug_report_validation_contact"));
+      contactInput.current?.focus();
+      return;
+    }
+
     setSubmitting(true);
     setDescriptionError(null);
+    setContactError(null);
     setNotice(null);
     setFailedReport(null);
 
     const reportPayload: BugReportRequestPayload = {
       description: trimmedDescription,
-      user_email: email.trim() ? email.trim() : null,
+      user_email: replyContact && EMAIL_PATTERN.test(replyContact) ? replyContact : null,
+      user_contact: replyContact,
+      needs_reply: needsReply,
       context,
       screenshot_data_url: screenshotDataUrl,
     };
@@ -837,7 +861,7 @@ export function BugReportModal({
             </div>
           </div>
         ) : (
-          <form className="flex min-h-0 flex-1 flex-col" onSubmit={handleSubmit}>
+          <form className="flex min-h-0 flex-1 flex-col" onSubmit={handleSubmit} noValidate>
             <div className="flex-1 space-y-4 overflow-y-auto overscroll-y-contain px-5 py-4">
               {notice && (
                 <StatusBanner
@@ -912,21 +936,56 @@ export function BugReportModal({
                 )}
               </div>
 
-              <div className="space-y-2">
-                <label
-                  htmlFor="bug-report-email"
-                  className="text-sm font-medium text-slate-700 dark:text-slate-200"
-                >
-                  {t("bug_report_modal_email_label")}
-                </label>
-                <input
-                  id="bug-report-email"
-                  type="email"
-                  maxLength={320}
-                  value={email}
-                  onChange={(event) => setEmail(event.target.value)}
-                  className={workstationInputClass}
+              <div className="space-y-3">
+                <Checkbox
+                  label={t("bug_report_modal_needs_reply")}
+                  checked={needsReply}
+                  disabled={submitting}
+                  onChange={(checked) => {
+                    setNeedsReply(checked);
+                    setContactError(null);
+                    setFailedReport(null);
+                  }}
                 />
+                {needsReply ? (
+                  <div className="space-y-2">
+                    <label
+                      htmlFor="bug-report-contact"
+                      className="text-sm font-medium text-slate-700 dark:text-slate-200"
+                    >
+                      {t("bug_report_modal_contact_label")}
+                    </label>
+                    <span aria-hidden="true" className="ml-1 text-[var(--error-fg)]">*</span>
+                    <input
+                      id="bug-report-contact"
+                      ref={contactInput}
+                      type="text"
+                      maxLength={MAX_CONTACT_LENGTH}
+                      autoCapitalize="none"
+                      spellCheck={false}
+                      required
+                      disabled={submitting}
+                      aria-invalid={contactError != null}
+                      aria-describedby={contactError ? "bug-report-contact-error" : undefined}
+                      value={contact}
+                      onChange={(event) => {
+                        setContact(event.target.value);
+                        setContactError(null);
+                        setFailedReport(null);
+                      }}
+                      className={workstationInputClass}
+                    />
+                    {contactError && (
+                      <p id="bug-report-contact-error" role="alert" className="text-sm text-[var(--error-fg)]">
+                        {contactError}
+                      </p>
+                    )}
+                  </div>
+                ) : (
+                  <p role="status" className="text-sm text-slate-600 dark:text-slate-300">
+                    {t("bug_report_modal_diagnostics_only")}
+                  </p>
+                )}
               </div>
 
               <div className="space-y-2">

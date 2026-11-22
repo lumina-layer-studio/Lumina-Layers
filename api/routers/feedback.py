@@ -13,11 +13,11 @@ import re
 from copy import deepcopy
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, AsyncIterator, Literal
+from typing import Any, AsyncIterator, Literal, Self
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status
 from fastapi.exceptions import RequestValidationError
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 from starlette.datastructures import FormData, UploadFile
 from starlette.formparsers import MultiPartException
 
@@ -41,6 +41,7 @@ log = get_logger(__name__)
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+_CONTACT_CONTROL_RE = re.compile(r"[\x00-\x1f\x7f-\x9f\u2028\u2029]")
 
 
 class BugReportSessionIds(BaseModel):
@@ -205,6 +206,8 @@ class BugReportRequest(BaseModel):
 
     description: str = Field(min_length=1)
     user_email: str | None = Field(default=None, max_length=320)
+    user_contact: str | None = None
+    needs_reply: bool = True
     context: BugReportContext
     screenshot_data_url: str | None = None
 
@@ -230,9 +233,45 @@ class BugReportRequest(BaseModel):
 
         if value is None or value == "":
             return None
-        if len(value) > 320 or not _EMAIL_RE.match(value):
+        if not _EMAIL_RE.fullmatch(value) or _CONTACT_CONTROL_RE.search(value):
             raise ValueError("Invalid email address")
         return value
+
+    @field_validator("user_contact")
+    @classmethod
+    def _validate_user_contact(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        contact = value.strip()
+        if _CONTACT_CONTROL_RE.search(value) or (contact and (
+            len(contact) > 320 or sum(not char.isspace() for char in contact) < 3
+        )):
+            raise ValueError(
+                "Enter an email address, QQ number, or WeChat ID on one line "
+                "with 3 to 320 characters. / 请填写 3 至 320 个字符的邮箱、QQ 号或微信号。"
+            )
+        return contact or None
+
+    @model_validator(mode="after")
+    def _resolve_reply_contact(self) -> Self:
+        # Legacy clients sent an optional email without declaring reply intent.
+        if self.model_fields_set.isdisjoint({"needs_reply", "user_contact"}):
+            self.needs_reply = self.user_email is not None
+        if not self.needs_reply:
+            self.user_contact = None
+            self.user_email = None
+            return self
+
+        contact = self.user_contact or self.user_email
+        if contact is None:
+            raise ValueError(
+                "Enter an email address, QQ number, or WeChat ID to request a reply. "
+                "/ 需要回复时，请填写邮箱、QQ 号或微信号。"
+            )
+        self.user_contact = contact
+        if _EMAIL_RE.fullmatch(contact):
+            self.user_email = contact
+        return self
 
 
 _DYNAMIC_MATERIAL_CONTEXT_FIELDS = {
@@ -783,6 +822,8 @@ async def submit_bug_report(
         "received_at_utc": received_at_utc,
         "description": request.description,
         "user_email": request.user_email,
+        "user_contact": request.user_contact,
+        "needs_reply": request.needs_reply,
         "context": context_dump,
         "screenshot_attached": request.screenshot_data_url is not None,
         "server": {

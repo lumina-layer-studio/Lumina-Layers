@@ -17,6 +17,16 @@ def public_catalog_url() -> str:
     return os.environ.get("LUMINA_PUBLIC_CATALOG_URL", GITHUB_CATALOG_URL).strip().rstrip("/")
 
 
+def workshop_mirror_url() -> str:
+    """Distribution can opt in to a mirror for the signed Workshop catalog."""
+    return os.environ.get("LUMINA_WORKSHOP_MIRROR_URL", "").strip().rstrip("/")
+
+
+def workshop_mirror_token() -> str:
+    """The Workshop mirror transport is the sole consumer of this credential."""
+    return os.environ.get("LUMINA_WORKSHOP_MIRROR_TOKEN", "").strip()
+
+
 def is_static_catalog(url: str) -> bool:
     preferences = effective_preferences()
     return bool(url) and url.rstrip("/") in {

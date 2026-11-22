@@ -1019,12 +1019,16 @@ export function WorkshopPanel({
         }
         return result.module;
       } catch (error: unknown) {
-        const { code } = workshopRequestFailure(error);
-        setOperationError(t(
-          code === "registry-download-network-error"
-            ? "workshop.manager.downloadNetworkError"
-            : "workshop.manager.operationError",
-        ));
+        const { code, status } = workshopRequestFailure(error);
+        if (code === "registry-download-network-error" || code === "registry-download-failed") {
+          setOperationError(t(status === 504
+            ? "workshop.manager.downloadTimeout"
+            : "workshop.manager.downloadNetworkError"));
+        } else {
+          setOperationError(t(code === "registry-catalog-unavailable"
+            ? "workshop.manager.catalogUnavailable"
+            : "workshop.manager.operationError"));
+        }
         return null;
       } finally {
         setBusyModuleId(null);
@@ -1570,7 +1574,7 @@ export function WorkshopPanel({
                 />
               }
             >
-              {t("workshop.manager.catalogInvalid")}
+              {t(catalog ? "workshop.manager.catalogInvalid" : "workshop.manager.catalogUnavailable")}
             </StatusBanner>
           ) : (
             <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">

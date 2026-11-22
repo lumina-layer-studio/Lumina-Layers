@@ -3780,7 +3780,7 @@ def _execute_system_save_settings_workflow(client: Any) -> None:
 def _execute_feedback_submit_workflow(client: Any) -> None:
     payload = {
         "description": "log_quality_check synthetic report",
-        "user_email": None,
+        "needs_reply": False,
         "context": {
             "url": "http://localhost:5174/",
             "user_agent": "log-quality-check",
@@ -3805,8 +3805,8 @@ def _execute_feedback_submit_workflow(client: Any) -> None:
         raise QualityCheckError("feedback_submit response was not an object")
     if not response_payload.get("ticket_id"):
         raise QualityCheckError("feedback_submit response missed ticket_id")
-    if response_payload.get("emailed") is not False:
-        raise QualityCheckError("feedback_submit response expected emailed=false")
+    if response_payload.get("submission_status") != "disabled":
+        raise QualityCheckError("feedback_submit response expected submission_status=disabled")
 
 
 def _execute_slicer_launch_workflow(client: Any) -> None:

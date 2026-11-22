@@ -15,7 +15,7 @@ from shapely.ops import unary_union
 
 import config
 from api.workers.converter_workers import worker_generate_model
-from core.pipeline import s09_export_3mf
+from core.pipeline import s09_export_3mf, s11_glb_preview
 
 ANGLES = (-90, -45, 0, 37, 45, 90, 180)
 PRESETS = ("top-center", "top-left", "top-right", "left-center", "right-center", "bottom-center")
@@ -70,6 +70,7 @@ def _read_print_footprints(path: Path) -> tuple[BaseGeometry, BaseGeometry, tupl
 def ring_export_source(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[dict[config.ModelingMode, Path], Path]:
     monkeypatch.setattr(config, "MODELS_DIR", str(tmp_path))
     monkeypatch.setattr(s09_export_3mf, "MODELS_DIR", str(tmp_path))
+    monkeypatch.setattr(s11_glb_preview, "OUTPUT_DIR", str(tmp_path))
     monkeypatch.setenv("LUMINA_VECTOR_SKIP_2D_PREVIEW", "1")
     monkeypatch.setenv("LUMINA_MAX_WORKERS", "1")
     svg = tmp_path / "offset.svg"

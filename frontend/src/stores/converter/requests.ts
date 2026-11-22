@@ -173,7 +173,7 @@ export function buildGenerateParams(
       input.color_layers,
     ),
     is_dark: settings.theme === "dark",
-    add_loop: state.add_loop,
+    add_loop: state.add_loop && !state.largeFormatEnabled,
     loop_width: state.loop_width,
     loop_length: state.loop_length,
     loop_hole: state.loop_hole,

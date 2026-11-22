@@ -1,5 +1,6 @@
-"""Measure the keychain joint in the actual packaged 3MF geometry."""
+"""Verify keychain behavior in the actual packaged 3MF geometry."""
 
+from io import BytesIO
 import json
 from pathlib import Path
 from xml.etree import ElementTree as ET
@@ -187,7 +188,8 @@ def _preview_anchor(client: TestClient, session: str, angle: float, preset: str)
 
 
 @pytest.fixture
-def keychain_api(tmp_path):
+def keychain_api(tmp_path, monkeypatch):
+    monkeypatch.setattr(generate_router, "TEMP_DIR", str(tmp_path))
     store = SessionStore(ttl=1800)
     registry = FileRegistry()
     app = FastAPI()
@@ -197,8 +199,8 @@ def keychain_api(tmp_path):
     app.dependency_overrides[get_file_registry] = lambda: registry
     app.dependency_overrides[get_worker_pool] = _InlinePool
 
-    def create_session(source, lut, mode):
-        _, cache, status = generate_preview_cached(str(source), str(lut), 40, "4-Color (RYBW)", mode)
+    def create_session(source, lut, mode, width_mm=40):
+        _, cache, status = generate_preview_cached(str(source), str(lut), width_mm, "4-Color (RYBW)", mode)
         assert cache is not None, status
         session = store.create()
         store.put(session, "preview_cache", externalize_preview_cache(session, store, cache, root_dir=tmp_path))
@@ -347,3 +349,35 @@ def test_invalid_manual_placement_returns_422_without_a_file(ring_export_source,
     assert detail in message
     assert "Adjust" in message
     assert not list(source.parent.glob("*.3mf"))
+
+
+@pytest.mark.parametrize("width_mm,expected_tiles", [(40, 1), (80, 2)])
+def test_large_format_archives_contain_no_keychain_part(ring_export_source, keychain_api, width_mm, expected_tiles):
+    mode = config.ModelingMode.HIGH_FIDELITY
+    source, lut = _review_source(ring_export_source, mode, "notch")
+    client, create_session, registry = keychain_api
+    session = create_session(source, lut, mode, width_mm)
+    params = {
+        **_review_parameters(mode, "Single-sided", -90, -4),
+        "target_width_mm": width_mm, "add_loop": False,
+    }
+    exported = client.post("/api/convert/generate-large-format", json={
+        "session_id": session,
+        "params": {"tile_width_mm": 50, "tile_height_mm": 100, "params": params},
+    })
+    assert exported.status_code == 200, exported.text
+    result = exported.json()
+    assert result["tile_count"] == expected_tiles
+    assert result["failed_tiles"] == []
+    output = registry.resolve(result["download_url"].rsplit("/", 1)[-1])
+    assert output is not None
+    with ZipFile(output[0]) as bundle:
+        assert bundle.testzip() is None
+        tiles = [name for name in bundle.namelist() if name.endswith(".3mf")]
+        assert len(tiles) == expected_tiles
+        for name in tiles:
+            with ZipFile(BytesIO(bundle.read(name))) as tile:
+                settings = ET.fromstring(tile.read("Metadata/model_settings.config"))
+                parts = settings.findall(".//part/metadata[@key='name']")
+                assert parts
+                assert all(part.get("value") != "Keychain_Loop" for part in parts), name

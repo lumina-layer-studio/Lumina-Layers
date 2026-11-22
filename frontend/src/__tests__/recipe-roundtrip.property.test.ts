@@ -199,11 +199,8 @@ describe("recipe round-trip properties", () => {
           : overrides.enable_fridge_magnet
             ? false
             : overrides.largeFormatEnabled;
-        const expectedAddLoop = overrides.puzzleEnabled
-          ? false
-          : overrides.enable_fridge_magnet
-            ? false
-            : overrides.add_loop;
+        const expectedAddLoop = overrides.add_loop && !overrides.puzzleEnabled
+          && !overrides.enable_fridge_magnet && !expectedLargeFormatEnabled;
         const expectedPuzzleEnabled = overrides.enable_fridge_magnet
           ? false
           : overrides.puzzleEnabled;

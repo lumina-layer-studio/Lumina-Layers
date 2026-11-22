@@ -3866,6 +3866,39 @@ class TestGenerateRegistryFailureCleanup:
         assert mock_pool.submit.await_count == 1
 
 
+def test_large_format_rejects_keychain_loop_before_dispatch() -> None:
+    sid = _create_session_with_preview_and_files(_test_store)
+    payload = _large_format_payload(
+        sid,
+        modeling_mode="high-fidelity",
+        use_cached_matched_rgb=False,
+        target_width_mm=60.0,
+        target_height_mm=40.0,
+        request_overrides={"add_loop": True},
+    )
+    try:
+        with (
+            patch("os.path.exists", return_value=True),
+            patch(
+                "api.routers.converter.generate._generate_large_format_raster",
+                return_value={
+                    "status": "ok", "message": "generated", "tile_count": 1,
+                    "grid_cols": 1, "grid_rows": 1, "download_url": "/api/files/tiles.zip",
+                },
+            ) as generate_tiles,
+        ):
+            response = client.post("/api/convert/generate-large-format", json=payload)
+
+        assert response.status_code == 422, response.text
+        detail = response.json()["detail"]
+        assert "大画幅分块模式下不支持挂件环" in detail
+        assert "does not support keychain loops" in detail
+        assert "download_url" not in response.json()
+        generate_tiles.assert_not_called()
+    finally:
+        _test_store.close(sid)
+
+
 class TestLargeFormatFridgeMagnetValidation:
     """Verify unsupported fridge-magnet combinations fail deterministically."""
 

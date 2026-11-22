@@ -2462,7 +2462,13 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
       state = withCurrentConverterCatalogs(state, _get());
       const printer = resolveConverterSettings(state, useSettingsStore.getState()).printerModel;
       const bed = state.bedSizes.find((item) => item.printer_id === printer);
-      set({ ...state, ...(bed ? { bed_label: bed.label } : {}), previewRequestRevision: _get().previewRequestRevision + 1, previewSubmissionSequence: _get().previewSubmissionSequence + 1 });
+      set({
+        ...state,
+        add_loop: state.add_loop && !state.largeFormatEnabled,
+        ...(bed ? { bed_label: bed.label } : {}),
+        previewRequestRevision: _get().previewRequestRevision + 1,
+        previewSubmissionSequence: _get().previewSubmissionSequence + 1,
+      });
     },
     setImageFile: documentCommand((file: File | null) => {
       const currentFile = _get().imageFile;
@@ -3732,10 +3738,7 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
     // --- 鎸備欢鐜?---
     setAddLoop: documentCommand((enabled: boolean) =>
       set((state) => ({
-        add_loop:
-          enabled && (state.puzzleEnabled || state.enable_fridge_magnet)
-            ? false
-            : enabled,
+        add_loop: enabled && !state.puzzleEnabled && !state.largeFormatEnabled && !state.enable_fridge_magnet,
         threemfDiskPath: null,
         downloadUrl: null,
       }))),
@@ -4058,16 +4061,17 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
 
     // --- 大画幅 ---
     setLargeFormatEnabled: documentCommand((enabled: boolean) =>
-      set((state) => ({
-        largeFormatEnabled:
-          enabled && (state.puzzleEnabled || state.enable_fridge_magnet)
-            ? false
-            : enabled,
-        largeFormatWarnings: [],
-        largeFormatFailedTiles: [],
-        threemfDiskPath: null,
-        downloadUrl: null,
-      }))),
+      set((state) => {
+        const largeFormatEnabled = enabled && !state.puzzleEnabled && !state.enable_fridge_magnet;
+        return {
+          largeFormatEnabled,
+          add_loop: state.add_loop && !largeFormatEnabled,
+          largeFormatWarnings: [],
+          largeFormatFailedTiles: [],
+          threemfDiskPath: null,
+          downloadUrl: null,
+        };
+      })),
     setTileWidthMm: documentCommand((width: number) =>
       set({
         tileWidthMm: Math.max(50, Number.isFinite(width) ? width : 50),
@@ -8158,6 +8162,7 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
       });
       set({
         ...partial,
+        add_loop: nextState.add_loop && !nextState.largeFormatEnabled,
         aspectRatio: nextState.target_width_mm / nextState.target_height_mm,
         modelBounds: null,
         ...fridgeMagnetState,

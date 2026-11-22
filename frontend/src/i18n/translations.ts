@@ -3117,6 +3117,10 @@ export const translations: Record<string, Record<"zh" | "en", string>> = {
     zh: "拼图模式开启时，挂件环会被禁用。",
     en: "Keychain Loop is disabled while puzzle mode is enabled.",
   },
+  large_format_loop_disabled_hint: {
+    zh: "大画幅分块模式下不支持挂件环。",
+    en: "Large-format tiling does not support keychain loops.",
+  },
 
   // ==================== TAB Navigation Titles ====================
   "tab.converter": {
@@ -6407,8 +6411,8 @@ export const translations: Record<string, Record<"zh" | "en", string>> = {
     en: "Large Format Mode",
   },
   basic_large_format_hint: {
-    zh: "作品超过打印床尺寸时，自动把模型切成多块，分别打印后再拼接。会生成一个包含多个 3MF 文件的压缩包。",
-    en: "When the artwork exceeds the print bed, the model is automatically split into tiles to print separately and assemble afterwards. Produces a ZIP containing multiple 3MF files.",
+    zh: "把作品分块打印后再拼接，3MF 文件会打包为 ZIP。开启大画幅时会关闭挂件环。",
+    en: "Split the artwork into tiles for printing and assembly. The 3MF files are packaged in a ZIP. Turning on Large Format turns off the keychain loop.",
   },
   large_format_warning_native_unavailable: {
     zh: "此 SVG 暂不支持原生大画幅切片，已改用栅格切片。",
@@ -8859,6 +8863,10 @@ export const translations: Record<string, Record<"zh" | "en", string>> = {
   recipe_import_warning_puzzle_conflict_loop: {
     zh: "导入的配方同时启用了拼图模式和挂件环。为保持状态有效，挂件环已被禁用。",
     en: "The imported recipe enabled both puzzle mode and a keychain loop. The loop has been disabled to keep the state valid.",
+  },
+  recipe_import_warning_large_format_conflict_loop: {
+    zh: "导入的配方开启了大画幅分块，已关闭挂件环。",
+    en: "The keychain loop was turned off because the imported recipe uses large-format tiling.",
   },
   recipe_import_warning_back_labels_unavailable: {
     zh: "导入的配方启用了拼图背面标签。当前版本暂不支持背面标签，已自动关闭。",

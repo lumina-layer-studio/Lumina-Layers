@@ -3979,6 +3979,14 @@ async def convert_generate_large_format(
     """
     lf = body.params
     request = lf.params
+    if request.add_loop:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "大画幅分块模式下不支持挂件环。请关闭挂件环后再生成。 / "
+                "Large-format tiling does not support keychain loops. Turn off the keychain loop and generate again."
+            ),
+        )
     revision_bytes(request.project_revision_file_id, registry)
     # 1. Session validation and immutable input snapshot
     (

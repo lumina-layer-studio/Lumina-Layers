@@ -8,6 +8,7 @@ export default function KeychainLoopSettings() {
   const { t } = useI18n();
   const add_loop = useConverterStore((s) => s.add_loop);
   const puzzleEnabled = useConverterStore((s) => s.puzzleEnabled);
+  const largeFormatEnabled = useConverterStore((s) => s.largeFormatEnabled);
   const enableFridgeMagnet = useConverterStore((s) => s.enable_fridge_magnet);
   const loop_width = useConverterStore((s) => s.loop_width);
   const loop_length = useConverterStore((s) => s.loop_length);
@@ -22,14 +23,16 @@ export default function KeychainLoopSettings() {
   const setLoopAngle = useConverterStore((s) => s.setLoopAngle);
   const setLoopOffsetX = useConverterStore((s) => s.setLoopOffsetX);
   const setLoopOffsetY = useConverterStore((s) => s.setLoopOffsetY);
+  const loopDisabled = puzzleEnabled || largeFormatEnabled || enableFridgeMagnet;
+  const loopEnabled = add_loop && !loopDisabled;
 
   return (
     <div className="flex flex-col gap-4">
       <Checkbox
         label={t("loop_enable")}
-        checked={add_loop}
+        checked={loopEnabled}
         onChange={setAddLoop}
-        disabled={puzzleEnabled || enableFridgeMagnet}
+        disabled={loopDisabled}
         tooltip={t("loop_enable_hint")}
         wikiPath={WIKI_DOCS.keychainLoop}
       />
@@ -43,7 +46,12 @@ export default function KeychainLoopSettings() {
           {t("fridge_magnet_loop_disabled_status")}
         </p>
       )}
-      {add_loop && (
+      {largeFormatEnabled && (
+        <p className="-mt-2 px-1 text-xs text-slate-500 dark:text-slate-400">
+          {t("large_format_loop_disabled_hint")}
+        </p>
+      )}
+      {loopEnabled && (
         <>
           <Slider label={t("loop_width")} tooltip={t("loop_width_hint")} wikiPath={WIKI_DOCS.keychainLoop} value={loop_width} min={2} max={10} step={0.5} unit="mm" onChange={setLoopWidth} />
           <Slider label={t("loop_length")} tooltip={t("loop_length_hint")} wikiPath={WIKI_DOCS.keychainLoop} value={loop_length} min={4} max={15} step={0.5} unit="mm" onChange={setLoopLength} />

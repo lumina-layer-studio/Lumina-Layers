@@ -550,6 +550,20 @@ describe("recipe/importRecipe", () => {
       expect(warnings).toContain(RECIPE_IMPORT_WARNING_BACK_LABELS_UNAVAILABLE);
     });
 
+    it("keeps Large Format and disables the ring in an older conflicting recipe", () => {
+      const recipe = createTestRecipe();
+      const converter = recipe.recipe.converter!;
+      converter.puzzle!.puzzle_enabled = false;
+      converter.large_format.large_format_enabled = true;
+      converter.geometry.add_loop = true;
+      converter.geometry.loop_offset_y = -4;
+
+      const { state, warnings } = restoreConverterRecipe(recipe, LOCAL_LUTS);
+
+      expect(state).toMatchObject({ largeFormatEnabled: true, add_loop: false, loop_offset_y: -4 });
+      expect(warnings).toContain("recipe_import_warning_large_format_conflict_loop");
+    });
+
     it("disables imported back-label engraving even when piece labels are enabled", () => {
       const recipe = createTestRecipe();
       recipe.recipe.converter!.puzzle!.labels_enabled = true;

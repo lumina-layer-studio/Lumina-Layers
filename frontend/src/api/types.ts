@@ -122,6 +122,15 @@ export type ConvertPreviewRequest = ConvertSourceSelection & {
   surface_model_transform_json?: string;
 };
 
+export interface KeychainAnchorRequest {
+  session_id: string;
+  width: number;
+  length: number;
+  hole: number;
+  angle: number;
+  preset: string;
+}
+
 export interface VectorPreviewRendererResponse {
   session_id: string;
   status: "pending";

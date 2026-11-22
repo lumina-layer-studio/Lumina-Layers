@@ -33,6 +33,8 @@ from typing import Any, TYPE_CHECKING
 
 import cv2  # noqa: F401  -- imported for side-effect parity with coordinator
 import numpy as np
+import shapely
+from shapely.geometry.base import BaseGeometry
 import trimesh
 
 from api.structured_logging import get_logger
@@ -41,10 +43,12 @@ from core.errors import (
     CachedPreviewAnalysisError,
 )
 from core.color_similarity import parse_hex_color, rgb_to_hex
-from core.geometry_utils import (
-    create_keychain_loop,
-    keychain_loop_hole_clearance,
-    resolve_keychain_attachment,
+from core.geometry_utils import create_keychain_loop
+from core.keychain_attachment import (
+    LoopProfile,
+    solve_vector_loop,
+    validate_keychain_export,
+    vector_keychain_body,
 )
 from core.material_dynamic_solver import (
     DynamicMaterialCandidateError,
@@ -468,162 +472,6 @@ def _finite_scene_bounds(scene: trimesh.Scene) -> np.ndarray | None:
     return bounds
 
 
-_TOP_PROFILE_CHUNK_CELLS = 2_000_000
-
-
-def _scene_band_edges(
-    scene: trimesh.Scene,
-    band_min: float,
-    band_max: float,
-    tangent_axis: int,
-    outward_sign: int,
-    x_mirrored: bool,
-) -> tuple[np.ndarray, np.ndarray] | None:
-    """Collect scene edges in the artwork contact band's (tangent, outward) frame."""
-    starts_parts: list[np.ndarray] = []
-    ends_parts: list[np.ndarray] = []
-    artwork_x_sign = -1 if x_mirrored else 1
-    tangent_sign = artwork_x_sign if tangent_axis == 0 else 1
-    normal_sign = outward_sign * (artwork_x_sign if tangent_axis == 1 else 1)
-    for node_name in scene.graph.nodes_geometry:
-        try:
-            transform, geometry_name = scene.graph[node_name]
-            geometry = scene.geometry[geometry_name]
-            vertices = trimesh.transform_points(
-                np.asarray(geometry.vertices, dtype=np.float64),
-                transform,
-            )[:, :2]
-            edges = np.asarray(geometry.edges_unique, dtype=np.int64)
-        except (AttributeError, KeyError, TypeError, ValueError):
-            continue
-        if vertices.ndim != 2 or vertices.shape[1] != 2 or edges.ndim != 2:
-            continue
-        if edges.shape[1] != 2 or len(edges) == 0:
-            continue
-
-        tangent = vertices[:, tangent_axis] * tangent_sign
-        start_tangent, end_tangent = tangent[edges[:, 0]], tangent[edges[:, 1]]
-        keep = (np.minimum(start_tangent, end_tangent) <= band_max) & (
-            np.maximum(start_tangent, end_tangent) >= band_min
-        )
-        if np.any(keep):
-            normal = vertices[:, 1 - tangent_axis] * normal_sign
-            starts = np.column_stack((start_tangent[keep], normal[edges[keep, 0]]))
-            ends = np.column_stack((end_tangent[keep], normal[edges[keep, 1]]))
-            finite = np.isfinite(starts[:, 1]) & np.isfinite(ends[:, 1])
-            if np.any(finite):
-                starts_parts.append(starts[finite])
-                ends_parts.append(ends[finite])
-
-    if not starts_parts:
-        return None
-    return np.concatenate(starts_parts), np.concatenate(ends_parts)
-
-
-def _top_profile_at(
-    sample_x: np.ndarray,
-    starts: np.ndarray,
-    ends: np.ndarray,
-) -> np.ndarray:
-    """Return the highest edge Y crossing each sample X (``-inf`` if none)."""
-    delta_x = ends[:, 0] - starts[:, 0]
-    non_vertical = np.abs(delta_x) > 1e-12
-    safe_delta_x = np.where(non_vertical, delta_x, 1.0)
-    edge_min_x = np.minimum(starts[:, 0], ends[:, 0]) - 1e-9
-    edge_max_x = np.maximum(starts[:, 0], ends[:, 0]) + 1e-9
-    vertical_top = np.maximum(starts[:, 1], ends[:, 1])
-
-    tops = np.full(len(sample_x), -np.inf)
-    chunk = max(1, _TOP_PROFILE_CHUNK_CELLS // max(1, len(starts)))
-    for offset in range(0, len(sample_x), chunk):
-        xs = sample_x[offset:offset + chunk, None]
-        covers = (xs >= edge_min_x) & (xs <= edge_max_x)
-        ratios = np.clip((xs - starts[:, 0]) / safe_delta_x, 0.0, 1.0)
-        edge_y = np.where(
-            non_vertical,
-            starts[:, 1] + ratios * (ends[:, 1] - starts[:, 1]),
-            vertical_top,
-        )
-        tops[offset:offset + chunk] = np.max(
-            np.where(covers, edge_y, -np.inf), axis=1
-        )
-    return tops
-
-
-def _scene_top_edge_range_for_contact_band(
-    scene: trimesh.Scene,
-    tangent: float,
-    contact_width: float,
-    tangent_axis: int,
-    outward_sign: int,
-    x_mirrored: bool,
-) -> tuple[float, float] | None:
-    """Return the lowest and highest outward outline inside a contact band.
-
-    The top profile is piecewise linear between edge endpoints, so sampling
-    the band ends plus every endpoint inside the band finds both extremes.
-    """
-    if contact_width <= 0:
-        return None
-
-    band_min = tangent - contact_width / 2.0
-    band_max = tangent + contact_width / 2.0
-    band_edges = _scene_band_edges(scene, band_min, band_max, tangent_axis, outward_sign, x_mirrored)
-    if band_edges is None:
-        return None
-    starts, ends = band_edges
-
-    endpoint_x = np.concatenate((starts[:, 0], ends[:, 0]))
-    inside_x = endpoint_x[(endpoint_x >= band_min) & (endpoint_x <= band_max)]
-    sample_x = np.unique(np.concatenate(([band_min, band_max], inside_x)))
-    tops = _top_profile_at(sample_x, starts, ends)
-    tops = tops[np.isfinite(tops)]
-    if len(tops) == 0:
-        return None
-    return float(np.min(tops)), float(np.max(tops))
-
-
-def _vector_loop_attach_point(
-    ctx: dict,
-    scene_bounds: np.ndarray,
-    scene: trimesh.Scene | None = None,
-    *,
-    x_mirrored: bool = False,
-) -> tuple[float, float]:
-    """Resolve an artwork-space anchor against the print scene."""
-    min_x, min_y = float(scene_bounds[0, 0]), float(scene_bounds[0, 1])
-    max_x, max_y = float(scene_bounds[1, 0]), float(scene_bounds[1, 1])
-    x_direction = -1.0 if x_mirrored else 1.0
-    if x_mirrored:
-        min_x, max_x = -max_x, -min_x
-    center_x = (min_x + max_x) / 2.0
-    offset_x = _coerce_finite_float(ctx.get("loop_offset_x"), 0.0)
-    offset_y = _coerce_finite_float(ctx.get("loop_offset_y"), 0.0)
-
-    loop_pos = ctx.get("loop_pos")
-    if isinstance(loop_pos, (list, tuple)) and len(loop_pos) >= 2:
-        attach_x = _coerce_finite_float(loop_pos[0], center_x)
-        attach_y = _coerce_finite_float(loop_pos[1], max_y)
-        return (attach_x + offset_x) * x_direction, attach_y + offset_y
-
-    def contact_range(axis: int, sign: int, tangent: float, width: float) -> tuple[float, float] | None:
-        if scene is None:
-            return None
-        return _scene_top_edge_range_for_contact_band(scene, tangent, width, axis, sign, x_mirrored)
-
-    loop_width = _coerce_positive_float(ctx.get("loop_width"), 4.0)
-    clearance = keychain_loop_hole_clearance(
-        loop_width,
-        _coerce_positive_float(ctx.get("loop_length"), 8.0),
-        _coerce_positive_float(ctx.get("loop_hole"), 2.5),
-    )
-    attach_x, attach_y = resolve_keychain_attachment(
-        (min_x, min_y, max_x, max_y), str(ctx.get("loop_position_preset") or "top-center"),
-        offset_x, offset_y, loop_width, clearance, contact_range,
-    )
-    return attach_x * x_direction, attach_y
-
-
 def _geometry_xy_distance(bounds: np.ndarray, x: float, y: float) -> tuple[float, float]:
     min_x, min_y = float(bounds[0, 0]), float(bounds[0, 1])
     max_x, max_y = float(bounds[1, 0]), float(bounds[1, 1])
@@ -690,6 +538,7 @@ def _inject_vector_keychain_loop(
     scene: trimesh.Scene,
     preview_colors: dict,
     slot_names: list,
+    body: BaseGeometry,
     *,
     x_mirrored: bool = False,
 ) -> bool:
@@ -701,11 +550,23 @@ def _inject_vector_keychain_loop(
     if bounds is None:
         return False
 
-    attach_x, attach_y = _vector_loop_attach_point(ctx, bounds, scene, x_mirrored=x_mirrored)
+    profile = LoopProfile(
+        _coerce_positive_float(ctx.get("loop_width"), 4.0),
+        _coerce_positive_float(ctx.get("loop_length"), 8.0),
+        _coerce_positive_float(ctx.get("loop_hole"), 2.5),
+        _coerce_finite_float(ctx.get("loop_angle"), 0.0),
+    )
+    pos = ctx.get("loop_pos")
+    anchor_x, anchor_y = solve_vector_loop(body, profile, str(ctx.get("loop_position_preset") or "top-center"))
+    if isinstance(pos, (list, tuple)) and len(pos) >= 2:
+        anchor_x = _coerce_finite_float(pos[0], anchor_x)
+        anchor_y = _coerce_finite_float(pos[1], anchor_y)
+    attach_x = anchor_x + _coerce_finite_float(ctx.get("loop_offset_x"), 0.0)
+    attach_y = anchor_y + _coerce_finite_float(ctx.get("loop_offset_y"), 0.0)
     _color_idx, rgba, material_name = _resolve_vector_loop_style(
         ctx,
         scene,
-        attach_x,
+        -attach_x if x_mirrored else attach_x,
         attach_y,
         preview_colors,
         list(slot_names),
@@ -716,13 +577,13 @@ def _inject_vector_keychain_loop(
         float(bounds[1, 2] - bounds[0, 2]),
     )
     loop_mesh = create_keychain_loop(
-        width_mm=_coerce_positive_float(ctx.get("loop_width"), 4.0),
-        length_mm=_coerce_positive_float(ctx.get("loop_length"), 8.0),
-        hole_dia_mm=_coerce_positive_float(ctx.get("loop_hole"), 2.5),
+        width_mm=profile.width,
+        length_mm=profile.length,
+        hole_dia_mm=profile.hole,
         thickness_mm=thickness_mm,
-        attach_x_mm=-attach_x if x_mirrored else attach_x,
+        attach_x_mm=attach_x,
         attach_y_mm=attach_y,
-        angle_deg=_coerce_finite_float(ctx.get("loop_angle"), 0.0),
+        angle_deg=profile.angle,
     )
     if loop_mesh is None or len(loop_mesh.vertices) == 0 or len(loop_mesh.faces) == 0:
         return False
@@ -1599,6 +1460,8 @@ def _run_vector_preview_branch(ctx: dict) -> dict:
         preview_timing["analyze_svg_s"] = time.perf_counter() - t0
 
         t0 = time.perf_counter()
+        structure = resolve_structure_plan(analysis)
+        analysis.structure_plan = structure
         raster_cache = VectorProcessor.build_preview_cache(
             analysis,
             pixels_per_mm=10.0,
@@ -1706,6 +1569,10 @@ def _run_vector_preview_branch(ctx: dict) -> dict:
             "debug_data": None,
             "quantized_image": raster_cache["quantized_image"],
         }
+        # Reuse the same prepared print outline as the backing mask. Keep it
+        # in the session's NumPy artifacts so posing a ring needs no SVG parse.
+        cache["keychain_vector_body"] = np.frombuffer(shapely.to_wkb(structure.body), dtype=np.uint8)
+        cache["keychain_vector_mm_per_unit"] = structure.mm_per_unit
         if dynamic_layer_active:
             cache["material_dynamic_layer_info"] = deepcopy(dynamic_layer_info)
             cache["original_material_dynamic_layer_info"] = deepcopy(
@@ -2228,6 +2095,8 @@ def _run_vector_branch(ctx: dict) -> dict:
         # Free-color ownership must be assigned before material extrusion;
         # adding a second mesh afterwards would duplicate the optical volume.
         analysis = _prepare_vector_free_colors(analysis, ctx.get("free_color_set"))
+        if ctx.get("add_loop"):
+            analysis.structure_plan = resolve_structure_plan(analysis)
         # 1b. Build 3D mesh from analysis
         build_mesh_kwargs = {
             "analysis": analysis,
@@ -2441,15 +2310,13 @@ def _run_vector_branch(ctx: dict) -> dict:
                 },
             )
 
-        _inject_vector_keychain_loop(
-            ctx,
-            scene,
-            vec_preview_colors,
-            list(vec_slot_list),
-            x_mirrored=should_mirror_vector_export(
-                structure_mode, vec_color_mode, enable_relief=bool(ctx.get("enable_relief", False)),
-            ),
-        )
+        if ctx.get("add_loop"):
+            _inject_vector_keychain_loop(
+                ctx, scene, vec_preview_colors, list(vec_slot_list), vector_keychain_body(analysis),
+                x_mirrored=should_mirror_vector_export(
+                    structure_mode, vec_color_mode, enable_relief=bool(ctx.get("enable_relief", False)),
+                ),
+            )
 
         # 1.6 Inject vector Outline mesh.
         # Use the shared structure plan, never the post-match color partition.
@@ -2636,6 +2503,8 @@ def _run_vector_branch(ctx: dict) -> dict:
                     },
                 )
 
+        if ctx.get("add_loop"):
+            validate_keychain_export(scene, separate_backing=ctx.get("backing_output") == "separate_project")
         export_t0 = time.perf_counter()
         # Cover thumbnail source resolution priority:
         # 1. ``ctx['svg_raster_preview_bytes']`` (rasterized SVG preview bytes

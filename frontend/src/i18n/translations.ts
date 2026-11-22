@@ -6798,16 +6798,16 @@ export const translations: Record<string, Record<"zh" | "en", string>> = {
     en: "X Offset",
   },
   loop_offset_x_hint: {
-    zh: "挂件环中心相对于模型中心的水平偏移（毫米）。正值向右，负值向左。",
-    en: "Horizontal offset of the loop center from the model center (in mm). Positive moves right, negative moves left.",
+    zh: "挂件环相对预设位置的水平偏移（毫米）。正值向右，负值向左。",
+    en: "Horizontal offset from the preset position (in mm). Positive moves right, negative moves left.",
   },
   loop_offset_y: {
     zh: "Y 偏移",
     en: "Y Offset",
   },
   loop_offset_y_hint: {
-    zh: "挂件环相对当前预设吸附点的垂直偏移（毫米）。顶部居中时，向内移动会限制在模型局部轮廓处。",
-    en: "Vertical offset from the preset anchor (in mm). A top-center loop stops at the local contour when moved inward.",
+    zh: "挂件环相对预设位置的垂直偏移（毫米）。正值向上，负值向下。",
+    en: "Vertical offset from the preset position (in mm). Positive moves up, negative moves down.",
   },
   loop_preset_top_center: {
     zh: "上中",

@@ -524,6 +524,26 @@ describe("useAutoPreview", () => {
     expect(useConverterStore.getState()).toMatchObject({ target_width_mm: 220, target_height_mm: 110 });
   });
 
+  it("refreshes the print grid once after resizing with a keychain ring", async () => {
+    establishMaterialPreviewBaseline();
+    useConverterStore.setState({
+      modeling_mode: ModelingMode.PIXEL, add_loop: true,
+      aspectRatio: 2, target_width_mm: 60, target_height_mm: 30, preview_width_mm: 60,
+    });
+    renderHook(() => useAutoPreview());
+    act(() => { useConverterStore.getState().setTargetWidthMm(80); });
+    expect(useConverterStore.getState().sessionId).toBe("material-session-old");
+    await act(async () => { await vi.advanceTimersByTimeAsync(150); });
+    act(() => { useConverterStore.getState().setTargetWidthMm(90); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(299); });
+    expect(mockSubmitPreview).not.toHaveBeenCalled();
+    await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+    expect(mockSubmitPreview).toHaveBeenCalledOnce();
+    expect(useConverterStore.getState().target_width_mm).toBe(90);
+    await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
+    expect(mockSubmitPreview).toHaveBeenCalledOnce();
+  });
+
   it("keeps ordinary SVG dimension changes projection-only when compensation is disabled", async () => {
     establishMaterialPreviewBaseline();
     useConverterStore.setState({

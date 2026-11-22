@@ -18,6 +18,7 @@ from core.naming import generate_model_filename
 from utils.slicer_3mf_writer import (
     export_scene_with_slicer_metadata as export_scene_with_bambu_metadata,
 )
+from core.keychain_attachment import validate_keychain_export
 
 _log = get_logger(__name__)
 
@@ -95,6 +96,8 @@ def run(ctx: dict) -> dict:
         - out_path (str): 导出的 3MF 文件路径
     """
     scene = ctx["scene"]
+    if ctx.get("add_loop"):
+        validate_keychain_export(scene, separate_backing=ctx.get("backing_output") == "separate_project")
     valid_slot_names = ctx["valid_slot_names"]
     slot_names = ctx.get("slot_names", valid_slot_names)
     preview_colors = ctx["preview_colors"]

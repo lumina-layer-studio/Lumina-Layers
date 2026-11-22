@@ -80,6 +80,7 @@ export function useAutoPreview(): void {
   const cropModalOpen = useConverterStore((state) => state.cropModalOpen);
   const hasManualPreview = useConverterStore((state) => state.hasManualPreview);
   const isLoading = useConverterStore((state) => state.isLoading);
+  const isGenerating = useConverterStore((state) => state.isGenerating);
   const refreshPending = useConverterStore(
     (state) => state.previewAutoRefreshPending,
   );
@@ -93,6 +94,13 @@ export function useAutoPreview(): void {
   const isSourceReady = useConverterStore(
     (state) => resolveConverterSourceSelection(state).isReady,
   );
+  // Resizing can change the print outline (for example, which raster cells
+  // are occupied). Rebuild that grid before fitting a physical ring to it.
+  const keychainWidth = useConverterStore((state) =>
+    state.add_loop && !state.puzzleEnabled && !state.largeFormatEnabled
+    && !state.batchMode && !state.modelSurfaceEnabled ? state.target_width_mm : null,
+  );
+  const analyzedWidth = useConverterStore((state) => state.preview_width_mm);
   const materialCacheIdentity = useConverterStore(
     resolveMaterialCacheIdentity,
   );
@@ -142,6 +150,7 @@ export function useAutoPreview(): void {
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastTriggeredRef = useRef<AutoPreviewSnapshot | null>(null);
   const lastSubmissionSequenceRef = useRef(submissionSequence);
+  const lastKeychainRefreshRef = useRef<{ image: File; width: number } | null>(null);
 
   useEffect(() => {
     if (timerRef.current !== null) {
@@ -162,14 +171,18 @@ export function useAutoPreview(): void {
     const submissionStarted =
       lastSubmissionSequenceRef.current !== submissionSequence;
     lastSubmissionSequenceRef.current = submissionSequence;
-    const scheduleRefresh = (requiresMaterialCachePreflight = false) => {
+    const scheduleRefresh = (requiresMaterialCachePreflight = false, keychainResizeWidth: number | null = null) => {
+      const stillPending = (state: ConverterState) => state.previewAutoRefreshPending || (
+        keychainResizeWidth !== null && state.add_loop && !state.isGenerating
+        && state.target_width_mm === keychainResizeWidth && state.preview_width_mm !== keychainResizeWidth
+      );
       let cancelled = false;
       timerRef.current = setTimeout(() => {
         timerRef.current = null;
         void (async () => {
           const scheduledState = useConverterStore.getState();
           if (
-            !scheduledState.previewAutoRefreshPending ||
+            !stillPending(scheduledState) ||
             scheduledState.isLoading
           ) {
             return;
@@ -228,12 +241,15 @@ export function useAutoPreview(): void {
           const latest = useConverterStore.getState();
           if (
             cancelled ||
-            !latest.previewAutoRefreshPending ||
+            !stillPending(latest) ||
             latest.isLoading
           ) {
             return;
           }
           lastTriggeredRef.current = currentSnapshot;
+          if (keychainResizeWidth !== null) {
+            lastKeychainRefreshRef.current = { image: imageFile, width: keychainResizeWidth };
+          }
           void submitPreview();
         })();
       }, 300);
@@ -276,13 +292,18 @@ export function useAutoPreview(): void {
       return;
     }
 
-    // Seed an already-established result on initial mount without submitting.
-    if (previousSnapshot === null) {
+    // A resize-only refresh must keep the old session long enough for
+    // submitPreview to carry forward confirmed spatial edits.
+    if (previousSnapshot === null || sameSnapshot(previousSnapshot, currentSnapshot)) {
       lastTriggeredRef.current = currentSnapshot;
-      return;
-    }
-
-    if (sameSnapshot(previousSnapshot, currentSnapshot)) {
+      if (keychainWidth === null || analyzedWidth === null || keychainWidth === analyzedWidth) {
+        lastKeychainRefreshRef.current = null;
+        return;
+      }
+      const last = lastKeychainRefreshRef.current;
+      if (isSourceReady && !isGenerating && (last?.image !== imageFile || last.width !== keychainWidth)) {
+        return scheduleRefresh(false, keychainWidth);
+      }
       return;
     }
 
@@ -297,13 +318,16 @@ export function useAutoPreview(): void {
 
     return scheduleRefresh();
   }, [
+    analyzedWidth,
     cropModalOpen,
     hasManualPreview,
     imageFile,
     inputKey,
     invalidatePreview,
+    isGenerating,
     isLoading,
     isSourceReady,
+    keychainWidth,
     materialCacheIdentity,
     refreshPending,
     settingsKey,

@@ -3,7 +3,6 @@ S05 — 2D preview image generation with keychain loop drawing.
 S05 — 2D 预览图生成与挂件环绘制。
 
 从 converter.py 搬入的预览生成逻辑和挂件环辅助函数：
-- _calculate_loop_position: 根据预设计算挂件环位置
 - _calculate_loop_info: 计算挂件环完整信息
 - _draw_loop_on_preview: 在预览图上绘制挂件环
 """
@@ -14,11 +13,8 @@ from PIL import Image
 from typing import Optional, Dict, Tuple
 
 from api.structured_logging import get_logger
-from core.geometry_utils import (
-    keychain_loop_hole_clearance,
-    keychain_loop_footprint,
-    resolve_keychain_attachment,
-)
+from core.geometry_utils import keychain_loop_footprint
+from core.keychain_attachment import LoopProfile, solve_raster_loop
 from core.pipeline.p06_bed_rendering import draw_keychain_footprint
 from core.pipeline.preview_color_utils import (
     build_material_preview_warning_extra,
@@ -28,123 +24,17 @@ from core.pipeline.preview_color_utils import (
 _log = get_logger(__name__)
 
 
-def _top_edge_range_for_contact_band(
-    mask_solid: np.ndarray,
-    center_x_mm: float,
-    contact_width_mm: float,
-    target_h: int,
-    pixel_scale: float,
-) -> tuple[float, float] | None:
-    """Return the lowest and highest solid top edge under a loop contact band.
-    返回挂环水平接触带下方实体上边缘的最低点和最高点。
-    """
-    if pixel_scale <= 0 or contact_width_mm <= 0:
-        return None
-
-    half_width = contact_width_mm / 2.0
-    min_col = max(0, int(np.floor((center_x_mm - half_width) / pixel_scale)))
-    max_col = min(
-        mask_solid.shape[1] - 1,
-        int(np.ceil((center_x_mm + half_width) / pixel_scale) - 1),
-    )
-    if min_col > max_col:
-        return None
-
-    band = mask_solid[:, min_col:max_col + 1]
-    solid_columns = np.any(band, axis=0)
-    if not np.any(solid_columns):
-        return None
-
-    top_rows = np.argmax(band, axis=0)[solid_columns]
-    # A solid pixel row occupies one full cell, so the outward cell edge is
-    # one pixel above the row's lower Y coordinate.
-    lowest_top = (target_h - int(np.max(top_rows))) * pixel_scale
-    highest_top = (target_h - int(np.min(top_rows))) * pixel_scale
-    return lowest_top, highest_top
-
-
 def _calculate_loop_position(
-    position_preset: str,
-    offset_x: float,
-    offset_y: float,
-    mask_solid: np.ndarray,
-    target_w: int,
-    target_h: int,
-    pixel_scale: float,
-    contact_width_mm: float = 0.0,
-    hole_clearance_mm: float = float("inf"),
-) -> tuple:
-    """Calculate keychain loop attach position based on preset and offset.
-    根据位置预设和偏移量计算钥匙扣挂孔的吸附位置。
-
-    Use the outside edges of occupied cells in artwork millimetres. The
-    selected contour and joint inset are independent of the rotation angle.
-
-    Args:
-        position_preset (str): Preset name for snap position.
-            (预设位置名称，如 'top-center', 'top-left' 等)
-        offset_x (float): X offset in mm to add to the base position.
-            (叠加到基准位置的 X 偏移量，单位 mm)
-        offset_y (float): Y offset in mm. Inward movement is constrained when
-            local contact anchoring is active. (Y 偏移量；局部接触锚定启用时限制向内移动)
-        mask_solid (np.ndarray): Boolean 2D array (H, W) indicating solid pixels.
-            (布尔二维数组，标识实体像素)
-        target_w (int): Image width in pixels. (图像宽度，像素)
-        target_h (int): Image height in pixels. (图像高度，像素)
-        pixel_scale (float): mm per pixel conversion factor. (像素到 mm 的缩放因子)
-        contact_width_mm (float): Width of the contact band. Zero uses the
-            preset on the bounds directly. (接触带宽度；0 时使用包围盒位置)
-        hole_clearance_mm (float): Maximum depth the loop may sink below the
-            highest contour point before its hole meets the body.
-            (挂孔压入本体前，挂环相对轮廓最高点可下沉的最大深度)
-
-    Returns:
-        tuple[float, float]: (attach_x_mm, attach_y_mm) position in mm.
-            (吸附点坐标，单位 mm)
-    """
-    # Extract model bounds from mask_solid
-    solid_rows = np.any(mask_solid, axis=1)
-    solid_cols = np.any(mask_solid, axis=0)
-
-    if not np.any(solid_rows) or not np.any(solid_cols):
-        # No solid pixels — return model center as fallback
-        center_x_mm = (target_w / 2.0) * pixel_scale
-        center_y_mm = (target_h / 2.0) * pixel_scale
-        return (center_x_mm + offset_x, center_y_mm + offset_y)
-
-    row_indices = np.where(solid_rows)[0]
-    col_indices = np.where(solid_cols)[0]
-
-    min_row = int(row_indices[0])
-    max_row = int(row_indices[-1])
-    min_col = int(col_indices[0])
-    max_col = int(col_indices[-1])
-
-    bounds = (
-        min_col * pixel_scale,
-        (target_h - 1 - max_row) * pixel_scale,
-        (max_col + 1) * pixel_scale,
-        (target_h - min_row) * pixel_scale,
-    )
-
-    def contact_range(axis: int, sign: int, tangent: float, width: float) -> tuple[float, float] | None:
-        # In this view, columns grow along the contact band and rows start at
-        # the outward edge. A reversed normal has a negative world origin.
-        cells = mask_solid[::-1]
-        if axis == 1:
-            cells = cells.T
-        if sign > 0:
-            cells = cells[::-1]
-        top = _top_edge_range_for_contact_band(cells, tangent, width, cells.shape[0], pixel_scale)
-        if top is None or sign > 0:
-            return top
-        origin = -cells.shape[0] * pixel_scale
-        return top[0] + origin, top[1] + origin
-
-    return resolve_keychain_attachment(
-        bounds, position_preset or "top-center", offset_x, offset_y,
-        contact_width_mm, hole_clearance_mm, contact_range,
-    )
+    position_preset: str, offset_x: float, offset_y: float,
+    mask_solid: np.ndarray, target_w: int, target_h: int, pixel_scale: float,
+    profile: LoopProfile = LoopProfile(4.0, 8.0, 2.5, 0.0),
+) -> tuple[float, float]:
+    """Seat the rotated profile on the raster outline, then apply signed offsets."""
+    if mask_solid.any():
+        (x, y), _ = solve_raster_loop(mask_solid, pixel_scale, pixel_scale, profile, position_preset)
+    else:
+        x, y = target_w * pixel_scale / 2, target_h * pixel_scale / 2
+    return x + offset_x, y + offset_y
 
 
 def _calculate_loop_info(
@@ -161,15 +51,14 @@ def _calculate_loop_info(
     offset_x: float = 0.0,
     offset_y: float = 0.0,
     position_preset: str = "top-center",
+    backing_mask: np.ndarray | None = None,
 ) -> Optional[Dict]:
     """Calculate keychain loop information including position and angle.
     计算钥匙扣挂孔信息，包括位置和旋转角度。
 
-    When loop_pos is provided, snaps to the nearest solid pixel from the
-    click point. When loop_pos is None, delegates to _calculate_loop_position()
-    to compute a default position based on the preset and offset.
-    当 loop_pos 有值时，吸附到点击点最近的实体像素；当 loop_pos 为 None 时，
-    委托 _calculate_loop_position() 根据预设和偏移计算默认位置。
+    A legacy click snaps to a solid pixel. Presets seat the rotated loop
+    against the outline. Both apply the user's signed offsets afterwards.
+    手动点击吸附到实体像素，预设按旋转后的挂环与轮廓贴合，再叠加有符号偏移。
 
     Args:
         loop_pos (Optional[Tuple[float, float]]): Click position (x, y) in pixels,
@@ -187,6 +76,7 @@ def _calculate_loop_info(
         offset_y (float): Y offset in mm, default 0. (Y 偏移量，mm，默认 0)
         position_preset (str): Position preset name, default "top-center".
             (位置预设名称，默认 "top-center")
+        backing_mask: Optional physical backing footprint. (可选的实体底板掩码)
 
     Returns:
         Optional[Dict]: Loop info dict with keys attach_x_mm, attach_y_mm,
@@ -223,29 +113,17 @@ def _calculate_loop_info(
 
         attach_col = max(0, min(target_w - 1, attach_col))
 
-        attach_x_mm = attach_col * pixel_scale
-        attach_y_mm = (target_h - 1 - top_row) * pixel_scale
+        attach_x_mm = attach_col * pixel_scale + offset_x
+        attach_y_mm = (target_h - 1 - top_row) * pixel_scale + offset_y
     else:
-        # Preset-based position calculation
+        footprint_mask = mask_solid if backing_mask is None else mask_solid | backing_mask
         attach_x_mm, attach_y_mm = _calculate_loop_position(
-            position_preset=position_preset,
-            offset_x=offset_x,
-            offset_y=offset_y,
-            mask_solid=mask_solid,
-            target_w=target_w,
-            target_h=target_h,
-            pixel_scale=pixel_scale,
-            contact_width_mm=loop_width,
-            hole_clearance_mm=keychain_loop_hole_clearance(
-                loop_width, loop_length, loop_hole
-            ),
+            position_preset, offset_x, offset_y, footprint_mask, target_w, target_h, pixel_scale,
+            LoopProfile(loop_width, loop_length, loop_hole, angle_deg),
         )
-        # Convert mm back to pixel coords for color sampling
-        attach_col = int(attach_x_mm / pixel_scale) if pixel_scale > 0 else target_w // 2
-        attach_col = max(0, min(target_w - 1, attach_col))
-        top_row_mm = attach_y_mm / pixel_scale if pixel_scale > 0 else 0
-        top_row = int(target_h - 1 - top_row_mm)
-        top_row = max(0, min(target_h - 1, top_row))
+
+    attach_col = int(np.clip(attach_x_mm / pixel_scale, 0, target_w - 1))
+    top_row = int(np.clip(target_h - 1 - attach_y_mm / pixel_scale, 0, target_h - 1))
 
     # Determine loop color from nearby material
     loop_color_id = 0
@@ -370,6 +248,7 @@ def run(ctx: dict) -> dict:
             offset_x=ctx.get('loop_offset_x', 0.0),
             offset_y=ctx.get('loop_offset_y', 0.0),
             position_preset=ctx.get('loop_position_preset') or "top-center",
+            backing_mask=ctx.get("backing_mask"),
         )
 
         if loop_info:

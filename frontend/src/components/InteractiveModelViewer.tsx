@@ -23,8 +23,7 @@ import { createMatteMaterialFromStandard } from "../utils/threeMatteMaterial";
 import PuzzleOverlay3D from "./PuzzleOverlay3D";
 import { useGltfCacheLifecycle } from "./useGltfCacheLifecycle";
 import { materializePositionAttributeForGeometryBake } from "../utils/threeQuantizedGeometry";
-import { readKeychainReference, type PreviewCanvasBounds } from "../utils/keychainReference";
-import { createPreviewSpace } from "../utils/previewSpace";
+import { createPreviewSpace, type PreviewSpaceBounds } from "../utils/previewSpace";
 import HeightmapReliefSurface3D from "./HeightmapReliefSurface3D";
 import CoatingPreview3D from "./CoatingPreview3D";
 
@@ -87,7 +86,7 @@ export interface InteractiveModelViewerProps {
   colorLayerHeightMm?: number;
   onPreviewCanvasBoundsChange?: (
     sourceUrl: string,
-    bounds: PreviewCanvasBounds | null,
+    bounds: PreviewSpaceBounds | null,
   ) => void;
   heightmapReliefUrl?: string | null;
   heightmapArtworkUrl?: string | null;
@@ -793,7 +792,7 @@ function InteractiveModelViewer({
         extractedPreviewCanvasBounds = child;
       }
     });
-    let resolvedPuzzleOverlayBounds: PreviewCanvasBounds | null = null;
+    let resolvedPuzzleOverlayBounds: PreviewSpaceBounds | null = null;
     if (extractedPreviewCanvasBounds !== null) {
       const canvasBoundsMesh = extractedPreviewCanvasBounds as THREE.Mesh;
       canvasBoundsMesh.updateWorldMatrix(true, false);
@@ -923,17 +922,6 @@ function InteractiveModelViewer({
           maxY: boundsBox.max.y,
           maxZ: boundsBox.max.z, // thickness direction (toward camera)
         };
-    const reference = readKeychainReference(scene.userData);
-    if (reference && bounds && resolvedPuzzleOverlayBounds) {
-      resolvedPuzzleOverlayBounds.keychainAttachment = {
-        reference,
-        assetCenter: {
-          x: (bounds.minX + bounds.maxX) / 2,
-          y: (bounds.minY + bounds.maxY) / 2,
-        },
-      };
-    }
-
     const buildSummary = {
       url,
       source_role: sourceRole,

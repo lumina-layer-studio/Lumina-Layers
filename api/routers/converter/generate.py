@@ -76,7 +76,7 @@ from api.workers.converter_workers import (
 )
 from core.batch_layout import LayoutResult, XYBBox, layout_shelf_by_row
 from core.errors import (
-    CachedPreviewAnalysisError, ExternalSpoolSelectionError, MaterialArchiveUnavailableError,
+    CachedPreviewAnalysisError, ExternalSpoolSelectionError, KeychainPlacementError, MaterialArchiveUnavailableError,
     NativeMaterialSelectionError, TemplateSlotCapacityError, WipeTowerLayoutError,
 )
 from .export_materials import require_material_selection
@@ -274,6 +274,7 @@ log = get_logger(__name__)
 
 _EXPORT_INPUT_ERRORS = (
     ExternalSpoolSelectionError,
+    KeychainPlacementError,
     MaterialArchiveUnavailableError,
     NativeMaterialSelectionError,
     TemplateSlotCapacityError,

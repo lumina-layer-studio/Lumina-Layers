@@ -1,50 +1,14 @@
 /**
- * Property-Based Tests for KeychainRing3D geometry and position calculations.
- * 钥匙扣环 3D 几何体与位置计算的 Property-Based 测试。
+ * Property-Based Tests for KeychainRing3D ring geometry.
+ * 钥匙扣环 3D 几何体的 Property-Based 测试。
  *
  * Feature: keychain-loop-enhancement
- * Properties: 3, 5, 6
+ * Properties: 5, 6
  */
 
 import { describe, it, expect } from "vitest";
 import * as fc from "fast-check";
-import {
-  createKeychainRingGeometry,
-  computeLoopPosition,
-} from "../components/KeychainRing3D";
-
-// ========== Generators ==========
-
-/** Valid position presets. (有效的位置预设) */
-const PRESETS = [
-  "top-center",
-  "top-left",
-  "top-right",
-  "left-center",
-  "right-center",
-  "bottom-center",
-] as const;
-
-/** Arbitrary valid preset string. */
-const presetArb = fc.constantFrom(...PRESETS);
-
-/** Arbitrary modelBounds where minX < maxX and minY < maxY. */
-const modelBoundsArb = fc
-  .record({
-    x1: fc.double({ min: -200, max: 200, noNaN: true, noDefaultInfinity: true }),
-    xSpan: fc.double({ min: 0.1, max: 200, noNaN: true, noDefaultInfinity: true }),
-    y1: fc.double({ min: -200, max: 200, noNaN: true, noDefaultInfinity: true }),
-    ySpan: fc.double({ min: 0.1, max: 200, noNaN: true, noDefaultInfinity: true }),
-  })
-  .map(({ x1, xSpan, y1, ySpan }) => ({
-    minX: x1,
-    maxX: x1 + xSpan,
-    minY: y1,
-    maxY: y1 + ySpan,
-  }));
-
-/** Arbitrary offset values in [-200, 200]. */
-const offsetArb = fc.double({ min: -200, max: 200, noNaN: true, noDefaultInfinity: true });
+import { createKeychainRingGeometry } from "../components/KeychainRing3D";
 
 /**
  * Smart generator: derive hole from width/length to guarantee validity.
@@ -101,31 +65,6 @@ const invalidGeomParamsArb = fc.oneof(
 // ========== Property-Based Tests ==========
 
 describe("KeychainRing3D — Property-Based Tests", () => {
-  /**
-   * Feature: keychain-loop-enhancement, Property 3: 前端位置计算正确性
-   * **Validates: Requirements 2.2, 3.4**
-   *
-   * For any valid modelBounds (minX < maxX, minY < maxY) and any offset,
-   * computeLoopPosition returns the selected bounds anchor plus the offset.
-   */
-  it("preserves offsets relative to each selected bounds anchor", () => {
-    fc.assert(
-      fc.property(
-        presetArb,
-        modelBoundsArb,
-        offsetArb,
-        offsetArb,
-        (preset, bounds, offX, offY) => {
-          const base = computeLoopPosition(preset, bounds, 0, 0);
-          const result = computeLoopPosition(preset, bounds, offX, offY);
-          expect(result.x).toBeCloseTo(base.x + offX, 10);
-          expect(result.y).toBeCloseTo(base.y + offY, 10);
-        },
-      ),
-      { numRuns: 200 },
-    );
-  });
-
   /**
    * Feature: keychain-loop-enhancement, Property 5: 前端几何体有效参数生成正确性
    * **Validates: Requirements 4.2**

@@ -23,7 +23,6 @@ import trimesh
 from trimesh.visual.material import PBRMaterial
 
 from config import PrinterConfig, OUTPUT_DIR, BedManager
-from core.keychain_reference import KEYCHAIN_REFERENCE_METADATA, raster_keychain_reference
 from core.naming import generate_preview_filename
 
 _log = get_logger(__name__)
@@ -1824,11 +1823,6 @@ def generate_segmented_glb(
                 node_name=PREVIEW_CANVAS_BOUNDS_NODE_NAME,
             )
 
-        source_mask = cache["mask_solid"]
-        source_scale = cache.get("pixel_scale") or _resolve_glb_pixel_scale(target_width_mm, source_mask.shape[1])
-        reference = raster_keychain_reference(source_mask, float(source_scale))
-        if reference is not None:
-            scene.metadata[KEYCHAIN_REFERENCE_METADATA] = reference
         _t_canvas_bounds = time.perf_counter() - _t
 
         cache["color_contours"] = contours_data

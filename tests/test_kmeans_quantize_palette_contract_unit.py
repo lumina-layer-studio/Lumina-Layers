@@ -74,6 +74,25 @@ def test_deprecated_skip_post_blur_kwarg_is_accepted_and_noop() -> None:
     assert np.array_equal(out_default, out_legacy_kwarg)
 
 
+def test_large_low_color_image_keeps_exact_rgb_without_full_size_unique_sort(monkeypatch):
+    image = np.zeros((640, 641, 3), dtype=np.uint8)
+    image[-2:, :, :] = (12, 45, 78)
+    unique = np.unique
+    sorted_sizes = []
+
+    def measure(values, *args, **kwargs):
+        sorted_sizes.append(values.size)
+        return unique(values, *args, **kwargs)
+
+    with monkeypatch.context() as patching:
+        patching.setattr(np, "unique", measure)
+        result = quantize_colors(image, n_colors=2)
+
+    assert max(sorted_sizes, default=0) <= 256 * 1024
+    np.testing.assert_array_equal(result, image)
+    assert not np.shares_memory(result, image)
+
+
 def test_masked_quantization_ignores_and_preserves_unselected_pixels() -> None:
     """Masked-out air must neither train K-Means nor leak through its cache."""
     mask = np.zeros((6, 6), dtype=bool)

@@ -13,6 +13,7 @@ import type { KeychainRing3DProps } from "../components/KeychainRing3D";
 import KeychainLoopSettings from "../components/sections/KeychainLoopSettings";
 import { useConverterStore } from "../stores/converter";
 import { createPreviewSpace } from "../utils/previewSpace";
+import contract from "../../../tests/fixtures/keychain_rotation_reference.json";
 
 const mockControls = { enabled: true };
 const mockCanvas = document.createElement("canvas");
@@ -115,6 +116,62 @@ function startRingDrag(container: HTMLElement, x = 0, y = 0) {
 }
 
 describe("KeychainRing3D", () => {
+  it("rotates the rendered ring around the same local attachment point", () => {
+    const modelBounds = { minX: 0, maxX: 40, minY: 0, maxY: 20, maxZ: 1.6 };
+    const contours = { body: [[[0, 0], [40, 0], [40, 10], [8, 10], [8, 20], [0, 20]]] };
+    const { container, rerender } = render(
+      <LiveRing width={6} length={8} hole={2.5} modelBounds={modelBounds}
+        contours={contours} contourCanvasBounds={modelBounds} angle={0} />,
+    );
+    type Transform = { position: [number, number, number]; rotation: [number, number, number] };
+    const initial = getReactProps<Transform>(container.querySelector("mesh")!);
+    for (const angle of [-90, -45, 45, 90, 180]) {
+      rerender(<LiveRing width={6} length={8} hole={2.5} modelBounds={modelBounds}
+        contours={contours} contourCanvasBounds={modelBounds} angle={angle} />);
+      const rotated = getReactProps<Transform>(container.querySelector("mesh")!);
+      expect(rotated.position).toEqual(initial.position);
+      expect(rotated.rotation[2]).toBeCloseTo(angle * Math.PI / 180);
+    }
+  });
+
+  it.each([0, -45, 45, -90, 90, 180, 37])("puts the %s° preview in the same artwork frame as the printable ring", (angle) => {
+    const { widthMm, lengthMm, holeMm, bodyBoundsMm, bodyOutlineMm, footMm } = contract;
+    const [minX, minY, maxX, maxY] = bodyBoundsMm;
+    const modelBounds = { minX, minY, maxX, maxY, maxZ: 1.6 };
+    const { container } = render(<LiveRing
+      width={widthMm} length={lengthMm} hole={holeMm} angle={angle} modelBounds={modelBounds}
+      contours={{ approximate: [[[0, 0], [20, 0], [20, 2], [0, 2]]] }}
+      contourCanvasBounds={{
+        ...modelBounds,
+        keychainAttachment: {
+          reference: { bounds_mm: [minX, minY, maxX, maxY], outlines_mm: [bodyOutlineMm] },
+          assetCenter: { x: 0, y: 0 },
+        },
+      }} />);
+    const ring = getReactProps<{
+      geometry: THREE.BufferGeometry;
+      position: [number, number, number];
+      rotation: [number, number, number];
+    }>(container.querySelector("mesh")!);
+    const mesh = new THREE.Mesh(ring.geometry);
+    mesh.position.set(...ring.position);
+    mesh.rotation.set(...ring.rotation);
+    mesh.updateMatrixWorld(true);
+    const positions = ring.geometry.attributes.position;
+    const targets = [[-3, 0], [3, 0], [0, 8], [1.25, 5], [-1.25, 5]];
+    for (const [x, y] of targets) {
+      const world = new THREE.Vector2(x, y).rotateAround(new THREE.Vector2(), angle * Math.PI / 180);
+      world.add(new THREE.Vector2(...footMm as [number, number]));
+      const vertex = new THREE.Vector3();
+      let distance = Infinity;
+      for (let index = 0; index < positions.count; index += 1) {
+        vertex.fromBufferAttribute(positions, index).applyMatrix4(mesh.matrixWorld);
+        distance = Math.min(distance, Math.hypot(vertex.x - world.x, vertex.y - world.y));
+      }
+      expect(distance).toBeLessThan(1e-5);
+    }
+  });
+
   describe("live dragging", () => {
     it("does not notify position subscribers when clamping leaves the offsets unchanged", () => {
       useConverterStore.setState({ loop_offset_x: 200, loop_offset_y: 0 });
@@ -212,9 +269,9 @@ describe("KeychainRing3D", () => {
     });
 
     it.each([
-      { angle: 0, clientX: 70, expectedX: -30 },
-      { angle: 45, clientX: 100, expectedX: 0 },
-    ])("allows inward movement when the destination is unconstrained (angle $angle, x $expectedX)", ({ angle, clientX, expectedX }) => {
+      { angle: 0, clientX: 70, expectedX: -30, expectedY: -10 },
+      { angle: 45, clientX: 100, expectedX: 0, expectedY: 0 },
+    ])("clamps to the destination contour when present (angle $angle, x $expectedX)", ({ angle, clientX, expectedX, expectedY }) => {
       vi.useFakeTimers();
       useConverterStore.setState({ loop_offset_x: 0, loop_offset_y: 0 });
       const { container } = render(
@@ -228,7 +285,7 @@ describe("KeychainRing3D", () => {
       fireEvent.pointerMove(window, { clientX, clientY: 110 });
       act(() => vi.advanceTimersToNextFrame());
       expect(useConverterStore.getState().loop_offset_x).toBeCloseTo(expectedX);
-      expect(useConverterStore.getState().loop_offset_y).toBeCloseTo(-10);
+      expect(useConverterStore.getState().loop_offset_y).toBeCloseTo(expectedY);
       fireEvent.pointerUp(window);
     });
 
@@ -331,12 +388,6 @@ describe("KeychainRing3D", () => {
       );
 
       expect(useConverterStore.getState().loop_offset_y).toBe(0);
-    });
-
-    it("geometry is null when hole >= width (component would return null)", () => {
-      // hole === width → invalid geometry → component returns null
-      const geo = createKeychainRingGeometry(3, 8, 3);
-      expect(geo).toBeNull();
     });
 
     it("does not dispose the active geometry during StrictMode mount replay", () => {
@@ -636,16 +687,10 @@ describe("createKeychainRingGeometry", () => {
     expect(geo!.attributes.position.count).toBeGreaterThan(0);
   });
 
-  it("returns null when hole >= min(width, length)", () => {
-    // hole=5 >= min(5, 10)=5 → invalid
-    expect(createKeychainRingGeometry(5, 10, 5)).toBeNull();
-    // hole=6 >= min(4, 8)=4 → invalid
-    expect(createKeychainRingGeometry(4, 8, 6)).toBeNull();
-  });
-
-  it("returns null when hole > width but < length", () => {
-    // hole=4 >= min(3, 8)=3 → invalid
-    expect(createKeychainRingGeometry(3, 8, 4)).toBeNull();
+  it("keeps the preview visible with the same hole limit as the printable ring", () => {
+    const oversized = createKeychainRingGeometry(3, 8, 4)!;
+    const limited = createKeychainRingGeometry(3, 8, 2.4)!;
+    expect(oversized.attributes.position.array).toEqual(limited.attributes.position.array);
   });
 
   it("returns null for zero or negative dimensions", () => {
@@ -677,14 +722,12 @@ describe("computeLoopPosition", () => {
     expect(pos.y).toBe(15);
   });
 
-  it("ignores preset value — always anchors at top-center", () => {
-    // All presets should produce the same base position
-    const presets = ["top-left", "top-right", "left-center", "right-center", "bottom-center", "invalid"];
-    for (const preset of presets) {
-      const pos = computeLoopPosition(preset, bounds, 0, 0);
-      expect(pos.x).toBe(0);
-      expect(pos.y).toBe(15);
-    }
+  it.each([
+    ["top-left", -10, 15], ["top-right", 10, 15],
+    ["left-center", -10, 0], ["right-center", 10, 0],
+    ["bottom-center", 0, -15], ["invalid", 0, 15],
+  ])("honors the %s anchor", (preset, x, y) => {
+    expect(computeLoopPosition(preset, bounds, 0, 0)).toEqual({ x, y });
   });
 
   it("applies offset correctly", () => {
@@ -713,7 +756,7 @@ describe("computeLoopPosition", () => {
       "top-center", contourBounds, 0, -25, contours, 8, contourBounds,
     );
 
-    expect(pos).toEqual({ x: 0, y: 10 });
+    expect(pos).toEqual({ x: 0, y: 9.6 });
   });
 
   it("scales the local contour with a live 60 to 90 mm preview resize", () => {
@@ -744,7 +787,7 @@ describe("computeLoopPosition", () => {
       previewSpace.toDisplayPoint,
     );
 
-    expect(pos).toEqual({ x: 0, y: 15 });
+    expect(pos).toEqual({ x: 0, y: 14.6 });
   });
 
   it.each([-6.5, -10.5])(
@@ -769,7 +812,7 @@ describe("computeLoopPosition", () => {
         "top-center", contourBounds, 0, capturedOffsetY, contours, 7, contourBounds,
       );
 
-      expect(pos).toEqual({ x: 0, y: 28 });
+      expect(pos).toEqual({ x: 0, y: 27.6 });
     },
   );
 
@@ -799,7 +842,7 @@ describe("computeLoopPosition", () => {
       backingBounds,
     );
 
-    expect(pos).toEqual({ x: 0, y: 10 });
+    expect(pos).toEqual({ x: 0, y: 9.6 });
   });
 
   it.each([0, -35])(
@@ -827,7 +870,7 @@ describe("computeLoopPosition", () => {
 
       // Band x in [41.5, 48.5]; lowest top is 90 - 0.75 * 48.5 = 53.625.
       expect(pos.x).toBe(0);
-      expect(pos.y).toBeCloseTo(53.625 - 45, 9);
+      expect(pos.y).toBeCloseTo(53.225 - 45, 9);
     },
   );
 

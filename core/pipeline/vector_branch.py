@@ -44,7 +44,7 @@ from core.color_similarity import parse_hex_color, rgb_to_hex
 from core.geometry_utils import (
     create_keychain_loop,
     keychain_loop_hole_clearance,
-    resolve_keychain_contact_anchor_y,
+    resolve_keychain_attachment,
 )
 from core.material_dynamic_solver import (
     DynamicMaterialCandidateError,
@@ -475,10 +475,16 @@ def _scene_band_edges(
     scene: trimesh.Scene,
     band_min: float,
     band_max: float,
+    tangent_axis: int,
+    outward_sign: int,
+    x_mirrored: bool,
 ) -> tuple[np.ndarray, np.ndarray] | None:
-    """Collect transformed XY mesh edges whose X span touches a band."""
+    """Collect scene edges in the artwork contact band's (tangent, outward) frame."""
     starts_parts: list[np.ndarray] = []
     ends_parts: list[np.ndarray] = []
+    artwork_x_sign = -1 if x_mirrored else 1
+    tangent_sign = artwork_x_sign if tangent_axis == 0 else 1
+    normal_sign = outward_sign * (artwork_x_sign if tangent_axis == 1 else 1)
     for node_name in scene.graph.nodes_geometry:
         try:
             transform, geometry_name = scene.graph[node_name]
@@ -495,16 +501,19 @@ def _scene_band_edges(
         if edges.shape[1] != 2 or len(edges) == 0:
             continue
 
-        starts = vertices[edges[:, 0]]
-        ends = vertices[edges[:, 1]]
-        keep = np.all(np.isfinite(starts), axis=1) & np.all(
-            np.isfinite(ends), axis=1
+        tangent = vertices[:, tangent_axis] * tangent_sign
+        start_tangent, end_tangent = tangent[edges[:, 0]], tangent[edges[:, 1]]
+        keep = (np.minimum(start_tangent, end_tangent) <= band_max) & (
+            np.maximum(start_tangent, end_tangent) >= band_min
         )
-        keep &= np.minimum(starts[:, 0], ends[:, 0]) <= band_max
-        keep &= np.maximum(starts[:, 0], ends[:, 0]) >= band_min
         if np.any(keep):
-            starts_parts.append(starts[keep])
-            ends_parts.append(ends[keep])
+            normal = vertices[:, 1 - tangent_axis] * normal_sign
+            starts = np.column_stack((start_tangent[keep], normal[edges[keep, 0]]))
+            ends = np.column_stack((end_tangent[keep], normal[edges[keep, 1]]))
+            finite = np.isfinite(starts[:, 1]) & np.isfinite(ends[:, 1])
+            if np.any(finite):
+                starts_parts.append(starts[finite])
+                ends_parts.append(ends[finite])
 
     if not starts_parts:
         return None
@@ -543,10 +552,13 @@ def _top_profile_at(
 
 def _scene_top_edge_range_for_contact_band(
     scene: trimesh.Scene,
-    center_x: float,
+    tangent: float,
     contact_width: float,
+    tangent_axis: int,
+    outward_sign: int,
+    x_mirrored: bool,
 ) -> tuple[float, float] | None:
-    """Return the lowest and highest scene top edge inside a horizontal band.
+    """Return the lowest and highest outward outline inside a contact band.
 
     The top profile is piecewise linear between edge endpoints, so sampling
     the band ends plus every endpoint inside the band finds both extremes.
@@ -554,9 +566,9 @@ def _scene_top_edge_range_for_contact_band(
     if contact_width <= 0:
         return None
 
-    band_min = center_x - contact_width / 2.0
-    band_max = center_x + contact_width / 2.0
-    band_edges = _scene_band_edges(scene, band_min, band_max)
+    band_min = tangent - contact_width / 2.0
+    band_max = tangent + contact_width / 2.0
+    band_edges = _scene_band_edges(scene, band_min, band_max, tangent_axis, outward_sign, x_mirrored)
     if band_edges is None:
         return None
     starts, ends = band_edges
@@ -585,7 +597,6 @@ def _vector_loop_attach_point(
     if x_mirrored:
         min_x, max_x = -max_x, -min_x
     center_x = (min_x + max_x) / 2.0
-    center_y = (min_y + max_y) / 2.0
     offset_x = _coerce_finite_float(ctx.get("loop_offset_x"), 0.0)
     offset_y = _coerce_finite_float(ctx.get("loop_offset_y"), 0.0)
 
@@ -593,42 +604,24 @@ def _vector_loop_attach_point(
     if isinstance(loop_pos, (list, tuple)) and len(loop_pos) >= 2:
         attach_x = _coerce_finite_float(loop_pos[0], center_x)
         attach_y = _coerce_finite_float(loop_pos[1], max_y)
-    else:
-        preset = str(ctx.get("loop_position_preset") or "top-center")
-        if (
-            preset == "top-center"
-            and scene is not None
-            and abs(_coerce_finite_float(ctx.get("loop_angle"), 0.0)) <= 1e-9
-        ):
-            requested_x = (center_x + offset_x) * x_direction
-            loop_width = _coerce_positive_float(ctx.get("loop_width"), 4.0)
-            top_range = _scene_top_edge_range_for_contact_band(
-                scene, requested_x, loop_width
-            )
-            if top_range is not None:
-                hole_clearance = keychain_loop_hole_clearance(
-                    loop_width,
-                    _coerce_positive_float(ctx.get("loop_length"), 8.0),
-                    _coerce_positive_float(ctx.get("loop_hole"), 2.5),
-                )
-                anchor_y = resolve_keychain_contact_anchor_y(
-                    *top_range, hole_clearance
-                )
-                return requested_x, anchor_y + max(0.0, offset_y)
-        if preset == "top-left":
-            attach_x, attach_y = min_x, max_y
-        elif preset == "top-right":
-            attach_x, attach_y = max_x, max_y
-        elif preset == "left-center":
-            attach_x, attach_y = min_x, center_y
-        elif preset == "right-center":
-            attach_x, attach_y = max_x, center_y
-        elif preset == "bottom-center":
-            attach_x, attach_y = center_x, min_y
-        else:
-            attach_x, attach_y = center_x, max_y
+        return (attach_x + offset_x) * x_direction, attach_y + offset_y
 
-    return (attach_x + offset_x) * x_direction, attach_y + offset_y
+    def contact_range(axis: int, sign: int, tangent: float, width: float) -> tuple[float, float] | None:
+        if scene is None:
+            return None
+        return _scene_top_edge_range_for_contact_band(scene, tangent, width, axis, sign, x_mirrored)
+
+    loop_width = _coerce_positive_float(ctx.get("loop_width"), 4.0)
+    clearance = keychain_loop_hole_clearance(
+        loop_width,
+        _coerce_positive_float(ctx.get("loop_length"), 8.0),
+        _coerce_positive_float(ctx.get("loop_hole"), 2.5),
+    )
+    attach_x, attach_y = resolve_keychain_attachment(
+        (min_x, min_y, max_x, max_y), str(ctx.get("loop_position_preset") or "top-center"),
+        offset_x, offset_y, loop_width, clearance, contact_range,
+    )
+    return attach_x * x_direction, attach_y
 
 
 def _geometry_xy_distance(bounds: np.ndarray, x: float, y: float) -> tuple[float, float]:

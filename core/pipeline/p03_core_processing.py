@@ -1128,6 +1128,7 @@ def run(ctx: dict) -> dict:
     ctx['mask_solid'] = mask_solid
     ctx['target_w'] = target_w
     ctx['target_h'] = target_h
+    ctx['pixel_scale'] = result.get('pixel_scale')
     ctx['debug_data'] = result.get('debug_data') if isinstance(result, dict) else None
     ctx['quantized_image'] = quantized_image
     if quantized_image is not None:

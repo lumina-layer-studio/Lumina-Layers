@@ -6786,8 +6786,8 @@ export const translations: Record<string, Record<"zh" | "en", string>> = {
     en: "Rotation Angle",
   },
   loop_angle_hint: {
-    zh: "挂件环相对于模型的旋转角度（度）。0° 为竖直向上，正值顺时针旋转。",
-    en: "Rotation angle of the loop relative to the model (in degrees). 0° is vertical upward; positive values rotate clockwise.",
+    zh: "挂件环绕附着点旋转。从上方看，0° 朝向图案顶部，正值逆时针旋转。",
+    en: "The loop rotates around its attachment point. Viewed from above, 0° points toward the top of the artwork and positive angles turn counterclockwise.",
   },
   loop_position_preset: {
     zh: "位置预设",
@@ -6806,8 +6806,8 @@ export const translations: Record<string, Record<"zh" | "en", string>> = {
     en: "Y Offset",
   },
   loop_offset_y_hint: {
-    zh: "挂件环相对当前预设吸附点的垂直偏移（毫米）。顶部居中且未旋转时，向内移动会限制在模型局部轮廓处。",
-    en: "Vertical offset from the current preset anchor (in mm). For an unrotated top-center loop, inward movement is clamped at the model's local contour.",
+    zh: "挂件环相对当前预设吸附点的垂直偏移（毫米）。顶部居中时，向内移动会限制在模型局部轮廓处。",
+    en: "Vertical offset from the preset anchor (in mm). A top-center loop stops at the local contour when moved inward.",
   },
   loop_preset_top_center: {
     zh: "上中",

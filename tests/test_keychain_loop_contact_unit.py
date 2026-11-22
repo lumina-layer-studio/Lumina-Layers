@@ -81,7 +81,7 @@ def test_vector_loop_overlaps_sloped_edge_instead_of_touching_a_corner(
 
     # Lowest contour point under the band x in [41.5, 48.5] is 90 - 0.75 * 48.5.
     assert attach_x == pytest.approx(45.0)
-    assert attach_y == pytest.approx(53.625)
+    assert attach_y == pytest.approx(53.225)
     _assert_connected_and_hole_clear(_slope_body(), attach_x, attach_y)
 
 

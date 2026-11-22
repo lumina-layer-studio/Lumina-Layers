@@ -10,14 +10,16 @@ S05 — 2D 预览图生成与挂件环绘制。
 
 import time
 import numpy as np
-from PIL import Image, ImageDraw
+from PIL import Image
 from typing import Optional, Dict, Tuple
 
 from api.structured_logging import get_logger
 from core.geometry_utils import (
     keychain_loop_hole_clearance,
-    resolve_keychain_contact_anchor_y,
+    keychain_loop_footprint,
+    resolve_keychain_attachment,
 )
+from core.pipeline.p06_bed_rendering import draw_keychain_footprint
 from core.pipeline.preview_color_utils import (
     build_material_preview_warning_extra,
     resolve_material_preview,
@@ -75,14 +77,8 @@ def _calculate_loop_position(
     """Calculate keychain loop attach position based on preset and offset.
     根据位置预设和偏移量计算钥匙扣挂孔的吸附位置。
 
-    Extracts model bounds from mask_solid and selects a preset snap point. When
-    a top-center contact width is supplied, the loop follows the local contour
-    at its final X position: its bottom sits at the lowest contour point under
-    the band (capped by the hole clearance) so sloped edges stay connected,
-    and inward Y offsets stop there.
-    从 mask_solid 提取模型边界并选择预设吸附点；顶部居中且提供接触宽度时，
-    挂环跟随最终 X 位置的局部轮廓：底边落在接触带下方轮廓的最低点（受挂孔
-    余量限制），保证斜边仍整段相连，向内的 Y 偏移停在该位置。
+    Use the outside edges of occupied cells in artwork millimetres. The
+    selected contour and joint inset are independent of the rotation angle.
 
     Args:
         position_preset (str): Preset name for snap position.
@@ -96,9 +92,8 @@ def _calculate_loop_position(
         target_w (int): Image width in pixels. (图像宽度，像素)
         target_h (int): Image height in pixels. (图像高度，像素)
         pixel_scale (float): mm per pixel conversion factor. (像素到 mm 的缩放因子)
-        contact_width_mm (float): Width used to keep a top-center loop outside
-            the local contour. Zero preserves the legacy bounds-only behavior.
-            (用于防止顶部居中挂环侵入局部轮廓的接触宽度；0 保留旧边界行为)
+        contact_width_mm (float): Width of the contact band. Zero uses the
+            preset on the bounds directly. (接触带宽度；0 时使用包围盒位置)
         hole_clearance_mm (float): Maximum depth the loop may sink below the
             highest contour point before its hole meets the body.
             (挂孔压入本体前，挂环相对轮廓最高点可下沉的最大深度)
@@ -125,59 +120,31 @@ def _calculate_loop_position(
     min_col = int(col_indices[0])
     max_col = int(col_indices[-1])
 
-    # Convert pixel bounds to mm coordinates.
-    # In the image coordinate system, row 0 is the top.
-    # In the mm coordinate system used by the 3D model,
-    # Y increases upward: y_mm = (target_h - 1 - row) * pixel_scale
-    min_x_mm = min_col * pixel_scale
-    max_x_mm = max_col * pixel_scale
-    # max_row (bottom in image) -> minY in mm; min_row (top in image) -> maxY in mm
-    min_y_mm = (target_h - 1 - max_row) * pixel_scale
-    max_y_mm = (target_h - 1 - min_row) * pixel_scale
+    bounds = (
+        min_col * pixel_scale,
+        (target_h - 1 - max_row) * pixel_scale,
+        (max_col + 1) * pixel_scale,
+        (target_h - min_row) * pixel_scale,
+    )
 
-    center_x_mm = (min_x_mm + max_x_mm) / 2.0
-    center_y_mm = (min_y_mm + max_y_mm) / 2.0
+    def contact_range(axis: int, sign: int, tangent: float, width: float) -> tuple[float, float] | None:
+        # In this view, columns grow along the contact band and rows start at
+        # the outward edge. A reversed normal has a negative world origin.
+        cells = mask_solid[::-1]
+        if axis == 1:
+            cells = cells.T
+        if sign > 0:
+            cells = cells[::-1]
+        top = _top_edge_range_for_contact_band(cells, tangent, width, cells.shape[0], pixel_scale)
+        if top is None or sign > 0:
+            return top
+        origin = -cells.shape[0] * pixel_scale
+        return top[0] + origin, top[1] + origin
 
-    # Select base snap point based on preset
-    preset = position_preset if position_preset else "top-center"
-
-    if preset == "top-center":
-        requested_x = center_x_mm + offset_x
-        top_range = _top_edge_range_for_contact_band(
-            mask_solid,
-            requested_x,
-            contact_width_mm,
-            target_h,
-            pixel_scale,
-        )
-        if top_range is not None:
-            anchor_y = resolve_keychain_contact_anchor_y(
-                *top_range, hole_clearance_mm
-            )
-            return (requested_x, anchor_y + max(0.0, offset_y))
-        base_x = center_x_mm
-        base_y = max_y_mm
-    elif preset == "top-left":
-        base_x = min_x_mm
-        base_y = max_y_mm
-    elif preset == "top-right":
-        base_x = max_x_mm
-        base_y = max_y_mm
-    elif preset == "left-center":
-        base_x = min_x_mm
-        base_y = center_y_mm
-    elif preset == "right-center":
-        base_x = max_x_mm
-        base_y = center_y_mm
-    elif preset == "bottom-center":
-        base_x = center_x_mm
-        base_y = min_y_mm
-    else:
-        # Unknown preset — fall back to top-center
-        base_x = center_x_mm
-        base_y = max_y_mm
-
-    return (base_x + offset_x, base_y + offset_y)
+    return resolve_keychain_attachment(
+        bounds, position_preset or "top-center", offset_x, offset_y,
+        contact_width_mm, hole_clearance_mm, contact_range,
+    )
 
 
 def _calculate_loop_info(
@@ -260,20 +227,15 @@ def _calculate_loop_info(
         attach_y_mm = (target_h - 1 - top_row) * pixel_scale
     else:
         # Preset-based position calculation
-        effective_preset = position_preset or "top-center"
         attach_x_mm, attach_y_mm = _calculate_loop_position(
-            position_preset=effective_preset,
+            position_preset=position_preset,
             offset_x=offset_x,
             offset_y=offset_y,
             mask_solid=mask_solid,
             target_w=target_w,
             target_h=target_h,
             pixel_scale=pixel_scale,
-            contact_width_mm=(
-                loop_width
-                if effective_preset == "top-center" and abs(angle_deg) <= 1e-9
-                else 0.0
-            ),
+            contact_width_mm=loop_width,
             hole_clearance_mm=keychain_loop_hole_clearance(
                 loop_width, loop_length, loop_hole
             ),
@@ -324,7 +286,6 @@ def _draw_loop_on_preview(preview_rgba, loop_info, color_conf, pixel_scale):
         np.ndarray: 绘制挂件环后的 RGBA 预览图
     """
     preview_pil = Image.fromarray(preview_rgba, mode='RGBA')
-    draw = ImageDraw.Draw(preview_pil)
 
     resolved_rgba = loop_info.get("color_rgba")
     if resolved_rgba is None:
@@ -341,42 +302,11 @@ def _draw_loop_on_preview(preview_rgba, loop_info, color_conf, pixel_scale):
         resolved_rgba = compatibility_resolution.rgba
     loop_color_rgba = tuple(resolved_rgba)
 
-    attach_col = int(loop_info['attach_x_mm'] / pixel_scale)
-    attach_row = int((preview_rgba.shape[0] - 1) - loop_info['attach_y_mm'] / pixel_scale)
-
-    loop_w_px = int(loop_info['width_mm'] / pixel_scale)
-    loop_h_px = int(loop_info['length_mm'] / pixel_scale)
-    hole_r_px = int(loop_info['hole_dia_mm'] / 2 / pixel_scale)
-    circle_r_px = loop_w_px // 2
-
-    loop_bottom = attach_row
-    loop_left = attach_col - loop_w_px // 2
-    loop_right = attach_col + loop_w_px // 2
-
-    rect_h_px = loop_h_px - circle_r_px
-    rect_bottom = loop_bottom
-    rect_top = loop_bottom - rect_h_px
-
-    circle_center_y = rect_top
-    circle_center_x = attach_col
-
-    if rect_h_px > 0:
-        draw.rectangle(
-            [loop_left, rect_top, loop_right, rect_bottom],
-            fill=loop_color_rgba
-        )
-
-    draw.ellipse(
-        [circle_center_x - circle_r_px, circle_center_y - circle_r_px,
-         circle_center_x + circle_r_px, circle_center_y + circle_r_px],
-        fill=loop_color_rgba
+    profile = keychain_loop_footprint(
+        loop_info["width_mm"], loop_info["length_mm"], loop_info["hole_dia_mm"],
+        loop_info["attach_x_mm"], loop_info["attach_y_mm"], loop_info.get("angle_deg", 0.0),
     )
-
-    draw.ellipse(
-        [circle_center_x - hole_r_px, circle_center_y - hole_r_px,
-         circle_center_x + hole_r_px, circle_center_y + hole_r_px],
-        fill=(0, 0, 0, 0)
-    )
+    draw_keychain_footprint(preview_pil, profile, (0, preview_pil.height), 1 / pixel_scale, loop_color_rgba)
 
     return np.array(preview_pil)
 

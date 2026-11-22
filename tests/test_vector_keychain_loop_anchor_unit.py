@@ -44,7 +44,7 @@ def test_vector_top_center_clamps_inward_offset_to_local_contact_edge(
     )
 
     assert attach_x == 21.0
-    assert attach_y == 58.0
+    assert attach_y == pytest.approx(57.6)
 
 
 def _read_exported_loop_xy(path: Path) -> np.ndarray:

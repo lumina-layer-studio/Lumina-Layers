@@ -31,6 +31,7 @@ from trimesh.visual.material import PBRMaterial
 
 from api.structured_logging import get_logger
 from config import PrinterConfig
+from core.keychain_reference import KEYCHAIN_REFERENCE_METADATA, vector_keychain_reference
 from core.vector_engine import (
     _load_vector_parse_clip_cache_artifact_by_provenance,
     _rasterize_geometry_roi_mask,
@@ -2342,6 +2343,10 @@ def export_vector_quick_preview_glb(
     t0 = time.perf_counter()
     glb_scene = trimesh.Scene()
     for part in parts:
+        if part.role == "backing" and part.extrusions:
+            reference = vector_keychain_reference(part.extrusions[0].footprint)
+            if reference is not None:
+                glb_scene.metadata[KEYCHAIN_REFERENCE_METADATA] = reference
         if part.extrusions:
             meshes = [
                 _mesh_from_analytic_extrusion(extrusion)

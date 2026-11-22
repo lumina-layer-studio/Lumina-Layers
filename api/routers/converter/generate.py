@@ -2597,6 +2597,13 @@ async def convert_generate(
         "material_max_layer_count": dynamic_material_settings[2],
         "material_delta_e00_tolerance": dynamic_material_settings[3],
     }
+    cached_scale = cache.get("pixel_scale")
+    if (
+        params["reuse_preview_analysis"] and preview_target_width_matches
+        and core_modeling_mode in {CoreModelingMode.HIGH_FIDELITY, CoreModelingMode.PIXEL}
+        and isinstance(cached_scale, (int, float)) and math.isfinite(cached_scale) and cached_scale > 0
+    ):
+        params["cached_raster_pixel_scale"] = float(cached_scale)
     if session_material_source == "material_archive":
         selected_materials = session_data.get("selected_materials") or []
         params["selected_materials"] = selected_materials

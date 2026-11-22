@@ -40,6 +40,7 @@ import { useSettingsStore } from "../stores/settingsStore";
 import { resolveConverterSettings } from "../stores/converter/project";
 import { computeScaleFactor } from "../utils/scaleUtils";
 import { createPreviewSpace } from "../utils/previewSpace";
+import type { PreviewCanvasBounds } from "../utils/keychainReference";
 import { resolveCameraClippingPlanes } from "../utils/cameraDepthPrecision";
 import { useI18n } from "../i18n/context";
 import { useThemeConfig } from "../hooks/useThemeConfig";
@@ -886,7 +887,7 @@ function Scene3D({ modelUrl, deferInitialization = false, suspended = false }: S
   const [performanceVisible, setPerformanceVisible] = useState(false);
   const [previewCanvasBoundsState, setPreviewCanvasBoundsState] = useState<{
     sourceUrl: string;
-    bounds: PreviewModelBounds;
+    bounds: PreviewCanvasBounds;
   } | null>(null);
   const [modelSurfaceBedGridVisible, setModelSurfaceBedGridVisible] = useState(true);
 
@@ -904,7 +905,7 @@ function Scene3D({ modelUrl, deferInitialization = false, suspended = false }: S
 
   const handlePreviewCanvasBoundsChange = useCallback((
     sourceUrl: string,
-    bounds: PreviewModelBounds | null,
+    bounds: PreviewCanvasBounds | null,
   ) => {
     setPreviewCanvasBoundsState((current) => {
       if (bounds) {

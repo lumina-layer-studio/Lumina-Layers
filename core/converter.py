@@ -367,6 +367,7 @@ def convert_image_to_3d(
     batch_preview: bool = False,
     external_spool_material: str | None = None,
     materials_dir: Optional[str] = None,
+    cached_raster_pixel_scale: float | None = None,
 ):
     """Main conversion function: Convert image to 3D model.
     主要转换函数：将图像转换为 3D 模型。
@@ -510,6 +511,7 @@ def convert_image_to_3d(
         "quantized_image_path": quantized_image_path,
         "material_matrix_path": material_matrix_path,
         "reuse_preview_analysis": reuse_preview_analysis,
+        "cached_raster_pixel_scale": cached_raster_pixel_scale,
         "preview_glb_path": preview_glb_path,
         "vector_parse_clip_cache_path": vector_parse_clip_cache_path,
         "piece_boundary_geometry_path": piece_boundary_geometry_path,
@@ -822,6 +824,7 @@ def generate_final_model(
     svg_hole_max_width_mm: float = 0.1,
     external_spool_material: str | None = None,
     materials_dir: Optional[str] = None,
+    cached_raster_pixel_scale: float | None = None,
 ):
     """Wrapper function for generating final model.
     包装函数，用于生成最终模型。
@@ -1032,6 +1035,7 @@ def generate_final_model(
         fridge_magnets=fridge_magnets,
         material_source=material_source,
         materials_dir=materials_dir,
+        cached_raster_pixel_scale=cached_raster_pixel_scale,
         selected_materials=selected_materials,
         material_layer_count=material_layer_count,
         material_layer_height_mm=material_layer_height_mm,

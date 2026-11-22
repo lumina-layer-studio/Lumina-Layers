@@ -318,7 +318,7 @@ def _build_preview_glb(
         )
     key = mesh_input_digest(
         "segmented", cache.get("matched_rgb"), height_identity, cache.get("mask_solid"),
-        cache.get("backing_mask"), cache.get("target_width_mm"), cache.get("glb_max_meshes"),
+        cache.get("backing_mask"), cache.get("target_width_mm"), cache.get("pixel_scale"), cache.get("glb_max_meshes"),
         material_inputs, PrinterConfig.NOZZLE_WIDTH, PrinterConfig.LAYER_HEIGHT,
         _resolve_kernel_choice(),
     )

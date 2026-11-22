@@ -20,6 +20,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from config import PrinterConfig
 from core.converter import generate_segmented_glb
+from core.keychain_reference import KEYCHAIN_REFERENCE_METADATA
 from core.pipeline.s11_glb_preview import generate_realtime_glb
 
 # Total Z layers hard-coded inside generate_segmented_glb().
@@ -44,6 +45,23 @@ def _make_cache(
         "target_h": h,
         "target_width_mm": target_width_mm,
     }
+
+
+def test_keychain_reference_keeps_the_print_grid_in_the_preview_glb(tmp_path) -> None:
+    mask = np.zeros((10, 12), dtype=bool)
+    mask[1:9, 2:6] = True
+    mask[4:9, 6:10] = True
+    rgb = np.broadcast_to(np.array([220, 20, 60], dtype=np.uint8), (10, 12, 3)).copy()
+    cache = {**_make_cache(rgb, mask, target_width_mm=6.0), "pixel_scale": 0.42}
+    glb = generate_segmented_glb(cache, output_path=str(tmp_path / "preview.glb"))
+    assert glb is not None
+    with open(glb, "rb") as stream:
+        stream.seek(12)
+        json_length, _ = struct.unpack("<II", stream.read(8))
+        scene = json.loads(stream.read(json_length))["scenes"][0]
+    reference = scene["extras"][KEYCHAIN_REFERENCE_METADATA]
+    assert reference["bounds_mm"] == pytest.approx([0.84, 0.42, 4.2, 3.78])
+    np.testing.assert_allclose(reference["bands_mm"][0], [[0.84, 2.52, 3.78], [2.52, 4.2, 2.52]])
 
 
 def _get_color_nodes(scene: trimesh.Scene) -> dict[str, trimesh.Trimesh]:

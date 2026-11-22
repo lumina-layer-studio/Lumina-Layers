@@ -77,9 +77,7 @@ const validGeomParamsArb = fc
   .filter(({ hole }) => hole > 0.1);
 
 /**
- * Generator for invalid geometry params where at least one of:
- * - hole >= min(width, length), OR
- * - any param <= 0
+ * Generator for invalid geometry params with a non-positive dimension.
  */
 const invalidGeomParamsArb = fc.oneof(
   // Case 1: some param <= 0
@@ -98,14 +96,6 @@ const invalidGeomParamsArb = fc.oneof(
     length: fc.double({ min: 1, max: 15, noNaN: true, noDefaultInfinity: true }),
     hole: fc.double({ min: -10, max: 0, noNaN: true, noDefaultInfinity: true }),
   }),
-  // Case 2: all positive but hole >= min(width, length)
-  fc
-    .record({
-      width: fc.double({ min: 1, max: 10, noNaN: true, noDefaultInfinity: true }),
-      length: fc.double({ min: 1, max: 15, noNaN: true, noDefaultInfinity: true }),
-      hole: fc.double({ min: 1, max: 15, noNaN: true, noDefaultInfinity: true }),
-    })
-    .filter(({ width, length, hole }) => hole >= Math.min(width, length)),
 );
 
 // ========== Property-Based Tests ==========
@@ -116,10 +106,9 @@ describe("KeychainRing3D — Property-Based Tests", () => {
    * **Validates: Requirements 2.2, 3.4**
    *
    * For any valid modelBounds (minX < maxX, minY < maxY) and any offset,
-   * computeLoopPosition returns top-center base point plus the offset.
-   * Preset parameter is ignored — always anchors at top-center.
+   * computeLoopPosition returns the selected bounds anchor plus the offset.
    */
-  it("Property 3: 前端位置计算正确性 — position equals top-center base + offset", () => {
+  it("preserves offsets relative to each selected bounds anchor", () => {
     fc.assert(
       fc.property(
         presetArb,
@@ -127,14 +116,10 @@ describe("KeychainRing3D — Property-Based Tests", () => {
         offsetArb,
         offsetArb,
         (preset, bounds, offX, offY) => {
-          // Always top-center regardless of preset
-          const expectedBaseX = (bounds.minX + bounds.maxX) / 2;
-          const expectedBaseY = bounds.maxY;
-
+          const base = computeLoopPosition(preset, bounds, 0, 0);
           const result = computeLoopPosition(preset, bounds, offX, offY);
-
-          expect(result.x).toBeCloseTo(expectedBaseX + offX, 10);
-          expect(result.y).toBeCloseTo(expectedBaseY + offY, 10);
+          expect(result.x).toBeCloseTo(base.x + offX, 10);
+          expect(result.y).toBeCloseTo(base.y + offY, 10);
         },
       ),
       { numRuns: 200 },
@@ -182,7 +167,7 @@ describe("KeychainRing3D — Property-Based Tests", () => {
    * Feature: keychain-loop-enhancement, Property 6: 前端几何体无效参数返回 null
    * **Validates: Requirements 6.3**
    *
-   * For any invalid params (hole >= min(width, length) or any param <= 0),
+   * For any invalid params (any param <= 0),
    * createKeychainRingGeometry returns null.
    */
   it("Property 6: 前端几何体无效参数返回 null — invalid params produce null geometry", () => {

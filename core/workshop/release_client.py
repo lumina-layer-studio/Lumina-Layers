@@ -10,7 +10,8 @@ import json
 import os
 import re
 import tempfile
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import AbstractContextManager, closing, contextmanager
 from pathlib import Path
 from urllib.parse import quote, urljoin, urlsplit
 
@@ -20,7 +21,8 @@ from config import TEMP_DIR
 
 from .constants import MAX_PACKAGE_BYTES
 from .errors import WorkshopPackageError, WorkshopReleaseError
-from .models import RegistryVersion, validate_semver
+from .mirror import WorkshopMirror, WorkshopMirrorUnavailable
+from .models import MODULE_ID_PATTERN, RegistryVersion, validate_semver
 from .package_validator import inspect_workshop_package
 
 
@@ -190,6 +192,22 @@ def stream_package_download(
     将一个模块包流式写入有界临时文件。
     """
 
+    return _save_package(_stream_github_package(url), expected_bytes, expected_sha256)
+
+
+@contextmanager
+def _stream_github_package(url: str) -> Iterator[httpx.Response]:
+    with _new_http_client() as client, closing(_request_with_redirects(
+        client, url, accept="application/octet-stream",
+    )) as response:
+        yield response
+
+
+def _save_package(
+    source: AbstractContextManager[httpx.Response],
+    expected_bytes: int | None,
+    expected_sha256: str | None,
+) -> Path:
     Path(TEMP_DIR).mkdir(parents=True, exist_ok=True)
     fd, raw_path = tempfile.mkstemp(
         suffix=".lumina-workshop",
@@ -200,35 +218,20 @@ def stream_package_download(
     received = 0
     digest = hashlib.sha256()
     try:
-        with os.fdopen(fd, "wb") as output:
-            with _new_http_client() as client:
-                response = _request_with_redirects(
-                    client,
-                    url,
-                    accept="application/octet-stream",
+        with os.fdopen(fd, "wb") as output, source as response:
+            if response.status_code != 200:
+                raise WorkshopReleaseError(
+                    f"package download failed with status {response.status_code}"
                 )
-                try:
-                    if response.status_code != 200:
-                        raise WorkshopReleaseError(
-                            "package download failed with status "
-                            f"{response.status_code}"
-                        )
-                    _content_length_within_limit(
-                        response,
-                        MAX_PACKAGE_BYTES,
-                    )
-                    for chunk in response.iter_bytes():
-                        received += len(chunk)
-                        if received > MAX_PACKAGE_BYTES:
-                            raise WorkshopReleaseError(
-                                "package download exceeds the size limit"
-                            )
-                        digest.update(chunk)
-                        output.write(chunk)
-                    output.flush()
-                    os.fsync(output.fileno())
-                finally:
-                    response.close()
+            _content_length_within_limit(response, MAX_PACKAGE_BYTES)
+            for chunk in response.iter_bytes():
+                received += len(chunk)
+                if received > MAX_PACKAGE_BYTES:
+                    raise WorkshopReleaseError("package download exceeds the size limit")
+                digest.update(chunk)
+                output.write(chunk)
+            output.flush()
+            os.fsync(output.fileno())
         if expected_bytes is not None and received != expected_bytes:
             raise WorkshopReleaseError(
                 "downloaded package size does not match release metadata"
@@ -244,11 +247,8 @@ def stream_package_download(
                 "downloaded package digest does not match release metadata"
             )
         return path
-    except (OSError, httpx.HTTPError, WorkshopReleaseError):
-        try:
-            path.unlink(missing_ok=True)
-        except OSError:
-            pass
+    except (OSError, httpx.HTTPError, WorkshopReleaseError, WorkshopMirrorUnavailable):
+        _remove_rejected_download(path)
         raise
 
 
@@ -291,6 +291,23 @@ def _remove_rejected_download(path: Path) -> None:
         pass
 
 
+def _download_preferred_package(candidate: RegistryVersion, module_id: str) -> Path:
+    mirror = WorkshopMirror.from_environment()
+    if mirror is not None:
+        try:
+            return _save_package(
+                mirror.stream(
+                    "packages", module_id, candidate.version, candidate.asset_name,
+                    accept="application/octet-stream",
+                ),
+                candidate.asset_bytes,
+                candidate.sha256,
+            )
+        except WorkshopMirrorUnavailable:
+            pass
+    return stream_package_download(candidate.download_url, candidate.asset_bytes, candidate.sha256)
+
+
 def download_registry_package(
     candidate: RegistryVersion,
     *,
@@ -301,20 +318,19 @@ def download_registry_package(
     下载并再次校验 Registry 指定的精确候选版本。
     """
 
-    downloader = package_downloader or stream_package_download
-    path = downloader(
-        candidate.download_url,
-        candidate.asset_bytes,
-        candidate.sha256,
-    )
-    asset_match = _GITHUB_ASSET_NAME.fullmatch(candidate.asset_name)
-    if asset_match is None:
-        _remove_rejected_download(path)
+    suffix = f"-{candidate.version}.lumina-workshop"
+    module_id = candidate.asset_name.removesuffix(suffix)
+    if module_id == candidate.asset_name or MODULE_ID_PATTERN.fullmatch(module_id) is None:
         raise WorkshopReleaseError("Registry asset name is invalid")
+    path = (
+        _download_preferred_package(candidate, module_id)
+        if package_downloader is None
+        else package_downloader(candidate.download_url, candidate.asset_bytes, candidate.sha256)
+    )
     try:
         _inspect_remote_package(
             path,
-            expected_module_id=asset_match.group("module_id"),
+            expected_module_id=module_id,
             expected_version=candidate.version,
             expected_manifest_sha256=candidate.manifest_sha256,
         )

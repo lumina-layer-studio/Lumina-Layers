@@ -657,9 +657,17 @@ export const translations: Record<string, Record<"zh" | "en", string>> = {
     zh: "请详细描述发生了什么、你期望发生什么、复现步骤……",
     en: "What happened, what did you expect, and how can we reproduce it?",
   },
-  bug_report_modal_email_label: {
-    zh: "你的邮箱（可选，方便我们回复你）",
-    en: "Your email (optional, so we can follow up)",
+  bug_report_modal_needs_reply: {
+    zh: "需要人工回复 / 修复后通知我",
+    en: "Need a reply / notify me when fixed",
+  },
+  bug_report_modal_contact_label: {
+    zh: "联系方式（邮箱、QQ 或微信）",
+    en: "Contact (email, QQ, or WeChat)",
+  },
+  bug_report_modal_diagnostics_only: {
+    zh: "仅上报诊断信息，无需回复",
+    en: "Send diagnostics only, no reply needed",
   },
   bug_report_modal_screenshot_label: {
     zh: "截图（可选）",
@@ -1800,6 +1808,10 @@ export const translations: Record<string, Record<"zh" | "en", string>> = {
   bug_report_validation_description_required: {
     zh: "请填写问题描述",
     en: "Please describe the problem",
+  },
+  bug_report_validation_contact: {
+    zh: "请填写有效的邮箱、QQ 或微信（3 至 320 个字符）。",
+    en: "Enter an email address, QQ number, or WeChat ID (3 to 320 characters).",
   },
   bug_report_validation_description_truncated: {
     zh: "问题描述已截断到 10000 个字符。",
@@ -9100,6 +9112,10 @@ export const translations: Record<string, Record<"zh" | "en", string>> = {
     zh: "目录签名验证失败，未显示任何模块。",
     en: "Catalog signature verification failed. No modules are shown.",
   },
+  "workshop.manager.catalogUnavailable": {
+    zh: "暂时无法加载创意工坊目录，请检查网络后重试。",
+    en: "Unable to load the Workshop catalog. Check your network and try again.",
+  },
   "workshop.manager.retry": {
     zh: "重试",
     en: "Retry",
@@ -9121,8 +9137,12 @@ export const translations: Record<string, Record<"zh" | "en", string>> = {
     en: "The module operation failed. Existing installation and project data were not replaced.",
   },
   "workshop.manager.downloadNetworkError": {
-    zh: "无法从 GitHub 下载模块。请检查网络；若 GitHub 连接不稳定，可开启网络加速器后重试。现有安装和工程数据已保留。",
-    en: "Couldn't download the module from GitHub. Check your connection; if GitHub is unreliable, try a network accelerator, then retry. Your installed modules and projects have been kept.",
+    zh: "插件包暂时无法下载，请检查网络后重试。",
+    en: "The plugin package is temporarily unavailable. Check your network and try again.",
+  },
+  "workshop.manager.downloadTimeout": {
+    zh: "网络连接超时，请检查网络后重试。",
+    en: "The connection timed out. Check your network and try again.",
   },
   "workshop.manager.recipeImportSaveError": {
     zh: "无法把分享配方交给模块；转换器内容仍然可用。",

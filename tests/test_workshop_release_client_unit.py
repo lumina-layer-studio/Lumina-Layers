@@ -155,6 +155,71 @@ def test_registry_download_removes_manifest_digest_mismatch(
     assert not archive.exists()
 
 
+@pytest.mark.parametrize(
+    "scenario", ["mirror", "anonymous", "timeout", "not-found", "redirect", "tampered", "unset"],
+)
+def test_registry_package_mirror_is_bounded_to_one_request_and_checks_sha256(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, scenario: str,
+) -> None:
+    mirror = "https://mirror.example/api/workshop-mirror/v1"
+    if scenario == "unset":
+        monkeypatch.delenv("LUMINA_WORKSHOP_MIRROR_URL", raising=False)
+    else:
+        monkeypatch.setenv("LUMINA_WORKSHOP_MIRROR_URL", mirror)
+    if scenario == "anonymous":
+        monkeypatch.delenv("LUMINA_WORKSHOP_MIRROR_TOKEN", raising=False)
+    else:
+        monkeypatch.setenv("LUMINA_WORKSHOP_MIRROR_TOKEN", "mirror-test-token")
+    download_dir = tmp_path / "downloads"
+    monkeypatch.setattr(release_client, "TEMP_DIR", str(download_dir))
+    archive = write_package(tmp_path, version="1.0.0-rc.1+mirror.1")
+    candidate = registry_version(archive)
+    package = archive.read_bytes()
+    encoded_version = "1.0.0-rc.1%2Bmirror.1"
+    mirrored_url = f"{mirror}/packages/fixture.hello/{encoded_version}/fixture.hello-{encoded_version}.lumina-workshop"
+    calls: list[tuple[str, str | None]] = []
+
+    class InterruptedBody(httpx.SyncByteStream):
+        def __iter__(self):
+            yield package[:20]
+            raise httpx.ReadTimeout("mirror stalled after first bytes")
+
+    def respond(request: httpx.Request) -> httpx.Response:
+        url = str(request.url)
+        calls.append((url, request.headers.get("Authorization")))
+        if request.url.host == "mirror.example":
+            if scenario == "timeout":
+                return httpx.Response(200, stream=InterruptedBody())
+            if scenario == "not-found":
+                return httpx.Response(404)
+            if scenario == "redirect":
+                return httpx.Response(302, headers={"Location": candidate.download_url})
+            if scenario == "tampered":
+                altered = bytes([package[0] ^ 1]) + package[1:]
+                return httpx.Response(200, content=altered)
+        return httpx.Response(200, content=package)
+
+    original_client = httpx.Client
+    monkeypatch.setattr(httpx, "Client", lambda **kwargs: original_client(
+        transport=httpx.MockTransport(respond), **kwargs,
+    ))
+
+    if scenario == "tampered":
+        with pytest.raises(WorkshopReleaseError, match="digest"):
+            release_client.download_registry_package(candidate)
+        assert list(download_dir.iterdir()) == []
+    else:
+        output = release_client.download_registry_package(candidate)
+        assert output.read_bytes() == package
+        assert list(download_dir.iterdir()) == [output]
+    expected = [] if scenario == "unset" else [(
+        mirrored_url, None if scenario == "anonymous" else "Bearer mirror-test-token",
+    )]
+    if scenario in {"timeout", "not-found", "redirect", "unset"}:
+        expected.append((candidate.download_url, None))
+    assert calls == expected
+
+
 def test_github_release_requires_one_exact_full_release_asset(
     tmp_path: Path,
 ) -> None:

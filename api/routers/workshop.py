@@ -86,6 +86,9 @@ router = APIRouter(prefix="/api/workshop/v1", tags=["Creative Workshop"])
 log = get_logger(__name__)
 
 LUMINA_VERSION = "2.0.1"
+_CATALOG_UNAVAILABLE = "Unable to load the Workshop catalog. Check your network and try again."
+_REGISTRY_DOWNLOAD_UNAVAILABLE = "The plugin package is temporarily unavailable. Check your network and try again."
+_REGISTRY_DOWNLOAD_TIMED_OUT = "The connection timed out. Check your network and try again."
 _PUBLIC_ASSET_EXTENSIONS = frozenset(
     {".png", ".jpg", ".jpeg", ".webp"}
 )
@@ -476,7 +479,7 @@ def workshop_catalog() -> WorkshopCatalogResponse:
             event="workshop_catalog_refresh_failed",
             exc=exc,
             status_code=503,
-            detail="No trusted Creative Workshop catalog is available.",
+            detail=_CATALOG_UNAVAILABLE,
         )
     log.info(
         "Creative Workshop catalog refreshed",
@@ -686,7 +689,7 @@ def workshop_install_registry(
             event="workshop_module_install_failed",
             exc=exc,
             status_code=503,
-            detail="No trusted Creative Workshop catalog is available.",
+            detail={"code": "registry-catalog-unavailable", "message": _CATALOG_UNAVAILABLE},
             module_id=payload.module_id,
             version=payload.version,
         )
@@ -695,7 +698,7 @@ def workshop_install_registry(
             event="workshop_module_install_failed",
             exc=exc,
             status_code=502,
-            detail="The Registry package could not be downloaded safely.",
+            detail={"code": "registry-download-failed", "message": _REGISTRY_DOWNLOAD_UNAVAILABLE},
             module_id=payload.module_id,
             version=payload.version,
         )
@@ -729,21 +732,13 @@ def workshop_install_registry(
         httpx.ProxyError,
     ) as exc:
         timed_out = isinstance(exc, httpx.TimeoutException)
-        description = (
-            "The Registry package download timed out."
-            if timed_out
-            else "The Registry package download was interrupted."
-        )
         _raise_workshop_http_error(
             event="workshop_module_install_failed",
             exc=exc,
             status_code=504 if timed_out else 502,
             detail={
                 "code": "registry-download-network-error",
-                "message": (
-                    f"{description} Check your connection to GitHub "
-                    "or use a network accelerator, then retry."
-                ),
+                "message": _REGISTRY_DOWNLOAD_TIMED_OUT if timed_out else _REGISTRY_DOWNLOAD_UNAVAILABLE,
             },
             module_id=payload.module_id,
             version=payload.version,
@@ -758,7 +753,7 @@ def workshop_install_registry(
             event="workshop_module_install_failed",
             exc=exc,
             status_code=502,
-            detail="The Registry package could not be downloaded.",
+            detail={"code": "registry-download-failed", "message": _REGISTRY_DOWNLOAD_UNAVAILABLE},
             module_id=payload.module_id,
             version=payload.version,
         )

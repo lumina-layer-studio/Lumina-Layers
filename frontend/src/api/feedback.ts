@@ -135,6 +135,8 @@ export interface BugReportContextPayload {
 export interface BugReportRequestPayload {
   description: string;
   user_email: string | null;
+  user_contact?: string | null;
+  needs_reply?: boolean;
   context: BugReportContextPayload;
   screenshot_data_url: string | null;
 }

@@ -307,6 +307,85 @@ def test_submit_bug_report_accepts_full_payload_and_logs_canary(
     assert canaries[0].recent_client_log_count == 1
 
 
+@pytest.mark.parametrize(
+    ("fields", "contact", "email", "needs_reply"),
+    [
+        ({"needs_reply": True, "user_contact": "  user@example.com  "}, "user@example.com", "user@example.com", True),
+        ({"needs_reply": True, "user_contact": "123456789"}, "123456789", None, True),
+        ({"user_contact": "微信号 wx_demo"}, "微信号 wx_demo", None, True),
+        ({"needs_reply": True, "user_email": "legacy@example.com"}, "legacy@example.com", "legacy@example.com", True),
+        ({"user_email": "legacy@example.com"}, "legacy@example.com", "legacy@example.com", True),
+        ({}, None, None, False),
+        ({"needs_reply": False, "user_contact": "wx_demo", "user_email": "user@example.com"}, None, None, False),
+    ],
+)
+def test_bug_report_contact_reaches_ticket_and_triage_artifacts(
+    client: TestClient,
+    feedback_root: Path,
+    fields: dict[str, Any],
+    contact: str | None,
+    email: str | None,
+    needs_reply: bool,
+) -> None:
+    response = client.post("/api/feedback/bug-report", json=_payload(**fields))
+
+    assert response.status_code == 200, response.text
+    ticket_id = response.json()["ticket_id"]
+    ticket = _read_ticket_json(feedback_root, ticket_id)
+    assert ticket["needs_reply"] is needs_reply
+    assert ticket["user_contact"] == contact
+    assert ticket["user_email"] == email
+    ticket_dir = next(feedback_root.glob(f"*/{ticket_id}"))
+    index = (ticket_dir / "index.md").read_text(encoding="utf-8")
+    summary = (ticket_dir / "summary.txt").read_text(encoding="utf-8")
+    assert f"Needs reply: {'Yes' if needs_reply else 'No'}" in index
+    assert f"需要回复：{'是' if needs_reply else '否'}" in summary
+    if contact:
+        assert contact in index.replace(r"\_", "_")
+        assert contact in summary
+    else:
+        for value in ("wx_demo", "user@example.com"):
+            assert value not in index and value not in summary and value not in response.text
+
+
+@pytest.mark.parametrize(
+    "fields",
+    [
+        {"needs_reply": True},
+        {"user_contact": None},
+        {"needs_reply": True, "user_contact": "  "},
+        {"needs_reply": True, "user_contact": "a b"},
+        {"needs_reply": True, "user_contact": "a" * 321},
+        {"needs_reply": True, "user_contact": "wx_demo\nNeeds reply: no"},
+    ],
+)
+def test_rejects_missing_or_invalid_reply_contact_before_creating_ticket(
+    client: TestClient, feedback_root: Path, fields: dict[str, Any],
+) -> None:
+    response = client.post("/api/feedback/bug-report", json=_payload(**fields))
+
+    assert response.status_code == 422
+    assert "email address, QQ number, or WeChat ID" in response.text
+    assert not list(feedback_root.glob("*/*/ticket.json"))
+
+
+def test_multipart_ticket_contact_is_validated_and_kept_with_original(
+    client: TestClient, feedback_root: Path,
+) -> None:
+    request_payload = _payload(needs_reply=True, user_contact="wx_fixture")
+    original = b"<svg xmlns='http://www.w3.org/2000/svg'/>"
+    response = client.post(
+        "/api/feedback/bug-report",
+        data={"request_payload": json.dumps(request_payload)},
+        files={"original_image": ("original.svg", original, "image/svg+xml")},
+    )
+
+    assert response.status_code == 200, response.text
+    ticket_id = response.json()["ticket_id"]
+    assert _read_ticket_json(feedback_root, ticket_id)["user_contact"] == "wx_fixture"
+    assert next(feedback_root.glob(f"*/{ticket_id}/original.svg")).read_bytes() == original
+
+
 @pytest.mark.parametrize("legacy_env_value", ["", "1"])
 def test_submit_bug_report_rejects_untrusted_origin_before_ticket_write(
     client: TestClient,

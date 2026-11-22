@@ -680,7 +680,7 @@ def test_registry_install_stops_after_two_timeouts_without_installing(
         json={"module_id": "fixture.hello", "version": "1.0.0"},
     )
     assert response.status_code == 504
-    assert "timed out" in response.json()["detail"]["message"]
+    assert response.json()["detail"]["message"] == "The connection timed out. Check your network and try again."
     assert "private download URL" not in response.text
     assert len(attempts) == 2
     assert installer.list() == ()
@@ -745,7 +745,8 @@ def test_registry_network_failure_preserves_installation_and_projects_until_retr
     detail = failed.json()["detail"]
     assert isinstance(detail, dict), "Transport failures need a machine-readable recovery code"
     assert detail["code"] == "registry-download-network-error"
-    assert "GitHub" in detail["message"]
+    assert "Check your network and try again." in detail["message"]
+    assert "GitHub" not in detail["message"]
     assert "private download URL" not in failed.text
     assert installer.state_path.read_bytes() == original_state
     assert original_ui.read_bytes() == original_ui_bytes

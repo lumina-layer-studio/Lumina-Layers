@@ -435,12 +435,24 @@ describe("Workshop installable module manager", () => {
     expect(await screen.findByText("测试模块")).toBeInTheDocument();
   });
 
+  it("shows neutral retry guidance when the catalog cannot be reached", async () => {
+    const api = fakeApi([]);
+    vi.mocked(api.fetchCatalog).mockRejectedValue(new Error("network timeout"));
+    renderManager(api);
+
+    fireEvent.click(screen.getByRole("button", { name: "发现" }));
+    expect(await screen.findByText("暂时无法加载创意工坊目录，请检查网络后重试。")).toBeInTheDocument();
+    vi.mocked(api.fetchCatalog).mockResolvedValue(catalog(true));
+    fireEvent.click(screen.getByRole("button", { name: "重试" }));
+    expect(await screen.findByText("测试模块")).toBeInTheDocument();
+  });
+
   it.each([
     {
       language: "zh" as const,
       status: 502,
       updateLabel: "更新",
-      message: "无法从 GitHub 下载模块。请检查网络；若 GitHub 连接不稳定，可开启网络加速器后重试。现有安装和工程数据已保留。",
+      message: "插件包暂时无法下载，请检查网络后重试。",
       activeVersion: "当前版本 1.0.0",
       retainedProject: "保留了本地工程",
       stagedVersion: "待激活版本 1.1.0",
@@ -449,12 +461,12 @@ describe("Workshop installable module manager", () => {
       language: "en" as const,
       status: 504,
       updateLabel: "Update",
-      message: "Couldn't download the module from GitHub. Check your connection; if GitHub is unreliable, try a network accelerator, then retry. Your installed modules and projects have been kept.",
+      message: "The connection timed out. Check your network and try again.",
       activeVersion: "Current version 1.0.0",
       retainedProject: "Local projects retained",
       stagedVersion: "Candidate version 1.1.0",
     },
-  ])("shows GitHub recovery guidance in $language and allows an update retry", async (labels) => {
+  ])("shows neutral download guidance in $language and allows an update retry", async (labels) => {
     useSettingsStore.setState({ language: labels.language });
     const api = { ...fakeApi(), installRegistry: workshopApi.installRegistry };
     const storage = fakeStorage(true);

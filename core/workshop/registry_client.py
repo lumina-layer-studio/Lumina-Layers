@@ -10,6 +10,7 @@ import tempfile
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from functools import partial
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
@@ -22,6 +23,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import (
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from .errors import WorkshopRegistryError
+from .mirror import WorkshopMirror, WorkshopMirrorUnavailable
 from .models import (
     RegistryIndex,
     RegistryRefreshResult,
@@ -301,7 +303,6 @@ def _default_fetch_bytes(
         write=INACTIVITY_TIMEOUT_SECONDS,
         pool=CONNECT_TIMEOUT_SECONDS,
     )
-    maximum = _response_body_limit(url)
     with httpx.Client(timeout=timeout, follow_redirects=False) as client:
         with client.stream("GET", url, headers=headers) as response:
             if response.status_code == 304:
@@ -315,32 +316,39 @@ def _default_fetch_bytes(
                     "Registry request failed with status "
                     f"{response.status_code}"
                 )
-            content_length = response.headers.get("Content-Length")
-            if content_length:
-                try:
-                    declared_length = int(content_length)
-                except ValueError as exc:
-                    raise WorkshopRegistryError(
-                        "Registry response has invalid Content-Length"
-                    ) from exc
-                if declared_length < 0 or declared_length > maximum:
-                    raise WorkshopRegistryError(
-                        "Registry response exceeds size limit"
-                    )
-            chunks: list[bytes] = []
-            received = 0
-            for chunk in response.iter_bytes():
-                received += len(chunk)
-                if received > maximum:
-                    raise WorkshopRegistryError(
-                        "Registry response exceeds size limit"
-                    )
-                chunks.append(chunk)
             return RegistryFetchResponse(
                 status_code=200,
-                body=b"".join(chunks),
+                body=_read_registry_response(response, _response_body_limit(url)),
                 etag=response.headers.get("ETag"),
             )
+
+
+def _read_registry_response(response: httpx.Response, maximum: int) -> bytes:
+    content_length = response.headers.get("Content-Length")
+    if content_length:
+        try:
+            declared_length = int(content_length)
+        except ValueError as exc:
+            raise WorkshopRegistryError("Registry response has invalid Content-Length") from exc
+        if declared_length < 0 or declared_length > maximum:
+            raise WorkshopRegistryError("Registry response exceeds size limit")
+    chunks: list[bytes] = []
+    received = 0
+    for chunk in response.iter_bytes():
+        received += len(chunk)
+        if received > maximum:
+            raise WorkshopRegistryError("Registry response exceeds size limit")
+        chunks.append(chunk)
+    return b"".join(chunks)
+
+
+def _fetch_mirror_bytes(
+    mirror: WorkshopMirror, asset_name: str, _etag: str | None,
+) -> RegistryFetchResponse:
+    with mirror.stream(asset_name, accept="application/json") as response:
+        body = _read_registry_response(response, _response_body_limit(asset_name))
+    # The next upstream refresh may only send ETags issued by the upstream.
+    return RegistryFetchResponse(status_code=200, body=body, etag=None)
 
 
 def _clean_etag(value: str | None) -> str | None:
@@ -438,6 +446,7 @@ class RegistryClient:
         self._cache_dir = Path(cache_dir)
         self._snapshot_path = Path(snapshot_path)
         self._fetch_bytes = fetch_bytes or _default_fetch_bytes
+        self._mirror = WorkshopMirror.from_environment() if fetch_bytes is None else None
         self._index_url = _validate_registry_url(index_url)
         self._signature_url = _validate_registry_url(signature_url)
         self.last_error: str | None = None
@@ -520,6 +529,43 @@ class RegistryClient:
         )
         return parse_registry_index(payload)
 
+    def _refresh_from(
+        self,
+        fetch_bytes: RegistryFetcher,
+        index_url: str,
+        signature_url: str,
+        cache: _VerifiedCache | None,
+    ) -> RegistryRefreshResult:
+        index_response = fetch_bytes(index_url, cache.etag if cache is not None else None)
+        if not isinstance(index_response, RegistryFetchResponse):
+            raise WorkshopRegistryError("Registry fetcher returned an invalid response")
+        if index_response.status_code == 304:
+            if cache is None:
+                raise WorkshopRegistryError("Registry returned 304 without a verified cache")
+            return RegistryRefreshResult(source="cache", verified=True, index=cache.index)
+        if index_response.status_code != 200:
+            raise WorkshopRegistryError("Registry index request did not return 200")
+        if len(index_response.body) > MAX_REGISTRY_BYTES:
+            raise WorkshopRegistryError("Registry index exceeds size limit")
+
+        signature_response = fetch_bytes(signature_url, None)
+        if (
+            not isinstance(signature_response, RegistryFetchResponse)
+            or signature_response.status_code != 200
+        ):
+            raise WorkshopRegistryError("Registry signature request did not return 200")
+        if len(signature_response.body) > MAX_SIGNATURE_METADATA_BYTES:
+            raise WorkshopRegistryError("Registry signature metadata exceeds size limit")
+
+        verify_registry_signature(index_response.body, signature_response.body, self._keys)
+        index = parse_registry_index(index_response.body)
+        self._write_verified_cache(
+            payload=index_response.body,
+            signature=signature_response.body,
+            etag=index_response.etag,
+        )
+        return RegistryRefreshResult(source="remote", verified=True, index=index)
+
     def refresh(self) -> RegistryRefreshResult:
         """Fetch, verify, cache, and select the safest available index.
 
@@ -527,73 +573,19 @@ class RegistryClient:
         """
 
         cache = self._load_verified_cache()
+        self.last_error = None
         try:
-            index_response = self._fetch_bytes(
-                self._index_url,
-                cache.etag if cache is not None else None,
-            )
-            if not isinstance(index_response, RegistryFetchResponse):
-                raise WorkshopRegistryError(
-                    "Registry fetcher returned an invalid response"
-                )
-            if index_response.status_code == 304:
-                if cache is None:
-                    raise WorkshopRegistryError(
-                        "Registry returned 304 without a verified cache"
+            if self._mirror is not None:
+                try:
+                    return self._refresh_from(
+                        partial(_fetch_mirror_bytes, self._mirror),
+                        "registry-v1.json", "registry-v1.sig", None,
                     )
-                self.last_error = None
-                return RegistryRefreshResult(
-                    source="cache",
-                    verified=True,
-                    index=cache.index,
-                )
-            if index_response.status_code != 200:
-                raise WorkshopRegistryError(
-                    "Registry index request did not return 200"
-                )
-            if len(index_response.body) > MAX_REGISTRY_BYTES:
-                raise WorkshopRegistryError(
-                    "Registry index exceeds size limit"
-                )
-
-            signature_response = self._fetch_bytes(
-                self._signature_url,
-                None,
-            )
-            if (
-                not isinstance(
-                    signature_response,
-                    RegistryFetchResponse,
-                )
-                or signature_response.status_code != 200
-            ):
-                raise WorkshopRegistryError(
-                    "Registry signature request did not return 200"
-                )
-            if (
-                len(signature_response.body)
-                > MAX_SIGNATURE_METADATA_BYTES
-            ):
-                raise WorkshopRegistryError(
-                    "Registry signature metadata exceeds size limit"
-                )
-
-            verify_registry_signature(
-                index_response.body,
-                signature_response.body,
-                self._keys,
-            )
-            index = parse_registry_index(index_response.body)
-            self._write_verified_cache(
-                payload=index_response.body,
-                signature=signature_response.body,
-                etag=index_response.etag,
-            )
-            self.last_error = None
-            return RegistryRefreshResult(
-                source="remote",
-                verified=True,
-                index=index,
+                except WorkshopMirrorUnavailable:
+                    # Never verify a mirror index against the upstream signature or vice versa.
+                    pass
+            return self._refresh_from(
+                self._fetch_bytes, self._index_url, self._signature_url, cache,
             )
         except Exception as exc:
             # This is the explicit remote/cache boundary. Any malformed or

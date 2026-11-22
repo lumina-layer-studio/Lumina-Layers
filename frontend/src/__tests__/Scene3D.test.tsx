@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, act, fireEvent } from "@testing-library/react";
+import { render, screen, act, fireEvent, waitFor } from "@testing-library/react";
 import * as THREE from "three";
 import { MOUSE } from "three";
 import { useConverterStore } from "../stores/converter";
@@ -10,6 +10,12 @@ import {
   clearSceneTransitionSnapshot,
   getSceneTransitionKey,
 } from "../components/sceneTransitionSnapshot";
+
+const { fetchKeychainAnchor } = vi.hoisted(() => ({ fetchKeychainAnchor: vi.fn() }));
+vi.mock("../api/converter", async (importOriginal) => ({
+  ...await importOriginal<typeof import("../api/converter")>(),
+  fetchKeychainAnchor,
+}));
 
 // Mock i18n — return key as-is
 vi.mock("../i18n/context", () => ({
@@ -271,6 +277,7 @@ describe("Scene3D", () => {
     } finally { Object.assign(window, { electronAPI: undefined }); }
   });
 beforeEach(() => {
+    fetchKeychainAnchor.mockReset().mockResolvedValue({ x: 0, y: 0 });
     environmentError = null;
     canvasError = null;
     clearEnvironment.mockClear();
@@ -325,6 +332,9 @@ beforeEach(() => {
         layerImagesOpen: false,
         layerImagesSourceKey: null,
         add_loop: false,
+        loop_angle: 0,
+        loop_offset_x: 0,
+        loop_offset_y: 0,
         enable_fridge_magnet: false,
         fridge_magnets: [],
         selectedFridgeMagnetId: null,
@@ -881,52 +891,51 @@ beforeEach(() => {
 
   });
 
-  describe("keychain contour-coordinate wiring", () => {
-    it("passes the preview canvas bounds into the keychain contour mapper", () => {
+  describe("keychain placement wiring", () => {
+    it("keeps the signed offsets and applies the solved foot from the active session", async () => {
+      fetchKeychainAnchor.mockResolvedValueOnce({ x: -2.4, y: 15 });
       useConverterStore.setState({
-        previewGlbUrl: "/api/files/mock-preview.glb",
-        add_loop: true,
-        modelBounds: {
-          minX: -50,
-          maxX: 50,
-          minY: -50,
-          maxY: 50,
-          maxZ: 2,
-        },
+        sessionId: "ring-session",
+        previewGlbUrl: "/api/files/ring-preview.glb",
+        target_width_mm: 40, preview_width_mm: 40,
+        add_loop: true, loop_width: 6, loop_length: 8, loop_hole: 2.5,
+        loop_angle: -90, loop_offset_x: 0, loop_offset_y: -4,
+        loop_position_preset: "top-center",
+        modelBounds: { minX: 4, maxX: 44, minY: -10, maxY: 20, maxZ: 2 },
       });
-
       render(<Scene3D />);
 
-      const onBoundsChange = capturedInteractiveViewerProps
-        ?.onPreviewCanvasBoundsChange as ((
-          sourceUrl: string,
-          bounds: Record<string, number> | null,
-        ) => void) | undefined;
-      expect(onBoundsChange).toBeTypeOf("function");
+      await waitFor(() => expect(capturedKeychainRingProps).toMatchObject({
+        anchor: { x: 21.6, y: 20 }, angle: -90, offsetY: -4,
+      }));
+      expect(fetchKeychainAnchor).toHaveBeenCalledWith(expect.objectContaining({
+        session_id: "ring-session", width: 6, length: 8, hole: 2.5, angle: -90, preset: "top-center",
+      }), expect.any(AbortSignal));
+      act(() => useConverterStore.getState().setLoopOffsets(-1, -5));
+      expect(capturedKeychainRingProps).toMatchObject({ offsetX: -1, offsetY: -5 });
+      expect(fetchKeychainAnchor).toHaveBeenCalledTimes(1);
+    });
 
-      const canvasBounds = {
-        minX: -50,
-        maxX: 50,
-        minY: -50,
-        maxY: 50,
-        maxZ: 0,
-      };
-      act(() => onBoundsChange?.("/api/files/mock-preview.glb", canvasBounds));
-
-      expect(capturedKeychainRingProps?.contourCanvasBounds).toEqual(canvasBounds);
-
-      act(() => {
-        useConverterStore.setState({ previewGlbUrl: "/api/files/next-preview.glb" });
+    it("discards an attachment result from an old preview session", async () => {
+      let finishOld!: (anchor: { x: number; y: number }) => void;
+      fetchKeychainAnchor.mockReturnValueOnce(new Promise((resolve) => { finishOld = resolve; }));
+      useConverterStore.setState({
+        sessionId: "old-ring-session", previewGlbUrl: "/api/files/old-ring.glb", add_loop: true,
+        target_width_mm: 40, preview_width_mm: 40,
+        modelBounds: { minX: -20, maxX: 20, minY: -15, maxY: 15, maxZ: 2 },
       });
+      render(<Scene3D />);
+      await waitFor(() => expect(fetchKeychainAnchor).toHaveBeenCalledTimes(1));
+      const previousSignal = fetchKeychainAnchor.mock.calls[0][1] as AbortSignal;
+      fetchKeychainAnchor.mockResolvedValueOnce({ x: 1, y: 2 });
+      act(() => useConverterStore.setState({
+        sessionId: "new-ring-session", previewGlbUrl: "/api/files/new-ring.glb",
+      }));
 
-      expect(capturedKeychainRingProps?.contourCanvasBounds).toBeNull();
-
-      const nextCanvasBounds = { ...canvasBounds, minX: -40, maxX: 60 };
-      act(() => onBoundsChange?.("/api/files/next-preview.glb", nextCanvasBounds));
-      expect(capturedKeychainRingProps?.contourCanvasBounds).toEqual(nextCanvasBounds);
-
-      act(() => onBoundsChange?.("/api/files/mock-preview.glb", null));
-      expect(capturedKeychainRingProps?.contourCanvasBounds).toEqual(nextCanvasBounds);
+      expect(previousSignal.aborted).toBe(true);
+      await waitFor(() => expect(capturedKeychainRingProps?.anchor).toEqual({ x: 1, y: 2 }));
+      await act(async () => finishOld({ x: 8, y: 9 }));
+      expect(capturedKeychainRingProps?.anchor).toEqual({ x: 1, y: 2 });
     });
   });
 
@@ -1025,39 +1034,24 @@ beforeEach(() => {
     });
   });
 
-  describe("keychain contour live resize wiring", () => {
-    it("passes a display transform that follows a 60 to 90 mm preview resize", () => {
-      useConverterStore.setState({
-        previewGlbUrl: "/api/files/quick-preview.glb",
-        add_loop: true,
-        target_width_mm: 90,
-        target_height_mm: 90,
-        preview_width_mm: 60,
-        preview_height_mm: 60,
-        modelBounds: {
-          minX: -30,
-          maxX: 30,
-          minY: -30,
-          maxY: 30,
-          maxZ: 2,
-        },
-      });
-
-      render(<Scene3D />);
-
-      expect(capturedKeychainRingProps?.modelBounds).toEqual({
-        minX: -45,
-        maxX: 45,
-        minY: -45,
-        maxY: 45,
-        maxZ: 2,
-      });
-      const toDisplayPoint = capturedKeychainRingProps?.contourToDisplayPoint as
-        | ((point: { x: number; y: number }) => { x: number; y: number })
-        | undefined;
-      expect(toDisplayPoint).toBeTypeOf("function");
-      expect(toDisplayPoint?.({ x: 0, y: 10 })).toEqual({ x: 0, y: 15 });
+  it("waits for a matching print grid after the size changes", async () => {
+    useConverterStore.setState({
+      sessionId: "old-grid", previewGlbUrl: "/api/files/quick-preview.glb", add_loop: true,
+      target_width_mm: 90, target_height_mm: 89, preview_width_mm: 60, preview_height_mm: 60,
+      modelBounds: { minX: -30, maxX: 30, minY: -30, maxY: 30, maxZ: 2 },
     });
+    render(<Scene3D />);
+    expect(screen.queryByTestId("mock-keychain-ring")).not.toBeInTheDocument();
+    expect(fetchKeychainAnchor).not.toHaveBeenCalled();
+
+    act(() => useConverterStore.setState({
+      sessionId: "current-grid", previewGlbUrl: "/api/files/resized.glb",
+      preview_width_mm: 90, preview_height_mm: 90,
+    }));
+    await waitFor(() => expect(fetchKeychainAnchor).toHaveBeenCalledWith(expect.objectContaining({
+      session_id: "current-grid",
+    }), expect.any(AbortSignal)));
+    expect(capturedInteractiveViewerProps?.scaleX).toBe(1);
   });
 
   describe("lightweight creative preview wiring", () => {
@@ -1137,38 +1131,21 @@ beforeEach(() => {
       expect(capturedInteractiveViewerProps?.sourceRole).toBe("generated");
     });
 
-    it("keeps the keychain proxy on a quick preview", () => {
+    it("uses the embedded ring when viewing the generated mesh", () => {
       useConverterStore.setState({
+        sessionId: "ring-session",
         previewGlbUrl: "/api/files/quick-preview.glb",
         add_loop: true,
-        target_width_mm: 80,
-        target_height_mm: 120,
-        preview_width_mm: 40,
-        preview_height_mm: 60,
-        modelBounds: {
-          minX: -20,
-          maxX: 20,
-          minY: -30,
-          maxY: 30,
-          maxZ: 2,
-        },
       });
-
-      render(<Scene3D />);
-
-      expect(capturedKeychainRingProps).not.toBeNull();
-      expect(capturedKeychainRingProps?.modelBounds).toEqual({
-        minX: -40,
-        maxX: 40,
-        minY: -60,
-        maxY: 60,
-        maxZ: 2,
-      });
+      render(<Scene3D modelUrl="/api/files/generated-with-ring.glb" />);
+      expect(screen.queryByTestId("mock-keychain-ring")).not.toBeInTheDocument();
+      expect(fetchKeychainAnchor).not.toHaveBeenCalled();
     });
 
     it("keeps the lightweight preview and keychain proxy ahead of a stale store model", () => {
       useConverterStore.setState({
         modelUrl: "/api/files/generated-with-keychain.glb",
+        target_width_mm: 40, preview_width_mm: 40,
         previewGlbUrl: "/api/files/old-quick-preview.glb",
         add_loop: true,
         modelBounds: {

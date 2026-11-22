@@ -161,6 +161,7 @@ const STRUCTURED_DETAIL_TRANSLATION_KEYS: ReadonlyMap<string, string> = new Map(
     "api_error_model_surface_insufficient_thickness",
   ],
   ["model_surface_boolean_failed", "api_error_model_surface_boolean_failed"],
+  ["model_surface_artwork_no_overlap", "api_error_model_surface_artwork_no_overlap"],
   ["The contribution server URL is invalid.", "community_err_invalid_url"],
   ["The material server returned invalid device credentials.", "community_err_invalid_credentials"],
   ["The contribution server has not been configured.", "community_err_unconfigured"],

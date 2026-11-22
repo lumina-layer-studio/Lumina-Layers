@@ -39,7 +39,8 @@ import { useConverterStore } from "../stores/converter";
 import { useSettingsStore } from "../stores/settingsStore";
 import { resolveConverterSettings } from "../stores/converter/project";
 import { computeScaleFactor } from "../utils/scaleUtils";
-import { createPreviewSpace } from "../utils/previewSpace";
+import { createPreviewSpace, type PreviewSpaceBounds } from "../utils/previewSpace";
+import { useKeychainAnchor } from "../hooks/useKeychainAnchor";
 import { resolveCameraClippingPlanes } from "../utils/cameraDepthPrecision";
 import { useI18n } from "../i18n/context";
 import { useThemeConfig } from "../hooks/useThemeConfig";
@@ -886,7 +887,7 @@ function Scene3D({ modelUrl, deferInitialization = false, suspended = false }: S
   const [performanceVisible, setPerformanceVisible] = useState(false);
   const [previewCanvasBoundsState, setPreviewCanvasBoundsState] = useState<{
     sourceUrl: string;
-    bounds: PreviewModelBounds;
+    bounds: PreviewSpaceBounds;
   } | null>(null);
   const [modelSurfaceBedGridVisible, setModelSurfaceBedGridVisible] = useState(true);
 
@@ -904,7 +905,7 @@ function Scene3D({ modelUrl, deferInitialization = false, suspended = false }: S
 
   const handlePreviewCanvasBoundsChange = useCallback((
     sourceUrl: string,
-    bounds: PreviewModelBounds | null,
+    bounds: PreviewSpaceBounds | null,
   ) => {
     setPreviewCanvasBoundsState((current) => {
       if (bounds) {
@@ -1066,10 +1067,16 @@ function Scene3D({ modelUrl, deferInitialization = false, suspended = false }: S
   const previewHeight = useConverterStore((s) => s.preview_height_mm);
   const previewPixelWidth = useConverterStore((s) => s.previewPixelWidth);
   const previewPixelHeight = useConverterStore((s) => s.previewPixelHeight);
+  const addLoop = useConverterStore((s) => s.add_loop);
+  const editableKeychain = addLoop && !puzzleEnabled && !largeFormatEnabled && !modelSurfaceEnabled
+    && batchPreviewItems.length === 0 && !effectiveModelUrl;
+  const keychainPreviewMatchesSize = editableKeychain && previewWidth === targetWidth;
 
-  const { scaleX, scaleY } = computeScaleFactor(
-    targetWidth, targetHeight, previewWidth, previewHeight
-  );
+  // The print grid is fitted to the requested width. Use its scale once
+  // the matching asset arrives, regardless of UI height rounding.
+  const { scaleX, scaleY } = keychainPreviewMatchesSize
+    ? { scaleX: 1, scaleY: 1 }
+    : computeScaleFactor(targetWidth, targetHeight, previewWidth, previewHeight);
   const rasterCellSize = previewWidth && previewPixelWidth && previewPixelWidth > 0
     ? previewWidth / previewPixelWidth
     : undefined;
@@ -1088,7 +1095,6 @@ function Scene3D({ modelUrl, deferInitialization = false, suspended = false }: S
   const heightmapArtworkUrl = previewBaseImageUrl ?? imagePreviewUrl;
 
   // Keychain ring params
-  const addLoop = useConverterStore((s) => s.add_loop);
   const loopWidth = useConverterStore((s) => s.loop_width);
   const loopLength = useConverterStore((s) => s.loop_length);
   const loopHole = useConverterStore((s) => s.loop_hole);
@@ -1134,12 +1140,21 @@ function Scene3D({ modelUrl, deferInitialization = false, suspended = false }: S
   const modelSurfaceBusy =
     showModelSurfaceSelector && (modelSurfaceLoading || modelSurfaceSelecting);
   const modelBounds = useConverterStore((s) => s.modelBounds);
-  const colorContours = useConverterStore((s) => s.colorContours);
   const modelPreviewSpace = useMemo(
     () => (modelBounds ? createPreviewSpace(modelBounds, scaleX, scaleY) : null),
     [modelBounds, scaleX, scaleY],
   );
   const displayModelBounds = modelPreviewSpace?.displayBounds ?? null;
+  // Generated assets already contain the exported ring. The editable overlay
+  // is only needed on the quick preview, using the current session's anchor.
+  const showKeychainOverlay = keychainPreviewMatchesSize && Boolean(previewGlbUrl);
+  const keychainAnchor = useKeychainAnchor(
+    showKeychainOverlay ? sessionId : null, previewGlbUrl, loopWidth, loopLength, loopHole, loopAngle, loopPositionPreset,
+  );
+  const keychainDisplayAnchor = keychainAnchor && modelPreviewSpace ? {
+    x: modelPreviewSpace.center.x + keychainAnchor.x,
+    y: modelPreviewSpace.center.y + keychainAnchor.y,
+  } : null;
   const activeModelUrl = effectiveModelUrl || previewGlbUrl;
   const modelReadyKey = showModelSurfaceSelector
     ? modelSurfacePreviewUrl!
@@ -1787,7 +1802,7 @@ function Scene3D({ modelUrl, deferInitialization = false, suspended = false }: S
             <SceneAssetReady onReadyChange={handleModelReadyChange} />
           </Suspense>
         ) : null}
-        {batchPreviewItems.length === 0 && addLoop && displayModelBounds && (
+        {showKeychainOverlay && readyModelKey === modelReadyKey && (
           <KeychainRing3D
             enabled={addLoop}
             width={loopWidth}
@@ -1796,11 +1811,7 @@ function Scene3D({ modelUrl, deferInitialization = false, suspended = false }: S
             angle={loopAngle}
             offsetX={loopOffsetX}
             offsetY={loopOffsetY}
-            positionPreset={loopPositionPreset}
-            modelBounds={displayModelBounds}
-            contours={colorContours}
-            contourCanvasBounds={activePreviewCanvasBounds}
-            contourToDisplayPoint={modelPreviewSpace?.toDisplayPoint}
+            anchor={keychainDisplayAnchor}
             cameraPanModifierActive={isSpacePanActive}
           />
           )}

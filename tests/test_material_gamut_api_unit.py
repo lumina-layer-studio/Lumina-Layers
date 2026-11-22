@@ -5,11 +5,14 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import threading
 from pathlib import Path
+from urllib.parse import urlencode
 
+import httpx
 import numpy as np
 import pytest
 from fastapi.testclient import TestClient
@@ -283,10 +286,9 @@ def test_compute_failures_use_safe_domain_error_mapping(
 
 
 @pytest.mark.parametrize("path", [
-    "material-gamut/coverage", "material-gamut/contributions",
     "material-dynamic-cache/prepare", "material-dynamic-cache/delete",
 ])
-def test_heavy_material_requests_reject_a_busy_build_queue_with_retryable_status(
+def test_cache_mutations_reject_a_busy_build_queue_with_retryable_status(
     client: TestClient, monkeypatch: pytest.MonkeyPatch, path: str,
     router_logs: pytest.LogCaptureFixture,
 ) -> None:
@@ -298,6 +300,96 @@ def test_heavy_material_requests_reject_a_busy_build_queue_with_retryable_status
     assert response.json()["detail"]["code"] == "dynamic_material_solver_unavailable"
     failures = [record for record in router_logs.records if getattr(record, "event", "").endswith("_failed")]
     assert failures and failures[-1].levelno == logging.WARNING
+
+
+@pytest.mark.asyncio
+async def test_gamut_coverage_waits_for_a_distinct_contribution_to_finish(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    started, finish = asyncio.Event(), asyncio.Event()
+
+    class ControlledPool:
+        async def submit(self, work, params):
+            if work.__name__ == "worker_material_gamut_contributions":
+                started.set()
+                await finish.wait()
+            return work(params)
+
+    monkeypatch.setattr("api.routers.single_stage.get_worker_pool", ControlledPool)
+    monkeypatch.setattr("api.routers.single_stage._MATERIAL_COMPUTE_QUEUE_TIMEOUT_SECONDS", 0.01)
+    transport = httpx.ASGITransport(app=client.app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://127.0.0.1") as web:
+        contribution = asyncio.create_task(
+            web.post(f"{_PREFIX}/material-gamut/contributions", data=_dynamic_form())
+        )
+        pending = [contribution]
+        try:
+            await asyncio.wait_for(started.wait(), timeout=2)
+            different_combo = _dynamic_form(material_directory_names=json.dumps(["white", "red"]))
+            coverage = asyncio.create_task(
+                web.post(f"{_PREFIX}/material-gamut/coverage", data=different_combo)
+            )
+            pending.append(coverage)
+            done, _ = await asyncio.wait({coverage}, timeout=0.15)
+            assert not done, coverage.result().text
+        finally:
+            finish.set()
+            responses = await asyncio.wait_for(asyncio.gather(*pending), timeout=5)
+
+    assert [response.status_code for response in responses] == [200, 200]
+    assert responses[1].json()["material_directory_names"] == ["white", "red"]
+
+
+@pytest.mark.asyncio
+async def test_disconnected_gamut_request_never_submits_waiting_work(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    queued = asyncio.Event()
+    semaphore = threading.BoundedSemaphore(1)
+    semaphore.acquire()
+    submitted = []
+
+    class ObservedGate:
+        def acquire(self, blocking: bool) -> bool:
+            acquired = semaphore.acquire(blocking=blocking)
+            if not acquired:
+                queued.set()
+            return acquired
+
+        def release(self) -> None:
+            semaphore.release()
+
+    class RecordingPool:
+        async def submit(self, work, *args):
+            submitted.append(work)
+            return work(*args)
+
+    monkeypatch.setattr("api.routers.single_stage._RUNTIME_BUILD_GLOBAL_SEMAPHORE", ObservedGate())
+    monkeypatch.setattr("api.routers.single_stage.get_worker_pool", RecordingPool)
+    incoming = asyncio.Queue()
+    incoming.put_nowait({
+        "type": "http.request", "body": urlencode(_dynamic_form()).encode(), "more_body": False,
+    })
+
+    async def send(_message):
+        pass
+
+    scope = {
+        "type": "http", "http_version": "1.1", "method": "POST", "scheme": "http",
+        "path": f"{_PREFIX}/material-gamut/coverage", "query_string": b"", "root_path": "",
+        "headers": [(b"content-type", b"application/x-www-form-urlencoded"), (b"host", b"127.0.0.1")],
+        "client": ("127.0.0.1", 12345), "server": ("127.0.0.1", 80),
+    }
+    request = asyncio.create_task(client.app(scope, incoming.get, send))
+    try:
+        await asyncio.wait_for(queued.wait(), timeout=2)
+        incoming.put_nowait({"type": "http.disconnect"})
+        await asyncio.wait_for(request, timeout=0.5)
+    finally:
+        request.cancel()
+        await asyncio.gather(request, return_exceptions=True)
+        semaphore.release()
+    assert submitted == []
 
 
 def test_failed_computation_releases_its_build_slot(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:

@@ -14,6 +14,8 @@ import numpy as np
 import cv2
 from scipy.spatial import KDTree
 
+from core.pipeline.processing_ops.color_histogram import RGB_LOOKUP_BLOCK_PIXELS, pack_rgb24
+
 _log = get_logger(__name__)
 
 
@@ -60,20 +62,21 @@ def _maybe_return_low_unique_input(
     if effective_n_colors <= 0:
         return None
     rgb_u8 = np.ascontiguousarray(rgb, dtype=np.uint8)
-    flat = rgb_u8.reshape(-1, 3).astype(np.uint32, copy=False)
-    packed = (
-        (flat[:, 0] << np.uint32(16))
-        | (flat[:, 1] << np.uint32(8))
-        | flat[:, 2]
-    )
-    unique_count = int(np.unique(packed).shape[0])
-    if unique_count > effective_n_colors:
-        return None
+    flat = rgb_u8.reshape(-1, 3)
+    keys = np.empty(0, dtype=np.uint32)
+    for start in range(0, len(flat), RGB_LOOKUP_BLOCK_PIXELS):
+        block = flat[start : start + RGB_LOOKUP_BLOCK_PIXELS]
+        block_keys = np.unique(pack_rgb24(block))
+        if block_keys.size > effective_n_colors:
+            return None
+        keys = np.union1d(keys, block_keys)
+        if keys.size > effective_n_colors:
+            return None
     _log.debug(
         "K-Means skipped because unique RGB count is within budget",
         extra={
             "event": "kmeans_low_unique_fast_path",
-            "unique_colors": unique_count,
+            "unique_colors": int(keys.size),
             "effective_n_colors": int(effective_n_colors),
         },
     )

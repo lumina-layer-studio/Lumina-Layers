@@ -6,8 +6,24 @@ from shapely.ops import unary_union
 
 from core import native_svg_adapter
 from core.model_surface.artwork import SurfacePlacement, render_surface_artwork
-from core.model_surface.types import EdgeMode, PlaneFrame, SurfaceFootprint
+from core.model_surface.types import EdgeMode, ModelSurfaceError, PlaneFrame, SurfaceFootprint
 from core.vector_engine import VectorProcessor
+
+
+@pytest.mark.parametrize("offset,alpha", [(100.0, 255), (0.0, 9)])
+def test_raster_artwork_without_printable_overlap_is_rejected(tmp_path, offset, alpha):
+    source = tmp_path / "art.png"
+    Image.new("RGBA", (20, 20), (100, 50, 10, alpha)).save(source)
+
+    with pytest.raises(ModelSurfaceError, match="model_surface_artwork_no_overlap"):
+        render_surface_artwork(
+            source_path=source,
+            footprint=_square_footprint(),
+            placement=SurfacePlacement(offset_x_mm=offset),
+            output_dir=tmp_path,
+        )
+
+    assert list(tmp_path.iterdir()) == [source]
 
 
 @pytest.mark.parametrize("native_available", [True, False])

@@ -1700,6 +1700,24 @@ class CleanupSessionFilesResponse(BaseModel):
     cleaned: int = Field(0, description="删除的文件数")
 
 
+class KeychainAnchorRequest(BaseModel):
+    """Resolve a preview attachment against the active session's print geometry."""
+
+    session_id: str = Field(min_length=1)
+    width: float = Field(ge=2, le=10)
+    length: float = Field(ge=4, le=15)
+    hole: float = Field(ge=1, le=5)
+    angle: float = Field(ge=-180, le=180)
+    preset: Literal["top-center", "top-left", "top-right", "left-center", "right-center", "bottom-center"]
+
+
+class KeychainAnchorResponse(BaseModel):
+    """The default foot position in display millimetres relative to the body centre."""
+
+    x: float
+    y: float
+
+
 class VectorPreviewRendererRequest(BaseModel):
     """Select the lightweight browser renderer for an active Vector session.
 

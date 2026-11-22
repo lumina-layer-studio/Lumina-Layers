@@ -1,50 +1,14 @@
 /**
- * Property-Based Tests for KeychainRing3D geometry and position calculations.
- * 钥匙扣环 3D 几何体与位置计算的 Property-Based 测试。
+ * Property-Based Tests for KeychainRing3D ring geometry.
+ * 钥匙扣环 3D 几何体的 Property-Based 测试。
  *
  * Feature: keychain-loop-enhancement
- * Properties: 3, 5, 6
+ * Properties: 5, 6
  */
 
 import { describe, it, expect } from "vitest";
 import * as fc from "fast-check";
-import {
-  createKeychainRingGeometry,
-  computeLoopPosition,
-} from "../components/KeychainRing3D";
-
-// ========== Generators ==========
-
-/** Valid position presets. (有效的位置预设) */
-const PRESETS = [
-  "top-center",
-  "top-left",
-  "top-right",
-  "left-center",
-  "right-center",
-  "bottom-center",
-] as const;
-
-/** Arbitrary valid preset string. */
-const presetArb = fc.constantFrom(...PRESETS);
-
-/** Arbitrary modelBounds where minX < maxX and minY < maxY. */
-const modelBoundsArb = fc
-  .record({
-    x1: fc.double({ min: -200, max: 200, noNaN: true, noDefaultInfinity: true }),
-    xSpan: fc.double({ min: 0.1, max: 200, noNaN: true, noDefaultInfinity: true }),
-    y1: fc.double({ min: -200, max: 200, noNaN: true, noDefaultInfinity: true }),
-    ySpan: fc.double({ min: 0.1, max: 200, noNaN: true, noDefaultInfinity: true }),
-  })
-  .map(({ x1, xSpan, y1, ySpan }) => ({
-    minX: x1,
-    maxX: x1 + xSpan,
-    minY: y1,
-    maxY: y1 + ySpan,
-  }));
-
-/** Arbitrary offset values in [-200, 200]. */
-const offsetArb = fc.double({ min: -200, max: 200, noNaN: true, noDefaultInfinity: true });
+import { createKeychainRingGeometry } from "../components/KeychainRing3D";
 
 /**
  * Smart generator: derive hole from width/length to guarantee validity.
@@ -77,9 +41,7 @@ const validGeomParamsArb = fc
   .filter(({ hole }) => hole > 0.1);
 
 /**
- * Generator for invalid geometry params where at least one of:
- * - hole >= min(width, length), OR
- * - any param <= 0
+ * Generator for invalid geometry params with a non-positive dimension.
  */
 const invalidGeomParamsArb = fc.oneof(
   // Case 1: some param <= 0
@@ -98,49 +60,11 @@ const invalidGeomParamsArb = fc.oneof(
     length: fc.double({ min: 1, max: 15, noNaN: true, noDefaultInfinity: true }),
     hole: fc.double({ min: -10, max: 0, noNaN: true, noDefaultInfinity: true }),
   }),
-  // Case 2: all positive but hole >= min(width, length)
-  fc
-    .record({
-      width: fc.double({ min: 1, max: 10, noNaN: true, noDefaultInfinity: true }),
-      length: fc.double({ min: 1, max: 15, noNaN: true, noDefaultInfinity: true }),
-      hole: fc.double({ min: 1, max: 15, noNaN: true, noDefaultInfinity: true }),
-    })
-    .filter(({ width, length, hole }) => hole >= Math.min(width, length)),
 );
 
 // ========== Property-Based Tests ==========
 
 describe("KeychainRing3D — Property-Based Tests", () => {
-  /**
-   * Feature: keychain-loop-enhancement, Property 3: 前端位置计算正确性
-   * **Validates: Requirements 2.2, 3.4**
-   *
-   * For any valid modelBounds (minX < maxX, minY < maxY) and any offset,
-   * computeLoopPosition returns top-center base point plus the offset.
-   * Preset parameter is ignored — always anchors at top-center.
-   */
-  it("Property 3: 前端位置计算正确性 — position equals top-center base + offset", () => {
-    fc.assert(
-      fc.property(
-        presetArb,
-        modelBoundsArb,
-        offsetArb,
-        offsetArb,
-        (preset, bounds, offX, offY) => {
-          // Always top-center regardless of preset
-          const expectedBaseX = (bounds.minX + bounds.maxX) / 2;
-          const expectedBaseY = bounds.maxY;
-
-          const result = computeLoopPosition(preset, bounds, offX, offY);
-
-          expect(result.x).toBeCloseTo(expectedBaseX + offX, 10);
-          expect(result.y).toBeCloseTo(expectedBaseY + offY, 10);
-        },
-      ),
-      { numRuns: 200 },
-    );
-  });
-
   /**
    * Feature: keychain-loop-enhancement, Property 5: 前端几何体有效参数生成正确性
    * **Validates: Requirements 4.2**
@@ -182,7 +106,7 @@ describe("KeychainRing3D — Property-Based Tests", () => {
    * Feature: keychain-loop-enhancement, Property 6: 前端几何体无效参数返回 null
    * **Validates: Requirements 6.3**
    *
-   * For any invalid params (hole >= min(width, length) or any param <= 0),
+   * For any invalid params (any param <= 0),
    * createKeychainRingGeometry returns null.
    */
   it("Property 6: 前端几何体无效参数返回 null — invalid params produce null geometry", () => {

@@ -23,8 +23,7 @@ import { createMatteMaterialFromStandard } from "../utils/threeMatteMaterial";
 import PuzzleOverlay3D from "./PuzzleOverlay3D";
 import { useGltfCacheLifecycle } from "./useGltfCacheLifecycle";
 import { materializePositionAttributeForGeometryBake } from "../utils/threeQuantizedGeometry";
-import type { PuzzleOverlayBounds } from "./puzzleOverlay3DUtils";
-import { createPreviewSpace } from "../utils/previewSpace";
+import { createPreviewSpace, type PreviewSpaceBounds } from "../utils/previewSpace";
 import HeightmapReliefSurface3D from "./HeightmapReliefSurface3D";
 import CoatingPreview3D from "./CoatingPreview3D";
 
@@ -87,7 +86,7 @@ export interface InteractiveModelViewerProps {
   colorLayerHeightMm?: number;
   onPreviewCanvasBoundsChange?: (
     sourceUrl: string,
-    bounds: PuzzleOverlayBounds | null,
+    bounds: PreviewSpaceBounds | null,
   ) => void;
   heightmapReliefUrl?: string | null;
   heightmapArtworkUrl?: string | null;
@@ -793,7 +792,7 @@ function InteractiveModelViewer({
         extractedPreviewCanvasBounds = child;
       }
     });
-    let resolvedPuzzleOverlayBounds: PuzzleOverlayBounds | null = null;
+    let resolvedPuzzleOverlayBounds: PreviewSpaceBounds | null = null;
     if (extractedPreviewCanvasBounds !== null) {
       const canvasBoundsMesh = extractedPreviewCanvasBounds as THREE.Mesh;
       canvasBoundsMesh.updateWorldMatrix(true, false);
@@ -923,7 +922,6 @@ function InteractiveModelViewer({
           maxY: boundsBox.max.y,
           maxZ: boundsBox.max.z, // thickness direction (toward camera)
         };
-
     const buildSummary = {
       url,
       source_role: sourceRole,
@@ -934,7 +932,11 @@ function InteractiveModelViewer({
       backing_plate: summarizeMeshList(
         extractedBackingPlate ? [extractedBackingPlate as THREE.Mesh] : [],
       ),
-      puzzle_overlay_bounds: resolvedPuzzleOverlayBounds,
+      puzzle_overlay_bounds: resolvedPuzzleOverlayBounds && {
+        minX: resolvedPuzzleOverlayBounds.minX, maxX: resolvedPuzzleOverlayBounds.maxX,
+        minY: resolvedPuzzleOverlayBounds.minY, maxY: resolvedPuzzleOverlayBounds.maxY,
+        maxZ: resolvedPuzzleOverlayBounds.maxZ,
+      },
       model_bounds: bounds,
       scene_center: {
         x: +center.x.toFixed(3),

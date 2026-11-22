@@ -44,17 +44,18 @@ describe("Keychain Ring Params — Property-Based Tests", () => {
   });
 
   /**
-   * Complementary: when hole >= min(width, length), geometry should be null.
-   * **Validates: Requirements 7.4**
+   * An oversized requested hole uses the same reduced radius as export.
    */
-  it("P12 complement: hole >= min(width, length) produces null geometry", () => {
+  it("clamps oversized holes to the available wall thickness", () => {
     fc.assert(
       fc.property(widthArb, lengthArb, holeArb, (width, length, hole) => {
         // Precondition: hole must be >= min(width, length)
         fc.pre(hole >= Math.min(width, length));
 
-        const geometry = createKeychainRingGeometry(width, length, hole);
-        expect(geometry).toBeNull();
+        const maxHole = 0.8 * Math.min(width, 2 * Math.max(0.2, length - width / 2));
+        const geometry = createKeychainRingGeometry(width, length, hole)!;
+        const expected = createKeychainRingGeometry(width, length, maxHole)!;
+        expect(geometry.attributes.position.array).toEqual(expected.attributes.position.array);
       }),
       { numRuns: 200 },
     );

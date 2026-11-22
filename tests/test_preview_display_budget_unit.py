@@ -84,8 +84,8 @@ def test_display_render_scales_loop_position_with_the_image(
     marker_y, marker_x = np.where(display[..., 3] > 0)
     assert marker_x.min() >= 17
     assert marker_x.max() <= 23
-    assert marker_y.min() >= 6
-    assert marker_y.max() <= 13
+    assert marker_y.min() == 5
+    assert marker_y.max() == 10
     assert not rgba.any()
 
 

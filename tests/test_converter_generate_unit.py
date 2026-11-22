@@ -3866,6 +3866,39 @@ class TestGenerateRegistryFailureCleanup:
         assert mock_pool.submit.await_count == 1
 
 
+def test_large_format_rejects_keychain_loop_before_dispatch() -> None:
+    sid = _create_session_with_preview_and_files(_test_store)
+    payload = _large_format_payload(
+        sid,
+        modeling_mode="high-fidelity",
+        use_cached_matched_rgb=False,
+        target_width_mm=60.0,
+        target_height_mm=40.0,
+        request_overrides={"add_loop": True},
+    )
+    try:
+        with (
+            patch("os.path.exists", return_value=True),
+            patch(
+                "api.routers.converter.generate._generate_large_format_raster",
+                return_value={
+                    "status": "ok", "message": "generated", "tile_count": 1,
+                    "grid_cols": 1, "grid_rows": 1, "download_url": "/api/files/tiles.zip",
+                },
+            ) as generate_tiles,
+        ):
+            response = client.post("/api/convert/generate-large-format", json=payload)
+
+        assert response.status_code == 422, response.text
+        detail = response.json()["detail"]
+        assert "大画幅分块模式下不支持挂件环" in detail
+        assert "does not support keychain loops" in detail
+        assert "download_url" not in response.json()
+        generate_tiles.assert_not_called()
+    finally:
+        _test_store.close(sid)
+
+
 class TestLargeFormatFridgeMagnetValidation:
     """Verify unsupported fridge-magnet combinations fail deterministically."""
 
@@ -5984,6 +6017,46 @@ class TestLargeFormatDimensionsAndRouting:
         assert native_helper.call_args.kwargs["source_basename"] == "source-artwork"
         assert native_helper.call_args.kwargs["total_width_mm"] == 90.0
         assert native_helper.call_args.kwargs["total_height_mm"] == 60.0
+
+    def test_large_format_high_fidelity_svg_sends_raster_tiles(self, tmp_path) -> None:
+        sid, svg_path, lut_path = _create_svg_session(_test_store, native_tiling_supported=True)
+        received_tiles = []
+
+        async def generate_tile(_worker, image_path, _lut, params):
+            with Image.open(image_path) as tile:
+                assert tile.format == "PNG"
+                assert tile.convert("RGBA").getpixel((tile.width // 2, tile.height // 2)) == (255, 0, 0, 255)
+                received_tiles.append((tile.size, params["target_width_mm"]))
+            output = tmp_path / f"tile-{len(received_tiles)}.3mf"
+            with zipfile.ZipFile(output, "w") as archive:
+                archive.writestr("3D/3dmodel.model", "<model/>")
+            return {"threemf_path": str(output)}
+
+        try:
+            with patch.object(_mock_pool, "submit", side_effect=generate_tile):
+                response = client.post(
+                    "/api/convert/generate-large-format",
+                    json={
+                        "session_id": sid,
+                        "params": {
+                            "tile_width_mm": 30,
+                            "tile_height_mm": 60,
+                            "params": {
+                                "lut_name": "test_lut",
+                                "modeling_mode": "high-fidelity",
+                                "target_width_mm": 60,
+                                "svg_pixels_per_mm": 10,
+                            },
+                        },
+                    },
+                )
+            assert response.status_code == 200, response.text
+            assert response.json()["tile_count"] == 2
+            assert received_tiles == [((300, 400), 30.0)] * 2
+        finally:
+            _test_store.close(sid)
+            Path(svg_path).unlink(missing_ok=True)
+            Path(lut_path).unlink(missing_ok=True)
 
     def test_large_format_svg_height_only_derives_width(self) -> None:
         sid, _svg_path, _lut_path = _create_svg_session(_test_store, native_tiling_supported=True)

@@ -604,12 +604,17 @@ def _download_registry_package_with_retry(
     *,
     module_id: str,
 ) -> Path:
-    """Retry one idempotent download after a timeout or interrupted read."""
+    """Retry one idempotent download after a timeout or remote disconnect."""
 
     for attempt in range(1, _REGISTRY_DOWNLOAD_MAX_ATTEMPTS + 1):
         try:
             return download_registry_package(candidate)
-        except (httpx.ConnectTimeout, httpx.ReadTimeout, httpx.ReadError) as exc:
+        except (
+            httpx.ConnectTimeout,
+            httpx.ReadTimeout,
+            httpx.ReadError,
+            httpx.RemoteProtocolError,
+        ) as exc:
             if attempt >= _REGISTRY_DOWNLOAD_MAX_ATTEMPTS:
                 raise
             log.warning(

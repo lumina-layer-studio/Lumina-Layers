@@ -114,6 +114,8 @@ export const RECIPE_IMPORT_WARNING_PUZZLE_CONFLICT_LARGE_FORMAT =
   "recipe_import_warning_puzzle_conflict_large_format";
 export const RECIPE_IMPORT_WARNING_PUZZLE_CONFLICT_LOOP =
   "recipe_import_warning_puzzle_conflict_loop";
+const RECIPE_IMPORT_WARNING_LARGE_FORMAT_CONFLICT_LOOP =
+  "recipe_import_warning_large_format_conflict_loop";
 export const RECIPE_IMPORT_WARNING_BACK_LABELS_UNAVAILABLE =
   "recipe_import_warning_back_labels_unavailable";
 export const RECIPE_IMPORT_WARNING_SPATIAL_EDITS_NOT_SERIALIZED =
@@ -566,11 +568,7 @@ export function restoreConverterRecipe(
     : puzzleEnabled
       ? false
       : conv.large_format.large_format_enabled;
-  const addLoop = fridgeMagnetEnabled
-    ? false
-    : puzzleEnabled
-      ? false
-      : conv.geometry.add_loop;
+  const addLoop = conv.geometry.add_loop && !fridgeMagnetEnabled && !puzzleEnabled && !largeFormatEnabled;
   const engraveBackLabels = false;
 
   if (fridgeMagnetEnabled && puzzle.puzzle_enabled) {
@@ -591,6 +589,9 @@ export function restoreConverterRecipe(
     warnings.push(
       RECIPE_IMPORT_WARNING_PUZZLE_CONFLICT_LOOP,
     );
+  }
+  if (largeFormatEnabled && conv.geometry.add_loop) {
+    warnings.push(RECIPE_IMPORT_WARNING_LARGE_FORMAT_CONFLICT_LOOP);
   }
   if (puzzle.engrave_back_labels) {
     warnings.push(

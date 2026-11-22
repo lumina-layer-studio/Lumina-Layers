@@ -1822,6 +1822,7 @@ def generate_segmented_glb(
                 canvas_bounds_mesh,
                 node_name=PREVIEW_CANVAS_BOUNDS_NODE_NAME,
             )
+
         _t_canvas_bounds = time.perf_counter() - _t
 
         cache["color_contours"] = contours_data

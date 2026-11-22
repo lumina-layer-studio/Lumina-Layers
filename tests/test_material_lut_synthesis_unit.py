@@ -205,6 +205,27 @@ class TestSolveImageColors:
 
 
 class TestMapPixelsToMaterials:
+    def test_large_recipe_lookup_keeps_pixel_indices_bounded(self, monkeypatch):
+        palette = np.array([[8, 4, 2], [1, 2, 3]], dtype=np.uint8)
+        recipes = np.array([[0, 1, -1], [1, 0, 1]], dtype=np.int32)
+        labels = np.indices((640, 641)).sum(axis=0) % 2
+        image = palette[labels]
+        search = np.searchsorted
+        search_sizes = []
+
+        def measure(sorted_codes, query_codes, *args, **kwargs):
+            search_sizes.append(query_codes.size)
+            return search(sorted_codes, query_codes, *args, **kwargs)
+
+        with monkeypatch.context() as patching:
+            patching.setattr(np, "searchsorted", measure)
+            matched, matrix = map_pixels_to_materials(image, palette, palette, recipes, 640, 641)
+
+        assert max(search_sizes, default=0) <= 256 * 1024
+        assert matrix.dtype == np.int32
+        np.testing.assert_array_equal(matched, image)
+        np.testing.assert_array_equal(matrix, recipes[labels])
+
     def test_basic_mapping(self):
         unique_colors = np.array([[255, 0, 0], [0, 0, 255]], dtype=np.uint8)
         matched_rgb = np.array([[200, 50, 50], [50, 50, 200]], dtype=np.uint8)

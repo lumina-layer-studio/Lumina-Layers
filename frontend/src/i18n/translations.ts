@@ -809,6 +809,10 @@ export const translations: Record<string, Record<"zh" | "en", string>> = {
     zh: "模型覆面开槽计算失败。请提交问题反馈，并附上模型和图片。",
     en: "Model-surface pocket calculation failed. Submit a bug report with the model and artwork attached.",
   },
+  api_error_model_surface_artwork_no_overlap: {
+    zh: "图案没有覆盖选中的模型表面。请把图案移到表面上，再预览一次。",
+    en: "The artwork does not cover the selected model surface. Move it onto the surface and preview again.",
+  },
   api_error_http_429: {
     zh: "请求过于频繁，请稍后再试。",
     en: "Too many requests were sent. Please wait and try again.",
@@ -3112,6 +3116,10 @@ export const translations: Record<string, Record<"zh" | "en", string>> = {
   puzzle_loop_disabled_hint: {
     zh: "拼图模式开启时，挂件环会被禁用。",
     en: "Keychain Loop is disabled while puzzle mode is enabled.",
+  },
+  large_format_loop_disabled_hint: {
+    zh: "大画幅分块模式下不支持挂件环。",
+    en: "Large-format tiling does not support keychain loops.",
   },
 
   // ==================== TAB Navigation Titles ====================
@@ -6403,8 +6411,8 @@ export const translations: Record<string, Record<"zh" | "en", string>> = {
     en: "Large Format Mode",
   },
   basic_large_format_hint: {
-    zh: "作品超过打印床尺寸时，自动把模型切成多块，分别打印后再拼接。会生成一个包含多个 3MF 文件的压缩包。",
-    en: "When the artwork exceeds the print bed, the model is automatically split into tiles to print separately and assemble afterwards. Produces a ZIP containing multiple 3MF files.",
+    zh: "把作品分块打印后再拼接，3MF 文件会打包为 ZIP。开启大画幅时会关闭挂件环。",
+    en: "Split the artwork into tiles for printing and assembly. The 3MF files are packaged in a ZIP. Turning on Large Format turns off the keychain loop.",
   },
   large_format_warning_native_unavailable: {
     zh: "此 SVG 暂不支持原生大画幅切片，已改用栅格切片。",
@@ -6782,8 +6790,8 @@ export const translations: Record<string, Record<"zh" | "en", string>> = {
     en: "Rotation Angle",
   },
   loop_angle_hint: {
-    zh: "挂件环相对于模型的旋转角度（度）。0° 为竖直向上，正值顺时针旋转。",
-    en: "Rotation angle of the loop relative to the model (in degrees). 0° is vertical upward; positive values rotate clockwise.",
+    zh: "挂件环绕附着点旋转。从上方看，0° 朝向图案顶部，正值逆时针旋转。",
+    en: "The loop rotates around its attachment point. Viewed from above, 0° points toward the top of the artwork and positive angles turn counterclockwise.",
   },
   loop_position_preset: {
     zh: "位置预设",
@@ -6794,16 +6802,16 @@ export const translations: Record<string, Record<"zh" | "en", string>> = {
     en: "X Offset",
   },
   loop_offset_x_hint: {
-    zh: "挂件环中心相对于模型中心的水平偏移（毫米）。正值向右，负值向左。",
-    en: "Horizontal offset of the loop center from the model center (in mm). Positive moves right, negative moves left.",
+    zh: "挂件环相对预设位置的水平偏移（毫米）。正值向右，负值向左。",
+    en: "Horizontal offset from the preset position (in mm). Positive moves right, negative moves left.",
   },
   loop_offset_y: {
     zh: "Y 偏移",
     en: "Y Offset",
   },
   loop_offset_y_hint: {
-    zh: "挂件环相对当前预设吸附点的垂直偏移（毫米）。顶部居中且未旋转时，向内移动会限制在模型局部轮廓处。",
-    en: "Vertical offset from the current preset anchor (in mm). For an unrotated top-center loop, inward movement is clamped at the model's local contour.",
+    zh: "挂件环相对预设位置的垂直偏移（毫米）。正值向上，负值向下。",
+    en: "Vertical offset from the preset position (in mm). Positive moves up, negative moves down.",
   },
   loop_preset_top_center: {
     zh: "上中",
@@ -8855,6 +8863,10 @@ export const translations: Record<string, Record<"zh" | "en", string>> = {
   recipe_import_warning_puzzle_conflict_loop: {
     zh: "导入的配方同时启用了拼图模式和挂件环。为保持状态有效，挂件环已被禁用。",
     en: "The imported recipe enabled both puzzle mode and a keychain loop. The loop has been disabled to keep the state valid.",
+  },
+  recipe_import_warning_large_format_conflict_loop: {
+    zh: "导入的配方开启了大画幅分块，已关闭挂件环。",
+    en: "The keychain loop was turned off because the imported recipe uses large-format tiling.",
   },
   recipe_import_warning_back_labels_unavailable: {
     zh: "导入的配方启用了拼图背面标签。当前版本暂不支持背面标签，已自动关闭。",

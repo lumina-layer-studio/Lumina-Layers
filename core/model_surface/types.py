@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 MODEL_SURFACE_FATAL_ERRORS = (MemoryError,)
+MODEL_SURFACE_ARTWORK_NO_OVERLAP = "model_surface_artwork_no_overlap"
 
 
 class ModelSurfaceError(ValueError):

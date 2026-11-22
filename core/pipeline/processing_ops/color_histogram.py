@@ -4,6 +4,16 @@ import numpy as np
 
 _COUNT_TILE_EDGE = 512
 _MAX_SPARSE_COLORS = 65_536
+RGB_LOOKUP_BLOCK_PIXELS = _COUNT_TILE_EDGE**2
+
+
+def pack_rgb24(pixels: np.ndarray) -> np.ndarray:
+    """Pack rows of RGB channels into unsigned 24-bit lookup keys."""
+    packed = pixels[:, 0].astype(np.uint32)
+    np.left_shift(packed, 16, out=packed)
+    packed |= pixels[:, 1].astype(np.uint32) << 8
+    packed |= pixels[:, 2]
+    return packed
 
 
 def count_visible_rgb(
@@ -25,11 +35,7 @@ def count_visible_rgb(
             pixels = rgb[y:y + _COUNT_TILE_EDGE, x:x + _COUNT_TILE_EDGE][selected]
             if not pixels.size:
                 continue
-            packed = pixels[:, 0].astype(np.uint32)
-            np.left_shift(packed, 16, out=packed)
-            packed |= pixels[:, 1].astype(np.uint32) << 8
-            packed |= pixels[:, 2]
-            tile_keys, tile_counts = np.unique(packed, return_counts=True)
+            tile_keys, tile_counts = np.unique(pack_rgb24(pixels), return_counts=True)
             if histogram is not None:
                 histogram[tile_keys] += tile_counts
                 continue

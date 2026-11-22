@@ -13,8 +13,13 @@ from shapely.geometry import MultiPolygon, Polygon
 from shapely.geometry.base import BaseGeometry
 from shapely.validation import make_valid
 
-from config import TEMP_DIR
-from core.model_surface.types import EdgeMode, ModelSurfaceError, SurfaceFootprint
+from config import MIN_PRINTABLE_ALPHA, TEMP_DIR
+from core.model_surface.types import (
+    MODEL_SURFACE_ARTWORK_NO_OVERLAP,
+    EdgeMode,
+    ModelSurfaceError,
+    SurfaceFootprint,
+)
 from core.vector_engine import parse_svg_geometry
 
 
@@ -121,7 +126,10 @@ def render_surface_artwork(
     )
 
     mask = _footprint_mask(footprint, width_px, height_px)
-    canvas.putalpha(Image.composite(canvas.getchannel("A"), Image.new("L", canvas.size, 0), mask))
+    alpha = Image.composite(canvas.getchannel("A"), Image.new("L", canvas.size, 0), mask)
+    if alpha.getextrema()[1] < MIN_PRINTABLE_ALPHA:
+        raise ModelSurfaceError(MODEL_SURFACE_ARTWORK_NO_OVERLAP)
+    canvas.putalpha(alpha)
 
     fd, output_path = tempfile.mkstemp(suffix=".png", dir=str(output_root))
     os.close(fd)
@@ -208,7 +216,7 @@ def _render_vector_surface_artwork(
         transformed_shapes.append((clipped, color))
 
     if not transformed_shapes:
-        raise ModelSurfaceError("Surface artwork does not overlap the selected surface.")
+        raise ModelSurfaceError(MODEL_SURFACE_ARTWORK_NO_OVERLAP)
 
     fd, output_path = tempfile.mkstemp(suffix=".svg", dir=str(output_dir))
     os.close(fd)

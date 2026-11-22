@@ -31,6 +31,7 @@ from api.preview_response_payload import build_preview_response_palette
 from api.preview_cache_artifacts import (
     estimate_preview_cache_bytes,
     externalize_preview_cache,
+    get_preview_cache_field_path,
     get_preview_cache_max_bytes,
     get_preview_cache_metadata,
     hydrate_preview_cache,
@@ -46,6 +47,8 @@ from api.schemas.converter import (
     BedSizeItem,
     BedSizeListResponse,
     ColorReplacementItem,
+    KeychainAnchorRequest,
+    KeychainAnchorResponse,
     VectorPreviewRendererRequest,
     VectorPreviewRendererResponse,
 )
@@ -61,6 +64,7 @@ from api.structured_logging import bind_session_id, get_logger
 from api.visible_region_cache import schedule_visible_region_cache_prewarm
 from api.worker_pool import WorkerPoolManager
 from api.workers.converter_workers import worker_generate_preview, worker_prepare_material_catalog
+from api.workers.keychain import worker_keychain_anchor
 from config import (
     SVG_PIXELS_PER_MM_DEFAULT,
     SVG_PIXELS_PER_MM_MAX,
@@ -72,7 +76,8 @@ from config import (
     normalize_svg_pixels_per_mm,
 )
 from core.converter import generate_empty_bed_glb, generate_segmented_glb
-from core.errors import CoreError, MaterialArchiveUnavailableError
+from core.errors import CoreError, KeychainPlacementError, MaterialArchiveUnavailableError
+from core.keychain_attachment import LoopProfile
 from core.naming import generate_segmented_glb_filename
 from core.heightmap_loader import HeightmapLoader
 from core.image_preprocessor import ImagePreprocessor
@@ -2418,6 +2423,41 @@ def get_segmented_glb_status(
             else None
         ),
     }
+
+
+@router.post("/keychain-anchor", response_model=KeychainAnchorResponse)
+async def resolve_keychain_anchor(
+    request: KeychainAnchorRequest,
+    store: SessionStore = Depends(get_session_store),
+    pool: WorkerPoolManager = Depends(get_worker_pool),
+) -> KeychainAnchorResponse:
+    """Calculate the same rotated attachment used by 3MF generation."""
+    session = _require_session(store, request.session_id)
+    cache = session.get("preview_cache")
+    if not isinstance(cache, dict):
+        raise HTTPException(status_code=409, detail=PREVIEW_CACHE_UNAVAILABLE_DETAIL)
+    metadata = get_preview_cache_metadata(cache)
+    mode = metadata.get("modeling_mode")
+    is_vector = getattr(mode, "value", mode) == "vector"
+    field = "keychain_vector_body" if is_vector else "mask_solid"
+    path = get_preview_cache_field_path(cache, field)
+    if path is None:
+        raise HTTPException(status_code=409, detail=PREVIEW_CACHE_UNAVAILABLE_DETAIL)
+    pixel_scale = metadata.get("pixel_scale")
+    if not pixel_scale:
+        pixel_scale = float(metadata["target_width_mm"]) / int(metadata["target_w"])
+    try:
+        x, y = await pool.submit(
+            worker_keychain_anchor,
+            path, get_preview_cache_field_path(cache, "backing_mask"), float(pixel_scale),
+            float(metadata["keychain_vector_mm_per_unit"]) if is_vector else None,
+            LoopProfile(request.width, request.length, request.hole, request.angle), request.preset,
+        )
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=409, detail=PREVIEW_CACHE_UNAVAILABLE_DETAIL) from exc
+    except KeychainPlacementError as exc:
+        raise to_http_exception(exc, "Keychain attachment") from exc
+    return KeychainAnchorResponse(x=x, y=y)
 
 
 @router.post(

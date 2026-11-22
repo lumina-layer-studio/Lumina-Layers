@@ -27,6 +27,24 @@ class CoreValidationError(CoreError):
         super().__init__(detail=detail, error_type="core_validation_error")
 
 
+class KeychainPlacementError(CoreValidationError):
+    """The final ring cannot be printed as an attached part with an open bore."""
+
+    @classmethod
+    def detached(cls) -> KeychainPlacementError:
+        return cls(
+            "挂件环与主体没有实体接合。请调整挂件环的位置、角度或偏移。 / "
+            "The keychain loop has no solid joint to the model. Adjust its position, angle or offsets."
+        )
+
+    @classmethod
+    def blocked(cls) -> KeychainPlacementError:
+        return cls(
+            "挂孔已被主体完全堵住。请调整挂件环的位置、角度或偏移。 / "
+            "The model completely blocks the keychain hole. Adjust the loop position, angle or offsets."
+        )
+
+
 class MaterialArchiveUnavailableError(CoreValidationError):
     """A selected conversion material is missing or has unusable calibration data."""
 

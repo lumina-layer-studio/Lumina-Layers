@@ -5,6 +5,7 @@ import { once } from "node:events";
 import { createRequestRetryAdapter } from "../requestRetryAdapter";
 
 const path = "/convert/replace-colors-batch";
+const selectionPath = "/convert/selection/session-1";
 const body = { session_id: "session", operation_id: "edit-1", replacements: [] };
 
 function clientWith(statuses: number[], headers: Record<string, string> = {}) {
@@ -98,7 +99,7 @@ describe("batch editor request recovery", () => {
 });
 
 describe("stateless request recovery", () => {
-  it.each(["/slicer/detect", "/lut/catalog"])("recovers an empty development-proxy 500 for %s", async (url) => {
+  it.each(["/slicer/detect", "/lut/catalog", selectionPath])("recovers an empty development-proxy 500 for %s", async (url) => {
     const base: AxiosAdapter = vi.fn(async (config) => {
       if (vi.mocked(base).mock.calls.length === 1) {
         throw new AxiosError("proxy disconnected", "ERR_BAD_RESPONSE", config, undefined, {
@@ -196,6 +197,8 @@ describe("stateless request recovery", () => {
     ["post", "/convert/preview"],
     ["post", "/convert/generate"],
     ["post", "/convert/replace-color"],
+    ["post", "/convert/selection/mutate"],
+    ["get", `${selectionPath}/other`],
     ["get", "/jobs/job-1"],
     ["post", "/session/heartbeat"],
   ])("does not add retries to %s %s", async (method, url) => {
@@ -211,13 +214,13 @@ describe("stateless request recovery", () => {
     expect(base).toHaveBeenCalledOnce();
   });
 
-  it("stops after a second catalog failure", async () => {
+  it.each(["/system/printers", selectionPath])("stops after a second read failure for %s", async (url) => {
     const { client, base } = clientWith([502, 504, 200]);
-    await expect(client.get("/system/printers")).rejects.toMatchObject({ response: { status: 504 } });
+    await expect(client.get(url)).rejects.toMatchObject({ response: { status: 504 } });
     expect(base).toHaveBeenCalledTimes(2);
   });
 
-  it.each(["/system/printers", path])("respects Retry-After for %s", async (url) => {
+  it.each(["/system/printers", selectionPath, path])("respects Retry-After for %s", async (url) => {
     const { client, base } = clientWith([503, 200], { "Retry-After": "30" });
     await expect(client.request({ url, method: url === path ? "post" : "get", data: body }))
       .rejects.toMatchObject({ response: { status: 503 } });
@@ -233,6 +236,41 @@ describe("stateless request recovery", () => {
     await vi.advanceTimersByTimeAsync(1);
     controller.abort();
     await vi.runAllTimersAsync();
+    expect(axios.isCancel(await outcome)).toBe(true);
+    expect(base).toHaveBeenCalledOnce();
+  });
+});
+
+describe("selection document request recovery", () => {
+  it("retries the same session document GET with the caller's signal", async () => {
+    const { client, base } = clientWith([502, 200]);
+    const controller = new AbortController();
+
+    await expect(client.get(selectionPath, { signal: controller.signal }))
+      .resolves.toMatchObject({ status: 200 });
+    expect(base).toHaveBeenCalledTimes(2);
+    for (const [config] of vi.mocked(base).mock.calls) {
+      expect(config).toMatchObject({ method: "get", url: selectionPath });
+      expect(config.signal).toBe(controller.signal);
+    }
+  });
+
+  it.each([404, 409])("preserves an HTTP %s response from the selection document API", async (status) => {
+    const { client, base } = clientWith([status, 200]);
+    await expect(client.get(selectionPath)).rejects.toMatchObject({ response: { status } });
+    expect(base).toHaveBeenCalledOnce();
+  });
+
+  it("stops before retrying an aborted selection document request", async () => {
+    vi.useFakeTimers();
+    const { client, base } = clientWith([502, 200]);
+    const controller = new AbortController();
+    const outcome = client.get(selectionPath, { signal: controller.signal }).catch((error: unknown) => error);
+
+    await vi.advanceTimersByTimeAsync(1);
+    controller.abort();
+    await vi.runAllTimersAsync();
+
     expect(axios.isCancel(await outcome)).toBe(true);
     expect(base).toHaveBeenCalledOnce();
   });

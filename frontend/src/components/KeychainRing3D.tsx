@@ -20,11 +20,8 @@ const _pointer = new THREE.Vector2();
 /** Default extrusion depth matching spacer_thick (mm). (默认拉伸深度，匹配 spacer_thick) */
 const EXTRUDE_DEPTH = 1.2;
 
-/** Small offset above model top (mm). (模型顶部上方的小偏移量) */
-const TOP_OFFSET = 0.1;
-
-/** Number of segments for the circular hole. (圆形孔洞的分段数) */
-const HOLE_SEGMENTS = 32;
+// Match the artwork-space profile and attachment dimensions in core/geometry_utils.py.
+const KEYCHAIN_ARC_SEGMENTS = 32;
 const GEOMETRY_DISPOSE_DELAY_MS = 0;
 const pendingKeychainRingGeometryDisposals = new Map<
   THREE.BufferGeometry,
@@ -68,19 +65,6 @@ export function resetKeychainRingGeometryDisposeForTests(): void {
   pendingKeychainRingGeometryDisposals.clear();
 }
 
-export interface ContourCanvasBounds {
-  minX: number;
-  maxX: number;
-  minY: number;
-  maxY: number;
-}
-
-/**
- * Map an asset-space contour point into current display millimetres.
- * 将资产空间轮廓点映射为当前显示毫米坐标。
- */
-export type ContourToDisplayPoint = (point: PreviewSpacePoint) => PreviewSpacePoint;
-
 export interface KeychainRing3DProps {
   enabled: boolean;
   cameraPanModifierActive?: boolean;
@@ -88,20 +72,17 @@ export interface KeychainRing3DProps {
   length: number; // mm, 4-15
   hole: number; // mm, 1-5
   angle: number; // degrees, -180 to 180
-  offsetX: number; // mm, -20 to 20
-  offsetY: number; // mm, -20 to 20
-  positionPreset: string; // e.g. "top-center"
-  modelBounds: {
-    minX: number;
-    maxX: number;
-    minY: number;
-    maxY: number;
-    maxZ: number;
-  } | null;
-  contours?: Record<string, number[][][]>;
-  contourCanvasBounds?: ContourCanvasBounds | null;
-  /** Live preview resize transform for contour points. / 轮廓点的实时预览缩放变换。 */
-  contourToDisplayPoint?: ContourToDisplayPoint;
+  offsetX: number; // mm, -200 to 200
+  offsetY: number; // mm, -200 to 200
+  /** Solved foot in display millimetres before the manual offsets. */
+  anchor: PreviewSpacePoint | null;
+}
+
+function keychainRingProfile(width: number, length: number, hole: number) {
+  const radius = width / 2;
+  const rectHeight = Math.max(0.2, length - radius);
+  const holeRadius = Math.min(hole / 2, radius * 0.8, rectHeight * 0.8);
+  return { radius, rectHeight, holeRadius };
 }
 
 /**
@@ -126,254 +107,31 @@ export function createKeychainRingGeometry(
   if (width <= 0 || length <= 0 || hole <= 0) {
     return null;
   }
-  // Hole diameter must be less than min(width, length) for valid geometry
-  if (hole >= Math.min(width, length)) {
-    return null;
-  }
+  const { radius, rectHeight, holeRadius } = keychainRingProfile(width, length, hole);
 
-  const halfW = width / 2;
-  const circleRadius = halfW;
-  const rectHeight = Math.max(0.2, length - circleRadius);
-
-  // Outer contour: rectangle bottom + semicircle top
+  // Local (0, 0) is the foot midpoint. Use the same polygon samples as export.
   const shape = new THREE.Shape();
-  shape.moveTo(-halfW, 0);
-  shape.lineTo(halfW, 0);
-  shape.lineTo(halfW, rectHeight);
-  // Semicircle arc from right (angle=0) to left (angle=PI)
-  shape.absarc(0, rectHeight, circleRadius, 0, Math.PI, false);
-  shape.lineTo(-halfW, rectHeight);
+  shape.moveTo(-radius, 0);
+  shape.lineTo(radius, 0);
+  for (let step = 0; step <= KEYCHAIN_ARC_SEGMENTS; step += 1) {
+    const angle = Math.PI * step / KEYCHAIN_ARC_SEGMENTS;
+    shape.lineTo(radius * Math.cos(angle), rectHeight + radius * Math.sin(angle));
+  }
   shape.closePath();
 
-  // Circular hole centered at semicircle center (0, rectHeight)
   const holePath = new THREE.Path();
-  holePath.absarc(0, rectHeight, hole / 2, 0, Math.PI * 2, false);
+  holePath.moveTo(holeRadius, rectHeight);
+  for (let step = 1; step < KEYCHAIN_ARC_SEGMENTS; step += 1) {
+    const angle = 2 * Math.PI * step / KEYCHAIN_ARC_SEGMENTS;
+    holePath.lineTo(holeRadius * Math.cos(angle), rectHeight + holeRadius * Math.sin(angle));
+  }
+  holePath.closePath();
   shape.holes.push(holePath);
 
-  const geometry = new THREE.ExtrudeGeometry(shape, {
+  return new THREE.ExtrudeGeometry(shape, {
     depth: EXTRUDE_DEPTH,
     bevelEnabled: false,
-    curveSegments: HOLE_SEGMENTS,
   });
-
-  return geometry;
-}
-
-/**
- * Distance from an unrotated loop's bottom edge to its hole, matching the
- * backend `keychain_loop_hole_clearance`. The loop may sink this far into the
- * body before the hole overlaps it.
- * 未旋转挂环底边到挂孔最低点的距离，与后端 `keychain_loop_hole_clearance`
- * 一致；挂环向本体内嵌入超过该深度时挂孔会与本体重叠。
- */
-export function keychainLoopHoleClearance(
-  width: number,
-  length: number,
-  hole: number,
-): number {
-  const circleRadius = width / 2;
-  const rectHeight = Math.max(0.2, length - circleRadius);
-  const holeRadius = Math.min(hole / 2, circleRadius * 0.8, rectHeight * 0.8);
-  return Math.max(0, rectHeight - holeRadius);
-}
-
-interface ContourEdge {
-  startX: number;
-  startY: number;
-  endX: number;
-  endY: number;
-}
-
-/** Highest edge Y crossing `x`, or -Infinity when no edge covers it. */
-function topProfileAt(edges: ContourEdge[], x: number): number {
-  let top = Number.NEGATIVE_INFINITY;
-  for (const edge of edges) {
-    const deltaX = edge.endX - edge.startX;
-    if (Math.abs(deltaX) <= Number.EPSILON) {
-      if (Math.abs(x - edge.startX) <= 1e-9) {
-        top = Math.max(top, edge.startY, edge.endY);
-      }
-      continue;
-    }
-    const ratio = (x - edge.startX) / deltaX;
-    if (ratio >= -1e-9 && ratio <= 1 + 1e-9) {
-      const clamped = Math.min(1, Math.max(0, ratio));
-      top = Math.max(top, edge.startY + clamped * (edge.endY - edge.startY));
-    }
-  }
-  return top;
-}
-
-function contourTopRangeWithinBand(
-  contours: Record<string, number[][][]> | undefined,
-  contourCanvasBounds: ContourCanvasBounds | null | undefined,
-  centerX: number,
-  contactWidth: number,
-  contourToDisplayPoint?: ContourToDisplayPoint,
-): { lowest: number; highest: number } | null {
-  if (!contours || !contourCanvasBounds || contactWidth <= 0) {
-    return null;
-  }
-
-  const polygons = Object.values(contours).flat();
-  if (
-    !Number.isFinite(contourCanvasBounds.minX)
-    || !Number.isFinite(contourCanvasBounds.maxX)
-    || !Number.isFinite(contourCanvasBounds.minY)
-    || !Number.isFinite(contourCanvasBounds.maxY)
-    || contourCanvasBounds.maxX <= contourCanvasBounds.minX
-    || contourCanvasBounds.maxY <= contourCanvasBounds.minY
-  ) {
-    return null;
-  }
-
-  // S11 emits contour points in full-canvas world-space millimetres with
-  // origin (0, 0). The GLB canvas anchor is the same rectangle after the
-  // viewer centers the scene, so only its world-space origin is required.
-  // A live preview resize then scales that asset-space point for display.
-  const mapPoint = (point: number[]) => {
-    const assetPoint = {
-      x: contourCanvasBounds.minX + point[0],
-      y: contourCanvasBounds.minY + point[1],
-    };
-    return contourToDisplayPoint ? contourToDisplayPoint(assetPoint) : assetPoint;
-  };
-  const bandMinX = centerX - contactWidth / 2;
-  const bandMaxX = centerX + contactWidth / 2;
-  const edges: ContourEdge[] = [];
-  const sampleXs = new Set<number>([bandMinX, bandMaxX]);
-
-  for (const polygon of polygons) {
-    if (polygon.length < 2) {
-      continue;
-    }
-    for (let index = 0; index < polygon.length; index += 1) {
-      const startPoint = polygon[index];
-      const endPoint = polygon[(index + 1) % polygon.length];
-      if (
-        startPoint.length < 2
-        || endPoint.length < 2
-        || !Number.isFinite(startPoint[0])
-        || !Number.isFinite(startPoint[1])
-        || !Number.isFinite(endPoint[0])
-        || !Number.isFinite(endPoint[1])
-      ) {
-        continue;
-      }
-      const start = mapPoint(startPoint);
-      const end = mapPoint(endPoint);
-      if (Math.max(start.x, end.x) < bandMinX || Math.min(start.x, end.x) > bandMaxX) {
-        continue;
-      }
-      edges.push({ startX: start.x, startY: start.y, endX: end.x, endY: end.y });
-      for (const vertexX of [start.x, end.x]) {
-        if (vertexX >= bandMinX && vertexX <= bandMaxX) {
-          sampleXs.add(vertexX);
-        }
-      }
-    }
-  }
-
-  // The top profile is piecewise linear between contour vertices, so the band
-  // ends plus every vertex inside the band contain both extremes.
-  let lowest = Number.POSITIVE_INFINITY;
-  let highest = Number.NEGATIVE_INFINITY;
-  for (const sampleX of sampleXs) {
-    const top = topProfileAt(edges, sampleX);
-    if (Number.isFinite(top)) {
-      lowest = Math.min(lowest, top);
-      highest = Math.max(highest, top);
-    }
-  }
-
-  return Number.isFinite(highest) ? { lowest, highest } : null;
-}
-
-/**
- * Compute keychain loop position from model bounds and offset.
- * 根据模型边界和偏移量计算钥匙扣挂孔的 3D 位置。
- *
- * Anchors top-center loops to the local contour when contour data is available.
- * The loop bottom sits at the lowest contour point under the contact band, so
- * sloped edges stay connected across the band, but never sinks further than
- * the hole clearance below the highest point, so the hole stays outside.
- * 有轮廓数据时，顶部居中挂环会锚定到接触带下方的局部轮廓：底边落在接触带内
- * 轮廓最低点，斜边也能整段相连；但相对最高点的下沉不超过挂孔余量，挂孔始终
- * 在本体之外。
- *
- * @param preset - Position preset. Local contour protection applies to top-center.
- *   (位置预设；局部轮廓保护用于顶部居中)
- * @param modelBounds - Model bounding box in mm. (模型包围盒，毫米)
- * @param offsetX - X offset in mm. (X 偏移量，毫米)
- * @param offsetY - Y offset in mm. (Y 偏移量，毫米)
- * @param contourToDisplayPoint - Optional live resize transform applied to
- *   contour points; modelBounds must already be in display space.
- *   (可选的实时缩放变换，作用于轮廓点；modelBounds 需已为显示空间)
- * @param holeClearance - Maximum sink depth below the highest contour point,
- *   see `keychainLoopHoleClearance`. (相对轮廓最高点的最大下沉深度)
- * @returns Computed {x, y} position in mm. (计算后的 {x, y} 位置，毫米)
- */
-export function computeLoopPosition(
-  preset: string,
-  modelBounds: { minX: number; maxX: number; minY: number; maxY: number },
-  offsetX: number,
-  offsetY: number,
-  contours?: Record<string, number[][][]>,
-  contactWidth = 0,
-  contourCanvasBounds?: ContourCanvasBounds | null,
-  contourToDisplayPoint?: ContourToDisplayPoint,
-  holeClearance = Number.POSITIVE_INFINITY,
-): { x: number; y: number } {
-  return computeLoopPlacement(
-    preset,
-    modelBounds,
-    offsetX,
-    offsetY,
-    contours,
-    contactWidth,
-    contourCanvasBounds,
-    contourToDisplayPoint,
-    holeClearance,
-  ).position;
-}
-
-function computeLoopPlacement(
-  preset: string,
-  modelBounds: { minX: number; maxX: number; minY: number; maxY: number },
-  offsetX: number,
-  offsetY: number,
-  contours: Record<string, number[][][]> | undefined,
-  contactWidth: number,
-  contourCanvasBounds: ContourCanvasBounds | null | undefined,
-  contourToDisplayPoint: ContourToDisplayPoint | undefined,
-  holeClearance: number,
-): { position: { x: number; y: number }; usesLocalContour: boolean } {
-  const baseX = (modelBounds.minX + modelBounds.maxX) / 2;
-  const x = baseX + offsetX;
-  const topRange = preset === "top-center"
-    ? contourTopRangeWithinBand(
-      contours,
-      contourCanvasBounds,
-      x,
-      contactWidth,
-      contourToDisplayPoint,
-    )
-    : null;
-  if (topRange !== null) {
-    const anchorY = Math.max(
-      topRange.lowest,
-      topRange.highest - Math.max(0, holeClearance),
-    );
-    return {
-      position: { x, y: anchorY + Math.max(0, offsetY) },
-      usesLocalContour: true,
-    };
-  }
-
-  return {
-    position: { x, y: modelBounds.maxY + offsetY },
-    usesLocalContour: false,
-  };
 }
 
 /** Visual feedback constants for drag interaction states. (拖拽交互状态的视觉反馈常量) */
@@ -395,11 +153,7 @@ function KeychainRing3D({
   angle,
   offsetX,
   offsetY,
-  positionPreset,
-  modelBounds,
-  contours,
-  contourCanvasBounds,
-  contourToDisplayPoint,
+  anchor,
 }: KeychainRing3DProps) {
   const { controls, camera, gl } = useThree();
 
@@ -418,8 +172,7 @@ function KeychainRing3D({
 
   // Store setters
   const setLoopOffsets = useConverterStore((s) => s.setLoopOffsets);
-  const setLoopOffsetY = useConverterStore((s) => s.setLoopOffsetY);
-  const shouldRenderGeometry = enabled && modelBounds !== null;
+  const shouldRenderGeometry = enabled && anchor !== null;
 
   // Memoize geometry — only regenerate when width/length/hole change (Req 6.1)
   const geometry = useMemo(
@@ -434,42 +187,7 @@ function KeychainRing3D({
     };
   }, [geometry]);
 
-  const getPlacement = useCallback((x: number, y: number) => {
-    if (!modelBounds) return null;
-    return computeLoopPlacement(
-      positionPreset,
-      modelBounds,
-      x,
-      y,
-      Math.abs(angle) <= 1e-9 ? contours : undefined,
-      width,
-      contourCanvasBounds,
-      contourToDisplayPoint,
-      keychainLoopHoleClearance(width, length, hole),
-    );
-  }, [
-    positionPreset,
-    modelBounds,
-    angle,
-    contours,
-    width,
-    length,
-    hole,
-    contourCanvasBounds,
-    contourToDisplayPoint,
-  ]);
-  const placement = useMemo(
-    () => getPlacement(offsetX, offsetY),
-    [getPlacement, offsetX, offsetY],
-  );
-  const position = placement?.position ?? null;
-  const constrainToLocalContour = placement?.usesLocalContour ?? false;
-
-  useEffect(() => {
-    if (enabled && constrainToLocalContour && offsetY < 0) {
-      setLoopOffsetY(0);
-    }
-  }, [enabled, constrainToLocalContour, offsetY, setLoopOffsetY]);
+  const position = anchor && { x: anchor.x + offsetX, y: anchor.y + offsetY };
 
   // Memoize rotation in radians (Req 1.2)
   const angleRad = useMemo(() => angle * (Math.PI / 180), [angle]);
@@ -500,14 +218,8 @@ function KeychainRing3D({
   const commitDragPosition = useCallback(() => {
     const next = pendingOffset.current;
     pendingOffset.current = null;
-    if (next) {
-      // Use the destination contour before publishing either coordinate.
-      const y = getPlacement(next.x, next.y)?.usesLocalContour
-        ? Math.max(0, next.y)
-        : next.y;
-      setLoopOffsets(next.x, y);
-    }
-  }, [getPlacement, setLoopOffsets]);
+    if (next) setLoopOffsets(next.x, next.y);
+  }, [setLoopOffsets]);
 
   const restoreInteractionState = useCallback(() => {
     cancelDragFrame();
@@ -643,7 +355,7 @@ function KeychainRing3D({
       ? DRAG_VISUAL.hover
       : DRAG_VISUAL.default;
 
-  const canRenderRing = Boolean(enabled && geometry && modelBounds && position);
+  const canRenderRing = Boolean(enabled && geometry && position);
 
   useEffect(() => {
     if (canRenderRing || (!isDragging && !isHovered)) {
@@ -669,19 +381,15 @@ function KeychainRing3D({
     };
   }, [restoreInteractionState]);
 
-  // Return null when modelBounds is null (Req 6.2) or params invalid (Req 6.3)
-  if (!enabled || !geometry || !modelBounds || !position) {
+  if (!enabled || !geometry || !position) {
     return null;
   }
 
-  const posX = position.x;
-  const posY = position.y + TOP_OFFSET;
-  const posZ = 0;
-
   return (
     <mesh
+      name="Keychain_Loop_Preview"
       geometry={geometry}
-      position={[posX, posY, posZ]}
+      position={[position.x, position.y, 0]}
       rotation={[0, 0, angleRad]}
       onPointerDown={handlePointerDown}
       onPointerOver={handlePointerOver}

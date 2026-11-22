@@ -32,6 +32,7 @@ from core.model_surface.slot_meshing import (
     build_slot_surface_scene_from_voxels,
 )
 from core.model_surface.types import (
+    MODEL_SURFACE_ARTWORK_NO_OVERLAP,
     MODEL_SURFACE_FATAL_ERRORS,
     ModelSurfaceError,
     SurfaceFootprint,
@@ -343,6 +344,8 @@ def _certify_surface_pattern_scene(
 ) -> None:
     """Publish compatibility metadata and certify one canonical pattern."""
 
+    if not pattern_scene.geometry:
+        raise ModelSurfaceError(MODEL_SURFACE_ARTWORK_NO_OVERLAP)
     pattern_scene.metadata[MODEL_SURFACE_DISPLAY_Z_BOUNDS_KEY] = (
         domain.writer_z_bounds_mm
     )

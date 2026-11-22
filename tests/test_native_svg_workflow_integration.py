@@ -18,6 +18,7 @@ from core.layered_coordinate_domain import (
     LayeredCoordinateDomain,
 )
 from core.native_svg_adapter import NativeSvgGeometry, analyze_native_svg
+from core.keychain_attachment import vector_keychain_body
 from core.pipeline.vector_branch import (
     _generate_vector_outline_mesh,
     _inject_vector_keychain_loop,
@@ -430,6 +431,8 @@ def test_native_analysis_drives_outline_keychain_glb_and_cross_slicer_3mf(
         scene,
         preview_colors,
         analysis.slot_names,
+        vector_keychain_body(analysis),
+        x_mirrored=True,
     )
     outline = _generate_vector_outline_mesh(
         analysis,

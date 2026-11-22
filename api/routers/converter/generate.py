@@ -76,7 +76,7 @@ from api.workers.converter_workers import (
 )
 from core.batch_layout import LayoutResult, XYBBox, layout_shelf_by_row
 from core.errors import (
-    CachedPreviewAnalysisError, ExternalSpoolSelectionError, MaterialArchiveUnavailableError,
+    CachedPreviewAnalysisError, ExternalSpoolSelectionError, KeychainPlacementError, MaterialArchiveUnavailableError,
     NativeMaterialSelectionError, TemplateSlotCapacityError, WipeTowerLayoutError,
 )
 from .export_materials import require_material_selection
@@ -274,6 +274,7 @@ log = get_logger(__name__)
 
 _EXPORT_INPUT_ERRORS = (
     ExternalSpoolSelectionError,
+    KeychainPlacementError,
     MaterialArchiveUnavailableError,
     NativeMaterialSelectionError,
     TemplateSlotCapacityError,
@@ -2597,6 +2598,13 @@ async def convert_generate(
         "material_max_layer_count": dynamic_material_settings[2],
         "material_delta_e00_tolerance": dynamic_material_settings[3],
     }
+    cached_scale = cache.get("pixel_scale")
+    if (
+        params["reuse_preview_analysis"] and preview_target_width_matches
+        and core_modeling_mode in {CoreModelingMode.HIGH_FIDELITY, CoreModelingMode.PIXEL}
+        and isinstance(cached_scale, (int, float)) and math.isfinite(cached_scale) and cached_scale > 0
+    ):
+        params["cached_raster_pixel_scale"] = float(cached_scale)
     if session_material_source == "material_archive":
         selected_materials = session_data.get("selected_materials") or []
         params["selected_materials"] = selected_materials
@@ -3400,9 +3408,23 @@ async def _generate_large_format_raster(
     full_img: Image.Image | None = None
     px_w = px_h = 0
     if image_path is not None:
-        with Image.open(image_path) as img:
-            px_w, px_h = img.size
-            full_img = img.copy()
+        if image_path.lower().endswith(".svg"):
+            # Match the transparency-cropped canvas used by the raster preview.
+            density = SVG_PIXELS_PER_MM_DEFAULT
+            if request.modeling_mode.value == "high-fidelity":
+                density = normalize_svg_pixels_per_mm(request.svg_pixels_per_mm)
+            rgba = await asyncio.to_thread(
+                rasterize_svg,
+                image_path,
+                total_width_mm,
+                pixels_per_mm=density,
+                _cache_result=False,
+            )
+            full_img = Image.fromarray(rgba)
+        else:
+            with Image.open(image_path) as img:
+                full_img = img.copy()
+        px_w, px_h = full_img.size
     elif svg_fallback_path is None:
         raise ValueError("Large-format raster generation requires an image or SVG source")
 
@@ -3957,6 +3979,14 @@ async def convert_generate_large_format(
     """
     lf = body.params
     request = lf.params
+    if request.add_loop:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "大画幅分块模式下不支持挂件环。请关闭挂件环后再生成。 / "
+                "Large-format tiling does not support keychain loops. Turn off the keychain loop and generate again."
+            ),
+        )
     revision_bytes(request.project_revision_file_id, registry)
     # 1. Session validation and immutable input snapshot
     (

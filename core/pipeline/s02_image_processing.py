@@ -36,6 +36,14 @@ def _normalize_modeling_mode(value):
         return value
 
 
+def _reused_pixel_scale(ctx: dict, target_w: int) -> float:
+    """Keep the original print grid when reusing the same preview size."""
+    cached_scale = ctx.get("cached_raster_pixel_scale")
+    if cached_scale is not None:
+        return float(cached_scale)
+    return float(ctx["target_width_mm"]) / target_w if target_w > 0 else 0.0
+
+
 def _load_reused_preview_analysis(ctx: dict) -> tuple[np.ndarray, np.ndarray, np.ndarray] | None:
     """Load preview arrays, failing closed when spatial edits require them.
 
@@ -146,12 +154,7 @@ def run(ctx: dict) -> dict:
         if reused_analysis is not None:
             matched_rgb, mask_solid, material_matrix = reused_analysis
             target_h, target_w = mask_solid.shape
-            target_width_mm = float(ctx['target_width_mm'])
-            pixel_scale = (
-                target_width_mm / float(target_w)
-                if target_w > 0
-                else 0.0
-            )
+            pixel_scale = _reused_pixel_scale(ctx, target_w)
             modeling_mode = _normalize_modeling_mode(ctx.get('modeling_mode'))
             ctx['matched_rgb'] = matched_rgb
             ctx['material_matrix'] = material_matrix
@@ -238,7 +241,7 @@ def run(ctx: dict) -> dict:
     if reused_analysis is not None:
         matched_rgb, mask_solid, material_matrix = reused_analysis
         target_h, target_w = mask_solid.shape
-        pixel_scale = float(target_width_mm) / float(target_w) if target_w > 0 else 0.0
+        pixel_scale = _reused_pixel_scale(ctx, target_w)
         modeling_mode = _normalize_modeling_mode(modeling_mode)
         try:
             processor = LuminaImageProcessor(

@@ -134,6 +134,8 @@ def run(ctx: dict) -> dict:
         'preview_colors': ctx.get('preview_colors'),
         'slot_names': ctx.get('slot_names'),
     }
+    if ctx.get('pixel_scale') is not None:
+        cache['pixel_scale'] = ctx['pixel_scale']
     # Preserve material solver diagnostics verbatim for preview response
     # assembly and later generation/editing stages. Fixed/LUT flows that do
     # not publish these keys retain their previous cache shape.

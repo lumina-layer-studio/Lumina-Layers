@@ -35,6 +35,8 @@ from typing import Any
 import cv2
 import numpy as np
 
+from core.pipeline.processing_ops.color_histogram import RGB_LOOKUP_BLOCK_PIXELS, pack_rgb24
+
 _log = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
@@ -459,27 +461,24 @@ def map_pixels_to_materials(
     """
     layer_count = recipes_unique.shape[1]
 
-    unique_codes = (
-        unique_colors[:, 0].astype(np.int32) * 65536
-        + unique_colors[:, 1].astype(np.int32) * 256
-        + unique_colors[:, 2].astype(np.int32)
-    )
+    unique_codes = pack_rgb24(unique_colors)
     sort_idx = np.argsort(unique_codes)
     sorted_codes = unique_codes[sort_idx]
     sorted_matched = matched_rgb_unique[sort_idx]
     sorted_recipes = recipes_unique[sort_idx]
 
     flat_quantized = quantized_image.reshape(-1, 3)
-    pixel_codes = (
-        flat_quantized[:, 0].astype(np.int32) * 65536
-        + flat_quantized[:, 1].astype(np.int32) * 256
-        + flat_quantized[:, 2].astype(np.int32)
-    )
-    insert_positions = np.searchsorted(sorted_codes, pixel_codes)
-    matched_rgb = sorted_matched[insert_positions].reshape(target_h, target_w, 3)
-    material_matrix = sorted_recipes[insert_positions].reshape(target_h, target_w, layer_count)
+    matched_rgb = np.empty((len(flat_quantized), 3), dtype=matched_rgb_unique.dtype)
+    material_matrix = np.empty((len(flat_quantized), layer_count), dtype=recipes_unique.dtype)
+    # Keep only the required result arrays at image scale. The RGB keys,
+    # search indices, and gathered recipe temporaries are bounded by a block.
+    for start in range(0, len(flat_quantized), RGB_LOOKUP_BLOCK_PIXELS):
+        selection = slice(start, start + RGB_LOOKUP_BLOCK_PIXELS)
+        positions = np.searchsorted(sorted_codes, pack_rgb24(flat_quantized[selection]))
+        matched_rgb[selection] = sorted_matched[positions]
+        material_matrix[selection] = sorted_recipes[positions]
 
-    return matched_rgb, material_matrix
+    return matched_rgb.reshape(target_h, target_w, 3), material_matrix.reshape(target_h, target_w, layer_count)
 
 
 # ---------------------------------------------------------------------------

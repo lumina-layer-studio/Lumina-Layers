@@ -19,6 +19,7 @@ from urllib.parse import urlparse
 import anyio
 import numpy as np
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile
+from starlette.requests import ClientDisconnect
 
 from config import MATERIALS_DIR, TEMP_DIR
 from api.colorchecker_artifacts import load_colorchecker_full_rgb, scale_corner_points
@@ -3638,6 +3639,14 @@ def _dynamic_overview_response(
     )
 
 
+async def _wait_for_material_request_disconnect(request: Request) -> None:
+    # The route has already consumed the form. Wait for the ASGI disconnect
+    # instead of polling Request.is_disconnected(), which cancels the receive
+    # before the request middleware can forward the disconnect message.
+    while (await request.receive())["type"] != "http.disconnect":
+        pass
+
+
 async def _run_material_compute(
     work: Callable[..., Any],
     *args: Any,
@@ -3645,11 +3654,13 @@ async def _run_material_compute(
     failed_event: str,
     failed_detail: str,
     serialize_builds: bool = False,
+    queue_request: Request | None = None,
 ) -> Any:
     """Dispatch heavy work to the existing process pool; keep admission async.
 
-    Metadata-only reads use a thread. A disconnected caller cannot release
-    a build slot until its process worker actually finishes.
+    Metadata-only reads use a thread. Measurements may wait for an occupied
+    slot while the request stays connected. Once dispatched, a worker keeps
+    its slot until completion, even if the requester disconnects.
     """
     try:
         if not serialize_builds:
@@ -3658,15 +3669,30 @@ async def _run_material_compute(
         semaphore = _RUNTIME_BUILD_GLOBAL_SEMAPHORE
         loop = asyncio.get_running_loop()
         deadline = loop.time() + _MATERIAL_COMPUTE_QUEUE_TIMEOUT_SECONDS
-        while not semaphore.acquire(blocking=False):
-            remaining = deadline - loop.time()
-            if remaining <= 0:
-                raise DynamicMaterialCandidateError(
-                    "material computation queue is busy; retry after the active build",
-                    layer_count=combo.layer_count,
-                    phase="material_compute_queue",
-                )
-            await asyncio.sleep(min(0.05, remaining))
+        disconnect: asyncio.Task[None] | None = None
+        try:
+            while True:
+                if disconnect is not None and disconnect.done():
+                    disconnect.result()
+                    raise ClientDisconnect
+                if semaphore.acquire(blocking=False):
+                    break
+                if queue_request is not None:
+                    if disconnect is None:
+                        disconnect = asyncio.create_task(_wait_for_material_request_disconnect(queue_request))
+                    await asyncio.wait((disconnect,), timeout=0.05)
+                    continue
+                remaining = deadline - loop.time()
+                if remaining <= 0:
+                    raise DynamicMaterialCandidateError(
+                        "material computation queue is busy; retry after the active build",
+                        layer_count=combo.layer_count,
+                        phase="material_compute_queue",
+                    )
+                await asyncio.sleep(min(0.05, remaining))
+        finally:
+            if disconnect is not None:
+                disconnect.cancel()
 
         try:
             task = asyncio.create_task(get_worker_pool().submit(work, *args))
@@ -3683,6 +3709,8 @@ async def _run_material_compute(
 
         task.add_done_callback(complete)
         return await asyncio.shield(task)
+    except ClientDisconnect as exc:
+        raise HTTPException(status_code=499, detail="Request cancelled") from exc
     except Exception as exc:
         queue_busy = (
             isinstance(exc, DynamicMaterialCandidateError)
@@ -3709,6 +3737,7 @@ async def _run_material_compute(
     dependencies=[Depends(require_local_app_origin)],
 )
 async def material_gamut_coverage(
+    request: Request,
     material_directory_names: str = Form(...),
     layer_mode: str = Form("fixed"),
     layer_count: int | None = Form(None),
@@ -3741,6 +3770,7 @@ async def material_gamut_coverage(
         failed_event="material_gamut_coverage_failed",
         failed_detail=MATERIAL_GAMUT_FAILED_DETAIL,
         serialize_builds=True,
+        queue_request=request,
     )
     log.info(
         "Material gamut coverage measured",
@@ -3789,6 +3819,7 @@ async def material_gamut_coverage(
     dependencies=[Depends(require_local_app_origin)],
 )
 async def material_gamut_contributions(
+    request: Request,
     material_directory_names: str = Form(...),
     layer_mode: str = Form("fixed"),
     layer_count: int | None = Form(None),
@@ -3815,6 +3846,7 @@ async def material_gamut_contributions(
         failed_event="material_gamut_contributions_failed",
         failed_detail=MATERIAL_GAMUT_FAILED_DETAIL,
         serialize_builds=True,
+        queue_request=request,
     )
     log.info(
         "Material gamut contributions measured",

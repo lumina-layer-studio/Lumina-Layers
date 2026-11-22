@@ -21,6 +21,7 @@ os.makedirs(TEMP_DIR, exist_ok=True)
 # source images to the browser.
 IMAGE_PREVIEW_MAX_EDGE = 1600
 IMAGE_PREVIEW_JPEG_QUALITY = 85
+MIN_PRINTABLE_ALPHA = 10
 
 # ColorChecker calibration artifacts.
 COLORCHECKER_PREVIEW_MAX_EDGE = IMAGE_PREVIEW_MAX_EDGE

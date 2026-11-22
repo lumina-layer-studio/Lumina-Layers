@@ -23,6 +23,16 @@ export function describeThrownValue(value: unknown, fallback = ""): string {
   return fallback;
 }
 
+function isInlineDocumentFetchFailure(error: unknown): boolean {
+  if (!(error instanceof TypeError) || error.message !== "Failed to fetch") return false;
+
+  // Lumina runs as modules. A Fetch failure from an inline page script stays
+  // in the global diagnostic log.
+  const firstFrame = error.stack?.split("\n", 2)[1]?.trim();
+  const source = firstFrame?.match(/^at (?:.+? \()?(.+?):\d+:\d+\)?$/)?.[1];
+  return source === window.location.href;
+}
+
 export function useErrorTicketPromptCapture(enabled: boolean): void {
   useEffect(() => {
     if (!enabled || typeof window === "undefined") return;
@@ -33,6 +43,7 @@ export function useErrorTicketPromptCapture(enabled: boolean): void {
       reportClientError(describeThrownValue(event.error, event.message ?? ""));
     };
     const handleUnhandledRejection = (event: PromiseRejectionEvent) => {
+      if (isInlineDocumentFetchFailure(event.reason)) return;
       reportClientError(describeThrownValue(event.reason));
     };
 

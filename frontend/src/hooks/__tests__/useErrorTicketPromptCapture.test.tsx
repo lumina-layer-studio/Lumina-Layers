@@ -40,6 +40,27 @@ describe("useErrorTicketPromptCapture", () => {
     expect(useErrorTicketPromptStore.getState().pending?.message).toBe("async failure");
   });
 
+  it("does not offer a ticket for a failed fetch from an inline page script", () => {
+    renderHook(() => useErrorTicketPromptCapture(true));
+
+    const error = new TypeError("Failed to fetch");
+    error.stack = `TypeError: Failed to fetch\n    at ping (${window.location.href}:26:13)`;
+    dispatchRejection(error);
+
+    expect(useErrorTicketPromptStore.getState().pending).toBeNull();
+  });
+
+  it("still offers a ticket for a failed fetch from a Lumina module", () => {
+    renderHook(() => useErrorTicketPromptCapture(true));
+
+    const error = new TypeError("Failed to fetch");
+    const appModule = new URL("/assets/converter.js", window.location.href);
+    error.stack = `TypeError: Failed to fetch\n    at loadModel (${appModule}:26:13)\n    at ${window.location.href}:30:9`;
+    dispatchRejection(error);
+
+    expect(useErrorTicketPromptStore.getState().pending?.message).toBe("Failed to fetch");
+  });
+
   it("does not offer a duplicate ticket for a recovered scene error", () => {
     renderHook(() => useErrorTicketPromptCapture(true));
     const error = new Error("Environment unavailable");

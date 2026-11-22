@@ -624,6 +624,44 @@ def test_registry_install_recovers_from_partial_download_connection_reset(
         assert response.json()["module"]["module_id"] == "fixture.hello"
 
 
+def test_registry_install_retries_when_server_disconnects_before_response(
+    api_bundle,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client, installer, archive, _registry = api_bundle
+    package_bytes = archive.read_bytes()
+    download_dir = tmp_path / "downloads"
+    download_dir.mkdir()
+    requested_urls: list[httpx.URL] = []
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        requested_urls.append(request.url)
+        if len(requested_urls) == 1:
+            raise httpx.RemoteProtocolError(
+                "Server disconnected without sending a response.", request=request,
+            )
+        return httpx.Response(200, content=package_bytes, request=request)
+
+    monkeypatch.setattr(release_client, "TEMP_DIR", str(download_dir))
+    monkeypatch.setattr(
+        release_client, "_new_http_client",
+        lambda: httpx.Client(transport=httpx.MockTransport(handle)),
+    )
+    monkeypatch.setattr(workshop_router.time, "sleep", lambda _delay: None)
+
+    response = client.post(
+        "/api/workshop/v1/install/registry",
+        json={"module_id": "fixture.hello", "version": "1.0.0"},
+    )
+
+    assert response.status_code == 200
+    assert len(requested_urls) == 2
+    assert requested_urls[0] == requested_urls[1]
+    assert installer.list()[0].candidate_version == "1.0.0"
+    assert list(download_dir.iterdir()) == []
+
+
 def test_registry_install_stops_after_two_timeouts_without_installing(
     api_bundle,
     monkeypatch: pytest.MonkeyPatch,
@@ -674,6 +712,7 @@ def test_registry_network_failure_preserves_installation_and_projects_until_retr
     download_dir = tmp_path / "downloads"
     download_dir.mkdir()
     connection_failed = True
+    download_requests = 0
 
     class InterruptedStream(httpx.SyncByteStream):
         def __iter__(self):
@@ -681,6 +720,8 @@ def test_registry_network_failure_preserves_installation_and_projects_until_retr
             raise failure_type("private download URL")
 
     def handle(request: httpx.Request) -> httpx.Response:
+        nonlocal download_requests
+        download_requests += 1
         if connection_failed:
             if failure_type is httpx.ConnectTimeout:
                 raise failure_type("private download URL", request=request)
@@ -700,6 +741,7 @@ def test_registry_network_failure_preserves_installation_and_projects_until_retr
 
     expected_status = 502 if failure_type is httpx.RemoteProtocolError else 504
     assert failed.status_code == expected_status
+    assert download_requests == 2
     detail = failed.json()["detail"]
     assert isinstance(detail, dict), "Transport failures need a machine-readable recovery code"
     assert detail["code"] == "registry-download-network-error"

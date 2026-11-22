@@ -9,6 +9,7 @@ const CATALOG_PATHS = new Set([
   "/slicer/detect",
   "/lut/catalog",
 ]);
+const SELECTION_DOCUMENT_PATH = /^\/convert\/selection\/[^/?#]+$/;
 const STATELESS_IMAGE_PATHS = new Set(["/convert/crop", "/convert/auto-detect-colors"]);
 
 function hasBatchCommitIdentity(config: InternalAxiosRequestConfig): boolean {
@@ -22,7 +23,7 @@ function hasBatchCommitIdentity(config: InternalAxiosRequestConfig): boolean {
   }
 }
 
-function isInterruptedRequest(error: unknown, catalogRead = false): boolean {
+function isInterruptedRequest(error: unknown, readOnly: boolean): boolean {
   if (!axios.isAxiosError(error) || axios.isCancel(error)) return false;
   if (error.response) {
     const headers = new Map(Object.entries(error.response.headers)
@@ -30,7 +31,7 @@ function isInterruptedRequest(error: unknown, catalogRead = false): boolean {
     if (headers.has("retry-after")) return false;
     // Vite returns an empty text/plain 500 when its backend connection drops.
     // Application errors retain their JSON body / request id and are not retried.
-    const emptyProxyFailure = catalogRead && error.response.status === 500
+    const emptyProxyFailure = readOnly && error.response.status === 500
       && error.response.data === "" && !headers.has("x-request-id")
       && String(headers.get("content-type") ?? "").toLowerCase().startsWith("text/plain");
     return emptyProxyFailure || [502, 503, 504].includes(error.response.status);
@@ -42,18 +43,18 @@ export function createRequestRetryAdapter(baseAdapter: AxiosAdapter): AxiosAdapt
   return (config) => {
     const method = config.method?.toLowerCase() ?? "get";
     const path = config.url ?? "";
-    const catalogRead = method === "get" && CATALOG_PATHS.has(path);
-    const canRetry = catalogRead
+    const readOnly = method === "get" && (CATALOG_PATHS.has(path) || SELECTION_DOCUMENT_PATH.test(path));
+    const canRetry = readOnly
       || (method === "post" && STATELESS_IMAGE_PATHS.has(path))
       || hasBatchCommitIdentity(config);
     if (!canRetry) return baseAdapter(config);
-    // Catalog reads and independent image processing do not edit sessions.
+    // Catalog reads, selection reads and independent image processing are safe to repeat.
     // Batch edits retain the exact body/operation id; the backend rejects a
     // duplicate commit with 409 for the store's existing receipt reconciliation.
     return retryAsync(() => {
       config.cancelToken?.throwIfRequested();
       if (config.signal?.aborted) throw new axios.CanceledError(undefined, config);
       return baseAdapter(config);
-    }, { attempts: 2, delayMs: 500, shouldRetry: (error) => isInterruptedRequest(error, catalogRead) });
+    }, { attempts: 2, delayMs: 500, shouldRetry: (error) => isInterruptedRequest(error, readOnly) });
   };
 }

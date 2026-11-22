@@ -3,9 +3,13 @@
 from __future__ import annotations
 
 import json
+import multiprocessing
+from multiprocessing.connection import Connection
+import os
 from pathlib import Path
 import shutil
 import threading
+from unittest.mock import patch
 
 import pytest
 
@@ -370,13 +374,13 @@ def test_worker_lease_recovers_the_lock_and_table_after_directory_deletion(
     old_grant = store.reserve(requested_workers=2, effective_cpu_capacity=4, stage="fixture")
     opens = 0
 
-    def open_lock(path, mode):
+    def open_lock(path, mode, **kwargs):
         nonlocal opens
         if path == lock:
             opens += 1
             if opens == 1:
                 shutil.rmtree(lock.parent)
-        return open(path, mode)
+        return open(path, mode, **kwargs)
 
     if remove_during_open:
         monkeypatch.setattr(runtime, "open", open_lock, raising=False)
@@ -394,6 +398,92 @@ def test_worker_lease_recovers_the_lock_and_table_after_directory_deletion(
         assert runtime.read_worker_leases(store.path) == ({}, False)
     finally:
         publisher.cleanup()
+
+
+@pytest.mark.skipif(os.name == "nt", reason="Windows keeps the open lock file from being deleted")
+def test_unlinking_the_posix_lock_file_does_not_split_the_lock(tmp_path: Path) -> None:
+    runtime = _runtime_module()
+    lock = tmp_path / "workers.lock"
+
+    with runtime._exclusive_file_lock(lock) as first:
+        assert first is not None
+        lock.unlink()
+        with runtime._exclusive_file_lock(lock, timeout_seconds=0) as second:
+            assert second is None
+
+    with runtime._exclusive_file_lock(lock, timeout_seconds=0) as second:
+        assert second is not None
+
+
+@pytest.mark.skipif(os.name == "nt", reason="Windows keeps the open lock file from being deleted")
+@pytest.mark.parametrize("operation", ["reserve", "release"])
+def test_recreated_lease_table_preserves_the_new_lock_holders_reservation(
+    tmp_path: Path, operation: str,
+) -> None:
+    runtime = _runtime_module()
+    publisher = runtime.OuterDemandPublisher(max_workers=2, parent_dir=tmp_path)
+    table = publisher.worker_lease_path
+    context = multiprocessing.get_context("spawn")
+    coordinator, worker = context.Pipe()
+    process = context.Process(target=_pause_lease_before_replace, args=(table, operation, worker))
+    try:
+        process.start()
+        worker.close()
+        assert coordinator.poll(10) and coordinator.recv() == "staged"
+
+        shutil.rmtree(table.parent)
+        second = runtime.WorkerLeaseStore(table)
+        new_grant = second.reserve(requested_workers=4, effective_cpu_capacity=4, stage="second")
+        assert new_grant.workers == 4
+
+        coordinator.send("resume")
+        assert coordinator.poll(10)
+        recovered = coordinator.recv()
+        if operation == "reserve":
+            assert recovered.workers == 0
+        else:
+            assert recovered is True
+        leases, invalid = runtime.read_worker_leases(table)
+        assert not invalid and leases[new_grant.token]["workers"] == 4
+        assert sum(entry["workers"] for entry in leases.values()) == 4
+
+        coordinator.send("stop")
+        process.join(10)
+        assert process.exitcode == 0
+    finally:
+        if process.is_alive():
+            process.terminate()
+            process.join(5)
+        coordinator.close()
+        worker.close()
+        publisher.cleanup()
+
+
+def _pause_lease_before_replace(table: Path, operation: str, barrier: Connection) -> None:
+    runtime = _runtime_module()
+    store = runtime.WorkerLeaseStore(table)
+    old_grant = (
+        store.reserve(requested_workers=4, effective_cpu_capacity=4, stage="first")
+        if operation == "release" else None
+    )
+    original_replace = runtime.os.replace
+    paused = False
+
+    def replace(source, target, **kwargs):
+        nonlocal paused
+        if Path(target).name == table.name and not paused:
+            paused = True
+            barrier.send("staged")
+            assert barrier.poll(10) and barrier.recv() == "resume"
+        return original_replace(source, target, **kwargs)
+
+    with barrier, patch.object(runtime.os, "replace", replace):
+        if old_grant is None:
+            result = store.reserve(requested_workers=4, effective_cpu_capacity=4, stage="first")
+        else:
+            result = store.release(old_grant.token)
+        barrier.send(result)
+        assert barrier.poll(10) and barrier.recv() == "stop"
 
 
 def test_runtime_scope_installs_and_restores_the_worker_lease_path(

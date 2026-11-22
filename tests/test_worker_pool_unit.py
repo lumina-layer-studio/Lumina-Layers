@@ -11,6 +11,7 @@ from contextlib import suppress
 import json
 import logging
 import os
+import shutil
 import subprocess
 import sys
 import threading
@@ -532,6 +533,37 @@ class TestSubmit:
         finally:
             pool.shutdown(wait=True)
 
+
+    @pytest.mark.asyncio
+    async def test_pool_recreates_demand_after_runtime_cleanup(
+        self, caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        target_logger = logging.getLogger("lumina.api.worker_pool")
+        target_logger.addHandler(caplog.handler)
+        caplog.set_level(logging.WARNING, logger=target_logger.name)
+        pool = WorkerPoolManager(max_workers=2)
+        try:
+            pool.start()
+            snapshot = pool.demand_snapshot_path
+            assert snapshot is not None
+            shutil.rmtree(snapshot.parent)
+
+            assert await pool.submit(_read_runtime_demand) == (1, 2, False, True)
+            payload = json.loads(snapshot.read_text(encoding="utf-8"))
+            assert (pool.outstanding_tasks, payload["outstanding"], payload["generation"]) == (0, 0, 2)
+
+            shutil.rmtree(snapshot.parent)
+        finally:
+            pool.shutdown(wait=True)
+            target_logger.removeHandler(caplog.handler)
+
+        assert not snapshot.parent.exists()
+        assert not any(
+            getattr(record, "event", None) in {
+                "worker_pool_demand_update_failed", "worker_pool_demand_cleanup_failed",
+            }
+            for record in caplog.records
+        )
 
     @pytest.mark.asyncio
     async def test_demand_publish_failure_does_not_change_task_result(

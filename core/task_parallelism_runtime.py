@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from dataclasses import dataclass
 import json
 import os
@@ -11,7 +11,7 @@ import sys
 import tempfile
 import threading
 import time
-from typing import Iterator
+from typing import Callable, Iterator, TextIO, TypeVar
 import uuid
 
 DEMAND_SNAPSHOT_VERSION = 1
@@ -52,6 +52,7 @@ _WORKER_LEASE_ENTRY_FIELDS = {
     "effective_cpu",
 }
 _RUNTIME_STATE = threading.local()
+_LeaseResult = TypeVar("_LeaseResult")
 
 
 @dataclass(frozen=True)
@@ -181,21 +182,47 @@ def read_outer_demand(
     )
 
 
+def _directory_opener(directory_fd: int) -> Callable[[str, int], int]:
+    def open_entry(path: str, flags: int) -> int:
+        return os.open(Path(path).name, flags, 0o600, dir_fd=directory_fd)
+
+    return open_entry
+
+
+def _open_json(path: Path, mode: str, directory_fd: int | None) -> TextIO:
+    if directory_fd is None:
+        return path.open(mode, encoding="utf-8")
+    return open(path.name, mode, encoding="utf-8", opener=_directory_opener(directory_fd))
+
+
 def _write_json_atomically(
-    directory: Path,
     target: Path,
     payload: dict,
     *,
+    directory_fd: int | None = None,
     attempts: int = 6,
 ) -> None:
-    """Replace one JSON file atomically, retrying reader-held replacements.
+    """Publish a complete snapshot, retrying once if temp cleanup races it.
 
-    原子替换一个 JSON 文件；读取方短暂占用目标时按次退避重试。
+    原子发布快照；临时目录或暂存文件被清理时重新写入一次。
     """
 
-    temporary_path = directory / f".{target.name}-{uuid.uuid4().hex}.tmp"
     try:
-        with temporary_path.open("w", encoding="utf-8") as handle:
+        _write_json_once(target, payload, directory_fd=directory_fd, attempts=attempts)
+    except FileNotFoundError:
+        # Restage within the same directory. A removed, locked directory must
+        # fail here so its lease transaction can re-read under the new lock.
+        _write_json_once(target, payload, directory_fd=directory_fd, attempts=attempts)
+
+
+def _write_json_once(
+    target: Path, payload: dict, *, directory_fd: int | None, attempts: int,
+) -> None:
+    if directory_fd is None:
+        target.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    temporary_path = target.with_name(f".{target.name}-{uuid.uuid4().hex}.tmp")
+    try:
+        with _open_json(temporary_path, "w", directory_fd) as handle:
             json.dump(
                 payload,
                 handle,
@@ -205,7 +232,13 @@ def _write_json_atomically(
             )
         for attempt in range(attempts):
             try:
-                os.replace(temporary_path, target)
+                if directory_fd is None:
+                    os.replace(temporary_path, target)
+                else:
+                    os.replace(
+                        temporary_path.name, target.name,
+                        src_dir_fd=directory_fd, dst_dir_fd=directory_fd,
+                    )
                 return
             except PermissionError:
                 # Windows readers can briefly deny atomic replacement.
@@ -214,7 +247,11 @@ def _write_json_atomically(
                     raise
                 time.sleep(0.005 * (attempt + 1))
     finally:
-        temporary_path.unlink(missing_ok=True)
+        if directory_fd is None:
+            temporary_path.unlink(missing_ok=True)
+        else:
+            with suppress(FileNotFoundError):
+                os.unlink(temporary_path.name, dir_fd=directory_fd)
 
 
 def _worker_lease_payload(leases: dict[str, dict], generation: int) -> dict:
@@ -281,11 +318,14 @@ def read_worker_leases(
 
     if path is None:
         return {}, False
+    return _read_worker_leases(path, None)
+
+
+def _read_worker_leases(
+    path: str | os.PathLike[str], directory_fd: int | None,
+) -> tuple[dict[str, dict], bool]:
     try:
-        table_path = Path(os.fspath(path))
-        if not table_path.exists():
-            return {}, False
-        with table_path.open("r", encoding="utf-8") as handle:
+        with _open_json(Path(os.fspath(path)), "r", directory_fd) as handle:
             payload = json.load(handle)
         if not isinstance(payload, dict) or set(payload) != _WORKER_LEASE_FIELDS:
             return {}, True
@@ -335,6 +375,8 @@ def read_worker_leases(
                 ),
             }
         return leases, False
+    except FileNotFoundError:
+        return {}, False
     except (
         json.JSONDecodeError,
         OSError,
@@ -348,11 +390,15 @@ def read_worker_leases(
 def worker_lease_lock_path(lease_path: str | os.PathLike[str]) -> Path:
     """Return the sibling lock file guarding one lease table.
 
-    返回守护某个租约表的同级锁文件路径。锁必须独立于被原子替换的文件：
-    替换会换掉 inode，锁在被替换的文件上无效。
+    返回守护某个租约表的同级锁文件路径。Windows 锁住此文件，POSIX 锁住其目录。
     """
 
     return Path(os.fspath(lease_path)).with_name(WORKER_LEASE_LOCK_FILENAME)
+
+
+@dataclass(frozen=True)
+class _HeldLeaseLock:
+    directory_fd: int | None
 
 
 @contextmanager
@@ -360,54 +406,69 @@ def _exclusive_file_lock(
     lock_path: Path,
     *,
     timeout_seconds: float = _LEASE_LOCK_TIMEOUT_SECONDS,
-) -> Iterator[bool]:
-    """Hold one cross-process exclusive lock, or report that it is busy.
+) -> Iterator[_HeldLeaseLock | None]:
+    """Hold a lock tied to one lifetime of the coordination directory.
 
-    持有一把跨进程排他锁；超时则如实报告未取得锁，而不是假装已持有。
+    锁定一代协调目录；超时返回未获得锁。
     """
 
     deadline = time.monotonic() + max(0.0, float(timeout_seconds))
     handle = None
+    directory_fd = None
     acquired = False
     try:
-        handle = open(lock_path, "a+b")
-        if handle.seek(0, os.SEEK_END) == 0:
+        for retry in (True, False):
+            try:
+                lock_path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+                if os.name != "nt":
+                    directory_fd = os.open(lock_path.parent, os.O_RDONLY | os.O_DIRECTORY)
+                opener = None if directory_fd is None else _directory_opener(directory_fd)
+                handle = open(lock_path, "a+b", opener=opener)
+                break
+            except FileNotFoundError:
+                if directory_fd is not None:
+                    os.close(directory_fd)
+                    directory_fd = None
+                if not retry:
+                    raise
+        if directory_fd is None and handle.seek(0, os.SEEK_END) == 0:
             handle.write(b"\0")
             handle.flush()
         while True:
             try:
-                handle.seek(0)
-                if os.name == "nt":
+                if directory_fd is None:
                     import msvcrt
 
+                    handle.seek(0)
                     msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
                 else:
                     import fcntl
 
-                    fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    # POSIX permits an open file to be unlinked. Lock the
+                    # directory and keep all lease I/O relative to that handle.
+                    fcntl.flock(directory_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
                 acquired = True
                 break
             except OSError:
                 if time.monotonic() >= deadline:
                     break
                 time.sleep(0.005)
-        yield acquired
+        yield _HeldLeaseLock(directory_fd) if acquired else None
     finally:
-        if acquired and handle is not None:
+        if acquired and handle is not None and directory_fd is None:
             try:
+                import msvcrt
+
                 handle.seek(0)
-                if os.name == "nt":
-                    import msvcrt
-
-                    msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
-                else:
-                    import fcntl
-
-                    fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+                msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
             except OSError:
                 pass
-        if handle is not None:
-            handle.close()
+        try:
+            if handle is not None:
+                handle.close()
+        finally:
+            if directory_fd is not None:
+                os.close(directory_fd)
 
 
 @dataclass(frozen=True)
@@ -479,8 +540,32 @@ class WorkerLeaseStore:
 
         return self._path
 
-    def _read_locked(self) -> tuple[dict[str, dict], bool]:
-        leases, invalid = read_worker_leases(self._path)
+    def _run_locked(
+        self,
+        operation: Callable[[int | None], _LeaseResult],
+        unavailable: _LeaseResult,
+    ) -> _LeaseResult:
+        for retry in (True, False):
+            with _exclusive_file_lock(self._lock_path) as lock:
+                if lock is None:
+                    return unavailable
+                directory_fd = lock.directory_fd
+                try:
+                    result = operation(directory_fd)
+                    if directory_fd is not None and not os.path.samestat(
+                        os.fstat(directory_fd), self._path.parent.stat(),
+                    ):
+                        raise FileNotFoundError(f"Worker lease directory changed: {self._path.parent}")
+                except FileNotFoundError:
+                    if not retry:
+                        raise
+                    # Release the old lock and read the live table again.
+                else:
+                    return result
+        return unavailable
+
+    def _read_locked(self, directory_fd: int | None) -> tuple[dict[str, dict], bool]:
+        leases, invalid = _read_worker_leases(self._path, directory_fd)
         now = time.time()
         live = {}
         for token, entry in leases.items():
@@ -491,13 +576,14 @@ class WorkerLeaseStore:
             live[token] = entry
         return live, invalid
 
-    def _write_locked(self, leases: dict[str, dict]) -> None:
-        self._generation += 1
+    def _write_locked(self, leases: dict[str, dict], directory_fd: int | None) -> None:
+        generation = self._generation + 1
         _write_json_atomically(
-            self._path.parent,
             self._path,
-            _worker_lease_payload(leases, self._generation),
+            _worker_lease_payload(leases, generation),
+            directory_fd=directory_fd,
         )
+        self._generation = generation
 
     def reserve(
         self,
@@ -522,13 +608,9 @@ class WorkerLeaseStore:
         requested = max(1, int(requested_workers))
         capacity = max(1, int(effective_cpu_capacity))
         pid = int(owner_pid if owner_pid is not None else os.getpid())
-        with _exclusive_file_lock(self._lock_path) as acquired:
-            if not acquired:
-                return WorkerLeaseGrant(
-                    None, requested, "lock_timeout", 0, 0, capacity,
-                    "lease_lock_timeout",
-                )
-            leases, invalid = self._read_locked()
+
+        def reserve_locked(directory_fd: int | None) -> WorkerLeaseGrant:
+            leases, invalid = self._read_locked(directory_fd)
             if invalid:
                 return WorkerLeaseGrant(
                     None, 1, "invalid", 0, 0, capacity, "lease_state_invalid",
@@ -556,10 +638,15 @@ class WorkerLeaseStore:
                 "stage": str(stage),
                 "effective_cpu": capacity,
             }
-            self._write_locked(leases)
-        return WorkerLeaseGrant(
-            token, workers, "granted", sibling_tasks, sibling_workers, capacity,
-            reason,
+            self._write_locked(leases, directory_fd)
+            return WorkerLeaseGrant(
+                token, workers, "granted", sibling_tasks, sibling_workers, capacity,
+                reason,
+            )
+
+        return self._run_locked(
+            reserve_locked,
+            WorkerLeaseGrant(None, requested, "lock_timeout", 0, 0, capacity, "lease_lock_timeout"),
         )
 
     def allowed_workers(self, token: str) -> int | None:
@@ -587,10 +674,8 @@ class WorkerLeaseStore:
         ``None`` 表示状态不可知，调用方应沿用当前额度。
         """
 
-        with _exclusive_file_lock(self._lock_path) as acquired:
-            if not acquired:
-                return None
-            leases, invalid = self._read_locked()
+        def allowed_locked(directory_fd: int | None) -> int | None:
+            leases, invalid = self._read_locked(directory_fd)
             if invalid:
                 return 1
             entry = leases.get(str(token))
@@ -609,8 +694,10 @@ class WorkerLeaseStore:
                     "workers": allowed,
                     "touched": now,
                 }
-                self._write_locked(leases)
+                self._write_locked(leases, directory_fd)
             return allowed
+
+        return self._run_locked(allowed_locked, None)
 
     def release(self, token: str | None) -> bool:
         """Drop one lease, leaving sibling leases untouched.
@@ -631,17 +718,18 @@ class WorkerLeaseStore:
 
         if token is None:
             return True
-        with _exclusive_file_lock(self._lock_path) as acquired:
-            if not acquired:
-                return False
-            leases, invalid = self._read_locked()
+
+        def release_locked(directory_fd: int | None) -> bool:
+            leases, invalid = self._read_locked(directory_fd)
             if invalid:
                 return False
             if str(token) not in leases:
                 return True
             leases.pop(str(token))
-            self._write_locked(leases)
+            self._write_locked(leases, directory_fd)
             return True
+
+        return self._run_locked(release_locked, False)
 
     def snapshot(self) -> dict:
         """Return leased task and worker totals for diagnostics.
@@ -649,10 +737,8 @@ class WorkerLeaseStore:
         返回租约任务数与 worker 总数，用于诊断。
         """
 
-        with _exclusive_file_lock(self._lock_path) as acquired:
-            if not acquired:
-                return {"tasks": 0, "workers": 0, "state": "lock_timeout"}
-            leases, invalid = self._read_locked()
+        def snapshot_locked(directory_fd: int | None) -> dict:
+            leases, invalid = self._read_locked(directory_fd)
             if invalid:
                 return {"tasks": 0, "workers": 0, "state": "invalid"}
             return {
@@ -660,6 +746,8 @@ class WorkerLeaseStore:
                 "workers": sum(entry["workers"] for entry in leases.values()),
                 "state": "ok",
             }
+
+        return self._run_locked(snapshot_locked, {"tasks": 0, "workers": 0, "state": "lock_timeout"})
 
 
 class OuterDemandPublisher:
@@ -782,11 +870,10 @@ class OuterDemandPublisher:
             "outer_max_workers": int(self._max_workers),
             "updated_monotonic_ns": int(time.monotonic_ns()),
         }
-        _write_json_atomically(self._directory, self._snapshot_path, payload)
+        _write_json_atomically(self._snapshot_path, payload)
 
     def _publish_worker_leases_locked(self, leases: dict[str, dict]) -> None:
         _write_json_atomically(
-            self._directory,
             self._worker_lease_path,
             _worker_lease_payload(leases, self._worker_lease_generation),
         )

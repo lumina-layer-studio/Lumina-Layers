@@ -85,6 +85,12 @@ jobs:
       - name: Install geometry dependencies
         run: python -m pip install -r requirements-dev.txt
 
+      - name: Verify worker coordination recovers after temp cleanup
+        run: >-
+          python -m pytest
+          tests/test_task_parallelism_runtime_unit.py
+          tests/test_converter_parallelism_recovery_integration.py -q
+
       - name: Exercise layered geometry and 3MF writer contracts
         run: >-
           python -m pytest
@@ -129,6 +135,12 @@ jobs:
 
       - name: Install geometry dependencies
         run: python -m pip install -r requirements-dev.txt
+
+      - name: Verify worker coordination recovers after temp cleanup
+        run: >-
+          python -m pytest
+          tests/test_task_parallelism_runtime_unit.py
+          tests/test_converter_parallelism_recovery_integration.py -q
 
       - name: Exercise production geometry and writer contracts
         run: >-

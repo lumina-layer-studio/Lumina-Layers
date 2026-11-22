@@ -18,6 +18,7 @@ import time
 import numpy as np
 
 from config import (
+    MIN_PRINTABLE_ALPHA,
     SVG_PIXELS_PER_MM_DEFAULT,
     ModelingMode,
     normalize_svg_pixels_per_mm,
@@ -357,7 +358,7 @@ def _run_material_archive_branch(ctx: dict) -> dict:
     del img
     rgb_arr = img_arr[:, :, :3]
     alpha_arr = img_arr[:, :, 3]
-    mask_transparent = alpha_arr < 10
+    mask_transparent = alpha_arr < MIN_PRINTABLE_ALPHA
     mask_solid = ~mask_transparent
     modeling_mode_value = getattr(modeling_mode, "value", modeling_mode)
     is_pixel_raster = (

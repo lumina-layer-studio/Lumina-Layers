@@ -26,6 +26,7 @@ from api.session_store import SessionStore
 from api.structured_logging import bind_session_id, get_logger
 from config import PrinterConfig
 from core.material_lut_synthesis import infer_material_archive_base_channel_idx
+from core.model_surface.types import MODEL_SURFACE_ARTWORK_NO_OVERLAP
 from core.model_surface.validation import (
     MODEL_SURFACE_BOOLEAN_FAILED,
     MODEL_SURFACE_EMPTY_GEOMETRY,
@@ -80,6 +81,10 @@ MODEL_SURFACE_PUBLIC_ERROR_MESSAGES: dict[str, str] = {
     MODEL_SURFACE_BOOLEAN_FAILED: (
         "Model-surface pocket calculation failed. "
         "Submit a bug report with the model and artwork attached."
+    ),
+    MODEL_SURFACE_ARTWORK_NO_OVERLAP: (
+        "The artwork does not cover the selected model surface. "
+        "Move it onto the surface and preview again."
     ),
 }
 PREVIEW_CACHE_UNAVAILABLE_DETAIL = (

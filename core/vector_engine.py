@@ -56,6 +56,7 @@ from shapely.geometry import (
     Polygon,
     box,
 )
+from shapely.geometry.base import BaseGeometry
 from shapely import affinity
 try:
     from shapely import get_num_coordinates
@@ -270,6 +271,57 @@ def _union_run_group_geometries(geometries):
         except VECTOR_HANDLED_ERRORS:
             pass
     return unary_union(geometries)
+
+
+def _build_face_up_coating_slabs(
+    surface_slabs: list[dict],
+    structure: VectorStructurePlan,
+    *,
+    layer_height_mm: float,
+    coating_height_mm: float,
+    outline_top_mm: float,
+    scale_factor: float,
+    print_grid_mm: float | None,
+) -> list[dict]:
+    """Cover each part of the artwork at its highest occupied layer."""
+    envelope = {"geometry": structure.in_units(structure.envelope, scale_factor)}
+    body_slabs = list(surface_slabs)
+    if not structure.outline.is_empty:
+        body_slabs.append({
+            "geometry": structure.in_units(structure.outline, scale_factor),
+            "z_offset": 0.0,
+            "height": outline_top_mm,
+        })
+    if print_grid_mm is not None:
+        prepare_print_slabs([envelope, *body_slabs], mm_per_unit=scale_factor, grid_mm=print_grid_mm)
+
+    roof_layers: dict[int, list[BaseGeometry]] = {}
+    for slab in body_slabs:
+        geometry = slab["geometry"]
+        if not geometry.is_empty:
+            roof_layer = round((slab["z_offset"] + slab["height"]) / layer_height_mm)
+            roof_layers.setdefault(roof_layer, []).append(geometry)
+
+    coating_slabs = []
+    remaining = envelope["geometry"]
+    precision = float(get_precision(remaining))
+    for roof_layer in sorted(roof_layers, reverse=True):
+        roof = _union_run_group_geometries(roof_layers[roof_layer])
+        covered = VectorProcessor._extract_polygonal_geometry(
+            grid_intersection(remaining, roof, grid_size=precision),
+        )
+        if covered is None:
+            continue
+        coating_slabs.append({
+            "geometry": covered,
+            "z_offset": roof_layer * layer_height_mm,
+            "height": coating_height_mm,
+            **({PRINT_GRID_KEY: print_grid_mm} if print_grid_mm is not None else {}),
+        })
+        remaining = grid_difference(remaining, covered, grid_size=precision)
+        if remaining.is_empty:
+            break
+    return coating_slabs
 
 
 def _union_occluder_geometries(geometries):
@@ -5435,9 +5487,12 @@ class VectorProcessor:
         backing_layer_count = max(1, int(round(thickness_mm / layer_h)))
         backing_height = backing_layer_count * layer_h
         deferred_vector_slabs = False
+        relief_surface_slabs: list[dict] | None = (
+            [] if enable_coating and relief_replaces_uniform_backing else None
+        )
 
         t0 = time.perf_counter()
-        if enable_relief and is_single_sided and not is_5color:
+        if relief_replaces_uniform_backing:
             meshes_by_slot = self._build_relief_meshes(
                 matched_shapes=matched_shapes,
                 num_layers=num_layers,
@@ -5456,6 +5511,7 @@ class VectorProcessor:
                 fridge_magnets=fridge_magnets,
                 merge_backing_into_material=merge_backing_into_material,
                 geometry_policy=geometry_policy,
+                surface_slabs=relief_surface_slabs,
             )
         elif is_5color:
             meshes_by_slot = self._run_length_extrude(
@@ -5508,7 +5564,7 @@ class VectorProcessor:
 
         backing_sil = None
         if (
-            not (enable_relief and is_single_sided and not is_5color)
+            not relief_replaces_uniform_backing
             and thickness_mm > 0
             and silhouette is not None
             and not silhouette.is_empty
@@ -5588,7 +5644,6 @@ class VectorProcessor:
 
         t0 = time.perf_counter()
         if enable_coating and silhouette is not None and not silhouette.is_empty:
-            coating_sil = structure.in_units(structure.envelope, scale_factor)
             try:
                 requested_coating_height = float(coating_height_mm)
             except (TypeError, ValueError):
@@ -5598,40 +5653,45 @@ class VectorProcessor:
             coating_layers = max(1, int(round(requested_coating_height / layer_h)))
             coating_height = coating_layers * layer_h
             coating_name = "Coating"
-            coating_z_offsets = [-coating_height]
-            if is_double_sided and not is_5color:
-                coating_z_offsets.append(
-                    (2 * num_layers + backing_layer_count) * layer_h
+            if is_5color or relief_surface_slabs is not None:
+                print_grid_mm = (
+                    geometry_grid_mm
+                    if isinstance(getattr(analysis, "svg_coordinate_domain", None), SvgCoordinateDomain)
+                    else next(iter(prepared_grids), None)
                 )
-            if deferred_vector_slabs:
-                meshes_by_slot[coating_name] = {
-                    "slabs": [
-                        {
-                            "geometry": coating_sil,
-                            "height": coating_height,
-                            "z_offset": z_offset,
-                        }
-                        for z_offset in coating_z_offsets
-                    ],
-                    "mat_id": max(num_channels, len(slot_names)),
-                }
+                surface_slabs = relief_surface_slabs
+                if surface_slabs is None:
+                    surface_slabs = [
+                        slab for entry in meshes_by_slot.values() for slab in entry["slabs"]
+                    ]
+                coating_slabs = _build_face_up_coating_slabs(
+                    surface_slabs, structure,
+                    layer_height_mm=layer_h, coating_height_mm=coating_height,
+                    outline_top_mm=backing_height + num_layers * layer_h,
+                    scale_factor=scale_factor, print_grid_mm=print_grid_mm,
+                )
+                del surface_slabs, relief_surface_slabs
             else:
-                coating_meshes = [
-                    self._extrude_spatial_geometry_group(
-                        coating_sil,
-                        height=coating_height,
-                        z_offset=z_offset,
-                        scale=scale_factor,
-                        stage="coating",
-                        geometry_policy=geometry_policy,
-                    )
+                coating_sil = structure.in_units(structure.envelope, scale_factor)
+                coating_z_offsets = [-coating_height]
+                if is_double_sided:
+                    coating_z_offsets.append((2 * num_layers + backing_layer_count) * layer_h)
+                coating_slabs = [
+                    {"geometry": coating_sil, "height": coating_height, "z_offset": z_offset}
                     for z_offset in coating_z_offsets
                 ]
-                meshes_by_slot[coating_name] = {
-                    "meshes": coating_meshes,
-                    "mat_id": max(num_channels, len(slot_names)),
-                }
-            meshes_by_slot[coating_name]["export_material"] = self.coating_material
+            coating_entry = {
+                "mat_id": max(num_channels, len(slot_names)),
+                "export_material": self.coating_material,
+            }
+            if deferred_vector_slabs:
+                coating_entry["slabs"] = coating_slabs
+            else:
+                coating_mesh = build_vector_layered_volume(
+                    coating_slabs, scale_mm_per_svg_unit=scale_factor, policy=geometry_policy,
+                )
+                coating_entry["meshes"] = [coating_mesh] if coating_mesh is not None else []
+            meshes_by_slot[coating_name] = coating_entry
             preview_colors[coating_name] = ([*self.coating_material.rgb, 255]
                                             if self.coating_material else [200, 200, 200, 80])
         stage_timings["coating_s"] = time.perf_counter() - t0
@@ -5769,6 +5829,7 @@ class VectorProcessor:
         fridge_magnets=None,
         merge_backing_into_material=False,
         geometry_policy: VectorLayerGeometryPolicy | None = None,
+        surface_slabs: list[dict] | None = None,
     ):
         """Extrude existing SVG regions at configured heights.
 
@@ -5991,6 +6052,13 @@ class VectorProcessor:
                 backing_volume_slabs, mm_per_unit=geometry_scale,
                 grid_mm=float(print_grid_mm),
             )
+        if surface_slabs is not None:
+            # The materializer releases input lists as soon as each mesh is
+            # built. Retain the corresponding geometry for the coating plan.
+            surface_slabs.extend(
+                slab for entry in slabs_by_slot.values() for slab in entry["slabs"]
+            )
+            surface_slabs.extend(backing_volume_slabs)
         meshes_by_slot = VectorProcessor._materialize_vector_slabs(
             slabs_by_slot,
             scale_factor=scale_factor,

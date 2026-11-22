@@ -5985,6 +5985,46 @@ class TestLargeFormatDimensionsAndRouting:
         assert native_helper.call_args.kwargs["total_width_mm"] == 90.0
         assert native_helper.call_args.kwargs["total_height_mm"] == 60.0
 
+    def test_large_format_high_fidelity_svg_sends_raster_tiles(self, tmp_path) -> None:
+        sid, svg_path, lut_path = _create_svg_session(_test_store, native_tiling_supported=True)
+        received_tiles = []
+
+        async def generate_tile(_worker, image_path, _lut, params):
+            with Image.open(image_path) as tile:
+                assert tile.format == "PNG"
+                assert tile.convert("RGBA").getpixel((tile.width // 2, tile.height // 2)) == (255, 0, 0, 255)
+                received_tiles.append((tile.size, params["target_width_mm"]))
+            output = tmp_path / f"tile-{len(received_tiles)}.3mf"
+            with zipfile.ZipFile(output, "w") as archive:
+                archive.writestr("3D/3dmodel.model", "<model/>")
+            return {"threemf_path": str(output)}
+
+        try:
+            with patch.object(_mock_pool, "submit", side_effect=generate_tile):
+                response = client.post(
+                    "/api/convert/generate-large-format",
+                    json={
+                        "session_id": sid,
+                        "params": {
+                            "tile_width_mm": 30,
+                            "tile_height_mm": 60,
+                            "params": {
+                                "lut_name": "test_lut",
+                                "modeling_mode": "high-fidelity",
+                                "target_width_mm": 60,
+                                "svg_pixels_per_mm": 10,
+                            },
+                        },
+                    },
+                )
+            assert response.status_code == 200, response.text
+            assert response.json()["tile_count"] == 2
+            assert received_tiles == [((300, 400), 30.0)] * 2
+        finally:
+            _test_store.close(sid)
+            Path(svg_path).unlink(missing_ok=True)
+            Path(lut_path).unlink(missing_ok=True)
+
     def test_large_format_svg_height_only_derives_width(self) -> None:
         sid, _svg_path, _lut_path = _create_svg_session(_test_store, native_tiling_supported=True)
 

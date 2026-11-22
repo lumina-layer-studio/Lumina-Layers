@@ -63,6 +63,7 @@ def _make_parse_only_processor(sampling_precision=0.05):
     vp.parse_warnings = []
     vp.enable_fridge_magnet = False
     vp.fridge_magnets = []
+    vp.coating_material = None
     return vp
 
 
@@ -1085,6 +1086,55 @@ class TestVectorPreviewBackingMaskRegression:
 
 
 class TestVectorCoatingBuildMeshRegression:
+
+    @pytest.mark.parametrize("enable_relief", [False, True])
+    @pytest.mark.parametrize("with_outline", [False, True])
+    def test_face_up_coating_follows_the_optical_surface(self, with_outline: bool, enable_relief: bool) -> None:
+        processor = _make_parse_only_processor()
+        processor.color_mode = "4-Color" if enable_relief else "5-Color Extended"
+        processor.enable_coating = True
+        processor.coating_height_mm = PrinterConfig.LAYER_HEIGHT
+        processor.enable_outline = with_outline
+        processor.outline_width_mm = 1.0
+        full = box(0, 0, 5, 10)
+        padded = box(5, 0, 10, 10)
+        shapes = [
+            {"geometry": full, "recipe": [1, 0], "color": (0, 255, 255)},
+            {"geometry": padded, "recipe": [-1, 0], "color": (255, 255, 255)},
+        ]
+        analysis = VectorAnalysis(
+            shape_data=[],
+            clipped_shapes=shapes,
+            matched_shapes=shapes,
+            silhouette=box(0, 0, 10, 10),
+            scale_factor=1.0,
+            bbox=(0.0, 0.0, 10.0, 10.0),
+            color_conf={},
+            slot_names=["White", "Cyan"],
+            num_channels=2,
+            num_layers=2,
+            preview_colors={0: [255, 255, 255, 255], 1: [0, 255, 255, 255]},
+            stage_timings={},
+        )
+
+        scene = processor.build_mesh(
+            analysis, thickness_mm=1.6, enable_relief=enable_relief,
+            color_height_map={"#00ffff": 1.76, "#ffffff": 0.8},
+        )
+        coating = scene.geometry["Coating"]
+
+        def cap_heights(point: Point) -> list[float]:
+            return sorted({
+                round(float(triangle[0, 2]), 7)
+                for triangle in coating.triangles
+                if np.ptp(triangle[:, 2]) < 1e-9 and Polygon(triangle[:, :2]).covers(point)
+            })
+
+        assert cap_heights(Point(2.5, -5.0)) == pytest.approx([1.76, 1.84])
+        expected_shallow = [0.72, 0.8] if enable_relief else [1.68, 1.76]
+        assert cap_heights(Point(7.5, -5.0)) == pytest.approx(expected_shallow)
+        if with_outline:
+            assert cap_heights(Point(10.5, -5.0)) == pytest.approx([1.76, 1.84])
 
     def test_build_mesh_adds_coating_when_enabled(self):
         processor = _make_parse_only_processor()

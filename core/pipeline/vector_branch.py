@@ -575,11 +575,19 @@ def _vector_loop_attach_point(
     ctx: dict,
     scene_bounds: np.ndarray,
     scene: trimesh.Scene | None = None,
+    *,
+    x_mirrored: bool = False,
 ) -> tuple[float, float]:
+    """Resolve an artwork-space anchor against the print scene."""
     min_x, min_y = float(scene_bounds[0, 0]), float(scene_bounds[0, 1])
     max_x, max_y = float(scene_bounds[1, 0]), float(scene_bounds[1, 1])
+    x_direction = -1.0 if x_mirrored else 1.0
+    if x_mirrored:
+        min_x, max_x = -max_x, -min_x
     center_x = (min_x + max_x) / 2.0
     center_y = (min_y + max_y) / 2.0
+    offset_x = _coerce_finite_float(ctx.get("loop_offset_x"), 0.0)
+    offset_y = _coerce_finite_float(ctx.get("loop_offset_y"), 0.0)
 
     loop_pos = ctx.get("loop_pos")
     if isinstance(loop_pos, (list, tuple)) and len(loop_pos) >= 2:
@@ -587,14 +595,12 @@ def _vector_loop_attach_point(
         attach_y = _coerce_finite_float(loop_pos[1], max_y)
     else:
         preset = str(ctx.get("loop_position_preset") or "top-center")
-        offset_x = _coerce_finite_float(ctx.get("loop_offset_x"), 0.0)
-        offset_y = _coerce_finite_float(ctx.get("loop_offset_y"), 0.0)
         if (
             preset == "top-center"
             and scene is not None
             and abs(_coerce_finite_float(ctx.get("loop_angle"), 0.0)) <= 1e-9
         ):
-            requested_x = center_x + offset_x
+            requested_x = (center_x + offset_x) * x_direction
             loop_width = _coerce_positive_float(ctx.get("loop_width"), 4.0)
             top_range = _scene_top_edge_range_for_contact_band(
                 scene, requested_x, loop_width
@@ -622,9 +628,7 @@ def _vector_loop_attach_point(
         else:
             attach_x, attach_y = center_x, max_y
 
-    attach_x += _coerce_finite_float(ctx.get("loop_offset_x"), 0.0)
-    attach_y += _coerce_finite_float(ctx.get("loop_offset_y"), 0.0)
-    return attach_x, attach_y
+    return (attach_x + offset_x) * x_direction, attach_y + offset_y
 
 
 def _geometry_xy_distance(bounds: np.ndarray, x: float, y: float) -> tuple[float, float]:
@@ -693,6 +697,8 @@ def _inject_vector_keychain_loop(
     scene: trimesh.Scene,
     preview_colors: dict,
     slot_names: list,
+    *,
+    x_mirrored: bool = False,
 ) -> bool:
     """Add vector keychain-loop geometry to the export scene when requested."""
     if not bool(ctx.get("add_loop", False)):
@@ -702,7 +708,7 @@ def _inject_vector_keychain_loop(
     if bounds is None:
         return False
 
-    attach_x, attach_y = _vector_loop_attach_point(ctx, bounds, scene)
+    attach_x, attach_y = _vector_loop_attach_point(ctx, bounds, scene, x_mirrored=x_mirrored)
     _color_idx, rgba, material_name = _resolve_vector_loop_style(
         ctx,
         scene,
@@ -721,13 +727,17 @@ def _inject_vector_keychain_loop(
         length_mm=_coerce_positive_float(ctx.get("loop_length"), 8.0),
         hole_dia_mm=_coerce_positive_float(ctx.get("loop_hole"), 2.5),
         thickness_mm=thickness_mm,
-        attach_x_mm=attach_x,
+        attach_x_mm=-attach_x if x_mirrored else attach_x,
         attach_y_mm=attach_y,
         angle_deg=_coerce_finite_float(ctx.get("loop_angle"), 0.0),
     )
     if loop_mesh is None or len(loop_mesh.vertices) == 0 or len(loop_mesh.faces) == 0:
         return False
 
+    # The body is already in print space. Mirror the loop built in artwork
+    # space with the same transform, including its rotated profile.
+    if x_mirrored:
+        loop_mesh.apply_transform(np.diag([-1.0, 1.0, 1.0, 1.0]))
     z_offset = float(bounds[0, 2])
     if z_offset != 0.0:
         loop_mesh.vertices[:, 2] += z_offset
@@ -2443,6 +2453,9 @@ def _run_vector_branch(ctx: dict) -> dict:
             scene,
             vec_preview_colors,
             list(vec_slot_list),
+            x_mirrored=should_mirror_vector_export(
+                structure_mode, vec_color_mode, enable_relief=bool(ctx.get("enable_relief", False)),
+            ),
         )
 
         # 1.6 Inject vector Outline mesh.

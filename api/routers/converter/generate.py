@@ -3400,9 +3400,23 @@ async def _generate_large_format_raster(
     full_img: Image.Image | None = None
     px_w = px_h = 0
     if image_path is not None:
-        with Image.open(image_path) as img:
-            px_w, px_h = img.size
-            full_img = img.copy()
+        if image_path.lower().endswith(".svg"):
+            # Match the transparency-cropped canvas used by the raster preview.
+            density = SVG_PIXELS_PER_MM_DEFAULT
+            if request.modeling_mode.value == "high-fidelity":
+                density = normalize_svg_pixels_per_mm(request.svg_pixels_per_mm)
+            rgba = await asyncio.to_thread(
+                rasterize_svg,
+                image_path,
+                total_width_mm,
+                pixels_per_mm=density,
+                _cache_result=False,
+            )
+            full_img = Image.fromarray(rgba)
+        else:
+            with Image.open(image_path) as img:
+                full_img = img.copy()
+        px_w, px_h = full_img.size
     elif svg_fallback_path is None:
         raise ValueError("Large-format raster generation requires an image or SVG source")
 

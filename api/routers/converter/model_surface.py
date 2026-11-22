@@ -366,7 +366,8 @@ def resolve_surface_preview_config(
     except (json.JSONDecodeError, KeyError, TypeError, ValueError, ModelSurfaceError) as exc:
         raise HTTPException(
             status_code=422,
-            detail=f"Invalid model surface preview configuration: {exc}",
+            detail=public_model_surface_error_detail(exc)
+            or f"Invalid model surface preview configuration: {exc}",
         ) from exc
 
     placement_public = asdict(placement)

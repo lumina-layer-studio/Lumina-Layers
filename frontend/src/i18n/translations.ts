@@ -809,6 +809,10 @@ export const translations: Record<string, Record<"zh" | "en", string>> = {
     zh: "模型覆面开槽计算失败。请提交问题反馈，并附上模型和图片。",
     en: "Model-surface pocket calculation failed. Submit a bug report with the model and artwork attached.",
   },
+  api_error_model_surface_artwork_no_overlap: {
+    zh: "图案没有覆盖选中的模型表面。请把图案移到表面上，再预览一次。",
+    en: "The artwork does not cover the selected model surface. Move it onto the surface and preview again.",
+  },
   api_error_http_429: {
     zh: "请求过于频繁，请稍后再试。",
     en: "Too many requests were sent. Please wait and try again.",

@@ -13,6 +13,7 @@ from PIL import Image
 
 from api.structured_logging import get_logger
 from config import (
+    MIN_PRINTABLE_ALPHA,
     SVG_PIXELS_PER_MM_DEFAULT,
     PrinterConfig,
     ModelingMode,
@@ -386,7 +387,7 @@ class LuminaImageProcessor:
         """
         img_arr = np.array(img)
         rgb_arr, alpha_arr = img_arr[:, :, :3], img_arr[:, :, 3]
-        mask_transparent = alpha_arr < 10
+        mask_transparent = alpha_arr < MIN_PRINTABLE_ALPHA
         transparent_count = int(np.sum(mask_transparent))
         self._last_pixel_skip_count = transparent_count
         log.debug(

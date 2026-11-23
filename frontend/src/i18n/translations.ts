@@ -9268,6 +9268,42 @@ export const translations: Record<string, Record<"zh" | "en", string>> = {
     zh: "将图像交给转换器",
     en: "Hand images to the converter",
   },
+  "workshop.manager.permission.material.import": {
+    zh: "经你确认后导入耗材到耗材库",
+    en: "Import materials into the material library after you confirm",
+  },
+  "workshop.materialImport.title": {
+    zh: "导入耗材",
+    en: "Import material",
+  },
+  "workshop.materialImport.description": {
+    zh: "此模块请求把一个耗材归档导入你的耗材库。Lumina 会先校验归档，失败时不会留下任何改动。",
+    en: "This module asks to import one material archive into your material library. Lumina validates the archive first and leaves no changes if the import fails.",
+  },
+  "workshop.materialImport.module": {
+    zh: "模块",
+    en: "Module",
+  },
+  "workshop.materialImport.publisher": {
+    zh: "发布者",
+    en: "Publisher",
+  },
+  "workshop.materialImport.review": {
+    zh: "审核等级",
+    en: "Review level",
+  },
+  "workshop.materialImport.file": {
+    zh: "文件",
+    en: "File",
+  },
+  "workshop.materialImport.summary": {
+    zh: "由模块提供的说明（Lumina 未核实）",
+    en: "Provided by the module (not verified by Lumina)",
+  },
+  "workshop.materialImport.confirm": {
+    zh: "导入",
+    en: "Import",
+  },
   "workshop.manager.uninstallTitle": {
     zh: "卸载模块",
     en: "Uninstall module",

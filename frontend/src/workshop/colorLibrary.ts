@@ -9,6 +9,7 @@ import {
   useConverterStore,
   type ConverterState,
 } from "../stores/converter";
+import { useResourceStore } from "../stores/resourceStore";
 import type {
   WorkshopColorEntry,
   WorkshopColorLibrary,
@@ -144,6 +145,21 @@ export function updateWorkshopMaterialCatalog(
 
 export function clearWorkshopMaterialCatalog(): void {
   materialCatalog = new Map<string, PublicMaterialSnapshot>();
+}
+
+/**
+ * Reload the saved-material library after a host-side change, such as a
+ * Workshop material import, so `colorLibrary.read` sees new materials. Pages
+ * that list materials fetch again when they open.
+ * 宿主侧耗材库变化后重新加载，使色库读取能看到新耗材；各页面打开时会重新获取。
+ */
+export async function refreshWorkshopMaterialLibrary(): Promise<void> {
+  const response = await listGradientCardMaterials();
+  const materials = response.materials ?? [];
+  useResourceStore.getState().observeLibrary("materials", materials.length);
+  if (useConverterStore.getState().source_version === "material") {
+    updateWorkshopMaterialCatalog(materials);
+  }
 }
 
 function paletteEntries(

@@ -1,4 +1,4 @@
-import type { WorkshopPermissionName } from "@lumina/workshop-sdk";
+import type { WorkshopPermissionName } from "../workshop/contracts";
 import axios from "axios";
 
 import apiClient from "./client";

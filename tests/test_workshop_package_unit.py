@@ -302,6 +302,28 @@ def test_manifest_is_strictly_validated(
         inspect_workshop_package(archive)
 
 
+def test_material_import_permission_requires_workshop_api_1_2(
+    tmp_path: Path,
+) -> None:
+    manifest = valid_manifest()
+    manifest["permissions"].append(
+        {"name": "material.import", "reason": "Import the measured material."}
+    )
+    with pytest.raises(WorkshopPackageError, match="workshopApi.min"):
+        inspect_workshop_package(write_workshop_zip(tmp_path, manifest=manifest))
+
+    manifest["workshopApi"]["min"] = "1.2.0"
+    accepted_dir = tmp_path / "accepted"
+    accepted_dir.mkdir()
+    inspected = inspect_workshop_package(
+        write_workshop_zip(accepted_dir, manifest=manifest)
+    )
+    assert [permission.name for permission in inspected.manifest.permissions] == [
+        "project.storage",
+        "material.import",
+    ]
+
+
 @pytest.mark.parametrize(
     "html",
     [

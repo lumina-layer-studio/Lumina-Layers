@@ -178,10 +178,11 @@ describe("Workshop backend RPC", () => {
 });
 
 describe("Workshop ready handshake negotiation", () => {
-  it("accepts frontend-only 1.0.0 and backend 1.1.0 modules on this host", () => {
+  it("accepts 1.0.0, backend 1.1.0, and material-import 1.2.0 modules on this host", () => {
     expect(isAcceptedHandshakeApiVersion("1.0.0")).toBe(true);
     expect(isAcceptedHandshakeApiVersion("1.1.0")).toBe(true);
-    expect(isAcceptedHandshakeApiVersion("1.2.0")).toBe(false);
+    expect(isAcceptedHandshakeApiVersion("1.2.0")).toBe(true);
+    expect(isAcceptedHandshakeApiVersion("1.3.0")).toBe(false);
     expect(isAcceptedHandshakeApiVersion("2.0.0")).toBe(false);
     expect(isAcceptedHandshakeApiVersion(1)).toBe(false);
   });

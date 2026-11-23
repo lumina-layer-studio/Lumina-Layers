@@ -31,8 +31,27 @@ export {
 const REQUEST_TIMEOUT_MS = 30_000;
 const IMAGE_PICK_TIMEOUT_MS = 300_000;
 const HANDOFF_TIMEOUT_MS = 120_000;
+/** Material import waits for the user's answer in a host dialog. */
+const MATERIAL_IMPORT_TIMEOUT_MS = 300_000;
 const TOKEN_REFILL_PER_SECOND = 30;
 const TOKEN_BURST_CAPACITY = 60;
+
+/**
+ * A handler failure with a stable, module-visible code. The message must be
+ * safe to show to the module: no paths, stacks, tokens, or project content.
+ * 可向模块公开的处理器错误；消息不得包含路径、堆栈、令牌或工程内容。
+ */
+export class WorkshopRpcHandlerError extends Error {
+  readonly code: string;
+  readonly retryable: boolean;
+
+  constructor(code: string, message: string, retryable = false) {
+    super(message);
+    this.name = "WorkshopRpcHandlerError";
+    this.code = code;
+    this.retryable = retryable;
+  }
+}
 
 export interface WorkshopRpcHandlerContext {
   readonly identity: WorkshopModuleIdentity;
@@ -198,6 +217,8 @@ function requestTimeout(method: HostWorkshopRpcMethod): number {
   switch (method) {
     case "image.pick":
       return IMAGE_PICK_TIMEOUT_MS;
+    case "material.import":
+      return MATERIAL_IMPORT_TIMEOUT_MS;
     case "handoff.image":
     case "backend.submit":
     case "backend.readOutput":
@@ -492,13 +513,20 @@ class WorkshopRpcHostImpl implements WorkshopRpcHost {
           (result) => {
             pending.finish(responseEnvelope(requestId, result));
           },
-          () => {
+          (error: unknown) => {
             pending.finish(
-              errorResponseEnvelope(
-                requestId,
-                "rpc-handler-failed",
-                "The Workshop host could not complete the request.",
-              ),
+              error instanceof WorkshopRpcHandlerError
+                ? errorResponseEnvelope(
+                    requestId,
+                    error.code,
+                    error.message,
+                    error.retryable,
+                  )
+                : errorResponseEnvelope(
+                    requestId,
+                    "rpc-handler-failed",
+                    "The Workshop host could not complete the request.",
+                  ),
             );
           },
         );

@@ -1,3 +1,4 @@
+import { useState, type ComponentType } from "react";
 import {
   act,
   fireEvent,
@@ -22,6 +23,14 @@ vi.mock("../utils/clientLog", async (importOriginal) => ({
   ...await importOriginal<typeof import("../utils/clientLog")>(),
   postClientLog,
 }));
+const materialLibrary = vi.hoisted(() => ({
+  importGradientCardMaterials: vi.fn(),
+  listGradientCardMaterials: vi.fn(),
+}));
+vi.mock("../api/extractor", async (importOriginal) => ({
+  ...await importOriginal<typeof import("../api/extractor")>(),
+  ...materialLibrary,
+}));
 
 import apiClient from "../api/client";
 import { workshopApi } from "../api/workshop";
@@ -43,7 +52,11 @@ import { useWorkshopStore } from "../workshop/store";
 function version(
   value: string,
   permissions: Array<
-    "image.pick" | "project.storage" | "color-library.read" | "handoff.image"
+    | "image.pick"
+    | "project.storage"
+    | "color-library.read"
+    | "handoff.image"
+    | "material.import"
   > = ["project.storage"],
 ): InstalledWorkshopVersion {
   return {
@@ -205,6 +218,39 @@ function ReadyFrame(props: WorkshopFrameProps) {
   );
 }
 
+function MaterialImportFrame(props: WorkshopFrameProps) {
+  const [result, setResult] = useState("idle");
+  return (
+    <section aria-label="material import module">
+      <button
+        type="button"
+        onClick={async () => {
+          const value = await props.handlers?.["material.import"]?.(
+            {
+              archiveBytes: new Uint8Array(2048).buffer,
+              fileName: "pla-white.zip",
+              summary: {
+                materials: [{ name: "PLA White", brand: "Example", notes: ["3 readings"] }],
+              },
+            },
+            {
+              identity: {
+                moduleId: props.module.moduleId,
+                moduleVersion: props.module.moduleVersion,
+              },
+              signal: new AbortController().signal,
+            },
+          );
+          setResult(JSON.stringify(value));
+        }}
+      >
+        request import
+      </button>
+      <output data-testid="material-import-result">{result}</output>
+    </section>
+  );
+}
+
 function renderManager(
   api: WorkshopManagerApi,
   storage = fakeStorage(),
@@ -212,6 +258,7 @@ function renderManager(
     | "desktop-secure"
     | "browser-restricted"
     | "unsafe-development" = "browser-restricted",
+  FrameComponent: ComponentType<WorkshopFrameProps> = ReadyFrame,
 ) {
   return render(
     <I18nProvider>
@@ -219,7 +266,7 @@ function renderManager(
         api={api}
         projectStorage={storage}
         runtimeMode={runtimeMode}
-        FrameComponent={ReadyFrame}
+        FrameComponent={FrameComponent}
       />
     </I18nProvider>,
   );
@@ -786,6 +833,83 @@ describe("Workshop installable module manager", () => {
         "1.1.0",
       ),
     );
+  });
+
+  it("asks again when an update adds material.import", async () => {
+    const current = installed();
+    const expandedCatalog = catalog();
+    expandedCatalog.modules[0].versions[0].permissions.push({
+      name: "material.import",
+      reason: "Import the measured material",
+    });
+    const api = fakeApi([current]);
+    vi.mocked(api.fetchCatalog).mockResolvedValue(expandedCatalog);
+    renderManager(api, fakeStorage(), "desktop-secure");
+
+    fireEvent.click(await screen.findByRole("button", { name: "更新" }));
+    expect(await screen.findByText("新增权限")).toBeInTheDocument();
+    expect(screen.getByText("经你确认后导入耗材到耗材库")).toBeInTheDocument();
+    expect(screen.getByText("Import the measured material")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "取消" }));
+    expect(api.installRegistry).not.toHaveBeenCalled();
+  });
+
+  it("confirms each material import in a host dialog before uploading", async () => {
+    useSettingsStore.setState({ language: "en", theme: "light" });
+    useWorkshopStore.setState({
+      activeModule: { moduleId: "fixture.hello", version: "1.0.0" },
+    });
+    materialLibrary.importGradientCardMaterials.mockReset().mockResolvedValue({
+      status: "success",
+      message: "ok",
+      imported_count: 1,
+      imported_materials: [
+        { material_name: "PLA White", directory_name: "example-pla-white" },
+      ],
+    });
+    materialLibrary.listGradientCardMaterials.mockReset().mockResolvedValue({
+      status: "success",
+      message: "ok",
+      materials: [],
+    });
+    const module = installed({
+      version_details: [version("1.0.0", ["material.import"])],
+    });
+    renderManager(fakeApi([module]), fakeStorage(), "desktop-secure", MaterialImportFrame);
+
+    fireEvent.click(await screen.findByRole("button", { name: "request import" }));
+    const dialog = await screen.findByRole("dialog", { name: "Import material" });
+    expect(within(dialog).getByText("Fixture module (fixture.hello 1.0.0)")).toBeInTheDocument();
+    expect(within(dialog).getByText("Fixture Publisher")).toBeInTheDocument();
+    expect(within(dialog).getByText("pla-white.zip · 2.0 KB")).toBeInTheDocument();
+    expect(within(dialog).getByText("Provided by the module (not verified by Lumina)")).toBeInTheDocument();
+    expect(within(dialog).getByText("PLA White")).toBeInTheDocument();
+    expect(within(dialog).getByText("3 readings")).toBeInTheDocument();
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    await waitFor(() =>
+      expect(screen.getByTestId("material-import-result")).toHaveTextContent(
+        JSON.stringify({ status: "cancelled" }),
+      ),
+    );
+    expect(screen.queryByRole("dialog", { name: "Import material" })).toBeNull();
+    expect(materialLibrary.importGradientCardMaterials).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "request import" }));
+    fireEvent.click(
+      within(await screen.findByRole("dialog", { name: "Import material" }))
+        .getByRole("button", { name: "Import" }),
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId("material-import-result")).toHaveTextContent(
+        JSON.stringify({
+          status: "imported",
+          materials: [{ directoryName: "example-pla-white", name: "PLA White" }],
+        }),
+      ),
+    );
+    expect(materialLibrary.importGradientCardMaterials).toHaveBeenCalledTimes(1);
+    expect(materialLibrary.listGradientCardMaterials).toHaveBeenCalledTimes(1);
   });
 
   it("keeps official uninstall tombstones and offers offline seed restore", async () => {

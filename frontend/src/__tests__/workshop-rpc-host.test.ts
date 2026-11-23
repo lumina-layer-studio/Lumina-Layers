@@ -97,6 +97,7 @@ describe("createWorkshopRpcHost", () => {
       "project.remove": "project.storage",
       "colorLibrary.read": "color-library.read",
       "handoff.image": "handoff.image",
+      "material.import": "material.import",
       "ui.getState": null,
       "status.progress": null,
       "status.error": null,

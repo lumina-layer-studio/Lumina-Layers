@@ -1,5 +1,6 @@
 import type {
   HostWorkshopRpcMethod,
+  WorkshopMaterialImportRequest,
   WorkshopModuleIdentity,
 } from "../contracts";
 
@@ -18,6 +19,12 @@ const BACKEND_TASK_ID = /^[0-9a-f]{32}$/;
 const BACKEND_OPERATION = /^[a-z][a-z0-9.-]{0,63}$/;
 const BACKEND_FILE_KEY = /^[a-z0-9][a-z0-9._-]{0,63}$/;
 const BACKEND_FILE_NAME = /^[A-Za-z0-9][A-Za-z0-9._ -]{0,127}$/;
+/** One Stage-A material archive per `material.import` call. */
+export const WORKSHOP_MATERIAL_IMPORT_MAX_BYTES = 8 * 1024 * 1024;
+const MATERIAL_IMPORT_FILE_NAME = /^[A-Za-z0-9][A-Za-z0-9._ -]{0,123}\.zip$/i;
+const MAX_MATERIAL_SUMMARY_ITEMS = 16;
+const MAX_MATERIAL_SUMMARY_NOTES = 8;
+const MAX_MATERIAL_SUMMARY_TEXT = 120;
 const BACKEND_MIME_TYPE =
   /^[a-z0-9][a-z0-9!#$&^_.+-]{0,63}\/[a-z0-9][a-z0-9!#$&^_.+-]{0,63}$/;
 
@@ -619,6 +626,91 @@ function validateBackendOutput(payload: unknown): unknown {
   return { taskId: payload.taskId, name: payload.name };
 }
 
+/** True when text contains C0 controls or DEL (newlines included). */
+export function hasControlCharacter(value: string): boolean {
+  for (let index = 0; index < value.length; index += 1) {
+    const code = value.charCodeAt(index);
+    if (code < 0x20 || code === 0x7f) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function summaryText(value: unknown): value is string {
+  return (
+    boundedString(value, MAX_MATERIAL_SUMMARY_TEXT) &&
+    // Plain single-line text. 仅允许单行纯文本。
+    !hasControlCharacter(value)
+  );
+}
+
+function validateMaterialImportSummary(
+  value: unknown,
+): WorkshopMaterialImportRequest["summary"] {
+  if (
+    !isRecord(value) ||
+    !hasOnlyKeys(value, ["materials"]) ||
+    !Array.isArray(value.materials) ||
+    value.materials.length === 0 ||
+    value.materials.length > MAX_MATERIAL_SUMMARY_ITEMS
+  ) {
+    return invalidPayload("Workshop material import summary is invalid.");
+  }
+  const materials = value.materials.map((item) => {
+    if (
+      !isRecord(item) ||
+      !hasOnlyKeys(item, ["name"], ["brand", "notes"]) ||
+      !summaryText(item.name) ||
+      ("brand" in item && !summaryText(item.brand)) ||
+      ("notes" in item &&
+        (!Array.isArray(item.notes) ||
+          item.notes.length > MAX_MATERIAL_SUMMARY_NOTES ||
+          !item.notes.every(summaryText)))
+    ) {
+      return invalidPayload("Workshop material import summary is invalid.");
+    }
+    return {
+      name: item.name,
+      ...(typeof item.brand === "string" ? { brand: item.brand } : {}),
+      ...(Array.isArray(item.notes)
+        ? { notes: [...(item.notes as string[])] }
+        : {}),
+    };
+  });
+  return { materials };
+}
+
+function validateMaterialImport(
+  payload: unknown,
+): WorkshopMaterialImportRequest {
+  if (
+    !isRecord(payload) ||
+    !hasOnlyKeys(payload, ["archiveBytes", "fileName"], ["summary"]) ||
+    !(payload.archiveBytes instanceof ArrayBuffer) ||
+    typeof payload.fileName !== "string" ||
+    !MATERIAL_IMPORT_FILE_NAME.test(payload.fileName)
+  ) {
+    return invalidPayload("Workshop material import request is invalid.");
+  }
+  if (payload.archiveBytes.byteLength > WORKSHOP_MATERIAL_IMPORT_MAX_BYTES) {
+    throw new RpcPayloadValidationError(
+      "rpc-binary-too-large",
+      "Workshop material archive exceeds 8 MiB.",
+    );
+  }
+  if (payload.archiveBytes.byteLength === 0) {
+    return invalidPayload("Workshop material archive is empty.");
+  }
+  return {
+    archiveBytes: payload.archiveBytes,
+    fileName: payload.fileName,
+    ...("summary" in payload
+      ? { summary: validateMaterialImportSummary(payload.summary) }
+      : {}),
+  };
+}
+
 export function validateMethodPayload(
   method: HostWorkshopRpcMethod,
   payload: unknown,
@@ -650,6 +742,8 @@ export function validateMethodPayload(
       return validateProjectIdPayload(payload);
     case "handoff.image":
       return validateHandoff(payload, identity);
+    case "material.import":
+      return validateMaterialImport(payload);
     case "status.progress":
       return validateProgress(payload);
     case "status.error":

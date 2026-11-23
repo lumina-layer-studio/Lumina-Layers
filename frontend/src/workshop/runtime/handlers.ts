@@ -1,3 +1,5 @@
+import { importGradientCardMaterials } from "../../api/extractor";
+import type { GradientCardMaterialBulkImportResponse } from "../../api/types";
 import type {
   WorkshopBackendApi,
   WorkshopBackendTaskResponse,
@@ -6,17 +8,26 @@ import type {
   WorkshopBackendSubmitRequest,
   WorkshopBackendTask,
   WorkshopImageHandoff,
+  WorkshopMaterialImportRequest,
+  WorkshopMaterialImportResult,
+  WorkshopModuleIdentity,
   WorkshopProjectRecord as SdkWorkshopProjectRecord,
   WorkshopUiState,
 } from "../contracts";
 import { createBrowserWorkshopFileServices } from "../browserFiles";
-import { readWorkshopColorLibrary } from "../colorLibrary";
+import {
+  readWorkshopColorLibrary,
+  refreshWorkshopMaterialLibrary,
+} from "../colorLibrary";
 import { handoffWorkshopPayloadToConverter } from "../converterHandoff";
 import type { ManagedWorkshopProjectStorage } from "../projectStorage";
 import type { WorkshopDiagnosticSummary } from "../types";
-import type {
-  WorkshopRpcHandlerContext,
-  WorkshopRpcHandlers,
+import { hasControlCharacter } from "./payloadValidation";
+import {
+  WorkshopRpcHandlerError,
+  type WorkshopRpcHandler,
+  type WorkshopRpcHandlerContext,
+  type WorkshopRpcHandlers,
 } from "./rpcHost";
 
 const MAX_PICKED_IMAGE_BYTES = 64 * 1024 * 1024;
@@ -30,6 +41,159 @@ interface CreateManagerHandlersOptions {
   onDiagnostics(summary: WorkshopDiagnosticSummary | null): void;
   /** Host-owned backend task API; absent hosts reject backend methods. */
   backend?: WorkshopBackendApi;
+  /** Host confirmation for `material.import`; absent hosts reject it. */
+  materialImport?: WorkshopMaterialImportServices;
+}
+
+/** What the host confirmation dialog shows for one import request. */
+export interface WorkshopMaterialImportConfirmation {
+  identity: WorkshopModuleIdentity;
+  fileName: string;
+  sizeBytes: number;
+  /** Module-provided and untrusted; shown under its own label. */
+  summary: WorkshopMaterialImportRequest["summary"] | null;
+}
+
+export interface WorkshopMaterialImportServices {
+  /**
+   * Ask the user in a host dialog outside the frame. Resolve `false` on
+   * Cancel, and also when `signal` aborts (frame closed or request timed out).
+   */
+  confirm(
+    request: WorkshopMaterialImportConfirmation,
+    signal: AbortSignal,
+  ): Promise<boolean>;
+  /** Defaults to the material library page's import client. */
+  importArchive?(file: File): Promise<GradientCardMaterialBulkImportResponse>;
+  /** Defaults to reloading the host's saved-material library state. */
+  refreshLibrary?(): Promise<void>;
+}
+
+const MATERIAL_IMPORT_UNAVAILABLE_MESSAGE =
+  "Material import is only available on a local or desktop host.";
+const MATERIAL_IMPORT_INVALID_MESSAGE = "The material archive is invalid.";
+const MATERIAL_IMPORT_FAILED_MESSAGE =
+  "The host could not import the material archive.";
+const MAX_MODULE_ERROR_MESSAGE_LENGTH = 300;
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/** Keep the server's 422 detail only when it is short, plain, and path-free. */
+function safeImportDetail(data: unknown): string {
+  const detail = isPlainObject(data) ? data.detail : null;
+  if (
+    typeof detail !== "string" ||
+    detail.trim().length === 0 ||
+    detail.length > MAX_MODULE_ERROR_MESSAGE_LENGTH ||
+    hasControlCharacter(detail) ||
+    /(?:^|[\s'"(])(?:[A-Za-z]:[\\/]|[\\/]|~[\\/])/.test(detail)
+  ) {
+    return MATERIAL_IMPORT_INVALID_MESSAGE;
+  }
+  return detail.trim();
+}
+
+function materialImportError(error: unknown): WorkshopRpcHandlerError {
+  const response =
+    isPlainObject(error) && isPlainObject(error.response)
+      ? error.response
+      : null;
+  const status = typeof response?.status === "number" ? response.status : null;
+  if (status === 422) {
+    return new WorkshopRpcHandlerError(
+      "material-import-invalid",
+      safeImportDetail(response?.data),
+    );
+  }
+  if (status === 403) {
+    return new WorkshopRpcHandlerError(
+      "material-import-unavailable",
+      MATERIAL_IMPORT_UNAVAILABLE_MESSAGE,
+    );
+  }
+  return new WorkshopRpcHandlerError(
+    "material-import-failed",
+    MATERIAL_IMPORT_FAILED_MESSAGE,
+    status === null || status >= 500,
+  );
+}
+
+/**
+ * `material.import`: the user confirms each call in a host dialog, then the
+ * archive goes through the material library's own import endpoint, which
+ * validates it and rolls back a failed import. One pending call per module.
+ * 每次调用都由用户在宿主对话框确认，再走耗材库原有导入接口（含校验与回滚）。
+ */
+export function createWorkshopMaterialImportHandler(
+  services: WorkshopMaterialImportServices,
+): WorkshopRpcHandler {
+  const importArchive =
+    services.importArchive ??
+    ((file: File) => importGradientCardMaterials([file]));
+  const refreshLibrary =
+    services.refreshLibrary ?? refreshWorkshopMaterialLibrary;
+  const pendingModules = new Set<string>();
+  return async (payload, context): Promise<WorkshopMaterialImportResult> => {
+    const request = payload as WorkshopMaterialImportRequest;
+    const { moduleId } = context.identity;
+    if (pendingModules.has(moduleId)) {
+      throw new WorkshopRpcHandlerError(
+        "material-import-busy",
+        "Another material import from this module is still pending.",
+        true,
+      );
+    }
+    pendingModules.add(moduleId);
+    try {
+      const confirmed = await services.confirm(
+        {
+          identity: context.identity,
+          fileName: request.fileName,
+          sizeBytes: request.archiveBytes.byteLength,
+          summary: request.summary ?? null,
+        },
+        context.signal,
+      );
+      if (!confirmed || context.signal.aborted) {
+        return { status: "cancelled" };
+      }
+      let response: GradientCardMaterialBulkImportResponse;
+      try {
+        response = await importArchive(
+          new File([request.archiveBytes], request.fileName, {
+            type: "application/zip",
+          }),
+        );
+      } catch (error) {
+        throw materialImportError(error);
+      }
+      try {
+        await refreshLibrary();
+      } catch {
+        // The import succeeded; library pages reload when they open.
+      }
+      return {
+        status: "imported",
+        materials: (response.imported_materials ?? [])
+          .filter(
+            (item) =>
+              typeof item.directory_name === "string" &&
+              item.directory_name.length > 0,
+          )
+          .map((item) => ({
+            directoryName: item.directory_name,
+            name:
+              typeof item.material_name === "string"
+                ? item.material_name
+                : item.directory_name,
+          })),
+      };
+    } finally {
+      pendingModules.delete(moduleId);
+    }
+  };
 }
 
 interface BackendTaskIdPayload {
@@ -357,6 +521,14 @@ export function createWorkshopManagerHandlers(
 
     "lifecycle.ready": () => undefined,
 
+    ...(options.materialImport === undefined
+      ? {}
+      : {
+          "material.import": createWorkshopMaterialImportHandler(
+            options.materialImport,
+          ),
+        }),
+
     ...(options.backend === undefined
       ? {}
       : createWorkshopBackendHandlers(options.backend)),
@@ -434,6 +606,13 @@ export function createSyntheticWorkshopHandlers(): WorkshopRpcHandlers {
       ],
     }),
     "handoff.image": () => ({ status: "completed" }),
+    // Never touches the host material library. 不触碰宿主耗材库。
+    "material.import": (): WorkshopMaterialImportResult => ({
+      status: "imported",
+      materials: [
+        { directoryName: "fixture-material", name: "Fixture material" },
+      ],
+    }),
     "ui.getState": () => createWorkshopUiState("en-US", "light"),
     "status.progress": () => undefined,
     "status.error": () => undefined,

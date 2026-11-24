@@ -16,7 +16,7 @@ from pathlib import Path
 
 import pytest
 
-from core.workshop.backend import model_files, wheel_files
+from core.workshop.backend import model_files, preview, wheel_files
 from core.workshop.backend.downloads import DownloadPreferences
 from core.workshop.backend.locks import WheelSourcePolicy
 from core.workshop.backend.review import ReviewContext
@@ -187,6 +187,8 @@ def test_download_selection_verifies_mirrors_and_reuses_bytes_across_locks(
     wheels = build_fixture_wheelhouse(tmp_path / "fixtures")
     shared, extra = wheels["shared"], wheels["conflict-1"]
     inactive = wheels["accel"]
+    target_version = ".".join(str(part) for part in sys.version_info[:3])
+    monkeypatch.setattr(preview, "host_python_version", lambda: f"3.12.{sys.version_info.micro + 1}")
     shared_origin = WHEEL_URL_BASE + shared.path.name
     extra_origin = WHEEL_URL_BASE + extra.path.name
     mirror = f"https://wheel-mirror.example/{shared.path.name}"
@@ -246,6 +248,11 @@ def test_download_selection_verifies_mirrors_and_reuses_bytes_across_locks(
         declared_lock = lock_text([*lock, inactive]).replace(
             f'name = "{inactive.name}"\n', f'name = "{inactive.name}"\nmarker = "sys_platform == \'unavailable\'"\n',
         )
+        if shared in lock:
+            declared_lock = declared_lock.replace(
+                f'name = "{shared.name}"\n',
+                f'name = "{shared.name}"\nmarker = "python_full_version == \'{target_version}\'"\n',
+            )
         package = write_backend_package(
             tmp_path / module_id, module_id=module_id, version="1.0.0",
             lock=declared_lock, manifest=manifest,
@@ -254,7 +261,10 @@ def test_download_selection_verifies_mirrors_and_reuses_bytes_across_locks(
         installer().install_candidate(package, source="local", source_repository="local", official=False)
         description = runtime.describe(module_id, "1.0.0")
         assert description["download_sources"]["artifacts"] == ["huggingface.co", "modelscope.cn"]
+        assert description["download_estimate"] == {"bytes": expected_bytes, "incomplete": False}
         assert "unavailable-platform.example" not in description["download_sources"]["wheels"]
+        if shared in lock:
+            assert "wheel-mirror.example" in description["download_sources"]["wheels"]
         runtime.authorize(module_id, "1.0.0", acknowledge_unreviewed=True)
         task = runtime.start_preparation(
             module_id, "1.0.0",

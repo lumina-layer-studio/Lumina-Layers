@@ -52,6 +52,7 @@ from .preview import (
     estimate_dependencies,
     estimate_download_total,
     model_estimates,
+    needs_target_python_version,
 )
 from .process import BackendLaunch, BackendProcess, kill_recorded_process
 from .protocol import BOOTSTRAP_SOURCE
@@ -520,6 +521,17 @@ class WorkshopBackendRuntime:
 
     # ----- description / preview -----------------------------------------
 
+    def _preview_python_version(self, lock: BackendLock, python_version: str) -> str | None:
+        if not needs_target_python_version(lock):
+            return None
+        provider = self._interpreters
+        if isinstance(provider, (ExternalInterpreterProvider, ManagedInterpreterProvider)):
+            try:
+                return provider.preview_version(python_version)
+            except (WorkshopBackendError, OSError, ValueError):
+                pass
+        return None
+
     def describe(self, module_id: str, version: str) -> dict[str, Any]:
         state = self._installed_state(module_id)
         if version not in state.versions:
@@ -553,6 +565,7 @@ class WorkshopBackendRuntime:
                 platform_key=self._platform_key,
                 python_version=declaration.python,
                 archive_available=archive_available,
+                target_python_version=self._preview_python_version(lock, declaration.python),
             )
             dependency = cpu_estimate.as_json()
             download_dependencies.append(cpu_estimate)
@@ -575,6 +588,7 @@ class WorkshopBackendRuntime:
                         platform_key=self._platform_key,
                         python_version=declaration.python,
                         archive_available=archive_available,
+                        target_python_version=self._preview_python_version(variant_lock, declaration.python),
                     )
                     estimate = variant_estimate.as_json()
                     source_wheels.extend(variant_estimate.source_wheels)

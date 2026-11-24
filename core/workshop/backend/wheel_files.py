@@ -24,7 +24,7 @@ from ..errors import WorkshopBackendError
 from .downloads import DownloadBatch, DownloadProgress, download_https, ordered_sources
 from .locks import BackendLock, LockedWheel, WheelSourcePolicy, PYPI_FILES_PREFIX, render_install_lock
 from .store import RemovalOutcome, remove_tree, sha256_file, unlink_with_retry
-from .tooling import BackendInterpreter, CancelToken, isolated_tool_environment, run_tool_command
+from .tooling import BackendInterpreter, CancelToken, read_python_version
 
 
 def wheel_urls(wheel: LockedWheel, policy: WheelSourcePolicy, mirrors: Mapping[str, tuple[str, ...]]) -> tuple[str, ...]:
@@ -84,12 +84,8 @@ def select_locked_wheels(lock: BackendLock, python_version: str, full_version: s
 
 
 def _select_wheels(lock: BackendLock, interpreter: BackendInterpreter, cancel: CancelToken) -> BackendLock:
-    result = run_tool_command(
-        [str(interpreter.executable), "-I", "-c", "import platform; print(platform.python_version())"],
-        env=isolated_tool_environment(), cancel=cancel, timeout_seconds=15,
-    )
-    version = result.stdout.strip()
-    if result.returncode != 0 or not version.startswith(interpreter.python_version + "."):
+    version = read_python_version(interpreter.executable, cancel)
+    if version is None or not version.startswith(interpreter.python_version + "."):
         raise WorkshopBackendError("dependency-install-failed", "Could not query the backend Python version.")
     return select_locked_wheels(lock, interpreter.python_version, version)
 

@@ -16,7 +16,7 @@ from platform import python_version as host_python_version
 
 from ..errors import WorkshopBackendError
 from ..models import BackendModelFile
-from .locks import BackendLock, LockedWheel, current_platform_key, estimated_wheel
+from .locks import BackendLock, LockedPackage, LockedWheel, current_platform_key, estimated_wheel
 from .wheel_files import select_locked_wheels
 
 
@@ -24,6 +24,15 @@ from .wheel_files import select_locked_wheels
 # estimate only when the shared interpreter is not installed yet.
 MANAGED_PYTHON_DOWNLOAD_ESTIMATE_BYTES = 32 * 1024 * 1024
 MANAGED_PYTHON_DISK_ESTIMATE_BYTES = 110 * 1024 * 1024
+
+
+def _patch_dependent(package: LockedPackage) -> bool:
+    marker = package.marker or ""
+    return "python_full_version" in marker or "implementation_version" in marker
+
+
+def needs_target_python_version(lock: BackendLock) -> bool:
+    return any(_patch_dependent(package) for package in lock.packages)
 
 
 @dataclass(frozen=True, slots=True)
@@ -60,6 +69,7 @@ def estimate_dependencies(
     platform_key: str,
     python_version: str,
     archive_available: Callable[[LockedWheel], bool] | None = None,
+    target_python_version: str | None = None,
 ) -> DependencyEstimate:
     """Split locked packages into already-present and new downloads."""
 
@@ -71,7 +81,7 @@ def estimate_dependencies(
     source_wheels: list[LockedWheel] = []
     selected: BackendLock | None = None
     if platform_key == current_platform_key():
-        full_version = host_python_version()
+        full_version = target_python_version or host_python_version()
         if not full_version.startswith(python_version + "."):
             full_version = python_version + ".0"
         try:
@@ -103,6 +113,14 @@ def estimate_dependencies(
                 unknown += 1
             else:
                 new_bytes += size
+    if target_python_version is None and needs_target_python_version(lock):
+        # The actual patch is not known. Keep platform-compatible sources for
+        # conditional packages even if the host's patch did not select them.
+        for package in lock.packages:
+            if _patch_dependent(package):
+                wheel = estimated_wheel(package, platform_key=platform_key, python_version=python_version)
+                if wheel is not None and wheel not in source_wheels:
+                    source_wheels.append(wheel)
     return DependencyEstimate(
         environment_key=environment_key,
         environment_reused=environment_exists,
@@ -115,9 +133,7 @@ def estimate_dependencies(
         source_wheels=tuple(source_wheels),
         uncertain_selection=not environment_exists and (
             selected is None
-            or any(package.marker and (
-                "python_full_version" in package.marker or "implementation_version" in package.marker
-            ) for package in lock.packages)
+            or (target_python_version is None and needs_target_python_version(lock))
         ),
     )
 

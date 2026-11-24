@@ -76,6 +76,13 @@ def test_patch_dependent_download_plan_is_marked_incomplete(monkeypatch) -> None
         platform_key=current_platform_key(), python_version="3.12",
     )
     assert estimate_download_total([estimate], (), set(), 0) == {"bytes": 0, "incomplete": True}
+    assert estimate.source_wheels == item.wheels
+    known_target = estimate_dependencies(
+        lock, environment_key=lock.digest, environment_exists=False, package_users={},
+        platform_key=current_platform_key(), python_version="3.12", target_python_version="3.12.16",
+    )
+    assert estimate_download_total([known_target], (), set(), 0) == {"bytes": 500_000_000, "incomplete": False}
+    assert known_target.source_wheels == item.wheels
 
 
 def test_download_observes_cancellation_between_transport_chunks(tmp_path, monkeypatch) -> None:

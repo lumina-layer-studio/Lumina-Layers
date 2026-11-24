@@ -389,7 +389,8 @@ handlers return a fixed `fixture-material` result without touching the library.
   权限后才开始准备或激活。
 - 本地包与目录包都可选择 Python、wheel、模型和数据包来源。宿主识别 URL 所属站点，
   按选择优先尝试同站点的候选地址，并在失败时回退。选择原始地址时仅使用原始地址。
-  镜像不会改变 wheel、模型或数据包的 SHA-256。Python 归档由 uv 校验。
+  镜像不会改变 wheel、模型或数据包的 SHA-256。Python 归档由 uv 校验。声明支持
+  Windows 的模块须使用可在 Windows 创建的模型和附加文件名。
 - 准备是可取消的后台任务，单独开启 GPU 加速时也可查看进度。界面显示来源、已下载量、
   总量、速度和预计剩余时间，并区分 Python 安装、依赖安装、文件准备和后端自检。
   估算时按 SHA-256 合并 CPU 与 GPU 都需要的 wheel。相同平台和锁可共用环境，不同锁

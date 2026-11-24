@@ -18,6 +18,7 @@ import threading
 import time
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
+from functools import lru_cache
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Protocol
@@ -219,6 +220,7 @@ class UvTool:
         self.cache_dir = Path(cache_dir)
         self.python_install_dir = Path(python_install_dir)
         self._download_staging_dir = download_staging_dir or self.cache_dir
+        self._python_downloads: dict[str, tuple[str, str]] = {}
         self.timeout_seconds = timeout_seconds
 
     def environment(self) -> dict[str, str]:
@@ -367,6 +369,28 @@ class UvTool:
             return None
         return candidate
 
+    def preferred_python_download(
+        self, python_version: str, cancel: CancelToken | None = None,
+    ) -> tuple[str, str]:
+        if cancel is not None:
+            cancel.raise_if_cancelled()
+        cached = self._python_downloads.get(python_version)
+        if cached is not None:
+            return cached
+        result = self.run(
+            "python", "list", f"cpython@{python_version}", "--only-downloads", "--output-format", "json",
+            cancel=cancel,
+            failure_code="interpreter-install-failed",
+            failure_message="The Python runtime download could not be identified.",
+        )
+        entries = json.loads(result.stdout)
+        for item in entries:
+            if item.get("implementation") == "cpython" and item.get("url"):
+                distribution = str(item["version"]), str(item["url"])
+                self._python_downloads[python_version] = distribution
+                return distribution
+        raise WorkshopBackendError("interpreter-install-failed", "No compatible Python runtime is available.")
+
     def download_and_install_python(
         self,
         python_version: str,
@@ -378,20 +402,7 @@ class UvTool:
         progress: Callable[[DownloadProgress], None],
         installing: Callable[[], None],
     ) -> None:
-        result = self.run(
-            "python", "list", f"cpython@{python_version}", "--only-downloads", "--output-format", "json",
-            cancel=cancel,
-            failure_code="interpreter-install-failed",
-            failure_message="The Python runtime download could not be identified.",
-        )
-        entries = json.loads(result.stdout)
-        entry = next(
-            (item for item in entries if item.get("implementation") == "cpython" and item.get("url")),
-            None,
-        )
-        if entry is None:
-            raise WorkshopBackendError("interpreter-install-failed", "No compatible Python runtime is available.")
-        primary = str(entry["url"])
+        version, primary = self.preferred_python_download(python_version, cancel)
         revision, filename = urlsplit(primary).path.rsplit("/", 2)[-2:]
         archive_name = unquote(filename)
         if Path(archive_name).name != archive_name or not revision.isascii() or not revision.isdigit():
@@ -417,7 +428,7 @@ class UvTool:
                     )
                     installing()
                     # uv verifies the archive against its embedded distribution checksum.
-                    self.install_python(str(entry["version"]), mirror=local_mirror.as_uri(), cancel=cancel)
+                    self.install_python(version, mirror=local_mirror.as_uri(), cancel=cancel)
                     return
             except WorkshopBackendError as exc:
                 if exc.code == "cancelled":
@@ -563,6 +574,33 @@ class ManagedInterpreterProvider:
             self._installed_cache = tuple(found)
             return self._installed_cache
 
+    def preview_version(self, python_version: str) -> str | None:
+        for interpreter in self.installed():
+            if interpreter.python_version == python_version:
+                return preview_python_version(interpreter.executable)
+        version, _url = self._uv.preferred_python_download(python_version)
+        return version
+
+
+def read_python_version(executable: Path, cancel: CancelToken | None = None) -> str | None:
+    result = run_tool_command(
+        [str(executable), "-I", "-c", "import platform; print(platform.python_version())"],
+        env=isolated_tool_environment(), cancel=cancel, timeout_seconds=15,
+    )
+    return result.stdout.strip() if result.returncode == 0 else None
+
+
+@lru_cache(maxsize=32)
+def _cached_python_version(executable: Path, _modified_ns: int) -> str | None:
+    return read_python_version(executable)
+
+
+def preview_python_version(executable: Path) -> str | None:
+    try:
+        return _cached_python_version(executable, executable.stat().st_mtime_ns)
+    except OSError:
+        return None
+
 
 def _interpreter_minor(executable: Path) -> str | None:
     result = run_tool_command(
@@ -623,6 +661,10 @@ class ExternalInterpreterProvider:
 
     def installed(self) -> tuple[BackendInterpreter, ...]:
         return tuple(self._verified.values())
+
+    def preview_version(self, python_version: str) -> str | None:
+        version = preview_python_version(self._executable)
+        return version if version and version.startswith(python_version + ".") else None
 
 
 def remove_python_install_dir_if_empty(path: Path) -> None:

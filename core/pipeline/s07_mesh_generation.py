@@ -225,6 +225,7 @@ def run(ctx: dict) -> dict:
         modeling_mode,
         disable_material_dilation=disable_material_dilation,
         boundary_geometry=boundary_geometry,
+        boundary_shape=full_matrix.shape[1:] if boundary_geometry is not None else None,
     )
     _log.debug(
         "Using mesher: %s",

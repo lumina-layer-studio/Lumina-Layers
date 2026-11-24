@@ -20,22 +20,36 @@ type EditorState = { cells: number[]; pixels: Uint8ClampedArray; history: unknow
 function editorFixture(module = identity, cells = [1, 2]) {
   const requests: string[] = [];
   const delayed = new Set<string>();
+  const probe: { count: number; reply: "success" | "error" | "ignore" } = { count: 0, reply: "success" };
   const pixels = new Uint8ClampedArray([1, 2, 3, 255]);
   const live: EditorState = { cells, pixels, history: [{ pixels }] };
-  let prepared: EditorState | null = null;
+  let prepared: { token: string; state: EditorState } | null = null;
   const channel = new WorkshopProjectChannel(module, ["fixture/v1"], workshopProjectChanged);
   const port: WorkshopMessagePort = {
     onmessage: null, onmessageerror: null, start() {}, close() {},
     postMessage(value) {
       const message = value as { operation: string; requestId: string; payload: { state: EditorState; token: string } };
-      requests.push(message.operation);
+      const isProbe = message.operation === "discard" && message.payload.token === "";
+      if (isProbe) {
+        probe.count++;
+        if (probe.reply === "ignore") return;
+      } else {
+        requests.push(message.operation);
+      }
       if (delayed.has(message.operation)) return;
       let result: unknown = null;
       if (message.operation === "capture") result = { schemaVersion: "fixture/v1", state: live };
-      if (message.operation === "prepare") { prepared = structuredClone(message.payload.state); result = { token: message.requestId }; }
-      if (message.operation === "commit") { Object.assign(live, prepared!); prepared = null; }
-      if (message.operation === "discard") prepared = null;
-      const response = { protocol: "lumina-workshop-project", version: 1, kind: "response", requestId: message.requestId, ok: true, result: structuredClone(result) };
+      if (message.operation === "prepare") {
+        prepared = { token: message.requestId, state: structuredClone(message.payload.state) };
+        result = { token: message.requestId };
+      }
+      if (message.operation === "commit" && prepared?.token === message.payload.token) {
+        Object.assign(live, prepared.state);
+        prepared = null;
+      }
+      if (message.operation === "discard" && prepared?.token === message.payload.token) prepared = null;
+      const response = { protocol: "lumina-workshop-project", version: 1, kind: "response", requestId: message.requestId,
+        ok: !isProbe || probe.reply !== "error", result: structuredClone(result) };
       queueMicrotask(() => port.onmessage?.(new MessageEvent("message", {
         data: response,
       })));
@@ -45,7 +59,7 @@ function editorFixture(module = identity, cells = [1, 2]) {
   host.attach(port);
   const detach = registerWorkshopProject(channel);
   return {
-    channel, live, requests, delayed, port,
+    channel, live, requests, delayed, port, probe,
     disconnect: () => port.onmessageerror?.(new MessageEvent("messageerror")),
     close: () => { detach(); host.close(); },
   };
@@ -74,6 +88,7 @@ beforeEach(() => {
 });
 afterEach(() => {
   editor.close();
+  vi.useRealTimers();
   useWorkshopProjectRuntime.setState({ retained: null, disconnected: null });
   useWorkshopStore.getState().returnHome();
 });
@@ -198,8 +213,12 @@ describe("live Workshop projects", () => {
   });
 
   it("unregisters the editor when the port cannot send a capture request", async () => {
-    vi.spyOn(editor.port, "postMessage").mockImplementationOnce(() => {
-      throw new DOMException("The port is unavailable", "InvalidStateError");
+    const send = editor.port.postMessage;
+    vi.spyOn(editor.port, "postMessage").mockImplementation((value) => {
+      if ((value as { operation: string }).operation === "capture") {
+        throw new DOMException("The port is unavailable", "InvalidStateError");
+      }
+      send(value);
     });
 
     const error = await createWorkshopProjectAdapter().capture().catch((cause: unknown) => cause);
@@ -211,14 +230,80 @@ describe("live Workshop projects", () => {
   it("keeps the editor connected when a prepare request cannot be cloned", async () => {
     const detachedBuffer = new ArrayBuffer(4);
     structuredClone(detachedBuffer, { transfer: [detachedBuffer] });
-    vi.spyOn(editor.port, "postMessage").mockImplementationOnce((message) => {
-      structuredClone(message);
+    const send = editor.port.postMessage;
+    vi.spyOn(editor.port, "postMessage").mockImplementation((message) => {
+      if ((message as { operation: string }).operation === "prepare") structuredClone(message);
+      send(message);
     });
 
     await expect(editor.channel.prepare({ schemaVersion: "fixture/v1", state: { detachedBuffer } }))
       .rejects.toMatchObject({ name: "DataCloneError" });
     expect(useWorkshopProjectRuntime.getState().current).toBe(editor.channel);
     await expect(editor.channel.capture()).resolves.toMatchObject({ schemaVersion: "fixture/v1" });
+  });
+
+  it.each(["success", "error"] as const)("recognizes a %s probe response then catches an idle peer loss in 1.5 s", async (reply) => {
+    const adapter = createWorkshopProjectAdapter();
+    editor.probe.reply = reply;
+    await adapter.capture();
+    editor.probe.reply = "ignore";
+    vi.useFakeTimers();
+    const error = adapter.capture().catch((cause: unknown) => cause);
+
+    await vi.advanceTimersByTimeAsync(1499);
+    expect(editor.requests).toEqual(["capture"]);
+    expect(useWorkshopProjectRuntime.getState().current).toBe(editor.channel);
+    await vi.advanceTimersByTimeAsync(1);
+
+    expect(visibleError(await error, "en")).toMatch(/reload.*sav/i);
+    expect(useWorkshopProjectRuntime.getState().current).toBeNull();
+  });
+
+  it("keeps an unverified v1 endpoint that ignores the probe usable", async () => {
+    editor.probe.reply = "ignore";
+    vi.useFakeTimers();
+    const first = editor.channel.capture();
+    await vi.advanceTimersByTimeAsync(1500);
+    await expect(first).resolves.toMatchObject({ schemaVersion: "fixture/v1" });
+    await expect(editor.channel.capture()).resolves.toMatchObject({ schemaVersion: "fixture/v1" });
+
+    expect(useWorkshopProjectRuntime.getState().current).toBe(editor.channel);
+    expect(editor.probe.count).toBe(1);
+  });
+
+  it("does not discard a real prepared token during an idle probe", async () => {
+    const token = await editor.channel.prepare({ schemaVersion: "fixture/v1", state: { ...editor.live, cells: [9] } });
+    await editor.channel.capture();
+    await editor.channel.request("commit", token);
+
+    expect(editor.probe.count).toBe(2);
+    expect(editor.live.cells).toEqual([9]);
+  });
+
+  it("gives a heavy capture 30 s and closes the host when it expires", async () => {
+    vi.useFakeTimers();
+    const send = editor.port.postMessage;
+    const slowPort = vi.spyOn(editor.port, "postMessage").mockImplementation((message) => {
+      if ((message as { operation: string }).operation === "capture") setTimeout(() => send(message), 20_000);
+      else send(message);
+    });
+    const heavy = editor.channel.capture();
+    await vi.advanceTimersByTimeAsync(1000);
+    const queued = editor.channel.capture();
+    await vi.advanceTimersByTimeAsync(20_000);
+    await expect(heavy).resolves.toMatchObject({ schemaVersion: "fixture/v1" });
+    await expect(queued).resolves.toMatchObject({ schemaVersion: "fixture/v1" });
+    expect(editor.probe.count).toBe(1);
+    slowPort.mockRestore();
+    editor.delayed.add("capture");
+
+    const stalled = editor.channel.capture().catch((cause: unknown) => cause);
+    await vi.advanceTimersByTimeAsync(29_999);
+    expect(useWorkshopProjectRuntime.getState().current).toBe(editor.channel);
+    await vi.advanceTimersByTimeAsync(1);
+
+    expect(await stalled).toMatchObject({ message: "Workshop editor is no longer connected" });
+    expect(useWorkshopProjectRuntime.getState().current).toBeNull();
   });
 
   it("keeps the current editor selected when opening a project loses its rollback capture", async () => {

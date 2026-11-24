@@ -98,6 +98,9 @@ _n3mf = None
 _PREVIEW_PLACEHOLDER_PNG_BYTES: Optional[bytes] = None
 _LAYER_HEIGHT_GRID_MM = 0.02
 _MAX_LAYER_HEIGHT_NOZZLE_RATIO = 0.7
+_COATING_Z_TOLERANCE_MM = 1e-7
+
+_LayerHeightRange = tuple[float, float, float]
 
 
 def _get_n3mf():
@@ -421,9 +424,7 @@ def build_layer_config_ranges_data(
     enable_base_layer_height_modifier: bool = True,
     backing_infill_density_percent: int = 100,
     solid_depth_mm: float | None = None,
-    coating_layer_height_mm: float | None = None,
-    bottom_coating_height_mm: float = 0.0,
-    top_coating_z_mm: tuple[float, float] | None = None,
+    coating_layer_ranges: tuple[_LayerHeightRange, ...] = (),
 ) -> dict[str, Any] | None:
     """Calculate object-height process overrides without choosing XML fields.
     计算对象高度工艺区间，不在业务计算层决定 XML 字段格式。
@@ -459,6 +460,7 @@ def build_layer_config_ranges_data(
         solid_depth_mm (float | None): Optional protected backing depth;
             ``None`` reads ``PrinterConfig.VIEWING_SURFACE_SOLID_DEPTH_MM``.
             （可选的受保护底板深度；``None`` 读取项目配置。）
+        coating_layer_ranges: Native layer heights over actual film and transition intervals.
 
     Returns:
         dict[str, Any] | None: Model index and ordered height ranges, or
@@ -480,7 +482,7 @@ def build_layer_config_ranges_data(
     )
     normalized_face = str(face).strip().lower()
 
-    if base_height <= 0 and coating_layer_height_mm is None:
+    if base_height <= 0 and not coating_layer_ranges:
         return None
     if color_height < 0 or nozzle <= 0:
         return None
@@ -538,18 +540,10 @@ def build_layer_config_ranges_data(
                 (min_z, max_z, {"infill_density_percent": 100})
             )
 
-    if coating_layer_height_mm is not None:
-        coating_settings = {"layer_height_mm": coating_layer_height_mm}
-        # The first layer is already fixed by the project. A range is only
-        # needed here when more non-default layers follow it in the bottom film.
-        if (
-            initial_layer_height is not None
-            and bottom_coating_height_mm > initial_layer_height + 1e-9
-            and not math.isclose(coating_layer_height_mm, fine_layer_height)
-        ):
-            overrides.append((0.0, bottom_coating_height_mm, coating_settings))
-        if top_coating_z_mm is not None:
-            overrides.append((*top_coating_z_mm, coating_settings))
+    overrides.extend(
+        (min_z, max_z, {"layer_height_mm": height})
+        for min_z, max_z, height in coating_layer_ranges
+    )
 
     segments = _split_layer_config_overrides(overrides)
     if not segments:
@@ -746,33 +740,110 @@ class _SingleExportProject:
     layout: ProjectLayout
     placement: WipeTowerPlacementResult | None
     build_translation: tuple[float, float, float]
-    coating_layer_height_mm: float | None
+    coating_layers: _CoatingLayerPlan | None
 
 
 @dataclass(frozen=True)
 class _CoatingRegions:
     thickness_mm: float
     on_build_plate: bool
-    flat_top_z_mm: tuple[float, float] | None
+    top_intervals_mm: tuple[tuple[float, float], ...]
+
+
+@dataclass(frozen=True)
+class _CoatingLayerPlan:
+    ranges: tuple[_LayerHeightRange, ...]
+    finest_layer_height_mm: float
 
 
 def _describe_coating_regions(
     scene: trimesh.Scene, thickness_mm: float, face: str,
 ) -> _CoatingRegions | None:
-    """Locate the printable flat film intervals using the exported mesh."""
+    """Read each local film roof from the upward-facing horizontal mesh facets."""
     coating = scene.geometry.get("Coating") if thickness_mm > 0 else None
     if coating is None:
         return None
-    low, high = coating.bounds[:, 2] - scene.bounds[0, 2]
-    bottom = face in {"down", "double"} and abs(low) < 1e-8
-    top = face == "double" or (face == "up" and math.isclose(high - low, thickness_mm))
-    if not bottom and not top:
-        # A stepped roof occupies several Z intervals at different XY locations.
-        return None
-    return _CoatingRegions(
-        thickness_mm, bottom,
-        (round(high - thickness_mm, 10), round(high, 10)) if top else None,
+    face = str(face).strip().lower()
+    origin = scene.bounds[0, 2]
+    bottom = face in {"down", "double"} and abs(coating.bounds[0, 2] - origin) < _COATING_Z_TOLERANCE_MM
+    roof_tops: set[float] = set()
+    if face in {"up", "double"}:
+        # Avoid materializing the full triangle array for a detailed relief.
+        batch_size = 65_536
+        for start in range(0, len(coating.faces), batch_size):
+            triangles = coating.vertices[coating.faces[start:start + batch_size]]
+            z = triangles[:, :, 2]
+            horizontal = np.ptp(z, axis=1) < _COATING_Z_TOLERANCE_MM
+            facets = triangles[horizontal]
+            first = facets[:, 1, :2] - facets[:, 0, :2]
+            second = facets[:, 2, :2] - facets[:, 0, :2]
+            upward = first[:, 0] * second[:, 1] > first[:, 1] * second[:, 0]
+            heights = facets[upward, 0, 2] - origin
+            roof_tops.update(map(float, np.unique(np.round(heights, 7))))
+    top_intervals = tuple(
+        (round(top - thickness_mm, 7), top)
+        for top in sorted(roof_tops)
+        if not bottom or top > thickness_mm + _COATING_Z_TOLERANCE_MM
     )
+    return _CoatingRegions(thickness_mm, bottom, top_intervals) if bottom or top_intervals else None
+
+
+def _fit_coating_layer_height(
+    span: float, minimum: float, maximum: float, preferred: float,
+) -> float | None:
+    """Use whole preferred layers where possible; otherwise fit a printable subdivision."""
+    tolerance = _COATING_Z_TOLERANCE_MM
+    if span + tolerance < minimum:
+        return None
+    if minimum <= preferred <= maximum + tolerance and math.isclose(
+        span, round(span / preferred) * preferred, abs_tol=tolerance,
+    ):
+        return preferred
+    count = max(1, math.ceil((span - tolerance) / maximum))
+    height = round(span / count, 9)
+    return height if height >= minimum - tolerance else None
+
+
+def _plan_top_coating_ranges(
+    intervals: tuple[tuple[float, float], ...],
+    *,
+    main: float,
+    minimum: float,
+    maximum: float,
+    top_layer: float,
+) -> list[_LayerHeightRange]:
+    if not intervals:
+        return []
+    origin = intervals[0][0]
+    top_start, top_end = intervals[-1]
+    tolerance = _COATING_Z_TOLERANCE_MM
+    ranges: list[_LayerHeightRange] = []
+    for _, end in intervals[:-1]:
+        if end >= top_start - tolerance:
+            break
+        # Each film starts on an authored body plane. Split the body layer
+        # containing the film's end and resume the original grid immediately.
+        layer_index = math.floor((end - origin + tolerance) / main)
+        lower = round(origin + layer_index * main, 7)
+        upper = round(lower + main, 7)
+        before = _fit_coating_layer_height(end - lower, minimum, maximum, main)
+        after = _fit_coating_layer_height(upper - end, minimum, maximum, main)
+        if before is not None and after is not None:
+            ranges.extend(((lower, end, before), (end, upper, after)))
+
+    # Above the last body plane, only film endpoints determine the divisions.
+    # A pair of endpoints closer than the minimum cannot both be cut exactly.
+    # Keep a printable span through that roof and preserve the highest endpoint.
+    start = top_start
+    remaining_layer = top_layer
+    for _, end in intervals[:-1]:
+        height = _fit_coating_layer_height(end - start, minimum, maximum, top_layer)
+        tail = _fit_coating_layer_height(top_end - end, minimum, maximum, top_layer)
+        if height is not None and tail is not None:
+            ranges.append((start, end, height))
+            start, remaining_layer = end, tail
+    ranges.append((start, top_end, remaining_layer))
+    return ranges
 
 
 def _align_project_coating_layers(
@@ -782,40 +853,39 @@ def _align_project_coating_layers(
     *,
     slicer_id: str,
     nozzle_mm: float,
-) -> float:
-    """Partition a flat film into whole layers and author the slicer's first-layer offset."""
+) -> _CoatingLayerPlan:
+    """Author a native layer schedule while keeping the requested film geometry."""
     main = layout["layer_height"]
     thickness = coating.thickness_mm
     native_max = layout["max_layer_height"]
     max_height = min(nozzle_mm * _MAX_LAYER_HEIGHT_NOZZLE_RATIO, native_max or math.inf)
-    # Keep an existing subdivision where it fits. For mixed heights, prefer
-    # one film layer, then split only if the target nozzle requires it.
     minimum = min(0.04, main, layout["min_layer_height"] or 0.04)
-    if main <= max_height + 1e-9 and math.isclose(thickness / main, round(thickness / main)):
-        layer_height = main
-    else:
-        count = max(1, math.ceil((thickness - 1e-9) / max_height))
-        layer_height = thickness / count
-        if layer_height < minimum - 1e-9:
-            raise CoatingLayerHeightError(
-                "当前喷嘴无法按请求的厚度切出镀层，请调整喷嘴或镀层厚度。 / "
-                "The selected nozzle cannot slice this coating thickness. Change the nozzle or coating thickness."
-            )
+    layer_height = _fit_coating_layer_height(thickness, minimum, max_height, main)
+    if layer_height is None:
+        raise CoatingLayerHeightError(
+            "当前喷嘴无法按请求的厚度切出镀层，请调整喷嘴或镀层厚度。 / "
+            "The selected nozzle cannot slice this coating thickness. Change the nozzle or coating thickness."
+        )
 
     native_settings = project
     if slicer_id == "PrusaSlicer" and project.get("config_containers"):
         native_settings = project["config_containers"][0]["configuration"]["print_settings"]
+    ranges = _plan_top_coating_ranges(
+        coating.top_intervals_mm, main=main, minimum=minimum, maximum=max_height, top_layer=layer_height,
+    )
     if coating.on_build_plate:
         first_key = process_setting_aliases(slicer_id).get("initial_layer_height", "initial_layer_height")
         native_settings[first_key] = (
             {"is_percent": False, "value": layer_height}
             if native_settings is not project else f"{layer_height:g}"
         )
+        # The project already fixes the first film layer. Only subsequent
+        # non-default layers in that same film need an object range.
+        if thickness > layer_height + _COATING_Z_TOLERANCE_MM and not math.isclose(layer_height, main):
+            ranges.insert(0, (0.0, thickness, layer_height))
 
-    has_coating_range = coating.flat_top_z_mm is not None or (
-        coating.on_build_plate and layer_height < thickness - 1e-9
-    )
-    if layer_height < main and has_coating_range:
+    range_minimum = min((height for _, _, height in ranges), default=main)
+    if range_minimum < main:
         # Bambu/Orca use half the project minimum as their layer-range lookup
         # offset. If it is larger than the film layer, that lookup can skip
         # the entire film. Opt into the requested minimum in this project only.
@@ -824,14 +894,17 @@ def _align_project_coating_layers(
             minima = list(native_minima)
             for index, value in enumerate(native_minima):
                 try:
-                    if float(value) > layer_height:
-                        minima[index] = f"{layer_height:g}"
+                    if not 0 < float(value) <= range_minimum:
+                        minima[index] = f"{range_minimum:g}"
                 except (TypeError, ValueError):
                     pass  # Preserve unknown template values for the native reader.
             native_settings["min_layer_height"] = minima
         elif isinstance(native_minima, (float, int)):
-            native_settings["min_layer_height"] = min(native_minima, layer_height)
-    return layer_height
+            native_settings["min_layer_height"] = min(native_minima or range_minimum, range_minimum)
+        elif native_minima is None and slicer_id in {"BambuStudio", "OrcaSlicer"}:
+            native_settings["min_layer_height"] = [f"{range_minimum:g}"] * len(layout["nozzle_diameters"])
+    finest = min(range_minimum, layer_height) if coating.on_build_plate else range_minimum
+    return _CoatingLayerPlan(tuple(ranges), finest)
 
 
 class Slicer3MFWriter:
@@ -886,15 +959,14 @@ class Slicer3MFWriter:
             nozzle_size (Optional[str | float]): Exact selected nozzle identity.
                 (所选喷嘴的精确身份)
             watermark (str): Watermark text embedded in the 3MF ZIP structure. (嵌入 3MF ZIP 结构的水印文本)
-            enable_base_layer_height_modifier (bool): Whether to emit layer_config_ranges.xml.
-                （是否输出 layer_config_ranges.xml）
+            enable_base_layer_height_modifier (bool): Whether to emit coarse backing layer ranges.
+                （是否输出底板粗层高区间。）
             enable_wipe_tower_auto_placement (bool): Whether to adapt the model and
                 wipe-tower layout to the selected build area.（是否按所选打印区域自动
                 调整模型与擦料塔的摆放和擦料塔尺寸。）
-            enable_relief (bool): Whether variable-height relief geometry is enabled. Relief
-                exports never emit ``layer_config_ranges.xml`` because no single global
-                backing range is safe.（是否启用可变高度浮雕；浮雕不存在全局安全的
-                底板区间，因此始终不输出 ``layer_config_ranges.xml``。）
+            enable_relief (bool): Relief keeps the local coating layer ranges and
+                skips the uniform backing override.（浮雕保留局部镀层的层高区间，
+                跳过全局底板覆盖。）
             base_height_mm (float): Backing/base thickness used for coarse layer-height override.
                 （用于粗层高覆盖的底板厚度）
             color_height_mm (float): Colored-region thickness used to place the override range.
@@ -1433,9 +1505,9 @@ class Slicer3MFWriter:
         # existing explicit tower-field API instead of composing the whole
         # project a second time.
         project_layout = read_project_layout(final_project, slicer_id=self.slicer)
-        coating_layer_height_mm = None
+        coating_layers = None
         if self.coating_regions is not None:
-            coating_layer_height_mm = _align_project_coating_layers(
+            coating_layers = _align_project_coating_layers(
                 final_project, project_layout, self.coating_regions,
                 slicer_id=self.slicer, nozzle_mm=float(self.nozzle_size),
             )
@@ -1444,7 +1516,7 @@ class Slicer3MFWriter:
         placement = self._get_wipe_tower_placement(
             effective_settings=effective_settings,
             project_layout=project_layout,
-            coating_layer_height_mm=coating_layer_height_mm,
+            coating_layer_height_mm=coating_layers.finest_layer_height_mm if coating_layers else None,
         )
         # Patching tower fields preserves the bed and layer facts reused below.
         tower_changes = (
@@ -1472,7 +1544,7 @@ class Slicer3MFWriter:
         )
         return _SingleExportProject(
             final_project, composed_project, project_layout, placement, build_translation,
-            coating_layer_height_mm,
+            coating_layers,
         )
 
     def _add_geometry_layout(
@@ -1575,7 +1647,7 @@ class Slicer3MFWriter:
                 material_palette, build_translation,
                 sidecar_bed_type=metadata_defaults["sidecar_bed_value"],
             )
-        if project.coating_layer_height_mm is not None or (
+        if (project.coating_layers and project.coating_layers.ranges) or (
             not self.enable_relief and (
                 self.enable_base_layer_height_modifier
                 or self.effective_backing_infill_density_percent < 100
@@ -1603,12 +1675,7 @@ class Slicer3MFWriter:
                 backing_infill_density_percent=(
                     100 if self.enable_relief else self.effective_backing_infill_density_percent
                 ),
-                coating_layer_height_mm=project.coating_layer_height_mm,
-                bottom_coating_height_mm=(
-                    self.coating_regions.thickness_mm
-                    if self.coating_regions is not None and self.coating_regions.on_build_plate else 0.0
-                ),
-                top_coating_z_mm=self.coating_regions.flat_top_z_mm if self.coating_regions else None,
+                coating_layer_ranges=project.coating_layers.ranges if project.coating_layers else (),
             )
             if layer_ranges is not None:
                 component_inputs["layer_config_ranges"] = layer_ranges
@@ -2112,14 +2179,13 @@ def export_scene_with_slicer_metadata(
         watermark (str): Watermark text embedded in the 3MF ZIP structure. (嵌入 3MF ZIP 结构的水印文本)
         project_slot_names (Optional[List[str]]): Full selected source palette/material names to preserve
             in exported project metadata when available. (可选，导出项目元数据时应保留的完整来源调色板/材料名称)
-        enable_base_layer_height_modifier (bool): Whether to emit layer_config_ranges.xml.
-            （是否输出 layer_config_ranges.xml）
+        enable_base_layer_height_modifier (bool): Whether to emit coarse backing layer ranges.
+            （是否输出底板粗层高区间。）
         enable_wipe_tower_auto_placement (bool): Whether to adapt the model and
             wipe-tower layout to the selected build area.（是否按所选打印区域自动
             调整模型与擦料塔的摆放和擦料塔尺寸。）
-        enable_relief (bool): Whether variable-height relief geometry is enabled. Relief
-            exports never emit ``layer_config_ranges.xml``.（是否启用可变高度浮雕；
-            浮雕导出始终不输出 ``layer_config_ranges.xml``。）
+        enable_relief (bool): Relief keeps the local coating layer ranges and skips
+            the uniform backing override.（浮雕保留局部镀层区间，跳过全局底板覆盖。）
         base_height_mm (float): Backing/base thickness used for coarse layer-height override.
             （用于粗层高覆盖的底板厚度）
         color_height_mm (float): Colored-region thickness used to place the override range.

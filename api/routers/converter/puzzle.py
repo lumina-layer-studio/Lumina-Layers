@@ -13,6 +13,7 @@ import io
 import json
 import os
 import pickle
+import shutil
 import tempfile
 import uuid
 from collections.abc import AsyncIterator
@@ -29,7 +30,7 @@ from pydantic import BaseModel
 from PIL import Image
 from shapely.geometry import Polygon
 
-from api.project_export import embed_generated_project, revision_bytes
+from api.project_export import revision_bytes
 from api.dependencies import get_file_registry, get_session_store, get_worker_pool
 from api.errors import to_http_exception
 from api.export_device_validation import validate_export_device_selection
@@ -55,9 +56,10 @@ from api.workers.converter_workers import (
     _submit_puzzle_worker,
 )
 from config import ModelingMode as CoreModelingMode
-from config import MIN_PRINTABLE_ALPHA, TEMP_DIR
+from config import LUTMetadata, MIN_PRINTABLE_ALPHA, TEMP_DIR, get_source_kind
 from core.mesh_generators import rasterize_boundary_geometry
 from core.preview_analysis_cache import REQUIRED_PREVIEW_ANALYSIS_REUSE
+from core.projects.export import embed_project_in_generated_file
 from .export_materials import require_material_selection
 from core.puzzle import (
     PuzzleLayout,
@@ -80,7 +82,7 @@ from core.material_dynamic_solver import (
 )
 from utils.bambu_3mf_writer import read_wipe_tower_placement_warnings
 from utils.fatcat_metadata import select_metadata_target
-from utils.merged_bambu_3mf_writer import MaterialSlot as WriterMaterialSlot
+from utils.merged_bambu_3mf_writer import MaterialSlot as WriterMaterialSlot, MergedWriteError
 from .generation_params import build_common_generation_params
 
 from .common import (
@@ -672,6 +674,29 @@ def _save_npy_array(path: Path, array: np.ndarray) -> str:
     return str(path)
 
 
+def _snapshot_puzzle_lut(
+    lut_path: str, work_dir: Path, session_paths: list[str],
+    lut_metadata: LUTMetadata | dict | None,
+) -> str:
+    """Detach editable lookup files and project-owned dependencies from the session."""
+    source = Path(lut_path).resolve()
+    owned_paths = [Path(path).resolve() for path in session_paths]
+    if not any(source.is_relative_to(path) for path in owned_paths):
+        if get_source_kind(lut_metadata) != "legacy_lookup":
+            return lut_path
+    target = work_dir / "lut"
+    if (
+        (source.parent / "dependencies").is_dir()
+        and any(source.parent.is_relative_to(path) for path in owned_paths)
+    ):
+        from core.projects.dependencies import pack_lut_source, unpack_lut_source
+
+        return unpack_lut_source(pack_lut_source(lut_path), target)
+    target.mkdir()
+    # Some classic LUT variants infer their metadata from the filename.
+    return str(shutil.copyfile(source, target / Path(lut_path).name))
+
+
 def _remove_temp_path(path: str | None) -> None:
     """Best-effort removal for route-local temp files not owned by a session."""
 
@@ -853,16 +878,9 @@ async def generate_puzzle(
     """
 
     with tempfile.TemporaryDirectory(prefix="puzzle_pieces_", dir=TEMP_DIR) as work_dir:
-        # Piece files belong to this request. Closing or replacing the
-        # source preview session must not remove them while workers write.
-        work_session_id = store.create()
-        try:
-            store.register_temp_file(work_session_id, work_dir)
-            return await _generate_puzzle_in_workspace(
-                body, store=store, registry=registry, pool=pool, work_dir=Path(work_dir),
-            )
-        finally:
-            store.close(work_session_id)
+        return await _generate_puzzle_in_workspace(
+            body, store=store, registry=registry, pool=pool, work_dir=Path(work_dir),
+        )
 
 
 async def _generate_puzzle_in_workspace(
@@ -875,7 +893,7 @@ async def _generate_puzzle_in_workspace(
 ) -> PuzzleGenerateResponse:
     request = body.params
     generate_params = request.params
-    revision_bytes(generate_params.project_revision_file_id, registry)
+    project_revision = revision_bytes(generate_params.project_revision_file_id, registry)
     (
         session_data,
         committed_content_revision,
@@ -1062,6 +1080,28 @@ async def _generate_puzzle_in_workspace(
         committed_content_revision,
         expected_selection_revision=committed_selection_revision,
     )
+    materials_dir = session_data.get("project_materials_dir")
+    try:
+        if material_puzzle_analysis is None:
+            lut_path = _snapshot_puzzle_lut(
+                lut_path, work_dir, store.get_temp_file_paths(sid), cache.get("lut_metadata"),
+            )
+        elif materials_dir is not None:
+            materials_dir = str(shutil.copytree(materials_dir, work_dir / "materials"))
+    except (OSError, ValueError) as exc:
+        log.warning(
+            "Puzzle input snapshot failed",
+            extra={
+                "event": "converter_puzzle_snapshot_failed",
+                "session_id": sid,
+                "error_type": type(exc).__name__,
+                "error_message": str(exc),
+            },
+        )
+        raise HTTPException(
+            status_code=409,
+            detail="Puzzle color resources are unavailable. Re-run preview before generating.",
+        ) from exc
     piece_jobs: list[_PuzzlePieceJob] = []
     skipped_transparent_count = 0
     skipped_cells_count = 0
@@ -1277,7 +1317,7 @@ async def _generate_puzzle_in_workspace(
                     ),
                 )
         if session_material_source == "material_archive":
-            worker_params["materials_dir"] = session_data.get("project_materials_dir")
+            worker_params["materials_dir"] = materials_dir
             worker_params["material_source"] = "material_archive"
             worker_params["selected_materials"] = selected_materials
             # A committed manual recipe can extend the matrix beyond the
@@ -1458,8 +1498,8 @@ async def _generate_puzzle_in_workspace(
     ).save(overview_buffer, format="PNG")
     overview_png_bytes = overview_buffer.getvalue()
 
-    fd, combined_3mf_path = tempfile.mkstemp(prefix="puzzle_", suffix=".3mf", dir=TEMP_DIR)
-    os.close(fd)
+    combined_3mf_path = str(work_dir / "combined.3mf")
+    download_path: str | None = None
     combined_registered = False
     try:
         piece_slots = [
@@ -1507,19 +1547,24 @@ async def _generate_puzzle_in_workspace(
         ):
             if warning_code not in warnings:
                 warnings.append(warning_code)
-        embed_generated_project(combined_3mf_path, generate_params.project_revision_file_id, registry)
+        if project_revision is not None:
+            embed_project_in_generated_file(combined_3mf_path, project_revision)
+        fd, download_path = tempfile.mkstemp(prefix="puzzle_", suffix=".3mf", dir=TEMP_DIR)
+        os.close(fd)
+        os.replace(combined_3mf_path, download_path)
         download_id = registry.register_path(
             str(uuid.uuid4()),
-            combined_3mf_path,
+            download_path,
             filename=f"{base_name}_puzzle.3mf",
             ttl_seconds=BATCH_DOWNLOAD_TTL_SECONDS,
         )
         combined_registered = True
     except _EXPORT_INPUT_ERRORS as exc:
         raise to_http_exception(exc, "puzzle 3MF layout") from exc
-    except ROUTER_HANDLED_ERRORS as exc:
+    except (*ROUTER_HANDLED_ERRORS, MergedWriteError) as exc:
         log.error(
             "Puzzle 3MF assembly failed",
+            exc_info=True,
             extra={
                 "event": "converter_puzzle_assembly_failed",
                 "session_id": sid,
@@ -1531,7 +1576,7 @@ async def _generate_puzzle_in_workspace(
         raise HTTPException(status_code=500, detail=_PUZZLE_ASSEMBLY_FAILED_DETAIL)
     finally:
         if not combined_registered:
-            _remove_temp_path(combined_3mf_path)
+            _remove_temp_path(download_path)
 
     log.info(
         "Puzzle 3MF generated",

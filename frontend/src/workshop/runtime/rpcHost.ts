@@ -56,6 +56,8 @@ export interface WorkshopRpcScheduler {
 export interface WorkshopMessagePort {
   onmessage: ((event: MessageEvent) => void) | null;
   onmessageerror: ((event: MessageEvent) => void) | null;
+  addEventListener?(type: "close", listener: () => void): void;
+  removeEventListener?(type: "close", listener: () => void): void;
   postMessage(message: unknown, transfer?: Transferable[]): void;
   start(): void;
   close(): void;
@@ -80,6 +82,7 @@ export interface WorkshopRpcHost {
   dispatch(value: unknown): Promise<WorkshopRpcResponse>;
   emit(event: WorkshopRpcEventName, payload: WorkshopUiState): boolean;
   attach(port: WorkshopMessagePort): () => void;
+  disconnect(): void;
   close(): void;
 }
 
@@ -215,6 +218,7 @@ class WorkshopRpcHostImpl implements WorkshopRpcHost {
   private readonly bucket: TokenBucket;
   private readonly pending = new Map<string, PendingRequest>();
   private activePort: WorkshopMessagePort | null = null;
+  private removePortCloseListener: (() => void) | null = null;
   private closed = false;
   private readonly projectChannel?: WorkshopProjectChannel;
   private readonly onDisconnect?: () => void;
@@ -352,7 +356,7 @@ class WorkshopRpcHostImpl implements WorkshopRpcHost {
         this.disconnect(port);
         throw new WorkshopProjectDisconnectedError();
       }
-    });
+    }, () => this.disconnect(port));
     port.onmessage = (event) => {
       if (this.activePort !== port) return;
       if (this.projectChannel?.receive(event.data)) return;
@@ -370,15 +374,15 @@ class WorkshopRpcHostImpl implements WorkshopRpcHost {
     port.onmessageerror = () => {
       this.disconnect(port);
     };
+    const handleClose = () => this.disconnect(port);
+    port.addEventListener?.("close", handleClose);
+    this.removePortCloseListener = () => port.removeEventListener?.("close", handleClose);
     port.start();
     return () => {
       if (this.activePort !== port) {
         return;
       }
-      port.onmessage = null;
-      port.onmessageerror = null;
-      port.close();
-      this.activePort = null;
+      this.detachPort();
       this.projectChannel?.close();
     };
   }
@@ -404,10 +408,21 @@ class WorkshopRpcHostImpl implements WorkshopRpcHost {
     }
   }
 
-  private disconnect(port: WorkshopMessagePort): void {
-    if (this.activePort !== port) return;
+  disconnect(port = this.activePort): void {
+    if (this.closed || port === null || this.activePort !== port) return;
     this.close();
     this.onDisconnect?.();
+  }
+
+  private detachPort(): void {
+    const port = this.activePort;
+    this.activePort = null;
+    this.removePortCloseListener?.();
+    this.removePortCloseListener = null;
+    if (port === null) return;
+    port.onmessage = null;
+    port.onmessageerror = null;
+    port.close();
   }
 
   close(): void {
@@ -416,13 +431,7 @@ class WorkshopRpcHostImpl implements WorkshopRpcHost {
     }
     this.closed = true;
     this.projectChannel?.close();
-    const port = this.activePort;
-    this.activePort = null;
-    if (port !== null) {
-      port.onmessage = null;
-      port.onmessageerror = null;
-      port.close();
-    }
+    this.detachPort();
     for (const [requestId, pending] of [
       ...this.pending.entries(),
     ]) {

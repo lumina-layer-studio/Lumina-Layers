@@ -31,7 +31,8 @@ COLORS = [(255, 0, 0), (0, 0, 0), (255, 255, 255)]
 
 
 def _write_piece(path: Path, *, slicer: str, printer: str, density: int,
-                 modifier: bool, user_source: bool = True, layer_height_mm: float = 0.08) -> None:
+                 modifier: bool, user_source: bool = True, layer_height_mm: float = 0.08,
+                 prime_volume: str | None = None) -> None:
     target = select_metadata_target(slicer=slicer, printer_id=printer,
         nozzle_size='0.4', device_profile_id=None, build_plate_id=None)
     materials = [{'name': name, 'colour': '#%02X%02X%02X' % color, 'material_type': 'PLA'}
@@ -43,6 +44,8 @@ def _write_piece(path: Path, *, slicer: str, printer: str, density: int,
     project['vendor_opaque_process'] = {'custom': ['retain', 17]}
     project['vendor_opaque_array'] = ['a', 'b', 'c']
     project['precise_outer_wall'] = '1'
+    if prime_volume is not None:
+        project['prime_volume'] = prime_volume
     writer = BambuStudio3MFWriter(output_path=str(path), settings={
         'layer_height': layer_height_mm, 'initial_layer_print_height': layer_height_mm,
     },
@@ -166,6 +169,33 @@ def test_real_puzzle_can_disable_final_tower_planning(tmp_path, slicer, printer)
     assert placement['enabled'] is False
     assert _project(output)['enable_prime_tower'] == '1'
     assert _ranges(output) is not None
+
+
+def test_orca_puzzle_places_tower_using_native_default_or_selected_prime_volume(tmp_path: Path) -> None:
+    slicer, printer = "OrcaSlicer", "bambu-p1s"
+    target = select_metadata_target(
+        slicer=slicer, printer_id=printer, nozzle_size="0.4", device_profile_id=None, build_plate_id=None,
+    )
+    tower_depths = {}
+    for prime_volume in (None, "45", "30"):
+        source, output = tmp_path / f"piece-{prime_volume}.3mf", tmp_path / f"puzzle-{prime_volume}.3mf"
+        _write_piece(source, slicer=slicer, printer=printer, density=100, modifier=False, prime_volume=prime_volume)
+        slots = tuple(MaterialSlot(**slot) for slot in read_source_metadata(source, target=target)["slots"])
+        assemble_puzzle_3mf(
+            piece_sources=[PuzzlePiece3MFSource(label, str(source), x, 0) for label, x in (("A1", 0), ("A2", 20))],
+            piece_slots=[slots, slots], output_path=str(output), slot_names=PALETTE,
+            preview_colors=dict(zip(PALETTE, COLORS)), slot_index_by_name=None,
+            printer_id=printer, nozzle_size="0.4", device_profile_id=None, build_plate_id=None,
+            metadata_target=target, overview_png_bytes=None,
+        )
+        with zipfile.ZipFile(output) as archive:
+            placement = json.loads(archive.read("Metadata/lumina_wipe_tower_placement.json"))
+        assert placement["placement_applied"]
+        assert _project(output).get("prime_volume") == prime_volume
+        tower_depths[prime_volume] = placement["tower"]["estimated_depth_mm"]
+
+    assert tower_depths[None] == tower_depths["45"] > tower_depths["30"]
+
 
 _NS = {"m": "http://schemas.microsoft.com/3dmanufacturing/core/2015/02"}
 

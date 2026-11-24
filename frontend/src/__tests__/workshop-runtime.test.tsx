@@ -7,6 +7,7 @@ import {
 } from "@testing-library/react";
 import {
   afterEach,
+  beforeEach,
   describe,
   expect,
   it,
@@ -26,10 +27,19 @@ import {
 import type { WorkshopMessagePort } from "../workshop/runtime/rpcHost";
 import { useWorkshopProjectRuntime, waitForWorkshopProject } from "../project/workshopRuntime";
 
-class FakeHostPort implements WorkshopMessagePort {
+class FakeHostPort extends EventTarget implements WorkshopMessagePort {
   onmessage: ((event: MessageEvent) => void) | null = null;
   onmessageerror: ((event: MessageEvent) => void) | null = null;
-  readonly postMessage = vi.fn();
+  readonly postMessage = vi.fn((value: unknown) => {
+    const request = value as { operation?: string; requestId?: string; payload?: { token?: string } };
+    if (request.operation !== "discard" || request.payload?.token !== "") return;
+    queueMicrotask(() => this.onmessage?.(new MessageEvent("message", {
+      data: {
+        protocol: "lumina-workshop-project", version: 1, kind: "response",
+        requestId: request.requestId, ok: true, result: null,
+      },
+    })));
+  });
   readonly start = vi.fn();
   readonly close = vi.fn();
 }
@@ -116,7 +126,15 @@ function channelFixture() {
   };
 }
 
+// These tests explicitly schedule load and ready. JSDOM's implicit iframe
+// load would otherwise turn a synthetic first load into a second navigation.
+const ignoreImplicitFrameLoad = (event: Event) => {
+  if (event.isTrusted && event.target instanceof HTMLIFrameElement) event.stopImmediatePropagation();
+};
+beforeEach(() => document.addEventListener("load", ignoreImplicitFrameLoad, true));
+
 afterEach(() => {
+  document.removeEventListener("load", ignoreImplicitFrameLoad, true);
   vi.useRealTimers();
   vi.restoreAllMocks();
   useWorkshopProjectRuntime.setState({ disconnected: null });
@@ -167,6 +185,7 @@ describe("WorkshopFrame", () => {
 
     const project = useWorkshopProjectRuntime.getState().current!;
     const capture = project.capture();
+    await waitFor(() => expect(channel.port1.postMessage).toHaveBeenCalledWith(expect.objectContaining({ operation: "capture" })));
     const captureRequest = channel.port1.postMessage.mock.calls.at(-1)![0] as { requestId: string };
     channel.port1.onmessage?.(new MessageEvent("message", {
       data: {
@@ -180,7 +199,7 @@ describe("WorkshopFrame", () => {
     expect(useWorkshopProjectRuntime.getState().current).toBeNull();
   });
 
-  it.each(["RPC response", "snapshot request"] as const)("offers a fresh connection after a %s fails to send", async (messageKind) => {
+  it.each(["failed RPC response", "failed snapshot request", "iframe navigation", "native close event"] as const)("offers a fresh connection after %s", async (failure) => {
     const disconnected = channelFixture();
     const replacement = channelFixture();
     const createChannel = vi.fn()
@@ -199,6 +218,7 @@ describe("WorkshopFrame", () => {
       />,
     );
     const originalFrame = screen.getByTitle("Fixture Hello") as HTMLIFrameElement;
+    fireEvent.load(originalFrame);
     act(() => {
       postReady(originalFrame.contentWindow, { projectSnapshotProtocol: 1 });
       disconnected.port1.onmessage?.(new MessageEvent("message", {
@@ -211,14 +231,21 @@ describe("WorkshopFrame", () => {
     ));
     const originalProject = useWorkshopProjectRuntime.getState().current;
     const oldMessageError = disconnected.port1.onmessageerror;
-    disconnected.port1.postMessage.mockImplementationOnce(() => {
-      throw new DOMException("The port is unavailable", "InvalidStateError");
-    });
-    if (messageKind === "snapshot request") {
+    if (failure === "iframe navigation") {
+      fireEvent.load(originalFrame);
+    } else if (failure === "native close event") {
+      act(() => { disconnected.port1.dispatchEvent(new Event("close")); });
+    } else if (failure === "failed snapshot request") {
+      disconnected.port1.postMessage.mockImplementationOnce(() => {
+        throw new DOMException("The port is unavailable", "InvalidStateError");
+      });
       await act(async () => {
         await expect(originalProject!.capture()).rejects.toThrow("no longer connected");
       });
     } else {
+      disconnected.port1.postMessage.mockImplementationOnce(() => {
+        throw new DOMException("The port is unavailable", "InvalidStateError");
+      });
       act(() => {
         disconnected.port1.onmessage?.(new MessageEvent("message", {
           data: rpcRequest("status.progress", { phase: "autosave", completed: 1, total: 2 }, "failed-response"),
@@ -244,6 +271,7 @@ describe("WorkshopFrame", () => {
     expect(replacementProject).not.toBe(originalProject);
 
     act(() => oldMessageError?.(new MessageEvent("messageerror")));
+    fireEvent.load(originalFrame);
     expect(useWorkshopProjectRuntime.getState().current).toBe(replacementProject);
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
     expect(onStartFailure).not.toHaveBeenCalled();

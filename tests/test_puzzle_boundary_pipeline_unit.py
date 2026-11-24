@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 from tempfile import NamedTemporaryFile
+from threading import Lock, get_ident
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
@@ -14,6 +16,7 @@ from shapely.geometry.base import BaseGeometry
 from shapely.ops import unary_union
 
 from config import ModelingMode, PrinterConfig
+from core import mesh_generators
 from core.export_materials import resolve_coating_material
 from core.mesh_generators import HighFidelityMesher
 from core.pipeline import s07_mesh_generation, s08_auxiliary_meshes
@@ -103,6 +106,50 @@ def test_s07_mesh_generation_loads_boundary_geometry_and_disables_dilation() -> 
     assert mesher.boundary_geometry.equals(Polygon([(0.0, 0.0), (3.0, 0.0), (0.0, 5.0)]))
     exported_mesh = ctx["scene"].geometry["White"]
     assert exported_mesh.bounds[1, 0] == pytest.approx(3.0)
+
+
+def test_parallel_piece_meshes_sample_one_shared_boundary(tmp_path, monkeypatch) -> None:
+    boundary = _write_boundary_json(tmp_path / "piece.json", {
+        "polygon_px": [[1, 0], [5, 0], [5, 4], [1, 4]],
+    })
+    matrix = np.zeros((1, 4, 6), dtype=np.int8)
+    matrix[:, :, 3:] = 1
+    rasterizer = mesh_generators.rasterize_boundary_geometry
+    sample_threads = []
+    lock = Lock()
+
+    def rasterize(geometry, **dimensions):
+        # Record any repeated calls without provoking the native GEOS race.
+        with lock:
+            sample_threads.append(get_ident())
+            return rasterizer(geometry, **dimensions)
+
+    monkeypatch.setattr(mesh_generators, "rasterize_boundary_geometry", rasterize)
+    monkeypatch.delenv("LUMINA_DISABLE_PARALLEL_MESH", raising=False)
+    monkeypatch.setattr(
+        s07_mesh_generation, "resolve_task_parallelism_plan",
+        lambda *_args, **_kwargs: SimpleNamespace(workers=2, limiting_reason=None),
+    )
+    monkeypatch.setattr(
+        s07_mesh_generation, "get_effective_memory_capacity",
+        lambda: SimpleNamespace(available_bytes=1024**3),
+    )
+
+    result = s07_mesh_generation.run({
+        "full_matrix": matrix,
+        "slot_names": ["White", "Red"],
+        "preview_colors": {0: [255, 255, 255], 1: [255, 0, 0]},
+        "modeling_mode": ModelingMode.HIGH_FIDELITY,
+        "target_h": 4,
+        "pixel_scale": 1.0,
+        "piece_boundary_geometry_path": str(boundary),
+        "_bench_enabled": False,
+    })
+
+    assert sample_threads == [get_ident()]
+    for part in result["scene"].geometry.values():
+        assert part.volume == pytest.approx(8 * PrinterConfig.LAYER_HEIGHT)
+    assert set(result["scene"].geometry) == {"White", "Red"}
 
 
 def test_s08_aux_meshes_use_boundary_geometry_for_coating_and_outline() -> None:

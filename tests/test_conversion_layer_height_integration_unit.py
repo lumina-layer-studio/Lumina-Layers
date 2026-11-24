@@ -135,6 +135,44 @@ def test_raster_coats_each_stepped_face_up_roof(tmp_path, main_height, coat_heig
     assert coat.section([0, 0, 1], [0, 0, bottom_left - 0.001]) is None
 
 
+@pytest.mark.parametrize("coat_height", [0.04, 0.12])
+def test_stepped_face_up_3mf_schedules_both_films_and_keeps_the_body_layer(coat_height, tmp_path, monkeypatch):
+    monkeypatch.setattr(s09_export_3mf, "MODELS_DIR", str(tmp_path))
+    ctx = _raster_context(0.08, coat_height, tmp_path)
+    ctx["color_mode"] = "5-Color Extended"
+    ctx["material_matrix"][:, :2, 0] = -1
+    for stage in (s06_voxel_building, s07_mesh_generation, s08_auxiliary_meshes, s09_export_3mf):
+        ctx = stage.run(ctx)
+        assert not ctx.get("error")
+
+    with ZipFile(ctx["out_path"]) as archive:
+        project = json.loads(archive.read("Metadata/project_settings.config"))
+        root = ElementTree.fromstring(archive.read("Metadata/layer_config_ranges.xml"))
+    main = float(project["layer_height"])
+    minimum = float(project["min_layer_height"][0])
+    assert main == pytest.approx(0.08)
+    assert minimum == pytest.approx(0.04)
+    ranges = [
+        (float(span.get("min_z")), float(span.get("max_z")), float(height))
+        for span in root.iter("range")
+        if (height := span.findtext("option[@opt_key='layer_height']")) is not None
+    ]
+    coat = ctx["scene"].geometry["Coating"]
+    roof_bottom = float(coat.bounds[0, 2])
+    roof_above = roof_bottom + main
+    # Check whether a slicer following the native range schedule can reach both
+    # mesh roofs and their endpoints, including the body step between them.
+    z = float(project["initial_layer_print_height"])
+    boundaries = {round(z, 6)}
+    while z < coat.bounds[1, 2] - 1e-7:
+        sample_z = z + minimum / 2
+        z += next((height for start, end, height in ranges if start <= sample_z < end), main)
+        boundaries.add(round(z, 6))
+    assert {round(edge, 6) for edge in (
+        roof_bottom, roof_bottom + coat_height, roof_above, roof_above + coat_height,
+    )} <= boundaries
+
+
 def test_raster_004_quantizes_magnet_depth_on_the_authored_lattice(tmp_path):
     ctx = _raster_context(0.04, None, tmp_path)
     ctx.update(spacer_thick=0.4, enable_fridge_magnet=True, fridge_magnets=[{

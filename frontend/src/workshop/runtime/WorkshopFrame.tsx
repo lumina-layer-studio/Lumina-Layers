@@ -1,4 +1,5 @@
 import {
+  type SyntheticEvent,
   useCallback,
   useEffect,
   useRef,
@@ -111,6 +112,7 @@ type RuntimePhase =
   | "incompatible";
 
 interface RuntimeDocument {
+  generation: number;
   src?: string;
   srcDoc?: string;
 }
@@ -188,6 +190,8 @@ export function WorkshopFrame({
 }: WorkshopFrameProps) {
   const { t } = useI18n();
   const iframeRef = useRef<HTMLIFrameElement>(null);
+  const loadedFrameRef = useRef<HTMLIFrameElement | null>(null);
+  const runtimeGenerationRef = useRef(0);
   const handshakeTimerRef = useRef<ReturnType<
     typeof setTimeout
   > | null>(null);
@@ -306,6 +310,8 @@ export function WorkshopFrame({
   );
 
   useEffect(() => {
+    const generation = ++runtimeGenerationRef.current;
+    loadedFrameRef.current = null;
     const sessionCandidate = candidatePropRef.current;
     sessionCandidateRef.current = sessionCandidate;
     handshakeAcceptedRef.current = false;
@@ -362,6 +368,7 @@ export function WorkshopFrame({
       setPhase("loading");
       if (runtimeMode === "desktop-secure") {
         setRuntimeDocument({
+          generation,
           src: desktopModuleUrl(
             module.moduleId,
             module.moduleVersion,
@@ -380,7 +387,7 @@ export function WorkshopFrame({
         }
         const srcDoc = injectWorkshopRuntimeCsp(html);
         if (!cancelled) {
-          setRuntimeDocument({ srcDoc });
+          setRuntimeDocument({ generation, srcDoc });
         }
       } catch {
         if (!cancelled) {
@@ -411,12 +418,20 @@ export function WorkshopFrame({
     runtimeMode,
   ]);
 
-  const handleFrameLoad = useCallback(() => {
+  const handleFrameLoad = useCallback((event: SyntheticEvent<HTMLIFrameElement>) => {
+    const frame = event.currentTarget;
     if (
-      runtimeDocument === null ||
-      failureHandledRef.current ||
-      handshakeAcceptedRef.current
+      frame !== iframeRef.current ||
+      runtimeDocument?.generation !== runtimeGenerationRef.current ||
+      failureHandledRef.current
     ) {
+      return;
+    }
+    const navigated = loadedFrameRef.current === frame;
+    loadedFrameRef.current = frame;
+    if (handshakeAcceptedRef.current) {
+      // The first load can arrive after ready. A later load replaces the editor.
+      if (navigated) hostRef.current?.disconnect();
       return;
     }
     setPhase("handshaking");
@@ -462,9 +477,11 @@ export function WorkshopFrame({
       const supportedEvents = handshake?.events ?? null;
       // Runtimes post ready once and Chromium can deliver it before the
       // frame's load event, so trust the current frame window, not load order.
-      const frameWindow = iframeRef.current?.contentWindow ?? null;
+      const frame = iframeRef.current;
+      const frameWindow = frame?.contentWindow ?? null;
       if (
         frameWindow === null ||
+        frame?.dataset.runtimeGeneration !== String(runtimeGenerationRef.current) ||
         handshakeAcceptedRef.current ||
         failureHandledRef.current ||
         event.source !== frameWindow ||
@@ -582,7 +599,7 @@ export function WorkshopFrame({
           return;
         }
         detachPortRef.current = detachPort;
-        iframeRef.current?.contentWindow?.postMessage(
+        frameWindow.postMessage(
           {
             type: "lumina.workshop.connect",
             sessionId: createRandomId(),
@@ -721,7 +738,8 @@ export function WorkshopFrame({
       {runtimeDocument ? (
         <iframe
           ref={iframeRef}
-          key={`${module.moduleId}@${module.moduleVersion}`}
+          key={runtimeDocument.generation}
+          data-runtime-generation={runtimeDocument.generation}
           title={module.displayName}
           src={runtimeDocument.src}
           srcDoc={runtimeDocument.srcDoc}

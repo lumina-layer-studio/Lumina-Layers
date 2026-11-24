@@ -7,8 +7,10 @@ import json
 import logging
 import os
 import pickle
+import time
 from dataclasses import replace
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 from xml.etree import ElementTree
 from zipfile import ZipFile
@@ -562,6 +564,69 @@ def test_puzzle_worker_export_does_not_depend_on_glb_preview(
     assert list(tmp_path.glob("puzzle_*")) == [Path(final_path)]
 
 
+@pytest.mark.parametrize("coating_profile", [None, "Bambu PLA Matte @BBL P1S 0.4 nozzle"])
+def test_puzzle_merge_keeps_coating_material_and_native_layer_ranges(
+    puzzle_harness, tmp_path, monkeypatch, coating_profile,
+) -> None:
+    from api.routers.converter.export_materials import require_material_selection
+    from api.workers.converter_workers import _batch_extract_slots_from_3mf
+    from utils.fatcat_metadata import read_source_metadata, select_metadata_target
+
+    monkeypatch.setattr(puzzle_router, "_batch_extract_slots_from_3mf", _batch_extract_slots_from_3mf)
+    monkeypatch.setattr(puzzle_router, "require_material_selection", require_material_selection)
+    session_id, _, color_mode = _seed_backed_puzzle(puzzle_harness["store"], tmp_path, monkeypatch, "lut")
+    puzzle_harness["pool"].submit = AsyncMock(side_effect=lambda worker, *args: worker(*args))
+    body = _generate_puzzle_body(session_id)
+    body["params"].update(rows=1, cols=2, target_height_mm=6.4)
+    params = body["params"]["params"]
+    params.update(
+        target_width_mm=9.6, color_mode=color_mode, printer_id="bambu-p1s", nozzle_size="0.4",
+        enable_coating=True, coating_height_mm=0.04, layer_height_mm=0.08, structure_mode="Double-sided",
+        enable_base_layer_height_modifier=False, enable_wipe_tower_auto_placement=False,
+    )
+    if coating_profile is not None:
+        params["native_filament_profiles"] = {"Coating": coating_profile}
+
+    response = puzzle_harness["client"].post("/api/convert/generate-puzzle", json=body)
+
+    assert response.status_code == 200, response.text
+    file_id = response.json()["download_url"].rsplit("/", 1)[-1]
+    path, _ = puzzle_harness["registry"].resolve(file_id)
+    target = select_metadata_target(
+        slicer="BambuStudio", printer_id="bambu-p1s", nozzle_size="0.4",
+        device_profile_id=None, build_plate_id=None,
+    )
+    metadata = read_source_metadata(path, target=target)
+    coating_slot = next(slot for slot in metadata["slots"] if slot["slot_name"] == "Coating")
+    assert coating_slot["slot_id"] == 2
+    assert coating_slot["preview_color"] == "#C8C8C8"
+    assert metadata["layout"]["layer_height"] == 0.08
+    assert metadata["layout"]["initial_layer_height"] == 0.04
+    assert metadata["layout"]["min_layer_height"] == 0.04
+    with ZipFile(path) as package:
+        project = json.loads(package.read("Metadata/project_settings.config"))
+        assert project["filament_type"][2] == "PLA"
+        assert project["filament_settings_id"][2] == (
+            coating_profile or "Bambu PLA Basic @BBL P1S 0.4 nozzle"
+        )
+        model = ElementTree.fromstring(package.read("Metadata/model_settings.config"))
+        ranges = ElementTree.fromstring(package.read("Metadata/layer_config_ranges.xml"))
+        root_model = ElementTree.fromstring(package.read("3D/3dmodel.model"))
+        root_objects = {obj.get("id"): obj for obj in root_model.findall("./{*}resources/{*}object")}
+        for item in root_model.findall("./{*}build/{*}item"):
+            dz = float((item.get("transform") or "0").split()[-1])
+            components = root_objects[item.get("objectid")].findall("./{*}components/{*}component")
+            component_path = components[0].get("{http://schemas.microsoft.com/3dmanufacturing/production/2015/06}path")
+            geometry = ElementTree.fromstring(package.read(component_path.lstrip("/")))
+            z_coordinates = [float(vertex.get("z")) for vertex in geometry.findall(".//{*}vertex")]
+            assert dz == pytest.approx(0.04)
+            assert dz + min(z_coordinates) == pytest.approx(0.0, abs=1e-7)
+    assert len(model.findall("./object/part/metadata[@key='extruder'][@value='3']")) == 2
+    assert len(ranges.findall("./object")) == 2
+    for obj in ranges.findall("./object"):
+        assert any(float(option.text) == 0.04 for option in obj.findall("./range/option[@opt_key='layer_height']"))
+
+
 class TestPuzzleLayoutPreviewCanary:
     """Successful puzzle-layout-preview requests emit the renamed done canary."""
 
@@ -976,6 +1041,76 @@ async def test_cancelled_puzzle_drains_active_batch_without_starting_more_pieces
     assert active_count == 0
     assert len(outputs) == 2
     assert all(not path.exists() for path in outputs)
+
+
+@pytest.mark.asyncio
+async def test_puzzle_inputs_survive_idle_cleanup_and_source_close(
+    puzzle_harness, tmp_path, monkeypatch,
+) -> None:
+    from api import session_store as session_store_module
+    from api.app import _run_cleanup_pass
+    from api.routers.session import close_session, heartbeat
+    from api.schemas.session import SessionRequest
+
+    store = puzzle_harness["store"]
+    registry = puzzle_harness["registry"]
+    pool = puzzle_harness["pool"]
+    session_id = _seed_puzzle_generate_session(store, tmp_path)
+    original_lut = Path(store.get(session_id)["lut_path"])
+    lut_bytes = original_lut.read_bytes()
+    idle_session = store.create()
+    started = asyncio.Event()
+    release = asyncio.Event()
+    inputs = []
+
+    async def submit_piece(_worker, image_path, lut_path, params):
+        inputs.append((Path(image_path), Path(lut_path)))
+        if len(inputs) == pool.max_workers:
+            started.set()
+        await release.wait()
+        assert Path(image_path).is_file()
+        assert Path(lut_path).read_bytes() == lut_bytes
+        piece = Path(params["export_only_3mf_path"])
+        piece.write_bytes(b"piece 3mf")
+        return {"threemf_path": str(piece), "x_mirrored": False, "mirror_span_mm": 1.0}
+
+    def assemble_pieces(*, output_path, **kwargs):
+        Path(output_path).write_bytes(b"assembled 3mf")
+
+    pool.submit = AsyncMock(side_effect=submit_piece)
+    monkeypatch.setattr(puzzle_router, "assemble_puzzle_3mf", assemble_pieces)
+    body = _generate_puzzle_body(session_id)
+    body["params"].update(rows=1, cols=2)
+    session_request = SessionRequest(session_id=session_id)
+    task = asyncio.create_task(puzzle_router.generate_puzzle(
+        puzzle_router._PuzzleGenerateBody.model_validate(body),
+        store=store,
+        registry=registry,
+        pool=pool,
+    ))
+    try:
+        await asyncio.wait_for(started.wait(), timeout=2.0)
+        origin = time.time()
+        elapsed = 1740
+        with monkeypatch.context() as clock:
+            clock.setattr(session_store_module, "time", SimpleNamespace(time=lambda: origin + elapsed))
+            assert heartbeat(session_request, store=store).status == "ok"
+            elapsed = 1820
+            expired, _, _ = _run_cleanup_pass(store, registry)
+            assert expired == [idle_session]
+        assert all(image.is_file() for image, _ in inputs)
+        close_session(session_request, store=store, registry=registry)
+        assert not original_lut.exists()
+        assert all(lut.is_file() for _, lut in inputs)
+    except BaseException:
+        release.set()
+        await asyncio.gather(task, return_exceptions=True)
+        raise
+    release.set()
+    response = await task
+    assert all(not file.exists() for pair in inputs for file in pair)
+    download, _ = registry.resolve(response.download_url.rsplit("/", 1)[-1])
+    assert Path(download).read_bytes() == b"assembled 3mf"
 
 
 class TestMaterialPuzzlePreviewReuse:

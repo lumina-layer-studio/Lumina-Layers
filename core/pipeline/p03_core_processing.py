@@ -24,6 +24,7 @@ from config import (
     normalize_svg_pixels_per_mm,
 )
 from core.material_layer_fallback_policy import should_run_cross_n_fallback
+from core.print_layers import resolve_layer_height_mm
 from core.pipeline.processing_ops.color_histogram import count_visible_rgb
 
 _log = get_logger(__name__)
@@ -244,7 +245,7 @@ def _run_material_archive_branch(ctx: dict) -> dict:
     dynamic_max_layer_count = ctx.get("material_max_layer_count", 10)
     dynamic_delta_e00_tolerance = ctx.get("material_delta_e00_tolerance", 0.5)
     layer_count = fixed_layer_count
-    layer_height_mm = float(ctx.get("layer_height_mm") or 0.08)
+    layer_height_mm = resolve_layer_height_mm(ctx)
     substrate = str(ctx.get("material_substrate") or "white")
     requested_grid = int(ctx.get("grid_resolution") or DEFAULT_GRID_RESOLUTION)
 

@@ -195,6 +195,7 @@ def build_wipe_tower_placement_request(
     slicer: str,
     nozzle_size: str,
     process_layout: Mapping[str, Any] | None = None,
+    coating_layer_height_mm: float | None = None,
 ) -> WipeTowerPlacementRequest | None:
     """Build placement input from decoded layout and geometry facts.
 
@@ -238,6 +239,8 @@ def build_wipe_tower_placement_request(
     if slicer == "BambuStudio" and first_layer and first_layer > 0:
         # The tower footprint must also hold the purge on its first layer.
         layer_height = min(layer_height, first_layer)
+    if coating_layer_height_mm is not None:
+        layer_height = min(layer_height, coating_layer_height_mm)
     return WipeTowerPlacementRequest(
         printable_area=printable_area,
         bed_exclusions=tuple(

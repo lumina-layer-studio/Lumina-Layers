@@ -13,8 +13,9 @@ import time
 
 import numpy as np
 
-from config import MODELS_DIR, PrinterConfig, get_printer_profile
+from config import MODELS_DIR, get_printer_profile
 from core.naming import generate_model_filename
+from core.print_layers import resolve_coating_height_mm, resolve_layer_height_mm
 from utils.slicer_3mf_writer import (
     export_scene_with_slicer_metadata as export_scene_with_bambu_metadata,
 )
@@ -146,8 +147,11 @@ def run(ctx: dict) -> dict:
     _log.debug(f"export_3mf start")
     _export_t0 = time.perf_counter() if _bench_enabled else None
 
-    base_name = os.path.splitext(os.path.basename(image_path))[0]
-    out_path = os.path.join(MODELS_DIR, generate_model_filename(base_name, modeling_mode, color_mode))
+    piece_path = ctx.get("export_only_3mf_path")
+    out_path = piece_path
+    if not out_path:
+        base_name = os.path.splitext(os.path.basename(image_path))[0]
+        out_path = os.path.join(MODELS_DIR, generate_model_filename(base_name, modeling_mode, color_mode))
 
     # Check if scene has any geometry before exporting
     if len(scene.geometry) == 0:
@@ -167,10 +171,8 @@ def run(ctx: dict) -> dict:
         return ctx
 
     # Geometry-driven values; shared product defaults belong to the writer.
-    print_settings = {
-        "layer_height": "0.08",
-        "initial_layer_height": "0.08",
-    }
+    layer_height = f"{resolve_layer_height_mm(ctx):g}"
+    print_settings = {"layer_height": layer_height, "initial_layer_height": layer_height}
 
     try:
         _log.debug(f"Exporting with BambuStudio metadata...")
@@ -187,7 +189,7 @@ def run(ctx: dict) -> dict:
         # to help correlate single-sided vs double-sided behaviour.
         # 封面缩略图诊断日志：记录本次导出实际使用的 cover_source 路径，
         # 以及 structure_mode / face_orientation，帮助定位单面/双面差异。
-        _cover_path = ctx.get("cover_source_path") or ctx.get("image_path")
+        _cover_path = None if piece_path else (ctx.get("cover_source_path") or ctx.get("image_path"))
         _cover_exists = bool(_cover_path) and os.path.exists(str(_cover_path))
         try:
             _cover_size = os.path.getsize(str(_cover_path)) if _cover_exists else 0
@@ -238,7 +240,11 @@ def run(ctx: dict) -> dict:
             backing_infill_density_percent=int(
                 ctx.get("backing_infill_density_percent", 100)
             ),
-            cover_source=ctx.get("cover_source_path") or ctx.get("image_path"),
+            cover_source=_cover_path,
+            coating_height_mm=(
+                resolve_coating_height_mm(ctx.get("coating_height_mm"))
+                if ctx.get("enable_coating") else 0.0
+            ),
             device_profile_id=ctx.get("device_profile_id") or None,
             custom_3mf_template_id=ctx.get("custom_3mf_template_id") or None,
             build_plate_id=ctx.get("build_plate_id") or None,

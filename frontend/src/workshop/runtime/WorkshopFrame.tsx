@@ -6,8 +6,14 @@ import {
 } from "react";
 
 import { useI18n } from "../../i18n/context";
+import Button from "../../components/ui/Button";
+import { StatusBanner } from "../../components/ui/panelPrimitives";
 import { createRandomId } from "../../utils/randomId";
-import { registerWorkshopProject, workshopProjectChanged } from "../../project/workshopRuntime";
+import {
+  registerWorkshopProject,
+  workshopProjectChanged,
+  workshopProjectDisconnected,
+} from "../../project/workshopRuntime";
 import { WorkshopProjectChannel } from "./projectChannel";
 import {
   type WorkshopPermissionName,
@@ -98,6 +104,7 @@ type RuntimePhase =
   | "handshaking"
   | "connected"
   | "ready"
+  | "disconnected"
   | "failed"
   | "desktop-required"
   | "disabled"
@@ -189,7 +196,6 @@ export function WorkshopFrame({
   const detachProjectRef = useRef<(() => void) | null>(null);
   const handshakeAcceptedRef = useRef(false);
   const failureHandledRef = useRef(false);
-  const mountedRef = useRef(true);
   const prepareCandidateRef = useRef(prepareCandidate);
   const onStartFailureRef = useRef(onStartFailure);
   const disableVersionRef = useRef(disableVersion);
@@ -199,6 +205,7 @@ export function WorkshopFrame({
   const [runtimeDocument, setRuntimeDocument] =
     useState<RuntimeDocument | null>(null);
   const [phase, setPhase] = useState<RuntimePhase>("preparing");
+  const [reloadCount, setReloadCount] = useState(0);
   const [failureReason, setFailureReason] =
     useState<WorkshopStartupFailureReason | null>(null);
   const [progress, setProgress] =
@@ -239,13 +246,14 @@ export function WorkshopFrame({
 
   const closeConnection = useCallback(() => {
     clearHandshakeTimer();
+    const host = hostRef.current;
+    hostRef.current = null;
     detachProjectRef.current?.();
     detachProjectRef.current = null;
     const detach = detachPortRef.current;
     detachPortRef.current = null;
     detach?.();
-    hostRef.current?.close();
-    hostRef.current = null;
+    host?.close();
   }, [clearHandshakeTimer]);
 
   useEffect(() => {
@@ -300,7 +308,6 @@ export function WorkshopFrame({
   useEffect(() => {
     const sessionCandidate = candidatePropRef.current;
     sessionCandidateRef.current = sessionCandidate;
-    mountedRef.current = true;
     handshakeAcceptedRef.current = false;
     failureHandledRef.current = false;
     setRuntimeDocument(null);
@@ -345,7 +352,7 @@ export function WorkshopFrame({
             module.moduleVersion,
           );
         } catch {
-          failStartup("candidate-prepare-failed");
+          if (!cancelled) failStartup("candidate-prepare-failed");
           return;
         }
       }
@@ -385,7 +392,6 @@ export function WorkshopFrame({
     void prepare();
     return () => {
       cancelled = true;
-      mountedRef.current = false;
       closeConnection();
     };
   }, [
@@ -399,6 +405,7 @@ export function WorkshopFrame({
     module.official,
     module.runtimeUrl,
     module.source,
+    reloadCount,
     runtimeApiMaxExclusive,
     runtimeApiMin,
     runtimeMode,
@@ -485,27 +492,35 @@ export function WorkshopFrame({
       const upstreamReady = selectedHandlers[
         "lifecycle.ready"
       ] as WorkshopRpcHandler | undefined;
-      const projectChannel = snapshotProtocol === 1 && event.data?.projectSnapshotProtocol === 1 && (JSON.parse(runtimePermissionsJson) as string[]).includes("project.storage")
-        ? new WorkshopProjectChannel({ moduleId: runtimeModuleId, moduleVersion: runtimeModuleVersion }, JSON.parse(snapshotSchemasJson) as string[], workshopProjectChanged)
+      const identity = { moduleId: runtimeModuleId, moduleVersion: runtimeModuleVersion };
+      const permissions = JSON.parse(runtimePermissionsJson) as WorkshopPermissionName[];
+      const schemas = JSON.parse(snapshotSchemasJson) as string[];
+      const supportsSnapshots = snapshotProtocol === 1 && schemas.length > 0 && permissions.includes("project.storage");
+      const projectChannel = supportsSnapshots && event.data?.projectSnapshotProtocol === 1
+        ? new WorkshopProjectChannel(identity, schemas, workshopProjectChanged)
         : undefined;
+      let host: WorkshopRpcHost | null = null;
+      const isCurrentHost = () => host !== null && hostRef.current === host;
+      const isCurrentRequest = (signal: AbortSignal) => isCurrentHost() && !signal.aborted;
+      const sessionCandidate = sessionCandidateRef.current;
       const runtimeHandlers: WorkshopRpcHandlers = {
         ...selectedHandlers,
         "status.progress": async (payload, context) => {
-          if (mountedRef.current) {
-            setProgress(progressValue(payload));
-          }
+          if (!isCurrentRequest(context.signal)) return;
+          setProgress(progressValue(payload));
           return upstreamProgress?.(payload, context);
         },
         "status.error": async (payload, context) => {
-          if (mountedRef.current) {
-            setModuleError(errorValue(payload));
-          }
+          if (!isCurrentRequest(context.signal)) return;
+          setModuleError(errorValue(payload));
           return upstreamError?.(payload, context);
         },
         "lifecycle.ready": async (payload, context) => {
+          if (!isCurrentRequest(context.signal)) return;
           await upstreamReady?.(payload, context);
+          if (!isCurrentRequest(context.signal)) return;
           try {
-            if (sessionCandidateRef.current) {
+            if (sessionCandidate) {
               if (activateCandidate === undefined) {
                 throw new Error(
                   "Candidate activation is unavailable.",
@@ -516,15 +531,16 @@ export function WorkshopFrame({
                 runtimeModuleVersion,
               );
             }
+            if (!isCurrentRequest(context.signal)) return;
             await onStartSuccess?.(
               runtimeModuleId,
               runtimeModuleVersion,
             );
           } catch (error) {
-            failStartup("activation-failed");
+            if (isCurrentRequest(context.signal)) failStartup("activation-failed");
             throw error;
           }
-          if (mountedRef.current) {
+          if (isCurrentRequest(context.signal)) {
             setProgress(null);
             setPhase("ready");
             if (projectChannel && !detachProjectRef.current) {
@@ -535,29 +551,37 @@ export function WorkshopFrame({
         },
       };
 
-      let host: WorkshopRpcHost | null = null;
       let channel: WorkshopFrameChannel | null = null;
       try {
         host = createWorkshopRpcHost({
-          identity: {
-            moduleId: runtimeModuleId,
-            moduleVersion: runtimeModuleVersion,
-          },
-          permissions: new Set(
-            JSON.parse(
-              runtimePermissionsJson,
-            ) as WorkshopPermissionName[],
-          ),
+          identity,
+          permissions: new Set(permissions),
           handlers: runtimeHandlers,
           supportedEvents: supportedEvents ?? undefined,
           // Backend RPC needs both a declared backend and the module's
           // request in the handshake; the API re-checks consent per call.
           backendEnabled: hasBackend && handshake?.backendRequested === true,
           projectChannel,
+          onDisconnect: () => {
+            if (!isCurrentHost()) return;
+            // Registered channels report their own close through the project runtime.
+            if (supportsSnapshots && !detachProjectRef.current) {
+              workshopProjectDisconnected(identity);
+            }
+            closeConnection();
+            setRuntimeDocument(null);
+            setPhase("disconnected");
+          },
         });
         channel = createChannel();
-        detachPortRef.current = host.attach(channel.port1);
         hostRef.current = host;
+        const detachPort = host.attach(channel.port1);
+        if (!isCurrentHost()) {
+          detachPort();
+          channel.port2.close();
+          return;
+        }
+        detachPortRef.current = detachPort;
         iframeRef.current?.contentWindow?.postMessage(
           {
             type: "lumina.workshop.connect",
@@ -581,6 +605,7 @@ export function WorkshopFrame({
   }, [
     activateCandidate,
     clearHandshakeTimer,
+    closeConnection,
     createChannel,
     failStartup,
     handlers,
@@ -629,6 +654,24 @@ export function WorkshopFrame({
       <div role="alert" className={terminalStatusClassName}>
         {t("workshop_runtime_incompatible")}
       </div>
+    );
+  }
+  if (phase === "disconnected") {
+    return (
+      <StatusBanner
+        role="alert"
+        tone="warning"
+        className="m-3 mt-16 flex-wrap items-center"
+        action={
+          <Button
+            label={t("workshop_runtime_reload")}
+            size="sm"
+            onClick={() => setReloadCount((count) => count + 1)}
+          />
+        }
+      >
+        {t("workshop_runtime_disconnected")}
+      </StatusBanner>
     );
   }
   if (phase === "failed") {

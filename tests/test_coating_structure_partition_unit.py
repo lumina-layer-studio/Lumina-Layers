@@ -149,6 +149,33 @@ def test_outline_uses_requested_material_layer_height():
     assert mesh.bounds[1, 2] == pytest.approx(1.2 + analysis.num_layers * 0.12)
 
 
+@pytest.mark.parametrize("layer_height", [0.04, 0.08, 0.10])
+@pytest.mark.parametrize("coating_height", [0.04, 0.08, 0.12])
+@pytest.mark.parametrize("structure_mode", ["Single-sided", "Double-sided"])
+def test_native_vector_film_is_independent_of_optical_layer_height(
+    layer_height, coating_height, structure_mode,
+):
+    analysis = _analysis()
+    processor = VectorProcessor.__new__(VectorProcessor)
+    processor._init_runtime_defaults()
+    processor.color_mode = "Material Archive"
+    processor.layer_height_mm = layer_height
+    processor.enable_coating = True
+    processor.coating_height_mm = coating_height
+    scene = processor.build_mesh(analysis, thickness_mm=1.2, structure_mode=structure_mode)
+
+    coating = scene.geometry["Coating"]
+    bottom = [-coating_height, 0.0]
+    if structure_mode == "Double-sided":
+        body_top = round(1.2 / layer_height) * layer_height + 4 * layer_height
+        bottom += [body_top, body_top + coating_height]
+    assert np.unique(np.round(coating.vertices[:, 2], 9)) == pytest.approx(bottom)
+    assert coating.is_watertight
+    assert scene.geometry["Board"].bounds[:, 2] == pytest.approx(
+        [2 * layer_height, (2 + round(1.2 / layer_height)) * layer_height],
+    )
+
+
 def test_backing_only_tile_keeps_declared_structure_without_new_cut_margins():
     from core.vector_large_format import slice_vector_analysis_into_tiles
     from core.vector_structure import resolve_structure_plan

@@ -23,6 +23,7 @@ import trimesh
 from trimesh.visual.material import PBRMaterial
 
 from config import PrinterConfig, OUTPUT_DIR, BedManager
+from core.print_layers import resolve_layer_height_mm
 from core.naming import generate_preview_filename
 
 _log = get_logger(__name__)
@@ -1201,16 +1202,6 @@ def _resize_material_matrix_nearest(
     return np.stack(layers, axis=2).astype(material_matrix.dtype, copy=False)
 
 
-def _resolve_material_layer_height_mm(cache: dict) -> float:
-    try:
-        value = float(cache.get("layer_height_mm"))
-    except (TypeError, ValueError):
-        value = 0.0
-    if np.isfinite(value) and value > 0:
-        return value
-    return float(PrinterConfig.LAYER_HEIGHT)
-
-
 def _add_material_matrix_color_meshes(
     *,
     scene: trimesh.Scene,
@@ -1230,7 +1221,7 @@ def _add_material_matrix_color_meshes(
     """
 
     layer_count = int(material_matrix.shape[2])
-    layer_height_mm = _resolve_material_layer_height_mm(cache)
+    layer_height_mm = resolve_layer_height_mm(cache)
     scale_transform = np.eye(4)
     scale_transform[0, 0] = pixel_scale
     scale_transform[1, 1] = pixel_scale
@@ -1307,6 +1298,8 @@ def _build_backing_plate_mesh(
     height: int,
     pixel_scale: float,
     rgba: np.ndarray,
+    *,
+    layer_height_mm: float = PrinterConfig.LAYER_HEIGHT,
 ) -> Optional[trimesh.Trimesh]:
     """用 RLE/Shapely 像素轮廓拉伸构建底板，替代逐像素体素方案。
     顶点数从 ~3M 降至 <5k，节省约 2.5s。
@@ -1324,7 +1317,7 @@ def _build_backing_plate_mesh(
     scale_transform = np.eye(4)
     scale_transform[0, 0] = pixel_scale
     scale_transform[1, 1] = pixel_scale
-    scale_transform[2, 2] = PrinterConfig.LAYER_HEIGHT
+    scale_transform[2, 2] = layer_height_mm
     mesh.apply_transform(scale_transform)
     return mesh
 
@@ -1645,7 +1638,8 @@ def generate_segmented_glb(
         scale_transform = np.eye(4)
         scale_transform[0, 0] = pixel_scale
         scale_transform[1, 1] = pixel_scale
-        scale_transform[2, 2] = PrinterConfig.LAYER_HEIGHT
+        layer_height_mm = resolve_layer_height_mm(cache)
+        scale_transform[2, 2] = layer_height_mm
 
         flat_total = width * height
         color_match_flat = np.zeros(flat_total, dtype=bool)
@@ -1659,7 +1653,7 @@ def generate_segmented_glb(
         height_identity_codes_flat = _rgb_codes(height_identity_rgb).reshape(-1)
         if material_matrix is not None:
             material_layer_count = int(material_matrix.shape[2])
-            material_layer_height_mm = _resolve_material_layer_height_mm(cache)
+            material_layer_height_mm = layer_height_mm
             material_scale_transform = np.eye(4)
             material_scale_transform[0, 0] = pixel_scale
             material_scale_transform[1, 1] = pixel_scale
@@ -1802,6 +1796,7 @@ def generate_segmented_glb(
             height=height,
             pixel_scale=pixel_scale,
             rgba=np.array([245, 245, 245, 255], dtype=np.uint8),
+            layer_height_mm=layer_height_mm,
         )
         if backing_mesh is not None:
             scene.add_geometry(backing_mesh, node_name="backing_plate")
@@ -1931,7 +1926,7 @@ def generate_realtime_glb(cache: dict, output_path: str) -> Optional[str]:
         transform = np.eye(4)
         transform[0, 0] = pixel_scale
         transform[1, 1] = pixel_scale
-        transform[2, 2] = PrinterConfig.LAYER_HEIGHT
+        transform[2, 2] = resolve_layer_height_mm(cache)
         preview_mesh.apply_transform(transform)
 
         glb_path = output_path
@@ -2004,6 +1999,7 @@ def run(ctx: dict) -> dict:
         "target_w": width,
         "target_h": height,
         "target_width_mm": target_width_mm,
+        "layer_height_mm": resolve_layer_height_mm(ctx),
     }
     if bool(ctx.get("high_precision_3d_preview", False)):
         try:

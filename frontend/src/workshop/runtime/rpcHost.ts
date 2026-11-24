@@ -20,7 +20,7 @@ import {
   RpcPayloadValidationError,
   validateMethodPayload,
 } from "./payloadValidation";
-import type { WorkshopProjectChannel } from "./projectChannel";
+import { WorkshopProjectDisconnectedError, type WorkshopProjectChannel } from "./projectChannel";
 
 
 export {
@@ -69,6 +69,7 @@ export interface CreateWorkshopRpcHostOptions {
   /** The exact module version declares a backend (manifest v2). */
   backendEnabled?: boolean;
   projectChannel?: WorkshopProjectChannel;
+  onDisconnect?: () => void;
   now?: () => number;
   scheduler?: WorkshopRpcScheduler;
 }
@@ -216,6 +217,7 @@ class WorkshopRpcHostImpl implements WorkshopRpcHost {
   private activePort: WorkshopMessagePort | null = null;
   private closed = false;
   private readonly projectChannel?: WorkshopProjectChannel;
+  private readonly onDisconnect?: () => void;
 
   constructor(options: CreateWorkshopRpcHostOptions) {
     this.identity = validatedIdentity(options.identity);
@@ -226,6 +228,7 @@ class WorkshopRpcHostImpl implements WorkshopRpcHost {
     this.supportedEvents = new Set(options.supportedEvents ?? []);
     this.backendEnabled = options.backendEnabled === true;
     this.projectChannel = options.projectChannel;
+    this.onDisconnect = options.onDisconnect;
     this.scheduler = options.scheduler ?? DEFAULT_SCHEDULER;
     this.bucket = new TokenBucket(options.now ?? defaultNow);
   }
@@ -337,8 +340,21 @@ class WorkshopRpcHostImpl implements WorkshopRpcHost {
       return () => undefined;
     }
     this.activePort = port;
-    this.projectChannel?.connect(port);
+    this.projectChannel?.connect((message) => {
+      if (this.activePort !== port) throw new WorkshopProjectDisconnectedError();
+      try {
+        port.postMessage(message);
+      } catch (error) {
+        // A serialization failure only affects this project request.
+        if (error && typeof error === "object" && "name" in error && error.name === "DataCloneError") {
+          throw error;
+        }
+        this.disconnect(port);
+        throw new WorkshopProjectDisconnectedError();
+      }
+    });
     port.onmessage = (event) => {
+      if (this.activePort !== port) return;
       if (this.projectChannel?.receive(event.data)) return;
       void this.dispatch(event.data).then((response) => {
         if (this.activePort !== port || this.closed) {
@@ -347,12 +363,12 @@ class WorkshopRpcHostImpl implements WorkshopRpcHost {
         try {
           port.postMessage(response);
         } catch {
-          this.close();
+          this.disconnect(port);
         }
       });
     };
     port.onmessageerror = () => {
-      this.close();
+      this.disconnect(port);
     };
     port.start();
     return () => {
@@ -383,9 +399,15 @@ class WorkshopRpcHostImpl implements WorkshopRpcHost {
       port.postMessage(eventEnvelope(event, payload));
       return true;
     } catch {
-      this.close();
+      this.disconnect(port);
       return false;
     }
+  }
+
+  private disconnect(port: WorkshopMessagePort): void {
+    if (this.activePort !== port) return;
+    this.close();
+    this.onDisconnect?.();
   }
 
   close(): void {

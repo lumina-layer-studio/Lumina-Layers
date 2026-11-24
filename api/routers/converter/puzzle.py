@@ -16,14 +16,18 @@ import pickle
 import tempfile
 import uuid
 from collections.abc import AsyncIterator
+from concurrent.futures.process import BrokenProcessPool
 from copy import deepcopy
 from dataclasses import dataclass, replace
+from pathlib import Path
 from typing import Any
 
 import numpy as np
+from anyio import CancelScope
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from PIL import Image
+from shapely.geometry import Polygon
 
 from api.project_export import embed_generated_project, revision_bytes
 from api.dependencies import get_file_registry, get_session_store, get_worker_pool
@@ -48,11 +52,11 @@ from api.structured_logging import get_logger
 from api.worker_pool import WorkerPoolManager
 from api.workers.converter_workers import (
     _batch_extract_slots_from_3mf,
-    worker_generate_model,
+    _submit_puzzle_worker,
 )
 from config import ModelingMode as CoreModelingMode
-from config import TEMP_DIR
-from core.errors import ExternalSpoolSelectionError, NativeMaterialSelectionError, TemplateSlotCapacityError, WipeTowerLayoutError
+from config import MIN_PRINTABLE_ALPHA, TEMP_DIR
+from core.mesh_generators import rasterize_boundary_geometry
 from core.preview_analysis_cache import REQUIRED_PREVIEW_ANALYSIS_REUSE
 from .export_materials import require_material_selection
 from core.puzzle import (
@@ -95,9 +99,11 @@ from .common import (
     _validate_material_archive_relief_minimum_height,
 )
 from .generate import (
+    _EXPORT_INPUT_ERRORS,
     _assert_editor_snapshot_current,
     _capture_generation_snapshot,
     _preview_analysis_params_match,
+    _resolve_effective_cached_layer_settings,
     _resolve_recipe_overrides,
     _serialize_recipe_override_for_worker,
 )
@@ -137,6 +143,7 @@ class PuzzlePieceWorkerAssets:
     rgba: np.ndarray
     matched_rgb: np.ndarray
     boundary_payload: dict[str, Any]
+    has_printable_cells: bool
     mask_solid: np.ndarray | None = None
     quantized_image: np.ndarray | None = None
     material_matrix: np.ndarray | None = None
@@ -504,6 +511,7 @@ def _prepare_piece_worker_assets(
     matched_rgb: np.ndarray,
     piece: PuzzlePiece,
     *,
+    modeling_mode: CoreModelingMode = CoreModelingMode.HIGH_FIDELITY,
     backing_mask: np.ndarray | None = None,
     mask_solid: np.ndarray | None = None,
     quantized_image: np.ndarray | None = None,
@@ -519,11 +527,6 @@ def _prepare_piece_worker_assets(
     crop = np.s_[y0:y1, x0:x1]
     inside = local_mask.astype(bool, copy=False)
     target_size = _resolve_piece_worker_raster_size(piece)
-    boundary_payload = export_piece_boundary_geometry(
-        piece,
-        raster_size=target_size,
-        inset_px=_PUZZLE_BOUNDARY_INSET_MM * _PUZZLE_WORKER_PIXELS_PER_MM,
-    )
     analysis_assets = (mask_solid, quantized_image, material_matrix)
     if any(asset is not None for asset in analysis_assets) and not all(
         asset is not None for asset in analysis_assets
@@ -541,20 +544,27 @@ def _prepare_piece_worker_assets(
         piece_matrix[~piece_mask] = -1
         piece_matched[~piece_mask] = 0
 
+    piece_rgba = _resize_piece_array_nearest(piece_rgba, target_size)
+    if piece_mask is not None:
+        piece_mask = _resize_piece_array_nearest(piece_mask, target_size)
+    piece_backing = (
+        _resize_piece_array_nearest(backing_mask[crop].astype(bool, copy=False) & inside, target_size)
+        if backing_mask is not None else None
+    )
+    footprint = piece_mask if piece_mask is not None else piece_rgba[..., 3] >= MIN_PRINTABLE_ALPHA
+    if piece_backing is not None:
+        footprint = footprint | piece_backing
+    boundary_payload, has_printable_cells = _resolve_piece_worker_boundary(
+        piece, target_size, footprint, modeling_mode,
+    )
     return PuzzlePieceWorkerAssets(
         bbox_px=bbox_px,
-        rgba=_resize_piece_array_nearest(piece_rgba, target_size),
+        rgba=piece_rgba,
         matched_rgb=_resize_piece_array_nearest(piece_matched, target_size),
         boundary_payload=boundary_payload,
-        backing_mask=(
-            _resize_piece_array_nearest(backing_mask[crop].astype(bool, copy=False) & inside, target_size)
-            if backing_mask is not None else None
-        ),
-        mask_solid=(
-            _resize_piece_array_nearest(piece_mask, target_size)
-            if piece_mask is not None
-            else None
-        ),
+        has_printable_cells=has_printable_cells,
+        backing_mask=piece_backing,
+        mask_solid=piece_mask,
         quantized_image=(
             _resize_piece_array_nearest(piece_quantized, target_size)
             if piece_quantized is not None
@@ -566,6 +576,35 @@ def _prepare_piece_worker_assets(
             else None
         ),
     )
+
+
+def _resolve_piece_worker_boundary(
+    piece: PuzzlePiece,
+    raster_size: tuple[int, int],
+    footprint: np.ndarray,
+    modeling_mode: CoreModelingMode,
+) -> tuple[dict[str, Any], bool]:
+    """Keep the cut clearance unless it removes every occupied mesh cell."""
+    boundary = export_piece_boundary_geometry(
+        piece,
+        raster_size=raster_size,
+        inset_px=_PUZZLE_BOUNDARY_INSET_MM * _PUZZLE_WORKER_PIXELS_PER_MM,
+    )
+    has_footprint = bool(footprint.any())
+    if not has_footprint or modeling_mode != CoreModelingMode.HIGH_FIDELITY:
+        return boundary, has_footprint
+
+    def overlaps_footprint(payload: dict[str, Any]) -> bool:
+        geometry = Polygon(payload["polygon_px"], payload["holes_px"])
+        cells = rasterize_boundary_geometry(
+            geometry, width_px=raster_size[0], height_px=raster_size[1],
+        )
+        return bool((footprint & cells).any())
+
+    if overlaps_footprint(boundary):
+        return boundary, True
+    original = export_piece_boundary_geometry(piece, raster_size=raster_size)
+    return original, overlaps_footprint(original)
 
 
 def _prepare_piece_recipe_override_masks(
@@ -623,85 +662,14 @@ def _prepare_piece_recipe_override_masks(
     return cropped_masks
 
 
-def _save_png_array(session_id: str, store: SessionStore, array: np.ndarray, prefix: str) -> str:
-    """Persist a numpy image array as a temp PNG registered to the session.
-    将 NumPy 图像数组保存为已注册到 Session 的临时 PNG。
-
-    Args:
-        session_id: Active session identifier. (当前 Session ID)
-        store: Session store used for temp-file cleanup. (用于清理临时文件的 SessionStore)
-        array: Image array to save. (待保存的图像数组)
-        prefix: Temp-file prefix. (临时文件前缀)
-
-    Returns:
-        str: Temp PNG path. (临时 PNG 路径)
-    """
-
-    fd, path = tempfile.mkstemp(prefix=prefix, suffix=".png", dir=TEMP_DIR)
-    os.close(fd)
+def _save_png_array(path: Path, array: np.ndarray) -> str:
     Image.fromarray(array).save(path)
-    store.register_temp_file(session_id, path)
-    return path
+    return str(path)
 
 
-def _save_npy_array(session_id: str, store: SessionStore, array: np.ndarray, prefix: str) -> str:
-    """Persist a numpy array as a temp ``.npy`` file registered to the session.
-    将 NumPy 数组保存为已注册到 Session 的临时 ``.npy`` 文件。
-
-    Args:
-        session_id: Active session identifier. (当前 Session ID)
-        store: Session store used for temp-file cleanup. (用于清理临时文件的 SessionStore)
-        array: Array to persist. (待保存的数组)
-        prefix: Temp-file prefix. (临时文件前缀)
-
-    Returns:
-        str: Temp NPY path. (临时 NPY 路径)
-    """
-
-    fd, path = tempfile.mkstemp(prefix=prefix, suffix=".npy", dir=TEMP_DIR)
-    os.close(fd)
-    np.save(path, array)
-    store.register_temp_file(session_id, path)
-    return path
-
-
-def _save_pickle_payload(
-    session_id: str,
-    store: SessionStore,
-    payload: object,
-    prefix: str,
-) -> str:
-    """Persist a trusted intra-process payload for a worker and register it.
-    持久化可信的进程内 worker 载荷并注册清理。
-    """
-    fd, path = tempfile.mkstemp(prefix=prefix, suffix=".pkl", dir=TEMP_DIR)
-    os.close(fd)
-    with open(path, "wb") as handle:
-        pickle.dump(payload, handle, protocol=pickle.HIGHEST_PROTOCOL)
-    store.register_temp_file(session_id, path)
-    return path
-
-
-def _save_json_payload(session_id: str, store: SessionStore, payload: dict[str, Any], prefix: str) -> str:
-    """Persist a JSON payload as a temp file registered to the session.
-    将 JSON 载荷保存为已注册到 Session 的临时文件。
-
-    Args:
-        session_id: Active session identifier. (当前 Session ID)
-        store: Session store used for temp-file cleanup. (用于清理临时文件的 SessionStore)
-        payload: JSON-serializable payload. (可序列化为 JSON 的载荷)
-        prefix: Temp-file prefix. (临时文件前缀)
-
-    Returns:
-        str: Temp JSON path. (临时 JSON 路径)
-    """
-
-    fd, path = tempfile.mkstemp(prefix=prefix, suffix=".json", dir=TEMP_DIR)
-    os.close(fd)
-    with open(path, "w", encoding="utf-8") as handle:
-        json.dump(payload, handle, ensure_ascii=False, indent=2)
-    store.register_temp_file(session_id, path)
-    return path
+def _save_npy_array(path: Path, array: np.ndarray) -> str:
+    np.save(path, array, allow_pickle=False)
+    return str(path)
 
 
 def _remove_temp_path(path: str | None) -> None:
@@ -742,27 +710,12 @@ def _resolve_relief_global_max_height(
     return None
 
 
-def _submit_puzzle_worker(
-    image_path: str,
-    lut_path: str,
-    params: dict[str, Any],
-) -> dict[str, Any]:
-    """Submit a puzzle piece to the existing model worker with forward-compatible params.
-    使用现有模型 worker 提交拼图块，并透传拼图边界参数。
-    """
-    return worker_generate_model(image_path, lut_path, params)
-
-
 async def _iter_puzzle_piece_results(
     jobs: list[_PuzzlePieceJob],
     *,
     pool: WorkerPoolManager,
-    store: SessionStore,
-    session_id: str,
 ) -> AsyncIterator[tuple[PuzzlePiece, dict[str, Any] | BaseException]]:
-    """Run bounded batches and retain output ownership before reporting errors.
-    分批并行生成拼图，并在返回错误前登记同批任务的输出文件。
-    """
+    """Run bounded batches and wait for their file writes before teardown."""
 
     batch_size = max(1, int(pool.max_workers))
     for start in range(0, len(jobs), batch_size):
@@ -774,22 +727,17 @@ async def _iter_puzzle_piece_results(
             ),
             return_exceptions=True,
         )
-        results: list[dict[str, Any] | BaseException] = []
         try:
-            try:
-                results = await asyncio.shield(pending)
-            except asyncio.CancelledError:
-                # Process-pool cancellation cannot stop running CPU work.
-                # Drain only this batch so its output paths remain owned.
-                results = await pending
-                raise
-        finally:
-            for result in results:
-                if isinstance(result, dict):
-                    for key in ("threemf_path", "glb_path"):
-                        path = result.get(key)
-                        if path and os.path.exists(path):
-                            store.register_temp_file(session_id, path)
+            results = await asyncio.shield(pending)
+        except asyncio.CancelledError:
+            # Workers can still be writing after the client's request has left.
+            with CancelScope(shield=True):
+                while not pending.done():
+                    try:
+                        await asyncio.shield(pending)
+                    except asyncio.CancelledError:
+                        continue
+            raise
 
         # gather keeps input order even when workers finish out of order.
         for job, result in zip(batch_jobs, results):
@@ -904,6 +852,27 @@ async def generate_puzzle(
             (包含下载地址与网格摘要的响应)
     """
 
+    with tempfile.TemporaryDirectory(prefix="puzzle_pieces_", dir=TEMP_DIR) as work_dir:
+        # Piece files belong to this request. Closing or replacing the
+        # source preview session must not remove them while workers write.
+        work_session_id = store.create()
+        try:
+            store.register_temp_file(work_session_id, work_dir)
+            return await _generate_puzzle_in_workspace(
+                body, store=store, registry=registry, pool=pool, work_dir=Path(work_dir),
+            )
+        finally:
+            store.close(work_session_id)
+
+
+async def _generate_puzzle_in_workspace(
+    body: _PuzzleGenerateBody,
+    *,
+    store: SessionStore,
+    registry: FileRegistry,
+    pool: WorkerPoolManager,
+    work_dir: Path,
+) -> PuzzleGenerateResponse:
     request = body.params
     generate_params = request.params
     revision_bytes(generate_params.project_revision_file_id, registry)
@@ -1058,6 +1027,15 @@ async def generate_puzzle(
 
     free_color_set = _resolve_free_color_set(session_data, generate_params)
     relief_global_max_height = _resolve_relief_global_max_height(session_data, generate_params)
+    common_worker_params = build_common_generation_params(generate_params)
+    if material_puzzle_analysis is None:
+        color_layers, layer_height_mm = _resolve_effective_cached_layer_settings(
+            cache=cache,
+            request=generate_params,
+            preview_color_layers=cache.get("color_layers"),
+            preview_layer_height_mm=cache.get("layer_height_mm"),
+        )
+        common_worker_params.update(color_layers=color_layers, layer_height_mm=layer_height_mm)
 
     core_modeling_mode = (
         CoreModelingMode.HIGH_FIDELITY
@@ -1085,7 +1063,8 @@ async def generate_puzzle(
         expected_selection_revision=committed_selection_revision,
     )
     piece_jobs: list[_PuzzlePieceJob] = []
-    skipped_transparent_labels: list[str] = []
+    skipped_transparent_count = 0
+    skipped_cells_count = 0
 
     log.info(
         "Puzzle generation started",
@@ -1118,27 +1097,32 @@ async def generate_puzzle(
             source_rgba,
             matched_rgb,
             piece,
+            modeling_mode=core_modeling_mode,
             backing_mask=cache.get("backing_mask"),
             **analysis_asset_kwargs,
         )
-        has_backing = assets.backing_mask is not None and assets.backing_mask.any()
-        if not has_backing and not np.any(assets.rgba[..., 3] >= 10):
-            skipped_transparent_labels.append(piece.label)
+        if not assets.has_printable_cells:
+            has_backing = assets.backing_mask is not None and assets.backing_mask.any()
+            if has_backing or np.any(assets.rgba[..., 3] >= MIN_PRINTABLE_ALPHA):
+                skipped_cells_count += 1
+            else:
+                skipped_transparent_count += 1
             continue
+
         piece_prefix = f"puzzle_{piece.label}_"
-        piece_image_path = _save_png_array(sid, store, assets.rgba, piece_prefix)
-        piece_matched_path = _save_npy_array(sid, store, assets.matched_rgb, piece_prefix)
-        piece_boundary_path = _save_json_payload(
-            sid,
-            store,
-            assets.boundary_payload,
-            piece_prefix,
+        piece_image_path = _save_png_array(work_dir / f"{piece_prefix}source.png", assets.rgba)
+        piece_matched_path = _save_npy_array(work_dir / f"{piece_prefix}colors.npy", assets.matched_rgb)
+        piece_boundary_path = work_dir / f"{piece_prefix}boundary.json"
+        piece_boundary_path.write_text(
+            json.dumps(assets.boundary_payload), encoding="utf-8",
         )
 
         worker_params: dict[str, Any] = {
-            **build_common_generation_params(generate_params),
-            # Each piece is temporary. Assign printheads once against the combined palette.
+            **common_worker_params,
+            # Apply printhead assignment and tower placement to the assembled plate.
             "external_spool_material": None,
+            "enable_wipe_tower_auto_placement": False,
+            "export_only_3mf_path": str(work_dir / f"piece-{piece.label}.3mf"),
             "target_width_mm": piece.bbox_mm[2] - piece.bbox_mm[0],
             "add_loop": False,
             "loop_pos": None,
@@ -1153,7 +1137,7 @@ async def generate_puzzle(
             "height_mode": height_mode,
             "free_color_set": free_color_set,
             "matched_rgb_path": piece_matched_path,
-            "piece_boundary_geometry_path": piece_boundary_path,
+            "piece_boundary_geometry_path": str(piece_boundary_path),
             "disable_material_dilation": True,
             "center_on_bed": False,
             "relief_global_max_height": relief_global_max_height,
@@ -1163,7 +1147,9 @@ async def generate_puzzle(
             "material_delta_e00_tolerance": dynamic_material_settings[3],
         }
         if assets.backing_mask is not None:
-            worker_params["backing_mask_path"] = _save_npy_array(sid, store, assets.backing_mask, piece_prefix)
+            worker_params["backing_mask_path"] = _save_npy_array(
+                work_dir / f"{piece_prefix}backing.npy", assets.backing_mask,
+            )
         if material_puzzle_analysis is not None:
             if (
                 assets.mask_solid is None
@@ -1174,13 +1160,13 @@ async def generate_puzzle(
             worker_params.update(
                 {
                     "mask_solid_path": _save_npy_array(
-                        sid, store, assets.mask_solid, piece_prefix
+                        work_dir / f"{piece_prefix}solid.npy", assets.mask_solid,
                     ),
                     "quantized_image_path": _save_npy_array(
-                        sid, store, assets.quantized_image, piece_prefix
+                        work_dir / f"{piece_prefix}quantized.npy", assets.quantized_image,
                     ),
                     "material_matrix_path": _save_npy_array(
-                        sid, store, assets.material_matrix, piece_prefix
+                        work_dir / f"{piece_prefix}materials.npy", assets.material_matrix,
                     ),
                     "reuse_preview_analysis": REQUIRED_PREVIEW_ANALYSIS_REUSE,
                 }
@@ -1264,14 +1250,10 @@ async def generate_puzzle(
                     for item in material_recipe_overrides
                 ]
                 if piece_override_masks:
-                    worker_params["recipe_override_masks_path"] = (
-                        _save_pickle_payload(
-                            sid,
-                            store,
-                            piece_override_masks,
-                            piece_prefix,
-                        )
-                    )
+                    masks_path = work_dir / f"{piece_prefix}override_masks.pkl"
+                    with masks_path.open("wb") as handle:
+                        pickle.dump(piece_override_masks, handle, protocol=pickle.HIGHEST_PROTOCOL)
+                    worker_params["recipe_override_masks_path"] = str(masks_path)
                 elif np.any(
                     assets.material_matrix[np.asarray(assets.mask_solid, dtype=bool)]
                     >= len(selected_materials)
@@ -1330,10 +1312,11 @@ async def generate_puzzle(
             piece_heightmap = np.array(heightmap_grayscale[y0:y1, x0:x1], copy=True)
             piece_heightmap = _resize_piece_array_nearest(
                 piece_heightmap,
-                _resolve_piece_worker_raster_size(piece),
+                (assets.rgba.shape[1], assets.rgba.shape[0]),
             )
-            piece_heightmap_path = _save_png_array(sid, store, piece_heightmap, piece_prefix)
-            worker_params["heightmap_path"] = piece_heightmap_path
+            worker_params["heightmap_path"] = _save_png_array(
+                work_dir / f"{piece_prefix}heightmap.png", piece_heightmap,
+            )
 
         # All worker arguments are paths, scalars, and per-piece dicts. Copy
         # the dict before enqueueing so a later session edit cannot mutate an
@@ -1347,16 +1330,18 @@ async def generate_puzzle(
             )
         )
 
-    if skipped_transparent_labels:
+    if skipped_transparent_count:
         warnings.append(
-            f"Skipped {len(skipped_transparent_labels)} fully transparent puzzle pieces."
+            f"Skipped {skipped_transparent_count} fully transparent puzzle pieces."
+        )
+    if skipped_cells_count:
+        warnings.append(
+            f"Skipped {skipped_cells_count} puzzle pieces without printable cells."
         )
 
     successful_entries: list[tuple[PuzzlePiece, str, bool, float]] = []
     errors: list[str] = []
-    async for piece, result in _iter_puzzle_piece_results(
-        piece_jobs, pool=pool, store=store, session_id=sid,
-    ):
+    async for piece, result in _iter_puzzle_piece_results(piece_jobs, pool=pool):
         try:
             if isinstance(result, BaseException):
                 raise result
@@ -1385,12 +1370,28 @@ async def generate_puzzle(
             else:
                 status_msg = result.get("status_msg", "unknown")
                 errors.append(f"{piece.label}: {status_msg}")
-        except asyncio.TimeoutError:
-            errors.append(f"{piece.label}: generation failed")
+        except asyncio.TimeoutError as exc:
+            errors.append(f"{piece.label}: {exc or type(exc).__name__}")
         except (DynamicMaterialCandidateError, DynamicMaterialSolverError) as exc:
             _handle_core_error(exc, "puzzle piece generation")
-        except (WipeTowerLayoutError, NativeMaterialSelectionError, ExternalSpoolSelectionError, TemplateSlotCapacityError) as exc:
+        except _EXPORT_INPUT_ERRORS as exc:
             raise to_http_exception(exc, "puzzle piece layout") from exc
+        except BrokenProcessPool as exc:
+            log.exception(
+                "Puzzle worker process failed",
+                extra={
+                    "event": "converter_puzzle_generate_failed",
+                    "session_id": sid,
+                    "stage": "generate_piece",
+                    "piece_label": piece.label,
+                    "error_type": type(exc).__name__,
+                    "error_message": str(exc),
+                },
+            )
+            raise HTTPException(
+                status_code=503,
+                detail=_PUZZLE_PIECE_GENERATION_FAILED_DETAIL,
+            ) from exc
         except ROUTER_HANDLED_ERRORS as exc:
             errors.append(f"{piece.label}: {exc}")
 
@@ -1400,6 +1401,7 @@ async def generate_puzzle(
             extra={
                 "event": "converter_puzzle_generate_failed",
                 "session_id": sid,
+                "stage": "generate_piece",
                 "error_type": "puzzle_piece_generation_failed",
                 "error_message": "; ".join(errors[:5]),
             },
@@ -1412,7 +1414,7 @@ async def generate_puzzle(
     if not successful_entries:
         raise HTTPException(
             status_code=422,
-            detail="Puzzle generation produced no non-transparent pieces.",
+            detail="Puzzle generation produced no printable pieces.",
         )
 
     _assert_editor_snapshot_current(
@@ -1437,10 +1439,6 @@ async def generate_puzzle(
         for piece, threemf_path, x_mirrored, mirror_span_mm in successful_entries
     ]
 
-    fd, combined_3mf_path = tempfile.mkstemp(prefix="puzzle_", suffix=".3mf", dir=TEMP_DIR)
-    os.close(fd)
-    combined_registered = False
-
     preview_colors = cache.get("preview_colors")
     slot_names = cache.get("slot_names")
     color_conf = cache.get("color_conf") or {}
@@ -1460,6 +1458,9 @@ async def generate_puzzle(
     ).save(overview_buffer, format="PNG")
     overview_png_bytes = overview_buffer.getvalue()
 
+    fd, combined_3mf_path = tempfile.mkstemp(prefix="puzzle_", suffix=".3mf", dir=TEMP_DIR)
+    os.close(fd)
+    combined_registered = False
     try:
         piece_slots = [
             tuple(
@@ -1514,7 +1515,7 @@ async def generate_puzzle(
             ttl_seconds=BATCH_DOWNLOAD_TTL_SECONDS,
         )
         combined_registered = True
-    except (WipeTowerLayoutError, NativeMaterialSelectionError, ExternalSpoolSelectionError, TemplateSlotCapacityError) as exc:
+    except _EXPORT_INPUT_ERRORS as exc:
         raise to_http_exception(exc, "puzzle 3MF layout") from exc
     except ROUTER_HANDLED_ERRORS as exc:
         log.error(
@@ -1522,6 +1523,7 @@ async def generate_puzzle(
             extra={
                 "event": "converter_puzzle_assembly_failed",
                 "session_id": sid,
+                "stage": "assemble",
                 "error_type": type(exc).__name__,
                 "error_message": _PUZZLE_ASSEMBLY_FAILED_DETAIL,
             },
@@ -1540,7 +1542,7 @@ async def generate_puzzle(
             "grid_cols": layout.cols,
             "grid_rows": layout.rows,
             "warning_count": len(warnings),
-            "skipped_transparent_count": len(skipped_transparent_labels),
+            "skipped_transparent_count": skipped_transparent_count,
             "download_id": download_id,
         },
     )

@@ -28,7 +28,7 @@ export default function CoatingSettings() {
           value={coating_height_mm}
           min={0.04}
           max={0.12}
-          step={0.04}
+          step={0.02}
           unit="mm"
           onChange={setCoatingHeightMm}
         />

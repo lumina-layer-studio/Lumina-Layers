@@ -92,6 +92,7 @@ except ImportError:  # Shapely < 2.1; keep the old union path available.
 
 from api.structured_logging import get_logger
 from config import PrinterConfig, ColorSystem, VectorConfig
+from core.print_layers import resolve_coating_height_mm, resolve_layer_height_mm
 from core import geos_buffer_fast
 from core import native_svg_adapter
 from core.svg_arc_geometry import parse_svg_document, parse_svg_path
@@ -5341,14 +5342,7 @@ class VectorProcessor:
         is_single_sided = (
             "单面" in structure_mode_value or "Single" in structure_mode_value
         )
-        try:
-            layer_h = float(
-                getattr(self, "layer_height_mm", PrinterConfig.LAYER_HEIGHT)
-            )
-        except (TypeError, ValueError):
-            layer_h = float(PrinterConfig.LAYER_HEIGHT)
-        if not math.isfinite(layer_h) or layer_h <= 0:
-            layer_h = float(PrinterConfig.LAYER_HEIGHT)
+        layer_h = resolve_layer_height_mm({"layer_height_mm": getattr(self, "layer_height_mm", None)})
 
         display_layer_count = int(num_layers)
         if display_layer_count <= 0:
@@ -5572,7 +5566,8 @@ class VectorProcessor:
             _log.debug("Generating backing: %s layers (%smm)", backing_layer_count, thickness_mm)
             backing_sil = silhouette
             backing_height = backing_layer_count * layer_h
-            gap_offset = BASE_COLOR_GAP_MM if not is_5color else 0.0
+            # Coated parts share one exact Z partition with the optical shells.
+            gap_offset = 0.0 if is_5color or enable_coating else BASE_COLOR_GAP_MM
             outer_side = "low" if is_5color else "high"
             cavity_specs = []
             if enable_fridge_magnet:
@@ -5644,14 +5639,7 @@ class VectorProcessor:
 
         t0 = time.perf_counter()
         if enable_coating and silhouette is not None and not silhouette.is_empty:
-            try:
-                requested_coating_height = float(coating_height_mm)
-            except (TypeError, ValueError):
-                requested_coating_height = layer_h
-            if not np.isfinite(requested_coating_height) or requested_coating_height <= 0:
-                requested_coating_height = layer_h
-            coating_layers = max(1, int(round(requested_coating_height / layer_h)))
-            coating_height = coating_layers * layer_h
+            coating_height = resolve_coating_height_mm(coating_height_mm)
             coating_name = "Coating"
             if is_5color or relief_surface_slabs is not None:
                 print_grid_mm = (

@@ -15,16 +15,17 @@ from __future__ import annotations
 import hashlib
 import os
 import stat
+import threading
 import uuid
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import Protocol
-from urllib.parse import urlsplit
 
 import httpx
 
 from ..errors import WorkshopBackendError
 from ..models import BackendModelFile, MODULE_ID_PATTERN, validate_semver
+from .downloads import DownloadBatch, DownloadProgress, download_https, ordered_sources
 from .store import ContentStore, RemovalOutcome, remove_tree, unlink_with_retry
 from .tooling import CancelToken
 
@@ -72,35 +73,10 @@ class HttpsModelFetcher:
         cancel: CancelToken | None,
         progress: ProgressCallback,
     ) -> None:
-        received = 0
-        with httpx.Client(timeout=self._timeout, follow_redirects=True) as client:
-            with client.stream(
-                "GET",
-                url,
-                headers={"User-Agent": "Lumina-Studio-Workshop/1"},
-            ) as response:
-                if urlsplit(str(response.url)).scheme != "https":
-                    raise WorkshopBackendError(
-                        "model-download-failed",
-                        "Model downloads must stay on HTTPS.",
-                    )
-                if response.status_code != 200:
-                    raise WorkshopBackendError(
-                        "model-download-failed",
-                        f"The model server returned HTTP {response.status_code}.",
-                    )
-                with destination.open("xb") as sink:
-                    for chunk in response.iter_bytes(_CHUNK_BYTES):
-                        if cancel is not None:
-                            cancel.raise_if_cancelled()
-                        received += len(chunk)
-                        if received > expected_bytes:
-                            raise WorkshopBackendError(
-                                "model-verification-failed",
-                                "The model file is larger than declared.",
-                            )
-                        sink.write(chunk)
-                        progress(received)
+        download_https(
+            url, destination, cancel=cancel, size=expected_bytes, timeout=self._timeout,
+            progress=lambda received, _total: progress(received),
+        )
 
 
 class ModelManager:
@@ -121,6 +97,8 @@ class ModelManager:
         self.views_dir.mkdir(parents=True, exist_ok=True)
         self._store = store
         self._fetcher = fetcher
+        self._download_locks: dict[str, threading.Lock] = {}
+        self._lock = threading.Lock()
 
     def view_dir(self, module_id: str, version: str) -> Path:
         if MODULE_ID_PATTERN.fullmatch(module_id) is None:
@@ -135,40 +113,65 @@ class ModelManager:
         *,
         cancel: CancelToken | None,
         progress: ProgressCallback,
+        preferred: str,
+        batch: DownloadBatch | None,
+        index: int,
     ) -> bool:
         """Download, verify, publish, and expose one model; ``False`` = copied view."""
 
-        temporary = self._store.temporary_dir / f"model-{uuid.uuid4().hex}"
-        try:
+        urls = ordered_sources(model.url, model.mirrors or (), preferred)
+        last_error: WorkshopBackendError | None = None
+        for url in urls:
+            if cancel is not None:
+                cancel.raise_if_cancelled()
+            temporary = self._store.temporary_dir / f"model-{uuid.uuid4().hex}"
+            report = batch.attempt(index, model.file_name, url) if batch is not None else None
+
+            def received(count: int) -> None:
+                progress(count)
+                if report is not None:
+                    report(count, model.size_bytes)
+
             try:
                 self._fetcher.fetch(
-                    model.url,
+                    url,
                     temporary,
                     expected_bytes=model.size_bytes,
                     cancel=cancel,
-                    progress=progress,
+                    progress=received,
                 )
-            except WorkshopBackendError:
-                raise
+                size = temporary.stat().st_size
+                digest = hashlib.sha256()
+                with temporary.open("rb") as stream:
+                    while chunk := stream.read(_CHUNK_BYTES):
+                        if cancel is not None:
+                            cancel.raise_if_cancelled()
+                        digest.update(chunk)
+                if size != model.size_bytes or digest.hexdigest() != model.sha256:
+                    raise WorkshopBackendError(
+                        "model-verification-failed",
+                        "A downloaded file did not match its declared size and SHA-256.",
+                    )
+                return self._store.import_verified_file(temporary, model.sha256, destination)
+            except WorkshopBackendError as exc:
+                if exc.code == "cancelled":
+                    raise
+                code = {
+                    "download-failed": "model-download-failed",
+                    "download-verification-failed": "model-verification-failed",
+                }.get(exc.code, exc.code)
+                last_error = WorkshopBackendError(code, str(exc))
             except (httpx.HTTPError, OSError) as exc:
-                raise WorkshopBackendError(
+                last_error = WorkshopBackendError(
                     "model-download-failed",
-                    "A model file could not be downloaded. Check the network, then retry.",
-                ) from exc
-            size = temporary.stat().st_size
-            digest = hashlib.sha256()
-            with temporary.open("rb") as stream:
-                while chunk := stream.read(_CHUNK_BYTES):
-                    digest.update(chunk)
-            if size != model.size_bytes or digest.hexdigest() != model.sha256:
-                raise WorkshopBackendError(
-                    "model-verification-failed",
-                    "A downloaded model file did not match its declared size and SHA-256.",
+                    "A file could not be downloaded. Check the network, then retry.",
                 )
-            return self._store.import_verified_file(temporary, model.sha256, destination)
-        finally:
-            if temporary.exists():
-                unlink_with_retry(temporary)
+                last_error.__cause__ = exc
+            finally:
+                if temporary.exists():
+                    unlink_with_retry(temporary)
+        assert last_error is not None
+        raise last_error
 
     def ensure_models(
         self,
@@ -178,6 +181,8 @@ class ModelManager:
         *,
         cancel: CancelToken | None,
         progress: Callable[[str, int, int], None],
+        preferred_sources: Mapping[str, str] | None = None,
+        on_download: Callable[[DownloadProgress], None] | None = None,
     ) -> tuple[dict[str, Path], int, int]:
         """Return model paths plus physical ``(new_bytes, shared_bytes)``.
 
@@ -189,29 +194,49 @@ class ModelManager:
         paths: dict[str, Path] = {}
         new_bytes = 0
         shared_bytes = 0
+        missing = {model.sha256: model.size_bytes for model in models if not self._store.has(model.sha256)}
+        indices = {digest: index for index, digest in enumerate(missing)}
+        batch = DownloadBatch(missing.values(), on_download) if on_download else None
         for model in models:
             if cancel is not None:
                 cancel.raise_if_cancelled()
             destination = view / model.file_name
-            linked = self._store.link_existing(model.sha256, destination)
-            if linked is None:
-                linked = self._download(
-                    model,
-                    destination,
-                    cancel=cancel,
-                    progress=lambda received, model=model: progress(
-                        model.id,
-                        received,
-                        model.size_bytes,
-                    ),
-                )
+            index = indices.pop(model.sha256, None)
+            with self._lock:
+                lock = self._download_locks.setdefault(model.sha256, threading.Lock())
+            while not lock.acquire(timeout=0.15):
+                if cancel is not None:
+                    cancel.raise_if_cancelled()
+            try:
+                cached_size = self._store.object_size(model.sha256)
+                if cached_size is not None and cached_size != model.size_bytes:
+                    raise WorkshopBackendError(
+                        "model-verification-failed", "A cached file did not match its declared size."
+                    )
+                linked = self._store.link_existing(model.sha256, destination)
+                downloaded = 0
+                if linked is None:
+                    linked = self._download(
+                        model,
+                        destination,
+                        cancel=cancel,
+                        progress=lambda received, model=model: progress(
+                            model.id, received, model.size_bytes,
+                        ),
+                        preferred=(preferred_sources or {}).get(model.id, "auto"),
+                        batch=batch if index is not None else None,
+                        index=index or 0,
+                    )
+                    downloaded = model.size_bytes
+            finally:
+                lock.release()
+            if batch is not None and index is not None:
+                batch.finish(index, downloaded)
+            new_bytes += downloaded
+            if not linked:
                 new_bytes += model.size_bytes
-                if not linked:
-                    new_bytes += model.size_bytes
-            elif linked:
+            elif not downloaded:
                 shared_bytes += model.size_bytes
-            else:
-                new_bytes += model.size_bytes
             paths[model.id] = destination
         return paths, new_bytes, shared_bytes
 

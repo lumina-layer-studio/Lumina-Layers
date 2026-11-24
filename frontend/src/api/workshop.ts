@@ -11,12 +11,19 @@ export interface WorkshopLocalizedText {
 export interface WorkshopPermission {
   name: WorkshopPermissionName;
   reason: string;
+  reason_i18n?: WorkshopLocalizedText | null;
+}
+
+export interface WorkshopBackendCapability {
+  name: string;
+  reason: string;
+  reason_i18n?: WorkshopLocalizedText | null;
 }
 
 export interface WorkshopBackendSummary {
   python: string;
   platforms: string[];
-  capabilities: Array<{ name: string; reason: string }>;
+  capabilities: WorkshopBackendCapability[];
   model_count: number;
   variants: Array<{
     id: string;
@@ -139,6 +146,16 @@ export interface WorkshopUninstallOptions {
 }
 
 export type WorkshopReviewLevel = "official" | "reviewed" | "unreviewed";
+export type WorkshopDownloadCategory = "python" | "wheels" | "models" | "artifacts";
+export type WorkshopDownloadPreferences = Partial<Record<WorkshopDownloadCategory, string>>;
+
+export interface WorkshopDownloadFile {
+  id: string;
+  file_name: string;
+  bytes: number;
+  license: string;
+  shared: boolean;
+}
 
 export interface WorkshopDependencyEstimate {
   environment_key: string;
@@ -176,14 +193,11 @@ export interface WorkshopBackendStatus {
   python: string;
   interpreter_download_bytes: number;
   interpreter_disk_bytes: number;
-  capabilities: Array<{ name: string; reason: string }>;
-  models: Array<{
-    id: string;
-    file_name: string;
-    bytes: number;
-    license: string;
-    shared: boolean;
-  }>;
+  capabilities: WorkshopBackendCapability[];
+  models: WorkshopDownloadFile[];
+  artifacts?: WorkshopDownloadFile[];
+  download_sources?: Partial<Record<WorkshopDownloadCategory, string[]>>;
+  download_preferences?: WorkshopDownloadPreferences;
   dependencies: WorkshopDependencyEstimate | null;
   variants: Array<{
     id: string;
@@ -205,6 +219,25 @@ export interface WorkshopBackendStatus {
   runtime: WorkshopBackendRuntimeState;
 }
 
+export interface WorkshopBackendProgress {
+  completed: number;
+  total: number;
+  phase: string;
+  downloaded_bytes?: number | null;
+  download?: {
+    file_name: string;
+    source: string;
+    file_index: number;
+    file_count: number;
+    file_received_bytes?: number;
+    file_total_bytes?: number | null;
+    received_bytes: number;
+    total_bytes: number | null;
+    bytes_per_second: number | null;
+    eta_seconds: number | null;
+  } | null;
+}
+
 export interface WorkshopBackendTaskResponse {
   task_id: string;
   module_id: string;
@@ -218,7 +251,7 @@ export interface WorkshopBackendTaskResponse {
     | "failed"
     | "cancelled"
     | "interrupted";
-  progress: { completed: number; total: number; phase: string } | null;
+  progress: WorkshopBackendProgress | null;
   error: { code: string; message: string } | null;
   inputs: Array<{ name: string; file_name: string; mime_type: string; size_bytes: number }>;
   outputs: Array<{ name: string; file_name: string; mime_type: string; size_bytes: number }>;
@@ -296,7 +329,9 @@ export interface WorkshopBackendApi {
     version: string,
     acknowledgeUnreviewed: boolean,
   ): Promise<WorkshopBackendStatus>;
-  prepare(moduleId: string, version: string): Promise<WorkshopBackendTaskResponse>;
+  prepare(
+    moduleId: string, version: string, sources?: WorkshopDownloadPreferences,
+  ): Promise<WorkshopBackendTaskResponse>;
   setAcceleration(
     moduleId: string,
     variant: string | null,
@@ -516,10 +551,10 @@ export const workshopBackendApi: WorkshopBackendApi = {
     return response.data;
   },
 
-  async prepare(moduleId, version) {
+  async prepare(moduleId, version, sources) {
     const response = await apiClient.post<WorkshopBackendTaskResponse>(
       `${backendVersionPath(moduleId, version)}/prepare`,
-      {},
+      sources ? { sources } : {},
     );
     return response.data;
   },

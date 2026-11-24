@@ -9,21 +9,25 @@ registry, or development environment.
 
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import subprocess
 import sys
 import threading
 import time
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from typing import Protocol
+from urllib.parse import unquote, urlsplit
 
 import psutil
 
 from ..constants import BACKEND_PYTHON_VERSIONS
 from ..errors import WorkshopBackendError
+from .downloads import DownloadBatch, DownloadProgress, download_https, ordered_sources
 
 
 PINNED_UV_VERSION = "0.13.7"
@@ -361,6 +365,64 @@ class UvTool:
             return None
         return candidate
 
+    def download_and_install_python(
+        self,
+        python_version: str,
+        *,
+        mirrors: tuple[str, ...],
+        preferred: str,
+        configured_mirror: str | None = None,
+        cancel: CancelToken | None,
+        progress: Callable[[DownloadProgress], None],
+        installing: Callable[[], None],
+    ) -> None:
+        result = self.run(
+            "python", "list", f"cpython@{python_version}", "--only-downloads", "--output-format", "json",
+            cancel=cancel,
+            failure_code="interpreter-install-failed",
+            failure_message="The Python runtime download could not be identified.",
+        )
+        entries = json.loads(result.stdout)
+        entry = next(
+            (item for item in entries if item.get("implementation") == "cpython" and item.get("url")),
+            None,
+        )
+        if entry is None:
+            raise WorkshopBackendError("interpreter-install-failed", "No compatible Python runtime is available.")
+        primary = str(entry["url"])
+        revision, filename = urlsplit(primary).path.rsplit("/", 2)[-2:]
+        archive_name = unquote(filename)
+        if Path(archive_name).name != archive_name or not revision.isascii() or not revision.isdigit():
+            raise WorkshopBackendError("interpreter-install-failed", "The Python runtime download path is invalid.")
+        candidates = tuple(f"{mirror.rstrip('/')}/{revision}/{filename}" for mirror in mirrors)
+        configured = f"{configured_mirror.rstrip('/')}/{revision}/{filename}" if configured_mirror else None
+        if configured is not None:
+            if preferred == "auto":
+                primary, configured = configured, primary
+            candidates = (configured, *candidates)
+        urls = ordered_sources(primary, candidates, preferred)
+        self.python_install_dir.parent.mkdir(parents=True, exist_ok=True)
+        last_error: WorkshopBackendError | None = None
+        for url in urls:
+            batch = DownloadBatch((None,), progress)
+            try:
+                with TemporaryDirectory(prefix="python-download-", dir=self.python_install_dir.parent) as directory:
+                    local_mirror = Path(directory)
+                    archive = local_mirror / revision / archive_name
+                    archive.parent.mkdir()
+                    download_https(
+                        url, archive, cancel=cancel, progress=batch.attempt(0, archive_name, url)
+                    )
+                    installing()
+                    # uv verifies the archive against its embedded distribution checksum.
+                    self.install_python(str(entry["version"]), mirror=local_mirror.as_uri(), cancel=cancel)
+                    return
+            except WorkshopBackendError as exc:
+                if exc.code == "cancelled":
+                    raise
+                last_error = exc
+        raise WorkshopBackendError("interpreter-install-failed", "The Python runtime could not be downloaded and installed.") from last_error
+
     def uninstall_python(self, python_version: str) -> None:
         self.run(
             "python",
@@ -438,16 +500,24 @@ class ManagedInterpreterProvider:
         self,
         python_version: str,
         cancel: CancelToken | None,
+        *,
+        mirrors: tuple[str, ...] = (),
+        preferred: str = "auto",
+        progress: Callable[[DownloadProgress], None] | None = None,
+        installing: Callable[[], None] = lambda: None,
     ) -> BackendInterpreter:
         with self._lock:
             self._installed_cache = None
             executable = self._uv.find_python(python_version)
             if executable is None:
-                self._uv.install_python(
-                    python_version,
-                    mirror=self._mirror,
-                    cancel=cancel,
-                )
+                if progress is None:
+                    self._uv.install_python(python_version, mirror=self._mirror, cancel=cancel)
+                else:
+                    self._uv.download_and_install_python(
+                        python_version, mirrors=mirrors, preferred=preferred, configured_mirror=self._mirror,
+                        cancel=cancel,
+                        progress=progress, installing=installing,
+                    )
                 executable = self._uv.find_python(python_version)
             if executable is None:
                 raise WorkshopBackendError(

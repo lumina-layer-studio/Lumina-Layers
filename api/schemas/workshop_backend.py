@@ -10,6 +10,7 @@ from typing import Literal
 from pydantic import Field, field_validator
 
 from api.schemas.workshop import WorkshopHttpModel
+from core.workshop.backend.downloads import DownloadPreferences, DownloadProgress
 from core.workshop.backend.tasks import TaskRecord
 
 
@@ -18,6 +19,10 @@ _VARIANT_PATTERN = re.compile(r"^[a-z][a-z0-9-]{0,31}$")
 
 class BackendAuthorizeRequest(WorkshopHttpModel):
     acknowledge_unreviewed: bool = False
+
+
+class BackendPrepareRequest(WorkshopHttpModel):
+    sources: DownloadPreferences | None = None
 
 
 class BackendAccelerationRequest(WorkshopHttpModel):
@@ -42,6 +47,8 @@ class BackendTaskProgressResponse(WorkshopHttpModel):
     completed: float
     total: float
     phase: str
+    download: DownloadProgress | None = None
+    downloaded_bytes: int | None = None
 
 
 class BackendTaskErrorResponse(WorkshopHttpModel):

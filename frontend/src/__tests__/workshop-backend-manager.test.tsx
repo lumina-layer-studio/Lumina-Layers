@@ -19,6 +19,7 @@ import type {
 import { I18nProvider } from "../i18n/context";
 import { useSettingsStore } from "../stores/settingsStore";
 import { WorkshopPanel } from "../workshop/WorkshopPanel";
+import { BackendSetupDialog } from "../workshop/backend/BackendSetupDialog";
 import type { ManagedWorkshopProjectStorage } from "../workshop/projectStorage";
 import type { WorkshopFrameProps } from "../workshop/runtime/WorkshopFrame";
 import { useWorkshopStore } from "../workshop/store";
@@ -309,7 +310,8 @@ describe("Workshop backend management UI", () => {
     const dialog = await screen.findByRole("dialog", { name: "运行本机后端" });
     expect(within(dialog).getByText("未审核：此版本没有审核记录。")).toBeInTheDocument();
     expect(within(dialog).getByText("联网")).toBeInTheDocument();
-    expect(within(dialog).getByText(/权限与你的账户相同/)).toBeInTheDocument();
+    expect(within(dialog).getByRole("alert")).toHaveAttribute("data-tone", "error");
+    expect(within(dialog).getByText(/以你的账户权限运行，可以读取、修改或删除/)).toBeInTheDocument();
     const confirm = within(dialog).getByRole("button", { name: "允许并安装" });
     expect(confirm).toBeDisabled();
     expect(backend.authorize).not.toHaveBeenCalled();
@@ -319,6 +321,64 @@ describe("Workshop backend management UI", () => {
     await waitFor(() => expect(backend.authorize).toHaveBeenCalledWith(MODULE_ID, "1.0.0", true));
     await waitFor(() => expect(backend.prepare).toHaveBeenCalledWith(MODULE_ID, "1.0.0"));
     expect(await screen.findByText(`opened ${MODULE_ID}@1.0.0 backend=true`)).toBeInTheDocument();
+  });
+
+  it.each(["official", "reviewed"] as const)("uses localized capability text and the chosen model source for %s code", async (reviewLevel) => {
+    const api = fakeApi([backendModule()]);
+    const backend = fakeBackend(status({
+      review_level: reviewLevel,
+      requires_unreviewed_confirmation: false,
+      capabilities: [{
+        name: "network",
+        reason: "Download data.",
+        reason_i18n: { zh_cn: "下载检测数据", en_us: "Download detection data." },
+      }],
+      download_sources: { python: [], wheels: [], models: ["huggingface.co", "modelscope.cn"], artifacts: [] },
+    }));
+    renderPanel(api, backend);
+
+    fireEvent.click(await screen.findByRole("button", { name: "打开" }));
+    const dialog = await screen.findByRole("dialog", { name: "运行本机后端" });
+    expect(within(dialog).queryByRole("alert")).toBeNull();
+    expect(within(dialog).getByText("下载检测数据")).toBeInTheDocument();
+    expect(within(dialog).queryByText("Download data.")).toBeNull();
+    fireEvent.change(within(dialog).getByRole("combobox", { name: "模型" }), { target: { value: "modelscope.cn" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "允许并安装" }));
+    await waitFor(() => expect(backend.prepare).toHaveBeenCalledWith(MODULE_ID, "1.0.0", { models: "modelscope.cn" }));
+  });
+
+  it("shows transfer totals, speed, ETA, and cumulative bytes through installation", () => {
+    const props = {
+      moduleName: "Backend fixture", status: status(), phase: "preparing" as const,
+      failureCode: null, onConfirm: vi.fn(), onRetry: vi.fn(), onCancel: vi.fn(),
+    };
+    const view = render(
+      <I18nProvider>
+        <BackendSetupDialog {...props} progress={{
+          completed: 1, total: 5, phase: "wheel-download", downloaded_bytes: 2048,
+          download: {
+            file_name: "demo.whl", source: "files.pythonhosted.org", file_index: 1, file_count: 1,
+            received_bytes: 1024, total_bytes: 4096, bytes_per_second: 1024, eta_seconds: 3,
+          },
+        }} />
+      </I18nProvider>,
+    );
+    expect(screen.getByText(/demo.whl · PyPI/)).toBeInTheDocument();
+    expect(screen.getByText("本阶段已下载 1.0 KB / 4.0 KB")).toBeInTheDocument();
+    expect(screen.getByText("1.0 KB/秒")).toBeInTheDocument();
+    expect(screen.getByText("本阶段约剩 3 秒")).toBeInTheDocument();
+    expect(screen.getByRole("progressbar", { name: "下载进度" })).toHaveAttribute("value", "25");
+
+    view.rerender(
+      <I18nProvider>
+        <BackendSetupDialog {...props} progress={{
+          completed: 1, total: 5, phase: "environment", downloaded_bytes: 5120,
+        }} />
+      </I18nProvider>,
+    );
+    expect(screen.getByRole("status")).toHaveTextContent("安装运行库");
+    expect(screen.getByText(/合计已下载 5.0 KB/)).toBeInTheDocument();
+    expect(screen.queryByRole("progressbar", { name: "下载进度" })).toBeNull();
   });
 
   it("opens a prepared, authorized backend without asking again", async () => {

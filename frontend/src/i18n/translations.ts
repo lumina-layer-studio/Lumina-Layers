@@ -9441,8 +9441,128 @@ export const translations: Record<string, Record<"zh" | "en", string>> = {
     en: "This copy of Lumina is missing the tool needed to install backends.",
   },
   "workshop.backend.unreviewedWarning": {
-    zh: "这段代码未经审核，是否安全取决于发布者。",
-    en: "This code hasn't been reviewed, so whether it's safe depends on its publisher.",
+    zh: "后端以你的账户权限运行，可以读取、修改或删除你能访问的本地文件，也可以执行代码。仅在信任开发者时继续。",
+    en: "The backend runs with your account permissions. It can read, modify, or delete local files you can access and can execute code. Continue only if you trust the developer.",
+  },
+  "workshop.backend.unreviewedRisk": {
+    zh: "安全风险 · 未经审查的后端",
+    en: "Security risk · Unreviewed backend",
+  },
+  "workshop.backend.sources": {
+    zh: "首选下载源",
+    en: "Preferred download sources",
+  },
+  "workshop.backend.source.python": {
+    zh: "Python 解释器",
+    en: "Python interpreter",
+  },
+  "workshop.backend.source.wheels": {
+    zh: "Python 依赖包",
+    en: "Python dependencies",
+  },
+  "workshop.backend.source.models": {
+    zh: "模型",
+    en: "Models",
+  },
+  "workshop.backend.source.artifacts": {
+    zh: "附加文件",
+    en: "Additional files",
+  },
+  "workshop.backend.source.auto": {
+    zh: "自动 · 失败后尝试备用源",
+    en: "Automatic · Try another source on failure",
+  },
+  "workshop.backend.source.original": {
+    zh: "原始地址",
+    en: "Original source",
+  },
+  "workshop.backend.artifact": {
+    zh: "附加文件 {file}（{bytes}，许可 {license}）",
+    en: "Additional file {file} ({bytes}, license {license})",
+  },
+  "workshop.backend.phase.python-download": {
+    zh: "下载 Python",
+    en: "Downloading Python",
+  },
+  "workshop.backend.phase.python-install": {
+    zh: "解包并安装 Python",
+    en: "Extracting and installing Python",
+  },
+  "workshop.backend.phase.wheel-download": {
+    zh: "下载运行库",
+    en: "Downloading libraries",
+  },
+  "workshop.backend.phase.file-download": {
+    zh: "下载模型与附加文件",
+    en: "Downloading models and additional files",
+  },
+  "workshop.backend.phase.variant-download": {
+    zh: "下载加速运行库",
+    en: "Downloading acceleration libraries",
+  },
+  "workshop.backend.phase.variant-install": {
+    zh: "安装加速运行库",
+    en: "Installing acceleration libraries",
+  },
+  "workshop.backend.phase.variant-check": {
+    zh: "检查加速后端",
+    en: "Checking the accelerated backend",
+  },
+  "workshop.backend.phase.complete": {
+    zh: "安装完成",
+    en: "Installation complete",
+  },
+  "workshop.backend.downloadFile": {
+    zh: "{file} · {source} · 第 {index}/{count} 个",
+    en: "{file} · {source} · File {index} of {count}",
+  },
+  "workshop.backend.downloadBytes": {
+    zh: "本阶段已下载 {received} / {total}",
+    en: "Downloaded in this phase {received} / {total}",
+  },
+  "workshop.backend.downloadFileBytes": {
+    zh: "当前文件已下载 {received} / {total}",
+    en: "Current file {received} / {total}",
+  },
+  "workshop.backend.downloadOverall": {
+    zh: "合计已下载 {received} / {total}",
+    en: "Total downloaded {received} / {total}",
+  },
+  "workshop.backend.downloadAbout": {
+    zh: "约 {bytes}",
+    en: "about {bytes}",
+  },
+  "workshop.backend.downloadAtLeast": {
+    zh: "至少 {bytes}",
+    en: "at least {bytes}",
+  },
+  "workshop.backend.downloadSizeUnknown": {
+    zh: "总量未知",
+    en: "Unknown total",
+  },
+  "workshop.backend.downloadMeter": {
+    zh: "下载进度",
+    en: "Download progress",
+  },
+  "workshop.backend.downloadSpeed": {
+    zh: "{speed}/秒",
+    en: "{speed}/s",
+  },
+  "workshop.backend.downloadEtaSeconds": {
+    zh: "本阶段约剩 {count} 秒",
+    en: "About {count} sec left in this phase",
+  },
+  "workshop.backend.downloadEtaMinutes": {
+    zh: "本阶段约剩 {count} 分钟",
+    en: "About {count} min left in this phase",
+  },
+  "workshop.backend.downloadFileEtaSeconds": {
+    zh: "当前文件约剩 {count} 秒",
+    en: "About {count} sec left for this file",
+  },
+  "workshop.backend.downloadFileEtaMinutes": {
+    zh: "当前文件约剩 {count} 分钟",
+    en: "About {count} min left for this file",
   },
   "workshop.backend.acknowledgeUnreviewed": {
     zh: "我信任发布者，允许运行未经审核的代码",

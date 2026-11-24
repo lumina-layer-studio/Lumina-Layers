@@ -18,7 +18,7 @@ import threading
 import time
 from collections import deque
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal
 
@@ -61,6 +61,7 @@ class RunTarget:
     models: dict[str, str]
     idle_timeout_seconds: float
     fallback: "RunTarget | None" = None
+    artifacts: dict[str, str] = field(default_factory=dict)
 
 
 TargetResolver = Callable[[TaskRecord], RunTarget]
@@ -398,6 +399,7 @@ class ModuleBackendSupervisor:
             "outputDir": str(outputs_dir),
             "workDir": str(work_dir),
             "models": target.models,
+            "artifacts": target.artifacts,
             "variant": target.variant or "cpu",
         }
         with self._condition:

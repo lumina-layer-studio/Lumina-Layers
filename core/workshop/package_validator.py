@@ -284,11 +284,16 @@ def _validate_backend_files(
             raise WorkshopPackageError(
                 f"backend declaration references a missing file: {required!r}"
             )
+    wheel_hashes: set[str] = set()
     for lock_name in (
         declaration.lock,
         *(variant.lock for variant in declaration.variants),
     ):
-        parse_backend_lock(_read_member(package, members_by_name[lock_name]))
+        lock = parse_backend_lock(_read_member(package, members_by_name[lock_name]))
+        wheel_hashes.update(wheel.sha256 for item in lock.packages for wheel in item.wheels)
+    sources = declaration.download_sources
+    if sources is not None and set(sources.wheels or ()) - wheel_hashes:
+        raise WorkshopPackageError("a wheel mirror references a SHA-256 missing from the backend locks")
 
 
 def _validate_specific_declared_limits(

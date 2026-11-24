@@ -209,12 +209,13 @@ interface BackendOutputPayload {
 export function publicBackendTask(
   task: WorkshopBackendTaskResponse,
 ): WorkshopBackendTask {
+  const progress = task.progress;
   return {
     taskId: task.task_id,
     moduleVersion: task.module_version,
     operation: task.operation,
     status: task.status,
-    progress: task.progress,
+    progress: progress && { completed: progress.completed, total: progress.total, phase: progress.phase },
     error: task.error,
     outputs: task.outputs.map((output) => ({
       name: output.name,

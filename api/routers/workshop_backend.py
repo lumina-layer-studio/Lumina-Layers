@@ -23,6 +23,7 @@ from api.schemas.workshop_backend import (
     BackendAccelerationRequest,
     BackendAuthorizeRequest,
     BackendDeletionResponse,
+    BackendPrepareRequest,
     BackendTaskListResponse,
     BackendTaskResponse,
 )
@@ -112,11 +113,19 @@ def workshop_backend_authorize(
     "/modules/{module_id}/{version}/backend/prepare",
     response_model=BackendTaskResponse,
 )
-def workshop_backend_prepare(module_id: str, version: str) -> BackendTaskResponse:
+def workshop_backend_prepare(
+    module_id: str, version: str, payload: BackendPrepareRequest | None = None,
+) -> BackendTaskResponse:
     """Start the cancellable dependency/model preparation task."""
 
     try:
-        return BackendTaskResponse.from_record(get_backend_runtime().start_preparation(module_id, version))
+        runtime = get_backend_runtime()
+        task = (
+            runtime.start_preparation(module_id, version)
+            if payload is None or payload.sources is None
+            else runtime.start_preparation(module_id, version, sources=payload.sources)
+        )
+        return BackendTaskResponse.from_record(task)
     except WorkshopBackendError as exc:
         raise_backend_error(exc, event="workshop_backend_prepare_failed", module_id=module_id, version=version)
 

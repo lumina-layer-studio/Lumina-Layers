@@ -15,6 +15,7 @@ import re
 import sys
 import tomllib
 import platform as platform_module
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -228,7 +229,12 @@ def _resolved_url(wheel: LockedWheel, policy: WheelSourcePolicy) -> str:
     return wheel.url
 
 
-def render_install_lock(lock: BackendLock, policy: WheelSourcePolicy) -> str:
+def render_install_lock(
+    lock: BackendLock,
+    policy: WheelSourcePolicy,
+    *,
+    verified_urls: Mapping[str, str] | None = None,
+) -> str:
     """Write an equivalent pylock.toml whose wheel URLs follow host policy.
 
     生成等价的 pylock.toml，仅按宿主策略改写下载位置，哈希保持不变。
@@ -256,7 +262,7 @@ def render_install_lock(lock: BackendLock, policy: WheelSourcePolicy) -> str:
                 [
                     "[[packages.wheels]]",
                     f"name = {_toml_string(wheel.file_name)}",
-                    f"url = {_toml_string(_resolved_url(wheel, policy))}",
+                    f"url = {_toml_string((verified_urls or {}).get(wheel.sha256) or _resolved_url(wheel, policy))}",
                 ]
             )
             if wheel.size is not None:

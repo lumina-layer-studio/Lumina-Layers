@@ -14,10 +14,12 @@ import {
   type InstalledWorkshopModule,
   type InstalledWorkshopVersion,
   type WorkshopBackendApi,
+  type WorkshopBackendProgress,
   type WorkshopBackendStatus,
   type WorkshopCatalog,
   type WorkshopCatalogModule,
   type WorkshopCatalogVersion,
+  type WorkshopDownloadPreferences,
   type WorkshopManagerApi,
   type WorkshopUninstallReport,
 } from "../api/workshop";
@@ -100,7 +102,7 @@ interface BackendSetupState {
   version: string;
   status: WorkshopBackendStatus;
   phase: BackendSetupPhase;
-  progress: { completed: number; total: number; phase: string } | null;
+  progress: WorkshopBackendProgress | null;
   failureCode: string | null;
   taskId: string | null;
   /** Translation key of a cancel request that did not go through. */
@@ -692,7 +694,7 @@ export function WorkshopPanel({
   );
 
   const confirmBackendSetup = useCallback(
-    (acknowledgeUnreviewed: boolean) => {
+    (acknowledgeUnreviewed: boolean, sources?: WorkshopDownloadPreferences) => {
       const setup = backendSetup;
       if (setup === null) {
         return;
@@ -704,6 +706,7 @@ export function WorkshopPanel({
         setup.version,
         acknowledgeUnreviewed,
         {
+          sources,
           onTask: (taskId) =>
             setBackendSetup((current) =>
               current === null ? current : { ...current, taskId },
@@ -1828,6 +1831,11 @@ export function WorkshopPanel({
               : null
           }
           onConfirm={confirmBackendSetup}
+          onRetry={() =>
+            setBackendSetup((current) =>
+              current === null ? current : { ...current, phase: "review", taskId: null, failureCode: null },
+            )
+          }
           onCancel={cancelBackendSetup}
         />
       ) : null}
@@ -1887,7 +1895,8 @@ export function WorkshopPanel({
                     {t(permissionTranslationKey(permission.name))}
                   </p>
                   <p className="mt-1 text-xs leading-5 text-slate-600 dark:text-slate-300">
-                    {permission.reason}
+                    {(lang === "zh" ? permission.reason_i18n?.zh_cn : permission.reason_i18n?.en_us)
+                      ?? permission.reason}
                   </p>
                 </li>
               ))}

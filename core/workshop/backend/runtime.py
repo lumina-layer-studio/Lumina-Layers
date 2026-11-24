@@ -35,11 +35,13 @@ from ..errors import WorkshopBackendError, WorkshopInstallError
 from ..install_store import InstalledModuleState
 from ..installer import WorkshopInstaller
 from ..models import (
+    BackendDeclaration,
     MODULE_ID_PATTERN,
     InspectedWorkshopPackage,
     WorkshopManifestV2,
     parse_workshop_manifest_json,
 )
+from .downloads import DownloadPreferences, DownloadProgress, source_options
 from .environments import EnvironmentManager, environment_key, environment_python
 from .locks import BackendLock, WheelSourcePolicy, current_platform_key, parse_backend_lock
 from .model_files import ModelFetcher, ModelManager
@@ -70,6 +72,7 @@ from .tasks import (
     SAFE_FILE_NAME_PATTERN,
     TaskError,
     TaskFile,
+    TaskProgress,
     TaskRecord,
     TaskStore,
     stored_input_path,
@@ -81,6 +84,7 @@ from .tooling import (
     ManagedInterpreterProvider,
     UvTool,
 )
+from .wheel_files import WheelArchiveCache, wheel_urls
 
 
 log = get_logger(__name__)
@@ -144,8 +148,16 @@ class GarbageReport:
 
 
 def declaration_digest(manifest: WorkshopManifestV2) -> str:
+    declaration = manifest.backend.model_dump(mode="json", by_alias=True)
+    for key in ("artifacts", "downloadSources"):
+        if declaration[key] is None:
+            del declaration[key]
+    for name, key in (("models", "mirrors"), ("capabilities", "reasonI18n")):
+        for item in declaration[name]:
+            if item[key] is None:
+                del item[key]
     payload = json.dumps(
-        manifest.backend.model_dump(mode="json", by_alias=True),
+        declaration,
         sort_keys=True,
         separators=(",", ":"),
         ensure_ascii=False,
@@ -174,6 +186,7 @@ class WorkshopBackendRuntime:
         wheel_sources: WheelSourcePolicy = WheelSourcePolicy(),
         external_python: Path | None = None,
         python_mirror: str | None = None,
+        track_downloads: bool = False,
         settings: RuntimeSettings = RuntimeSettings(),
         platform_key: str | None = None,
         process_factory: Callable[..., BackendProcess] = BackendProcess,
@@ -185,6 +198,9 @@ class WorkshopBackendRuntime:
         self._settings = settings
         self._platform_key = platform_key if platform_key is not None else current_platform_key()
         self._process_factory = process_factory
+        self._python_mirror = python_mirror
+        self._wheel_sources = wheel_sources
+        self._wheel_archives = WheelArchiveCache(self.root / "wheels") if track_downloads else None
         self._uv = (
             UvTool(
                 uv_executable,
@@ -510,9 +526,17 @@ class WorkshopBackendRuntime:
         platform_supported = self._platform_key is not None and self._platform_key in declaration.platforms
         dependency: dict[str, Any] | None = None
         variants: list[dict[str, Any]] = []
+        source_locks: list[BackendLock] = []
         package_users = self.environments.package_users()
+        archives = self._wheel_archives
+        archive_available = (
+            (lambda wheel: archives.available(wheel, self._wheel_sources))
+            if archives is not None and not self._wheel_sources.offline
+            else None
+        )
         if platform_supported and self._platform_key is not None:
             lock = self._lock_for(root, declaration.lock)
+            source_locks.append(lock)
             key = environment_key(lock, platform_key=self._platform_key, python_version=declaration.python)
             dependency = estimate_dependencies(
                 lock,
@@ -521,12 +545,14 @@ class WorkshopBackendRuntime:
                 package_users=package_users,
                 platform_key=self._platform_key,
                 python_version=declaration.python,
+                archive_available=archive_available,
             ).as_json()
             for variant in declaration.variants:
                 available = self._platform_key in variant.platforms
                 estimate = None
                 if available:
                     variant_lock = self._lock_for(root, variant.lock)
+                    source_locks.append(variant_lock)
                     variant_key = environment_key(
                         variant_lock,
                         platform_key=self._platform_key,
@@ -539,6 +565,7 @@ class WorkshopBackendRuntime:
                         package_users=package_users,
                         platform_key=self._platform_key,
                         python_version=declaration.python,
+                        archive_available=archive_available,
                     ).as_json()
                 variants.append(
                     {
@@ -556,7 +583,7 @@ class WorkshopBackendRuntime:
             interpreter_needed = not any(
                 item.python_version == declaration.python for item in self._interpreters.installed()
             )
-        present_models = {model.sha256 for model in declaration.models if self.store.has(model.sha256)}
+        present_models = {model.sha256 for model in declaration.download_files if self.store.has(model.sha256)}
         preparing = self._active_preparation(module_id, version)
         with self._lock:
             supervisor = self._supervisors.get(module_id)
@@ -577,9 +604,17 @@ class WorkshopBackendRuntime:
             "interpreter_download_bytes": MANAGED_PYTHON_DOWNLOAD_ESTIMATE_BYTES if interpreter_needed else 0,
             "interpreter_disk_bytes": MANAGED_PYTHON_DISK_ESTIMATE_BYTES if interpreter_needed else 0,
             "capabilities": [
-                {"name": item.name, "reason": item.reason} for item in declaration.capabilities
+                {
+                    "name": item.name,
+                    "reason": item.reason,
+                    "reason_i18n": item.reason_i18n.model_dump() if item.reason_i18n else None,
+                }
+                for item in declaration.capabilities
             ],
             "models": model_estimates(declaration.models, present_models),
+            "artifacts": model_estimates(declaration.artifacts or (), present_models),
+            "download_sources": self._download_options(declaration, source_locks),
+            "download_preferences": record.download_preferences or DownloadPreferences().model_dump(),
             "dependencies": dependency,
             "variants": variants,
             "acceleration": self.state.settings_for(module_id).acceleration,
@@ -588,6 +623,31 @@ class WorkshopBackendRuntime:
         }
 
     # ----- preparation ----------------------------------------------------
+
+    def _download_options(
+        self, declaration: BackendDeclaration, locks: Sequence[BackendLock],
+    ) -> dict[str, list[str]]:
+        declared = declaration.download_sources
+        wheel_mirrors = (declared.wheels or {}) if declared is not None else {}
+        python_mirrors = (declared.python or ()) if declared is not None else ()
+        python_urls = [*python_mirrors]
+        if self._python_mirror:
+            python_urls.append(self._python_mirror)
+        wheel_urls_for_host = [
+            url
+            for lock in locks
+            for package in lock.packages
+            for wheel in package.wheels
+            for url in (wheel.url, *wheel_urls(wheel, self._wheel_sources, wheel_mirrors))
+        ]
+        return {
+            "python": source_options(python_urls),
+            "wheels": source_options(wheel_urls_for_host),
+            "models": source_options(url for item in declaration.models for url in (item.url, *(item.mirrors or ()))),
+            "artifacts": source_options(
+                url for item in declaration.artifacts or () for url in (item.url, *(item.mirrors or ()))
+            ),
+        }
 
     def _active_preparation(self, module_id: str, version: str) -> str | None:
         with self._lock:
@@ -637,7 +697,9 @@ class WorkshopBackendRuntime:
             self._maintenance = False
             self._work_condition.notify_all()
 
-    def start_preparation(self, module_id: str, version: str) -> TaskRecord:
+    def start_preparation(
+        self, module_id: str, version: str, *, sources: DownloadPreferences | None = None,
+    ) -> TaskRecord:
         state = self._installed_state(module_id)
         if version not in state.versions:
             raise WorkshopBackendError("module-version-unavailable", "The module version is not installed.")
@@ -651,47 +713,47 @@ class WorkshopBackendRuntime:
             )
         if self._platform_key is None or self._platform_key not in manifest.backend.platforms:
             raise WorkshopBackendError("platform-unsupported", "This module backend does not support this platform.")
-        existing = self._active_preparation(module_id, version)
-        if existing is not None:
-            return self.tasks.require(module_id, existing)
-        task, _created = self.tasks.create(
-            module_id=module_id,
-            module_version=version,
-            kind="prepare",
-            operation=_PREPARE_OPERATION,
-        )
-        token = CancelToken()
-        thread = threading.Thread(
-            target=self._run_preparation,
-            args=(task, token),
-            name=f"workshop-prepare-{module_id}",
-            daemon=True,
-        )
         with self._lock:
-            self._preparations[task.task_id] = (token, thread, module_id, version)
-        if record.preparation != "prepared":
+            existing = self._active_preparation(module_id, version)
+            if existing is not None:
+                return self.tasks.require(module_id, existing)
+            preferences = sources or DownloadPreferences.model_validate(record.download_preferences or {})
+            task, _created = self.tasks.create(
+                module_id=module_id,
+                module_version=version,
+                kind="prepare",
+                operation=_PREPARE_OPERATION,
+                params=preferences.model_dump(),
+            )
+            token = CancelToken()
+            thread = threading.Thread(
+                target=self._run_preparation,
+                args=(task, token),
+                name=f"workshop-prepare-{module_id}",
+                daemon=True,
+            )
             # A prepared CPU backend stays usable while a variant is added.
-            self.state.update_version(module_id, version, preparation="preparing", failure_code=None)
-        thread.start()
+            self.state.update_version(
+                module_id, version,
+                preparation="prepared" if record.preparation == "prepared" else "preparing",
+                failure_code=None,
+                download_preferences=preferences.model_dump(),
+            )
+            self._preparations[task.task_id] = (token, thread, module_id, version)
+            thread.start()
         return task
-
-    def _progress(self, task: TaskRecord, completed: float, phase: str) -> None:
-        from .tasks import TaskProgress
-
-        self.tasks.update(
-            task.module_id,
-            task.task_id,
-            progress=TaskProgress(completed=completed, total=4, phase=phase),
-        )
 
     def _prepare_environment(
         self,
-        task: TaskRecord,
         root: Path,
         lock_relative: str,
         manifest: WorkshopManifestV2,
         token: CancelToken,
         leased: list[str],
+        sources: DownloadPreferences,
+        advance: Callable[[int, str, DownloadProgress | None], None],
+        *,
+        variant: bool = False,
     ) -> tuple[str, int, int, bool]:
         assert self._interpreters is not None and self._platform_key is not None
         lock = self._lock_for(root, lock_relative)
@@ -699,14 +761,41 @@ class WorkshopBackendRuntime:
         # The lease keeps GC from removing an environment mid-transaction.
         self._lease([key], 1)
         leased.append(key)
-        self._progress(task, 0, "interpreter")
-        interpreter = self._interpreters.ensure(manifest.backend.python, token)
-        self._progress(task, 1, "environment")
+        interpreter_step = 4 if variant else 0
+        wheel_step = 4 if variant else 1
+        install_phase = "variant-install" if variant else "environment"
+        wheel_phase = "variant-download" if variant else "wheel-download"
+        advance(interpreter_step, "interpreter", None)
+        declared = manifest.backend.download_sources
+        if self._wheel_archives is not None and isinstance(self._interpreters, ManagedInterpreterProvider):
+            interpreter = self._interpreters.ensure(
+                manifest.backend.python, token,
+                mirrors=(declared.python or ()) if declared is not None else (),
+                preferred=sources.python,
+                progress=lambda data: advance(interpreter_step, "python-download", data),
+                installing=lambda: advance(interpreter_step, "python-install", None),
+            )
+        else:
+            interpreter = self._interpreters.ensure(manifest.backend.python, token)
+        advance(wheel_step, install_phase, None)
+        prepare_lock = None
+        archives = self._wheel_archives
+        if archives is not None and not self._wheel_sources.offline:
+            wheel_mirrors = (declared.wheels or {}) if declared is not None else {}
+
+            def prepare_lock() -> tuple[str, tuple[str, ...]]:
+                return archives.prepare(
+                    lock, interpreter, self._wheel_sources, wheel_mirrors, sources.wheels, token,
+                    lambda data: advance(wheel_step, wheel_phase, data),
+                )
+
         record, created = self.environments.ensure(
             lock,
             platform_key=self._platform_key,
             interpreter=interpreter,
             cancel=token,
+            prepare_lock=prepare_lock,
+            on_install=lambda: advance(wheel_step, install_phase, None),
         )
         return key, record.new_bytes if created else 0, record.shared_bytes if created else record.new_bytes + record.shared_bytes, not created
 
@@ -764,6 +853,23 @@ class WorkshopBackendRuntime:
 
     def _run_preparation(self, task: TaskRecord, token: CancelToken) -> None:
         module_id, version = task.module_id, task.module_version
+        received_by_phase: dict[str, int] = {}
+
+        def advance(completed: int, phase: str, download: DownloadProgress | None = None) -> None:
+            if download is not None:
+                received_by_phase[phase] = download.received_bytes
+            self.tasks.update(
+                module_id,
+                task.task_id,
+                progress=TaskProgress(
+                    completed=completed,
+                    total=5,
+                    phase=phase,
+                    download=download,
+                    downloaded_bytes=sum(received_by_phase.values()),
+                ),
+            )
+
         leased: list[str] = []
         pinned: list[str] = []
         working = False
@@ -775,23 +881,29 @@ class WorkshopBackendRuntime:
             self._enter_preparation_work(token)
             working = True
             manifest, root = self._manifest(module_id, version)
+            sources = DownloadPreferences.model_validate(task.params)
             # Other modules may finish, uninstall, and collect garbage while
             # this runs; pins keep these models until the commit below makes
             # the version record reference them.
-            pinned = [model.sha256 for model in manifest.backend.models]
+            pinned = [model.sha256 for model in manifest.backend.download_files]
             self.store.pin(pinned)
             env_key, env_new, env_shared, reused = self._prepare_environment(
-                task, root, manifest.backend.lock, manifest, token, leased
+                root, manifest.backend.lock, manifest, token, leased, sources, advance,
             )
-            self._progress(task, 2, "models")
+            advance(2, "models")
             _paths, model_new, model_shared = self.models.ensure_models(
                 module_id,
                 version,
-                manifest.backend.models,
+                manifest.backend.download_files,
                 cancel=token,
                 progress=lambda _model_id, _received, _total: None,
+                preferred_sources={
+                    **{item.id: sources.models for item in manifest.backend.models},
+                    **{item.id: sources.artifacts for item in manifest.backend.artifacts or ()},
+                },
+                on_download=lambda data: advance(2, "file-download", data),
             )
-            self._progress(task, 3, "self-check")
+            advance(3, "self-check")
             self._self_check(module_id, version, root, manifest, env_key, None, token)
             variant_environments: dict[str, str] = {}
             variant_failures: dict[str, str] = {}
@@ -800,8 +912,9 @@ class WorkshopBackendRuntime:
             if variant is not None and self._platform_key in variant.platforms:
                 try:
                     variant_key, _new, _shared, _reused = self._prepare_environment(
-                        task, root, variant.lock, manifest, token, leased
+                        root, variant.lock, manifest, token, leased, sources, advance, variant=True,
                     )
+                    advance(4, "variant-check")
                     self._self_check(module_id, version, root, manifest, variant_key, variant.id, token)
                     variant_environments[variant.id] = variant_key
                 except WorkshopBackendError as exc:
@@ -820,7 +933,7 @@ class WorkshopBackendRuntime:
                     environment_key=env_key,
                     variant_environments=variant_environments,
                     variant_failures=variant_failures,
-                    model_sha256s=tuple(model.sha256 for model in manifest.backend.models),
+                    model_sha256s=tuple(model.sha256 for model in manifest.backend.download_files),
                     footprint=InstallFootprint(
                         environment_new_bytes=env_new,
                         environment_shared_bytes=env_shared,
@@ -830,6 +943,7 @@ class WorkshopBackendRuntime:
                     ),
                     prepared_at=utc_now(),
                 )
+            advance(5, "complete")
             outcome = ("succeeded", None)
             log.info(
                 "Workshop backend prepared",
@@ -943,12 +1057,17 @@ class WorkshopBackendRuntime:
             model.id: str(self.models.view_dir(module_id, version) / model.file_name)
             for model in manifest.backend.models
         }
+        artifacts = {
+            item.id: str(self.models.view_dir(module_id, version) / item.file_name)
+            for item in manifest.backend.artifacts or ()
+        }
         idle = float(manifest.backend.idle_timeout_seconds or self._settings.idle_timeout_seconds)
         cpu = RunTarget(
             version=version,
             variant=None,
             launch=self._launch(module_id, version, root, manifest, record.environment_key, None),
             models=models,
+            artifacts=artifacts,
             idle_timeout_seconds=idle,
         )
         acceleration = self.state.settings_for(module_id).acceleration
@@ -959,6 +1078,7 @@ class WorkshopBackendRuntime:
                 variant=acceleration,
                 launch=self._launch(module_id, version, root, manifest, variant_key, acceleration),
                 models=models,
+                artifacts=artifacts,
                 idle_timeout_seconds=idle,
                 fallback=cpu,
             )
@@ -1250,7 +1370,7 @@ class WorkshopBackendRuntime:
                 manifest, _root = self._manifest(module_id, record.version)
             except WorkshopBackendError:
                 continue
-            for model in manifest.backend.models:
+            for model in manifest.backend.download_files:
                 own_models[model.sha256] = (model.file_name, model.size_bytes)
         # Retention becomes a reference before this module's versions stop
         # counting, so no collection in between can see the model unused.
@@ -1553,6 +1673,11 @@ class WorkshopBackendRuntime:
         temporary = self.store.clear_temporary()
         report.other_bytes += staging.freed_bytes + temporary.freed_bytes
         report.pending.extend([*staging.pending, *temporary.pending])
+        if self._wheel_archives is not None:
+            retained = {digest for env in self.environments.list() for digest in env.wheel_sha256s}
+            archives = self._wheel_archives.prune(retained)
+            report.other_bytes += archives.freed_bytes
+            report.pending.extend(archives.pending)
         if self._uv is not None:
             try:
                 self._uv.clean_cache()

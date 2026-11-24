@@ -24,6 +24,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from ..errors import WorkshopBackendError
 from ..install_store import _atomic_write
 from ..models import MODULE_ID_PATTERN
+from .downloads import DownloadProgress
 from .store import RemovalOutcome, remove_tree
 
 
@@ -71,6 +72,8 @@ class TaskProgress(_TaskModel):
     completed: float = Field(ge=0)
     total: float = Field(ge=0)
     phase: str = Field(max_length=200)
+    download: DownloadProgress | None = None
+    downloaded_bytes: int | None = Field(default=None, ge=0)
 
 
 class TaskError(_TaskModel):

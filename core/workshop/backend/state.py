@@ -69,6 +69,7 @@ class BackendVersionRecord(_StateModel):
     variant_environments: dict[str, str] = Field(default_factory=dict)
     variant_failures: dict[str, str] = Field(default_factory=dict)
     model_sha256s: tuple[str, ...] = ()
+    download_preferences: dict[str, str] | None = None
     authorization: BackendAuthorization | None = None
     footprint: InstallFootprint | None = None
     prepared_at: str | None = None

@@ -143,6 +143,9 @@ export function BackendStatusRow({
           ) : null}
         </div>
       </div>
+      {status.review_level === "unreviewed" ? (
+        <StatusBanner tone="error">{t("workshop.backend.unreviewedRisk")}</StatusBanner>
+      ) : null}
       {stopError ? (
         <StatusBanner tone="error" role="alert">
           {t("workshop.backend.stopFailed").replace("{reason}", t(stopError.reasonKey))}

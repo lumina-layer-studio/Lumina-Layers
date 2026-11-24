@@ -279,7 +279,10 @@ def _installed_version_response(
             python=declaration.python,
             platforms=declaration.platforms,
             capabilities=tuple(
-                WorkshopBackendCapabilityResponse(name=item.name, reason=item.reason)
+                WorkshopBackendCapabilityResponse(
+                    name=item.name, reason=item.reason,
+                    reason_i18n=_localized_response(item.reason_i18n) if item.reason_i18n else None,
+                )
                 for item in declaration.capabilities
             ),
             model_count=len(declaration.models),
@@ -309,6 +312,7 @@ def _installed_version_response(
             WorkshopPermissionResponse(
                 name=permission.name,
                 reason=permission.reason,
+                reason_i18n=_localized_response(permission.reason_i18n) if permission.reason_i18n else None,
             )
             for permission in manifest.permissions
         ),

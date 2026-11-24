@@ -10,11 +10,11 @@ preparation and reported afterwards.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 
 from ..models import BackendModelFile
-from .locks import BackendLock, estimated_wheel
+from .locks import BackendLock, LockedWheel, estimated_wheel
 
 
 # Approximate size of one uv-managed CPython 3.12 runtime. Shown as an
@@ -53,6 +53,7 @@ def estimate_dependencies(
     package_users: Mapping[tuple[str, str], set[str]],
     platform_key: str,
     python_version: str,
+    archive_available: Callable[[LockedWheel], bool] | None = None,
 ) -> DependencyEstimate:
     """Split locked packages into already-present and new downloads."""
 
@@ -63,7 +64,10 @@ def estimate_dependencies(
     for package in lock.packages:
         wheel = estimated_wheel(package, platform_key=platform_key, python_version=python_version)
         size = wheel.size if wheel is not None else None
-        present = environment_exists or (package.name, package.version) in package_users
+        if archive_available is None:
+            present = environment_exists or (package.name, package.version) in package_users
+        else:
+            present = environment_exists or (wheel is not None and archive_available(wheel))
         if present:
             shared_count += 1
             shared_bytes += size or 0

@@ -2,6 +2,7 @@ import type {
   WorkshopBackendApi,
   WorkshopBackendStatus,
   WorkshopBackendTaskResponse,
+  WorkshopDownloadPreferences,
 } from "../../api/workshop";
 
 const TERMINAL = new Set(["succeeded", "failed", "cancelled", "interrupted"]);
@@ -20,6 +21,11 @@ export interface WaitOptions {
   intervalMs?: number;
   onProgress?(task: WorkshopBackendTaskResponse): void;
   isCancelled?(): boolean;
+}
+
+interface PreparationOptions extends WaitOptions {
+  sources?: WorkshopDownloadPreferences;
+  onTask?(taskId: string): void;
 }
 
 function delay(milliseconds: number): Promise<void> {
@@ -57,7 +63,7 @@ export async function authorizeAndPrepare(
   moduleId: string,
   version: string,
   acknowledgeUnreviewed: boolean,
-  options: WaitOptions & { onTask?(taskId: string): void } = {},
+  options: PreparationOptions = {},
 ): Promise<WorkshopBackendStatus> {
   let status = await api.status(moduleId, version);
   if (status.authorization === "required") {
@@ -69,7 +75,9 @@ export async function authorizeAndPrepare(
   const task =
     status.preparation_task_id !== null
       ? await api.task(moduleId, status.preparation_task_id)
-      : await api.prepare(moduleId, version);
+      : options.sources
+        ? await api.prepare(moduleId, version, options.sources)
+        : await api.prepare(moduleId, version);
   options.onTask?.(task.task_id);
   const finished = await waitForBackendTask(api, moduleId, task.task_id, options);
   if (finished.status !== "succeeded") {

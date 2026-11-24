@@ -9,7 +9,7 @@ import re
 from typing import Literal
 from urllib.parse import urlsplit
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_serializer
 
 from core.workshop.models import MODULE_ID_PATTERN, validate_semver
 
@@ -103,6 +103,14 @@ class LocalizedTextResponse(WorkshopHttpModel):
 class WorkshopPermissionResponse(WorkshopHttpModel):
     name: str
     reason: str
+    reason_i18n: LocalizedTextResponse | None = None
+
+    @model_serializer(mode="wrap")
+    def _serialize(self, handler):
+        payload = handler(self)
+        if self.reason_i18n is None:
+            payload.pop("reason_i18n", None)
+        return payload
 
 
 class WorkshopRevocationResponse(WorkshopHttpModel):
@@ -135,9 +143,8 @@ class WorkshopCatalogResponse(WorkshopHttpModel):
     modules: tuple[WorkshopCatalogModuleResponse, ...]
 
 
-class WorkshopBackendCapabilityResponse(WorkshopHttpModel):
-    name: str
-    reason: str
+class WorkshopBackendCapabilityResponse(WorkshopPermissionResponse):
+    pass
 
 
 class WorkshopBackendVariantSummary(WorkshopHttpModel):

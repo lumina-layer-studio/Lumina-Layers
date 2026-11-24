@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import base64
 import hashlib
 import json
@@ -584,6 +585,42 @@ def test_registry_archive_status_streams_received_bytes_while_install_request_ru
             allow_finish.set()
         assert install.result(timeout=10).status_code == 200
     assert client.get(progress_path).json() is None
+
+
+def test_local_archive_install_allows_progress_queries_on_the_same_event_loop(
+    api_bundle, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client, installer, archive, _registry = api_bundle
+    entered = threading.Event()
+    allow_finish = threading.Event()
+    original = installer.install_candidate
+    progress_id = uuid4()
+
+    def install_slowly(*args, **kwargs):
+        entered.set()
+        assert allow_finish.wait(5), "installation blocked progress queries"
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(installer, "install_candidate", install_slowly)
+
+    async def verify() -> None:
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=client.app), base_url="http://testserver") as api:
+            running = asyncio.create_task(api.post(
+                "/api/workshop/v1/install/local",
+                files={"archive": (archive.name, archive.read_bytes())},
+                params={"progress_id": str(progress_id)},
+            ))
+            try:
+                assert await asyncio.to_thread(entered.wait, 3)
+                progress = await asyncio.wait_for(api.get(f"/api/workshop/v1/install/progress/{progress_id}"), 3)
+                assert progress.json()["phase"] == "installing"
+                assert not running.done()
+            finally:
+                allow_finish.set()
+                response = await running
+            assert response.status_code == 200
+
+    asyncio.run(verify())
 
 
 @pytest.mark.parametrize("timeout_type", [httpx.ReadTimeout, httpx.ConnectTimeout])

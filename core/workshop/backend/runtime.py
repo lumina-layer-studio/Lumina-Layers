@@ -43,7 +43,7 @@ from ..models import (
 )
 from .downloads import DownloadPreferences, DownloadProgress, source_options
 from .environments import EnvironmentManager, environment_key, environment_python
-from .locks import BackendLock, WheelSourcePolicy, current_platform_key, parse_backend_lock
+from .locks import BackendLock, LockedWheel, WheelSourcePolicy, current_platform_key, parse_backend_lock
 from .model_files import ModelFetcher, ModelManager
 from .preview import (
     DependencyEstimate,
@@ -203,7 +203,10 @@ class WorkshopBackendRuntime:
         self._python_mirror = python_mirror
         self._wheel_sources = wheel_sources
         self.store = ContentStore(self.root / "store")
-        self._wheel_archives = WheelArchiveCache(self.root / "wheels") if track_downloads else None
+        self._wheel_archives = (
+            WheelArchiveCache(self.root / "wheels", staging_dir=self.store.temporary_dir)
+            if track_downloads else None
+        )
         self._uv = (
             UvTool(
                 uv_executable,
@@ -529,7 +532,7 @@ class WorkshopBackendRuntime:
         platform_supported = self._platform_key is not None and self._platform_key in declaration.platforms
         dependency: dict[str, Any] | None = None
         variants: list[dict[str, Any]] = []
-        source_locks: list[BackendLock] = []
+        source_wheels: list[LockedWheel] = []
         download_dependencies: list[DependencyEstimate] = []
         acceleration = self.state.settings_for(module_id).acceleration
         package_users = self.environments.package_users()
@@ -541,7 +544,6 @@ class WorkshopBackendRuntime:
         )
         if platform_supported and self._platform_key is not None:
             lock = self._lock_for(root, declaration.lock)
-            source_locks.append(lock)
             key = environment_key(lock, platform_key=self._platform_key, python_version=declaration.python)
             cpu_estimate = estimate_dependencies(
                 lock,
@@ -554,12 +556,12 @@ class WorkshopBackendRuntime:
             )
             dependency = cpu_estimate.as_json()
             download_dependencies.append(cpu_estimate)
+            source_wheels.extend(cpu_estimate.source_wheels)
             for variant in declaration.variants:
                 available = self._platform_key in variant.platforms
                 estimate = None
                 if available:
                     variant_lock = self._lock_for(root, variant.lock)
-                    source_locks.append(variant_lock)
                     variant_key = environment_key(
                         variant_lock,
                         platform_key=self._platform_key,
@@ -575,6 +577,7 @@ class WorkshopBackendRuntime:
                         archive_available=archive_available,
                     )
                     estimate = variant_estimate.as_json()
+                    source_wheels.extend(variant_estimate.source_wheels)
                     if acceleration == variant.id:
                         download_dependencies.append(variant_estimate)
                 variants.append(
@@ -624,7 +627,7 @@ class WorkshopBackendRuntime:
             ],
             "models": model_estimates(declaration.models, present_models),
             "artifacts": model_estimates(declaration.artifacts or (), present_models),
-            "download_sources": self._download_options(declaration, source_locks),
+            "download_sources": self._download_options(declaration, source_wheels),
             "download_preferences": record.download_preferences or DownloadPreferences().model_dump(),
             "download_estimate": estimate_download_total(
                 download_dependencies, declaration.download_files, present_models, interpreter_bytes,
@@ -639,7 +642,7 @@ class WorkshopBackendRuntime:
     # ----- preparation ----------------------------------------------------
 
     def _download_options(
-        self, declaration: BackendDeclaration, locks: Sequence[BackendLock],
+        self, declaration: BackendDeclaration, wheels: Sequence[LockedWheel],
     ) -> dict[str, list[str]]:
         declared = declaration.download_sources
         wheel_mirrors = (declared.wheels or {}) if declared is not None else {}
@@ -649,9 +652,7 @@ class WorkshopBackendRuntime:
             python_urls.append(self._python_mirror)
         wheel_urls_for_host = [
             url
-            for lock in locks
-            for package in lock.packages
-            for wheel in package.wheels
+            for wheel in wheels
             for url in (wheel.url, *wheel_urls(wheel, self._wheel_sources, wheel_mirrors))
         ]
         return {

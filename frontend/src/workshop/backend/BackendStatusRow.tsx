@@ -136,10 +136,24 @@ export function BackendStatusRow({
   const failedVariant = variants.find(
     (variant) => variant.id === status.acceleration && variant.failure_code !== null,
   );
+  const cancelledVariant = preparationTaskId === null && status.failure_code === "cancelled"
+    ? variants.find((variant) => variant.id === status.acceleration && !variant.prepared)
+    : undefined;
+  const retryVariant = cancelledVariant ?? failedVariant;
   // A failed stop is resolved once the backend no longer runs.
   const stopError = actionError?.action === "stop" && running ? actionError : null;
   const accelerationError = actionError?.action === "acceleration" ? actionError : null;
   const cancelError = actionError?.action === "cancel-preparation" && preparationTaskId ? actionError : null;
+  const changeAcceleration = (value: string | null) => {
+    setBusy(true);
+    void api.setAcceleration(moduleId, value)
+      .then((next) => {
+        updateStatus(next);
+        settle("acceleration");
+      })
+      .catch(fail("acceleration"))
+      .finally(() => setBusy(false));
+  };
 
   return (
     <div
@@ -207,7 +221,9 @@ export function BackendStatusRow({
         />
       ) : null}
       {cancelError ? (
-        <StatusBanner tone="error" role="alert">{t(cancelError.reasonKey)}</StatusBanner>
+        <StatusBanner tone="error" role="alert">
+          {t("workshop.backend.cancelFailed").replace("{reason}", t(cancelError.reasonKey))}
+        </StatusBanner>
       ) : null}
       {status.review_level === "unreviewed" ? (
         <StatusBanner tone="error">{t("workshop.backend.unreviewedRisk")}</StatusBanner>
@@ -240,18 +256,7 @@ export function BackendStatusRow({
             <select
               value={status.acceleration ?? ""}
               disabled={busy || preparationTaskId !== null}
-              onChange={(event) => {
-                const value = event.target.value === "" ? null : event.target.value;
-                setBusy(true);
-                void api
-                  .setAcceleration(moduleId, value)
-                  .then((next) => {
-                    updateStatus(next);
-                    settle("acceleration");
-                  })
-                  .catch(fail("acceleration"))
-                  .finally(() => setBusy(false));
-              }}
+              onChange={(event) => changeAcceleration(event.target.value || null)}
               className={compactFieldClass}
             >
               <option value="">{t("workshop.backend.cpu")}</option>
@@ -269,7 +274,19 @@ export function BackendStatusRow({
           {t("workshop.backend.accelerationFailed").replace("{reason}", t(accelerationError.reasonKey))}
         </StatusBanner>
       ) : null}
-      {failedVariant ? <span>{t("workshop.backend.variantFailed")}</span> : null}
+      {retryVariant && preparationTaskId === null && status.preparation === "prepared" ? (
+        <div className="flex flex-wrap items-center gap-2">
+          <span>{t(cancelledVariant ? "workshop.backend.variantCancelled" : "workshop.backend.variantFailed")}</span>
+          <Button
+            label={t("workshop.backend.retryAcceleration")}
+            size="sm"
+            variant="secondary"
+            loading={busy}
+            disabled={status.authorization === "required"}
+            onClick={() => changeAcceleration(retryVariant.id)}
+          />
+        </div>
+      ) : null}
     </div>
   );
 }

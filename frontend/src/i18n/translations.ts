@@ -9500,6 +9500,14 @@ export const translations: Record<string, Record<"zh" | "en", string>> = {
     zh: "安装加速运行库",
     en: "Installing acceleration libraries",
   },
+  "workshop.backend.variantCancelled": {
+    zh: "已取消加速准备，当前可使用 CPU。",
+    en: "Acceleration setup was cancelled. CPU remains available.",
+  },
+  "workshop.backend.retryAcceleration": {
+    zh: "重试加速安装",
+    en: "Retry acceleration setup",
+  },
   "workshop.backend.phase.variant-check": {
     zh: "检查加速后端",
     en: "Checking the accelerated backend",
@@ -9547,6 +9555,18 @@ export const translations: Record<string, Record<"zh" | "en", string>> = {
   "workshop.manager.archive.downloading": {
     zh: "下载扩展包",
     en: "Downloading the extension package",
+  },
+  "workshop.manager.archive.uploading": {
+    zh: "传输本地扩展包",
+    en: "Transferring the local package",
+  },
+  "workshop.manager.archive.localFile": {
+    zh: "本地文件",
+    en: "Local file",
+  },
+  "workshop.manager.archive.uploadedBytes": {
+    zh: "已传输 {received} / {total}",
+    en: "Transferred {received} / {total}",
   },
   "workshop.manager.archive.verifying": {
     zh: "校验扩展包",

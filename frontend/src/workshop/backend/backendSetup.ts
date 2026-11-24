@@ -80,10 +80,14 @@ export async function authorizeAndPrepare(
 ): Promise<WorkshopBackendStatus> {
   let status = await api.status(moduleId, version);
   if (status.authorization === "required") {
+    if (options.isCancelled?.()) throw new BackendSetupError("cancelled");
     status = await api.authorize(moduleId, version, acknowledgeUnreviewed);
   }
   if (status.preparation === "prepared" && status.preparation_task_id === null) {
     return status;
+  }
+  if (status.preparation_task_id === null && options.isCancelled?.()) {
+    throw new BackendSetupError("cancelled");
   }
   const task =
     status.preparation_task_id !== null
@@ -92,7 +96,10 @@ export async function authorizeAndPrepare(
         ? await api.prepare(moduleId, version, options.sources)
         : await api.prepare(moduleId, version);
   options.onTask?.(task.task_id);
-  const finished = await waitForBackendTask(api, moduleId, task.task_id, options);
+  const finished = await waitForBackendTask(api, moduleId, task.task_id, {
+    intervalMs: options.intervalMs,
+    onProgress: options.onProgress,
+  });
   if (finished.status !== "succeeded") {
     throw new BackendSetupError(finished.error?.code ?? finished.status);
   }

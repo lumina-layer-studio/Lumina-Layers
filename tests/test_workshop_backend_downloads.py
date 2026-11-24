@@ -1,7 +1,7 @@
 import httpx
 import pytest
 
-from core.workshop.backend import downloads
+from core.workshop.backend import downloads, preview
 from core.workshop.backend.downloads import DownloadBatch, DownloadPreferences, ordered_sources, source_options
 from core.workshop.backend.locks import BackendLock, LockedPackage, LockedWheel, current_platform_key
 from core.workshop.backend.preview import estimate_dependencies, estimate_download_total
@@ -65,6 +65,17 @@ def test_total_counts_a_shared_wheel_once_and_omits_inactive_packages() -> None:
     ]
     assert [item.new_download_bytes for item in estimates] == [20, 70]
     assert estimate_download_total(estimates, (), set(), 0) == {"bytes": 70, "incomplete": False}
+
+
+def test_patch_dependent_download_plan_is_marked_incomplete(monkeypatch) -> None:
+    monkeypatch.setattr(preview, "host_python_version", lambda: "3.12.10")
+    item = LockedPackage("demo", "1.0", "python_full_version >= '3.12.15'", (_wheel("demo", "a", 500_000_000),))
+    lock = BackendLock((item,), None, "patch")
+    estimate = estimate_dependencies(
+        lock, environment_key=lock.digest, environment_exists=False, package_users={},
+        platform_key=current_platform_key(), python_version="3.12",
+    )
+    assert estimate_download_total([estimate], (), set(), 0) == {"bytes": 0, "incomplete": True}
 
 
 def test_download_observes_cancellation_between_transport_chunks(tmp_path, monkeypatch) -> None:

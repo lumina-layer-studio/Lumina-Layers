@@ -1,7 +1,8 @@
 import type { WorkshopPermissionName } from "../workshop/contracts";
-import axios from "axios";
+import axios, { type AxiosRequestConfig } from "axios";
 
 import apiClient from "./client";
+import { createRandomId } from "../utils/randomId";
 
 export interface WorkshopLocalizedText {
   zh_cn: string;
@@ -240,7 +241,7 @@ export interface WorkshopDownloadProgress {
 }
 
 export interface WorkshopArchiveInstallProgress {
-  phase: "resolving" | "downloading" | "verifying" | "installing";
+  phase: "resolving" | "uploading" | "downloading" | "verifying" | "installing";
   download?: WorkshopDownloadProgress | null;
 }
 
@@ -415,23 +416,41 @@ async function installArchive(
   kind: "registry" | "github" | "local",
   payload: unknown,
   onProgress?: ArchiveProgressListener,
+  localFileName?: string,
 ): Promise<WorkshopMutation> {
   const endpoint = `/workshop/v1/install/${kind}`;
-  const options = kind === "registry"
+  const options: AxiosRequestConfig = kind === "registry"
     ? { timeout: MUTATION_TIMEOUT_MS, suppressErrorTicket: true }
     : { timeout: MUTATION_TIMEOUT_MS };
-  const id = onProgress ? globalThis.crypto?.randomUUID?.() : undefined;
-  if (!id || !onProgress) {
+  if (!onProgress) {
     return (await apiClient.post<WorkshopMutation>(endpoint, payload, options)).data;
   }
   let stopped = false;
+  let hasServerProgress = false;
+  if (localFileName !== undefined) {
+    options.onUploadProgress = ({ loaded, total, rate, estimated }) => {
+      if (stopped || hasServerProgress) return;
+      onProgress({
+        phase: "uploading",
+        download: {
+          file_name: localFileName, source: "local", file_index: 1, file_count: 1,
+          received_bytes: loaded, total_bytes: total ?? null,
+          bytes_per_second: rate ?? null, eta_seconds: estimated == null ? null : Math.ceil(estimated),
+        },
+      });
+    };
+  }
+  const id = createRandomId();
   let timer: ReturnType<typeof setTimeout>;
   const poll = async () => {
     try {
       const { data } = await apiClient.get<WorkshopArchiveInstallProgress | null>(
         `/workshop/v1/install/progress/${id}`, { suppressErrorTicket: true },
       );
-      if (!stopped && data) onProgress(data);
+      if (!stopped && data) {
+        hasServerProgress = true;
+        onProgress(data);
+      }
     } catch {
       // A progress request can fail without changing the install request.
     }
@@ -493,7 +512,7 @@ export const workshopApi: WorkshopManagerApi = {
   installLocal(file, onProgress) {
     const payload = new FormData();
     payload.append("archive", file, file.name);
-    return installArchive("local", payload, onProgress);
+    return installArchive("local", payload, onProgress, file.name);
   },
 
   async activateModule(moduleId, version) {

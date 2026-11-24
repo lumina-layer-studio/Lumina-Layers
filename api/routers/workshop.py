@@ -16,6 +16,7 @@ from uuid import UUID
 
 import httpx
 from fastapi import APIRouter, File, Header, HTTPException, UploadFile
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import Response
 from pydantic import ValidationError
 
@@ -560,7 +561,8 @@ async def workshop_install_local(
         )
         if progress is not None:
             progress.stage("installing")
-        state = get_workshop_installer().install_candidate(
+        state = await run_in_threadpool(
+            get_workshop_installer().install_candidate,
             archive_path,
             source="local",
             source_repository="local",

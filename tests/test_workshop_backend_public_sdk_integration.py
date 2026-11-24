@@ -11,6 +11,7 @@ import hashlib
 import os
 import sys
 import time
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -185,6 +186,7 @@ def test_download_selection_verifies_mirrors_and_reuses_bytes_across_locks(
 ) -> None:
     wheels = build_fixture_wheelhouse(tmp_path / "fixtures")
     shared, extra = wheels["shared"], wheels["conflict-1"]
+    inactive = wheels["accel"]
     shared_origin = WHEEL_URL_BASE + shared.path.name
     extra_origin = WHEEL_URL_BASE + extra.path.name
     mirror = f"https://wheel-mirror.example/{shared.path.name}"
@@ -237,16 +239,22 @@ def test_download_selection_verifies_mirrors_and_reuses_bytes_across_locks(
                 "sha256": hashlib.sha256(labels).hexdigest(),
             }],
         )
+        mirrors = {inactive.sha256: ["https://unavailable-platform.example/unused.whl"]}
         if shared in lock:
-            manifest["backend"]["downloadSources"] = {"wheels": {shared.sha256: [mirror]}}
+            mirrors[shared.sha256] = [mirror]
+        manifest["backend"]["downloadSources"] = {"wheels": mirrors}
+        declared_lock = lock_text([*lock, inactive]).replace(
+            f'name = "{inactive.name}"\n', f'name = "{inactive.name}"\nmarker = "sys_platform == \'unavailable\'"\n',
+        )
         package = write_backend_package(
             tmp_path / module_id, module_id=module_id, version="1.0.0",
-            lock=lock_text(lock), manifest=manifest,
+            lock=declared_lock, manifest=manifest,
             extra_files={**_vendored_sdk(), "backend/main.py": SDK_MODULE_MAIN.encode("utf-8")},
         )
         installer().install_candidate(package, source="local", source_repository="local", official=False)
         description = runtime.describe(module_id, "1.0.0")
         assert description["download_sources"]["artifacts"] == ["huggingface.co", "modelscope.cn"]
+        assert "unavailable-platform.example" not in description["download_sources"]["wheels"]
         runtime.authorize(module_id, "1.0.0", acknowledge_unreviewed=True)
         task = runtime.start_preparation(
             module_id, "1.0.0",
@@ -274,8 +282,16 @@ def test_download_selection_verifies_mirrors_and_reuses_bytes_across_locks(
         assert output.read_bytes() == labels
         runtime.shutdown()
 
+        alternative_name = extra.path.name.replace("lumina_fixture_conflict", "lumina.fixture.conflict", 1)
+        assert alternative_name != extra.path.name
+        aliased = replace(extra, path=extra.path.with_name(alternative_name))
+        aliased.path.write_bytes(extra.path.read_bytes())
+        leftover = runtime.root / "wheels" / extra.sha256 / ".old-download.part"
+        leftover.write_bytes(b"leftover")
         runtime = start_runtime(offline=True)
-        install("fixture.download-three", [extra], 0)
+        runtime.startup()
+        assert not leftover.exists()
+        install("fixture.download-three", [aliased], 0)
         assert fetched == [mirror, shared_origin, labels_mirror, extra_origin]
         assert runtime.storage_overview()["wheel_cache"] == {"files": 2, "bytes": shared.size + extra.size}
     finally:

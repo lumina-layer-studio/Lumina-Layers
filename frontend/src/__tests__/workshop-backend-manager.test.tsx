@@ -543,6 +543,16 @@ describe("Workshop backend management errors", () => {
     expect(within(row).getByText("全部下载约剩 3 秒")).toBeInTheDocument();
     expect(backend.task).toHaveBeenCalledWith(MODULE_ID, task.task_id);
     expect(within(row).getByRole("combobox")).toBeDisabled();
+
+    vi.mocked(backend.cancel).mockResolvedValue(prepareTask("cancelled"));
+    vi.mocked(backend.status).mockResolvedValue({
+      ...prepared, acceleration: "accel", failure_code: "cancelled",
+    });
+    fireEvent.click(within(row).getByRole("button", { name: "取消安装" }));
+    expect(await within(row).findByText("已取消加速准备，当前可使用 CPU。")).toBeInTheDocument();
+    fireEvent.click(within(row).getByRole("button", { name: "重试加速安装" }));
+    expect(backend.setAcceleration).toHaveBeenCalledTimes(2);
+    expect(backend.setAcceleration).toHaveBeenLastCalledWith(MODULE_ID, "accel");
   });
 
   it("keeps a refused deletion beside its item after the list refreshes", async () => {
@@ -575,5 +585,45 @@ describe("Workshop backend management errors", () => {
     expect(await within(dialog).findByRole("alert")).toHaveTextContent("未能取消，安装仍在继续");
     expect(within(dialog).getByRole("button", { name: "取消安装" })).toBeInTheDocument();
     taskStatus = "cancelled";
+  });
+
+  it("does not start downloading when cancelled while authorizing", async () => {
+    const backend = fakeBackend(status());
+    let finishAuthorization: (() => void) | undefined;
+    vi.mocked(backend.authorize).mockImplementation(() => new Promise((resolve) => {
+      finishAuthorization = () => resolve(status({ authorization: "granted" }));
+    }));
+    renderPanel(fakeApi([backendModule()]), backend);
+    fireEvent.click(await screen.findByRole("button", { name: "打开" }));
+    const dialog = await screen.findByRole("dialog", { name: "运行本机后端" });
+    fireEvent.click(within(dialog).getByRole("checkbox", { name: /我信任发布者/ }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "允许并安装" }));
+    await waitFor(() => expect(backend.authorize).toHaveBeenCalled());
+    fireEvent.click(within(dialog).getByRole("button", { name: "取消安装" }));
+    finishAuthorization?.();
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(backend.prepare).not.toHaveBeenCalled();
+    expect(screen.queryByText(/^opened /)).toBeNull();
+  });
+
+  it("cancels a task whose ID arrives after the user stops preparation", async () => {
+    const backend = fakeBackend(status());
+    let finishSubmission: (() => void) | undefined;
+    vi.mocked(backend.prepare).mockImplementation(() => new Promise((resolve) => {
+      finishSubmission = () => resolve(prepareTask("running"));
+    }));
+    vi.mocked(backend.cancel).mockResolvedValue(prepareTask("cancelled"));
+    vi.mocked(backend.task).mockResolvedValue(prepareTask("succeeded"));
+    renderPanel(fakeApi([backendModule()]), backend);
+    fireEvent.click(await screen.findByRole("button", { name: "打开" }));
+    const dialog = await screen.findByRole("dialog", { name: "运行本机后端" });
+    fireEvent.click(within(dialog).getByRole("checkbox", { name: /我信任发布者/ }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "允许并安装" }));
+    await waitFor(() => expect(backend.prepare).toHaveBeenCalled());
+    fireEvent.click(within(dialog).getByRole("button", { name: "取消安装" }));
+    finishSubmission?.();
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(backend.cancel).toHaveBeenCalledWith(MODULE_ID, prepareTask("running").task_id);
+    expect(screen.queryByText(/^opened /)).toBeNull();
   });
 });

@@ -36,6 +36,8 @@ class DependencyEstimate:
     shared_bytes: int
     unknown_size_packages: int
     missing_wheels: Mapping[str, int | None]
+    source_wheels: tuple[LockedWheel, ...]
+    uncertain_selection: bool
 
     def as_json(self) -> dict[str, object]:
         return {
@@ -66,6 +68,7 @@ def estimate_dependencies(
     shared_bytes = 0
     unknown = 0
     missing_wheels: dict[str, int | None] = {}
+    source_wheels: list[LockedWheel] = []
     selected: BackendLock | None = None
     if platform_key == current_platform_key():
         full_version = host_python_version()
@@ -83,6 +86,8 @@ def estimate_dependencies(
             else estimated_wheel(package, platform_key=platform_key, python_version=python_version)
         )
         size = wheel.size if wheel is not None else None
+        if wheel is not None:
+            source_wheels.append(wheel)
         if archive_available is None:
             present = environment_exists or (package.name, package.version) in package_users
         else:
@@ -107,6 +112,13 @@ def estimate_dependencies(
         shared_bytes=shared_bytes,
         unknown_size_packages=unknown,
         missing_wheels=missing_wheels,
+        source_wheels=tuple(source_wheels),
+        uncertain_selection=not environment_exists and (
+            selected is None
+            or any(package.marker and (
+                "python_full_version" in package.marker or "implementation_version" in package.marker
+            ) for package in lock.packages)
+        ),
     )
 
 
@@ -124,7 +136,10 @@ def estimate_download_total(
     missing_files = {item.sha256: item.size_bytes for item in files if item.sha256 not in present}
     return {
         "bytes": interpreter_bytes + sum(missing_files.values()) + sum(size or 0 for size in wheels.values()),
-        "incomplete": any(size is None for size in wheels.values()),
+        "incomplete": (
+            any(size is None for size in wheels.values())
+            or any(dependency.uncertain_selection for dependency in dependencies)
+        ),
     }
 
 

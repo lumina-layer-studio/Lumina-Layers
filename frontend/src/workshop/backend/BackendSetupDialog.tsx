@@ -27,6 +27,7 @@ interface BackendSetupDialogProps {
   status: WorkshopBackendStatus;
   phase: BackendSetupPhase;
   progress: WorkshopBackendProgress | null;
+  cancelling?: boolean;
   failureCode: string | null;
   /** Why the last cancel request failed; preparation is still running. */
   cancelError?: string | null;
@@ -47,6 +48,7 @@ export function BackendSetupDialog({
   status,
   phase,
   progress,
+  cancelling = false,
   failureCode,
   cancelError = null,
   onConfirm,
@@ -275,6 +277,7 @@ export function BackendSetupDialog({
               <Button
                 label={t("workshop.backend.cancelPreparation")}
                 variant="secondary"
+                loading={cancelling}
                 onClick={onCancel}
               />
             </div>

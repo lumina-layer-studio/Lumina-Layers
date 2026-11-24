@@ -112,7 +112,14 @@ interface BackendSetupState {
   taskId: string | null;
   /** Translation key of a cancel request that did not go through. */
   cancelErrorKey?: string | null;
+  cancelling?: boolean;
   proceed(): void;
+}
+
+interface BackendSetupAttempt {
+  taskId: string | null;
+  cancelRequested: boolean;
+  cancelRequest: Promise<void> | null;
 }
 
 function moduleHasBackend(module: InstalledWorkshopModule): boolean {
@@ -656,7 +663,7 @@ export function WorkshopPanel({
   const [materialImportPrompt, setMaterialImportPrompt] =
     useState<MaterialImportPrompt | null>(null);
   const materialImportPromptRef = useRef<MaterialImportPrompt | null>(null);
-  const backendSetupCancelled = useRef(false);
+  const backendSetupAttempt = useRef<BackendSetupAttempt | null>(null);
   const returnHomeTimerRef = useRef<number | null>(null);
   const snapshotIds = useRef(new Map<string, string>());
 
@@ -682,7 +689,6 @@ export function WorkshopPanel({
           proceed();
           return;
         }
-        backendSetupCancelled.current = false;
         setBackendSetup({
           module,
           version,
@@ -700,12 +706,28 @@ export function WorkshopPanel({
     [backendApi, t],
   );
 
+  const cancelPreparationTask = useCallback((moduleId: string, attempt: BackendSetupAttempt) => {
+    if (attempt.taskId === null || attempt.cancelRequest !== null) return;
+    attempt.cancelRequest = backendApi.cancel(moduleId, attempt.taskId).then(
+      () => undefined,
+      (error: unknown) => {
+        attempt.cancelRequested = false;
+        attempt.cancelRequest = null;
+        if (backendSetupAttempt.current === attempt) {
+          setBackendSetup((current) => current === null ? current : {
+            ...current, cancelling: false, cancelErrorKey: backendActionErrorKey(error),
+          });
+        }
+      },
+    );
+  }, [backendApi]);
+
   const confirmBackendSetup = useCallback(
     (acknowledgeUnreviewed: boolean, sources?: WorkshopDownloadPreferences) => {
       const setup = backendSetup;
-      if (setup === null) {
-        return;
-      }
+      if (setup === null || setup.phase !== "review" || backendSetupAttempt.current !== null) return;
+      const attempt: BackendSetupAttempt = { taskId: setup.taskId, cancelRequested: false, cancelRequest: null };
+      backendSetupAttempt.current = attempt;
       setBackendSetup({ ...setup, phase: "preparing" });
       void authorizeAndPrepare(
         backendApi,
@@ -714,24 +736,30 @@ export function WorkshopPanel({
         acknowledgeUnreviewed,
         {
           sources,
-          onTask: (taskId) =>
+          isCancelled: () => attempt.cancelRequested,
+          onTask: (taskId) => {
+            attempt.taskId = taskId;
             setBackendSetup((current) =>
               current === null ? current : { ...current, taskId },
-            ),
+            );
+            if (attempt.cancelRequested) cancelPreparationTask(setup.module.module_id, attempt);
+          },
           onProgress: (task) =>
             setBackendSetup((current) =>
               current === null ? current : { ...current, progress: task.progress },
             ),
         },
       )
-        .then(() => {
+        .then(async () => {
+          await attempt.cancelRequest;
           setBackendSetup(null);
           setBackendRefreshKey((value) => value + 1);
-          setup.proceed();
+          if (!attempt.cancelRequested) setup.proceed();
         })
-        .catch((error: unknown) => {
+        .catch(async (error: unknown) => {
+          await attempt.cancelRequest;
           setBackendRefreshKey((value) => value + 1);
-          if (backendSetupCancelled.current) {
+          if (attempt.cancelRequested) {
             setBackendSetup(null);
             return;
           }
@@ -745,9 +773,12 @@ export function WorkshopPanel({
                     error instanceof BackendSetupError ? error.code : "request-failed",
                 },
           );
+        })
+        .finally(() => {
+          if (backendSetupAttempt.current === attempt) backendSetupAttempt.current = null;
         });
     },
-    [backendApi, backendSetup],
+    [backendApi, backendSetup, cancelPreparationTask],
   );
 
   const cancelBackendSetup = useCallback(() => {
@@ -755,21 +786,17 @@ export function WorkshopPanel({
     if (setup === null) {
       return;
     }
-    if (setup.phase === "preparing" && setup.taskId !== null) {
-      // Cancels the host preparation task; its rollback runs on the host.
-      backendSetupCancelled.current = true;
-      setBackendSetup((current) => (current === null ? current : { ...current, cancelErrorKey: null }));
-      void backendApi.cancel(setup.module.module_id, setup.taskId).catch((error: unknown) => {
-        // The preparation keeps running; say so beside the cancel action.
-        backendSetupCancelled.current = false;
-        setBackendSetup((current) =>
-          current === null ? current : { ...current, cancelErrorKey: backendActionErrorKey(error) },
-        );
+    const attempt = backendSetupAttempt.current;
+    if (setup.phase === "preparing" && attempt !== null) {
+      attempt.cancelRequested = true;
+      setBackendSetup((current) => current === null ? current : {
+        ...current, cancelling: true, cancelErrorKey: null,
       });
+      cancelPreparationTask(setup.module.module_id, attempt);
       return;
     }
     setBackendSetup(null);
-  }, [backendApi, backendSetup]);
+  }, [backendSetup, cancelPreparationTask]);
 
   const handleReturnHome = useCallback(() => {
     if (returnHomeTimerRef.current !== null) return;
@@ -1556,7 +1583,9 @@ export function WorkshopPanel({
             <p role="status" className="text-sm font-medium text-slate-700 dark:text-slate-200">
               {t(`workshop.manager.archive.${item.phase}`)}
             </p>
-            {item.download ? <DownloadProgressDetails download={item.download} /> : null}
+            {item.download ? (
+              <DownloadProgressDetails download={item.download} uploading={item.phase === "uploading"} />
+            ) : null}
           </div>
         ))}
 
@@ -1639,7 +1668,6 @@ export function WorkshopPanel({
                   backendApi={backendApi}
                   backendRefreshKey={backendRefreshKey}
                   onPrepareBackend={(version, status) => {
-                    backendSetupCancelled.current = false;
                     setBackendSetup({
                       module,
                       version,
@@ -1840,6 +1868,7 @@ export function WorkshopPanel({
           status={backendSetup.status}
           phase={backendSetup.phase}
           progress={backendSetup.progress}
+          cancelling={backendSetup.cancelling}
           failureCode={backendSetup.failureCode}
           cancelError={
             backendSetup.cancelErrorKey

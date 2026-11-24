@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 import threading
 import uuid
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterator, Mapping
 from dataclasses import replace
 from pathlib import Path
 
@@ -97,19 +97,28 @@ def _select_wheels(lock: BackendLock, interpreter: BackendInterpreter, cancel: C
 class WheelArchiveCache:
     """Reuse verified wheels across locks and mirrors by their SHA-256."""
 
-    def __init__(self, root: Path) -> None:
+    def __init__(self, root: Path, *, staging_dir: Path | None = None) -> None:
         self.root = root
+        self._staging_dir = staging_dir or root / ".staging"
         self._locks: dict[str, threading.Lock] = {}
         self._guard = threading.Lock()
 
     def _path(self, wheel: LockedWheel) -> Path:
         return self.root / wheel.sha256 / wheel.file_name
 
+    def _archive_paths(self, wheel: LockedWheel) -> Iterator[Path]:
+        same_name = self._path(wheel)
+        yield same_name
+        yield from (path for path in same_name.parent.glob("*.whl") if path != same_name)
+
     def available(self, wheel: LockedWheel, policy: WheelSourcePolicy) -> bool:
         """Check the local inventory for the preflight estimate."""
-        return self._path(wheel).is_file() or (
+        return any(path.is_file() for path in self._archive_paths(wheel)) or (
             policy.wheelhouse is not None and (policy.wheelhouse / wheel.file_name).is_file()
         )
+
+    def _cached(self, wheel: LockedWheel, cancel: CancelToken) -> Path | None:
+        return next((path for path in self._archive_paths(wheel) if self._matches(path, wheel, cancel)), None)
 
     @staticmethod
     def _matches(path: Path, wheel: LockedWheel, cancel: CancelToken) -> bool:
@@ -126,19 +135,21 @@ class WheelArchiveCache:
         batch: DownloadBatch,
         index: int,
         cancel: CancelToken,
-    ) -> int:
+    ) -> tuple[Path, int]:
         with self._guard:
             lock = self._locks.setdefault(wheel.sha256, threading.Lock())
         while not lock.acquire(timeout=0.15):
             cancel.raise_if_cancelled()
         try:
+            cached = self._cached(wheel, cancel)
+            if cached is not None:
+                return cached, 0
             target = self._path(wheel)
-            if self._matches(target, wheel, cancel):
-                return 0
             target.parent.mkdir(parents=True, exist_ok=True)
+            self._staging_dir.mkdir(parents=True, exist_ok=True)
             last_error: WorkshopBackendError | None = None
             for url in urls:
-                temporary = target.with_name(f".{uuid.uuid4().hex}.part")
+                temporary = self._staging_dir / f"wheel-{uuid.uuid4().hex}.part"
                 report = batch.attempt(index, wheel.file_name, url)
                 try:
                     download_https(url, temporary, cancel=cancel, progress=report, size=wheel.size)
@@ -148,7 +159,7 @@ class WheelArchiveCache:
                         )
                     size = temporary.stat().st_size
                     os.replace(temporary, target)
-                    return size
+                    return target, size
                 except WorkshopBackendError as exc:
                     if exc.code == "cancelled":
                         raise
@@ -173,15 +184,19 @@ class WheelArchiveCache:
         on_progress: Callable[[DownloadProgress], None],
     ) -> tuple[str, tuple[str, ...]]:
         selected = _select_wheels(lock, interpreter, cancel)
-        wheels = tuple(dict.fromkeys(package.wheels[0] for package in selected.packages))
+        wheels = {package.wheels[0].sha256: package.wheels[0] for package in selected.packages}
         local: dict[str, str] = {}
+        cached: set[str] = set()
         needed = []
-        for wheel in wheels:
+        for wheel in wheels.values():
             supplied = policy.wheelhouse / wheel.file_name if policy.wheelhouse else None
             if supplied is not None and self._matches(supplied, wheel, cancel):
                 local[wheel.sha256] = supplied.resolve().as_uri()
-            elif self._matches(self._path(wheel), wheel, cancel):
-                local[wheel.sha256] = self._path(wheel).resolve().as_uri()
+                continue
+            archive = self._cached(wheel, cancel)
+            if archive is not None:
+                local[wheel.sha256] = archive.resolve().as_uri()
+                cached.add(wheel.sha256)
             elif not policy.offline:
                 needed.append(wheel)
         batch = DownloadBatch((wheel.size for wheel in needed), on_progress)
@@ -190,18 +205,19 @@ class WheelArchiveCache:
             urls = ordered_sources(wheel.url, alternatives, preferred)
             if preferred == "auto" and policy.mirror_prefix and wheel.url.startswith(PYPI_FILES_PREFIX):
                 urls = ordered_sources(alternatives[0], (wheel.url, *alternatives[1:]), preferred)
-            size = self._download(wheel, urls, batch, index, cancel)
+            archive, size = self._download(wheel, urls, batch, index, cancel)
             batch.finish(index, size)
-            local[wheel.sha256] = self._path(wheel).resolve().as_uri()
-        cached = tuple(sorted({wheel.sha256 for wheel in wheels if self._path(wheel).is_file()}))
-        return render_install_lock(selected, policy, verified_urls=local), cached
+            local[wheel.sha256] = archive.resolve().as_uri()
+            cached.add(wheel.sha256)
+        return render_install_lock(selected, policy, verified_urls=local), tuple(sorted(cached))
 
     def prune(self, retained: set[str]) -> RemovalOutcome:
         outcome = RemovalOutcome()
         if self.root.is_dir():
             for entry in self.root.iterdir():
-                if entry.name not in retained:
-                    removed = remove_tree(entry)
+                leftovers = (entry,) if entry.name not in retained else tuple(entry.glob(".*.part"))
+                for leftover in leftovers:
+                    removed = remove_tree(leftover)
                     outcome.freed_bytes += removed.freed_bytes
                     outcome.pending.extend(removed.pending)
         return outcome

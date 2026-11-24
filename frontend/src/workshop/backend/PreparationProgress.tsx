@@ -16,13 +16,16 @@ export function PreparationProgress({
     : undefined;
   const downloaded = progress?.downloaded_bytes ?? 0;
   const complete = progress?.phase === "complete";
-  const rate = progress?.download?.bytes_per_second;
-  const remaining = estimate && !estimate.incomplete && rate && estimate.bytes > downloaded
-    ? Math.ceil((estimate.bytes - downloaded) / rate)
+  const transfer = progress?.download;
+  const batchTotal = transfer?.total_bytes == null ? 0 : downloaded - transfer.received_bytes + transfer.total_bytes;
+  const expectedBytes = Math.max(estimate?.bytes ?? 0, downloaded, batchTotal);
+  const rate = transfer?.bytes_per_second;
+  const remaining = estimate && !estimate.incomplete && rate && expectedBytes > downloaded
+    ? Math.ceil((expectedBytes - downloaded) / rate)
     : null;
   const total = estimate
     ? t(estimate.incomplete ? "workshop.backend.downloadKnownSizes" : "workshop.backend.downloadAbout")
-      .replace("{bytes}", formatBytes(Math.max(estimate.bytes, downloaded)))
+      .replace("{bytes}", formatBytes(expectedBytes))
     : t("workshop.backend.downloadSizeUnknown");
   return (
     <div>

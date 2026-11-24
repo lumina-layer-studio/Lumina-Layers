@@ -25,7 +25,6 @@ export class WorkshopProjectChannel {
   }>();
   private closeListeners = new Set<() => void>();
   private closed = false;
-  private probeSupported: boolean | undefined;
   private checkingLiveness: Promise<void> | null = null;
   constructor(readonly identity: WorkshopModuleIdentity, readonly schemas: readonly string[], private changed: () => void) {}
 
@@ -68,11 +67,11 @@ export class WorkshopProjectChannel {
     if (this.checkingLiveness) return this.checkingLiveness;
     // The v1 SDK serves project operations in order. A healthy capture or
     // restore already in flight has its own full response window.
-    if (this.pending.size || this.probeSupported === false) return;
-    // An empty token can never match a prepared restore. The v1 SDK replies
-    // to discard without calling the editor's capture, prepare or commit.
+    if (this.pending.size) return;
+    // An empty token can never match a prepared restore. Every v1 endpoint
+    // replies to discard without calling the editor's capture, prepare or commit.
     this.checkingLiveness = this.sendRequest("discard", { token: "" }, true)
-      .then((acknowledged) => { this.probeSupported = acknowledged === true; })
+      .then(() => undefined)
       .finally(() => { this.checkingLiveness = null; });
     return this.checkingLiveness;
   }
@@ -93,12 +92,6 @@ export class WorkshopProjectChannel {
     const requestId = crypto.randomUUID();
     const value = await new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
-        if (probe && this.probeSupported === undefined) {
-          // Older custom endpoints can ignore a discard of an unknown token.
-          this.pending.delete(requestId);
-          resolve(false);
-          return;
-        }
         connection.disconnect();
       }, probe ? PROJECT_PROBE_TIMEOUT_MS : PROJECT_REQUEST_TIMEOUT_MS);
       this.pending.set(requestId, { resolve, reject, timer, probe });

@@ -259,15 +259,19 @@ describe("live Workshop projects", () => {
     expect(useWorkshopProjectRuntime.getState().current).toBeNull();
   });
 
-  it("keeps an unverified v1 endpoint that ignores the probe usable", async () => {
+  it("catches an idle peer loss before the first save in 1.5 s", async () => {
+    const adapter = createWorkshopProjectAdapter();
     editor.probe.reply = "ignore";
     vi.useFakeTimers();
-    const first = editor.channel.capture();
-    await vi.advanceTimersByTimeAsync(1500);
-    await expect(first).resolves.toMatchObject({ schemaVersion: "fixture/v1" });
-    await expect(editor.channel.capture()).resolves.toMatchObject({ schemaVersion: "fixture/v1" });
+    const error = adapter.capture().catch((cause: unknown) => cause);
 
+    await vi.advanceTimersByTimeAsync(1499);
+    expect(editor.requests).toEqual([]);
     expect(useWorkshopProjectRuntime.getState().current).toBe(editor.channel);
+    await vi.advanceTimersByTimeAsync(1);
+
+    expect(visibleError(await error, "en")).toMatch(/reload.*sav/i);
+    expect(useWorkshopProjectRuntime.getState().current).toBeNull();
     expect(editor.probe.count).toBe(1);
   });
 

@@ -508,6 +508,43 @@ describe("Workshop backend management errors", () => {
     expect(within(row).getByRole("combobox")).toHaveValue("");
   });
 
+  it("follows the download task when an installed backend enables GPU acceleration", async () => {
+    const prepared = status({
+      authorization: "granted",
+      preparation: "prepared",
+      requires_unreviewed_confirmation: false,
+      variants: [{
+        id: "accel", name: { "zh-CN": "GPU 加速", "en-US": "GPU acceleration" },
+        description: { "zh-CN": "测试", "en-US": "Test" },
+        available: true, prepared: false, failure_code: null, dependencies: null,
+      }],
+    });
+    const backend = fakeBackend(prepared);
+    const task = prepareTask("running");
+    vi.mocked(backend.setAcceleration).mockResolvedValue({
+      ...prepared, acceleration: "accel", preparation_task_id: task.task_id,
+      download_estimate: { bytes: 4096, incomplete: false },
+    });
+    vi.mocked(backend.task).mockResolvedValue({
+      ...task, progress: {
+        completed: 4, total: 5, phase: "variant-download", downloaded_bytes: 1024,
+        download: {
+          source: "download.pytorch.org", file_name: "gpu.whl", file_index: 1, file_count: 1,
+          received_bytes: 1024, total_bytes: 4096, bytes_per_second: 1024, eta_seconds: 3,
+        },
+      },
+    });
+    renderPanel(fakeApi([backendModule()]), backend);
+    const row = await screen.findByTestId(`workshop-backend-${MODULE_ID}`);
+    fireEvent.change(within(row).getByRole("combobox"), { target: { value: "accel" } });
+
+    expect(await within(row).findByText(/下载加速运行库/)).toBeInTheDocument();
+    expect(within(row).getByText("本阶段已下载 1.0 KB / 4.0 KB")).toBeInTheDocument();
+    expect(within(row).getByText("全部下载约剩 3 秒")).toBeInTheDocument();
+    expect(backend.task).toHaveBeenCalledWith(MODULE_ID, task.task_id);
+    expect(within(row).getByRole("combobox")).toBeDisabled();
+  });
+
   it("keeps a refused deletion beside its item after the list refreshes", async () => {
     const backend = fakeBackend(status());
     vi.mocked(backend.deleteTaskData).mockRejectedValue(refused(409, "task-active"));

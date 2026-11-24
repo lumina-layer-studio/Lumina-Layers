@@ -3,14 +3,12 @@
 from __future__ import annotations
 
 
-# Host Workshop API. 1.1.0 adds optional module backends and 1.2.0 adds
-# host-confirmed material import and verified download sources; existing modules keep
-# negotiating 1.0.0.
-WORKSHOP_API_VERSION = "1.2.0"
+# Backend execution predates host-confirmed import and verified download sources.
 WORKSHOP_BACKEND_API_VERSION = "1.1.0"
 WORKSHOP_MATERIAL_IMPORT_API_VERSION = "1.2.0"
 WORKSHOP_MATERIAL_IMPORT_PERMISSION = "material.import"
 WORKSHOP_DOWNLOAD_SOURCES_API_VERSION = "1.2.0"
+WORKSHOP_API_VERSION = WORKSHOP_DOWNLOAD_SOURCES_API_VERSION
 WORKSHOP_MANIFEST_VERSION = 1
 WORKSHOP_BACKEND_MANIFEST_VERSION = 2
 

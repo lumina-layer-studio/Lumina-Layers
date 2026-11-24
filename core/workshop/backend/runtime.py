@@ -46,9 +46,11 @@ from .environments import EnvironmentManager, environment_key, environment_pytho
 from .locks import BackendLock, WheelSourcePolicy, current_platform_key, parse_backend_lock
 from .model_files import ModelFetcher, ModelManager
 from .preview import (
+    DependencyEstimate,
     MANAGED_PYTHON_DISK_ESTIMATE_BYTES,
     MANAGED_PYTHON_DOWNLOAD_ESTIMATE_BYTES,
     estimate_dependencies,
+    estimate_download_total,
     model_estimates,
 )
 from .process import BackendLaunch, BackendProcess, kill_recorded_process
@@ -200,12 +202,14 @@ class WorkshopBackendRuntime:
         self._process_factory = process_factory
         self._python_mirror = python_mirror
         self._wheel_sources = wheel_sources
+        self.store = ContentStore(self.root / "store")
         self._wheel_archives = WheelArchiveCache(self.root / "wheels") if track_downloads else None
         self._uv = (
             UvTool(
                 uv_executable,
                 cache_dir=self.root / "uv-cache",
                 python_install_dir=self.root / "python",
+                download_staging_dir=self.store.temporary_dir,
             )
             if uv_executable is not None
             else None
@@ -217,7 +221,6 @@ class WorkshopBackendRuntime:
             self._interpreters = ManagedInterpreterProvider(self._uv, mirror=python_mirror)
         else:
             self._interpreters = None
-        self.store = ContentStore(self.root / "store")
         self.environments = EnvironmentManager(
             self.root / "envs",
             uv=self._uv,
@@ -527,18 +530,20 @@ class WorkshopBackendRuntime:
         dependency: dict[str, Any] | None = None
         variants: list[dict[str, Any]] = []
         source_locks: list[BackendLock] = []
+        download_dependencies: list[DependencyEstimate] = []
+        acceleration = self.state.settings_for(module_id).acceleration
         package_users = self.environments.package_users()
         archives = self._wheel_archives
         archive_available = (
             (lambda wheel: archives.available(wheel, self._wheel_sources))
-            if archives is not None and not self._wheel_sources.offline
+            if archives is not None
             else None
         )
         if platform_supported and self._platform_key is not None:
             lock = self._lock_for(root, declaration.lock)
             source_locks.append(lock)
             key = environment_key(lock, platform_key=self._platform_key, python_version=declaration.python)
-            dependency = estimate_dependencies(
+            cpu_estimate = estimate_dependencies(
                 lock,
                 environment_key=key,
                 environment_exists=self.environments.get(key) is not None,
@@ -546,7 +551,9 @@ class WorkshopBackendRuntime:
                 platform_key=self._platform_key,
                 python_version=declaration.python,
                 archive_available=archive_available,
-            ).as_json()
+            )
+            dependency = cpu_estimate.as_json()
+            download_dependencies.append(cpu_estimate)
             for variant in declaration.variants:
                 available = self._platform_key in variant.platforms
                 estimate = None
@@ -558,7 +565,7 @@ class WorkshopBackendRuntime:
                         platform_key=self._platform_key,
                         python_version=declaration.python,
                     )
-                    estimate = estimate_dependencies(
+                    variant_estimate = estimate_dependencies(
                         variant_lock,
                         environment_key=variant_key,
                         environment_exists=self.environments.get(variant_key) is not None,
@@ -566,7 +573,10 @@ class WorkshopBackendRuntime:
                         platform_key=self._platform_key,
                         python_version=declaration.python,
                         archive_available=archive_available,
-                    ).as_json()
+                    )
+                    estimate = variant_estimate.as_json()
+                    if acceleration == variant.id:
+                        download_dependencies.append(variant_estimate)
                 variants.append(
                     {
                         "id": variant.id,
@@ -584,6 +594,7 @@ class WorkshopBackendRuntime:
                 item.python_version == declaration.python for item in self._interpreters.installed()
             )
         present_models = {model.sha256 for model in declaration.download_files if self.store.has(model.sha256)}
+        interpreter_bytes = MANAGED_PYTHON_DOWNLOAD_ESTIMATE_BYTES if interpreter_needed else 0
         preparing = self._active_preparation(module_id, version)
         with self._lock:
             supervisor = self._supervisors.get(module_id)
@@ -601,7 +612,7 @@ class WorkshopBackendRuntime:
             "failure_code": record.failure_code,
             "preparation_task_id": preparing,
             "python": declaration.python,
-            "interpreter_download_bytes": MANAGED_PYTHON_DOWNLOAD_ESTIMATE_BYTES if interpreter_needed else 0,
+            "interpreter_download_bytes": interpreter_bytes,
             "interpreter_disk_bytes": MANAGED_PYTHON_DISK_ESTIMATE_BYTES if interpreter_needed else 0,
             "capabilities": [
                 {
@@ -615,9 +626,12 @@ class WorkshopBackendRuntime:
             "artifacts": model_estimates(declaration.artifacts or (), present_models),
             "download_sources": self._download_options(declaration, source_locks),
             "download_preferences": record.download_preferences or DownloadPreferences().model_dump(),
+            "download_estimate": estimate_download_total(
+                download_dependencies, declaration.download_files, present_models, interpreter_bytes,
+            ),
             "dependencies": dependency,
             "variants": variants,
-            "acceleration": self.state.settings_for(module_id).acceleration,
+            "acceleration": acceleration,
             "footprint": record.footprint.model_dump(mode="json") if record.footprint else None,
             "runtime": supervisor.snapshot() if supervisor is not None else {"state": "stopped", "pid": None, "version": None, "variant": None, "current_task_id": None, "queued": 0, "last_failure": None},
         }
@@ -780,7 +794,7 @@ class WorkshopBackendRuntime:
         advance(wheel_step, install_phase, None)
         prepare_lock = None
         archives = self._wheel_archives
-        if archives is not None and not self._wheel_sources.offline:
+        if archives is not None:
             wheel_mirrors = (declared.wheels or {}) if declared is not None else {}
 
             def prepare_lock() -> tuple[str, tuple[str, ...]]:
@@ -1800,6 +1814,7 @@ class WorkshopBackendRuntime:
             "environments": environments,
             "interpreters": interpreters,
             "shared_store": {"objects": objects, "bytes": object_bytes},
+            "wheel_cache": self._wheel_archives.usage() if self._wheel_archives is not None else {"files": 0, "bytes": 0},
             # Views that are full copies because the volume lacks hard links.
             "model_copies": {"files": copy_files, "bytes": copy_bytes},
             "models": [

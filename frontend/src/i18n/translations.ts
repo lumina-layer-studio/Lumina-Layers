@@ -9388,10 +9388,6 @@ export const translations: Record<string, Record<"zh" | "en", string>> = {
     zh: "访问任务文件夹以外的文件",
     en: "Files outside its task folder",
   },
-  "workshop.backend.declarationNotice": {
-    zh: "后端在本机运行，权限与你的账户相同。",
-    en: "The backend runs on this computer with the same permissions as your account.",
-  },
   "workshop.backend.footprint": {
     zh: "下载与磁盘占用",
     en: "Download and disk space",
@@ -9532,9 +9528,37 @@ export const translations: Record<string, Record<"zh" | "en", string>> = {
     zh: "约 {bytes}",
     en: "about {bytes}",
   },
-  "workshop.backend.downloadAtLeast": {
-    zh: "至少 {bytes}",
-    en: "at least {bytes}",
+  "workshop.backend.downloadKnownSizes": {
+    zh: "已知部分约 {bytes}",
+    en: "about {bytes} with known sizes",
+  },
+  "workshop.backend.downloadOverallEtaSeconds": {
+    zh: "全部下载约剩 {count} 秒",
+    en: "About {count} sec for all downloads",
+  },
+  "workshop.backend.downloadOverallEtaMinutes": {
+    zh: "全部下载约剩 {count} 分钟",
+    en: "About {count} min for all downloads",
+  },
+  "workshop.manager.archive.resolving": {
+    zh: "准备扩展包",
+    en: "Preparing the extension package",
+  },
+  "workshop.manager.archive.downloading": {
+    zh: "下载扩展包",
+    en: "Downloading the extension package",
+  },
+  "workshop.manager.archive.verifying": {
+    zh: "校验扩展包",
+    en: "Verifying the extension package",
+  },
+  "workshop.manager.archive.installing": {
+    zh: "安装扩展包",
+    en: "Installing the extension package",
+  },
+  "workshop.storage.wheelCache": {
+    zh: "已校验的运行库下载缓存 {count} 个文件，共 {bytes}",
+    en: "Verified library download cache · {count} files, {bytes}",
   },
   "workshop.backend.downloadSizeUnknown": {
     zh: "总量未知",

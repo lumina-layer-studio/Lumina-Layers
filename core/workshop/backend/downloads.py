@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import time
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
@@ -20,7 +21,8 @@ if TYPE_CHECKING:
     from .tooling import CancelToken
 
 
-SourceId = Annotated[str, Field(pattern=r"^[a-z0-9.:][a-z0-9.:-]{0,252}$")]
+_SOURCE_ID_PATTERN = r"^[a-z0-9.:][a-z0-9.:-]{0,252}$"
+SourceId = Annotated[str, Field(pattern=_SOURCE_ID_PATTERN)]
 _SOURCE_ALIASES = {
     "www.modelscope.cn": "modelscope.cn",
     "modelscope.ai": "modelscope.cn",
@@ -40,12 +42,17 @@ class DownloadPreferences(StrictFrozenModel):
 
 
 def source_id(url: str) -> str:
-    host = (urlsplit(url).hostname or "").lower()
+    try:
+        host = httpx.URL(url).raw_host.decode("ascii").lower().rstrip(".")
+    except (httpx.InvalidURL, UnicodeError):
+        return ""
+    if re.fullmatch(_SOURCE_ID_PATTERN, host) is None:
+        return ""
     return _SOURCE_ALIASES.get(host, host)
 
 
 def source_options(urls: Iterable[str]) -> list[str]:
-    return sorted({source_id(url) for url in urls if source_id(url)})
+    return sorted({source_id(url) for url in urls} - {""})
 
 
 def ordered_sources(primary: str, alternatives: Iterable[str], preferred: str) -> tuple[str, ...]:
@@ -185,7 +192,7 @@ def download_https(
                     progress(0, total)
                     received = 0
                     with destination.open("xb") as sink:
-                        for chunk in response.iter_bytes(1024 * 1024):
+                        for chunk in response.iter_bytes():
                             if cancel is not None:
                                 cancel.raise_if_cancelled()
                             received += len(chunk)
@@ -197,4 +204,6 @@ def download_https(
                     return
             raise WorkshopBackendError("download-failed", "The download server redirected too many times.")
     except (httpx.HTTPError, httpx.InvalidURL, OSError, ValueError) as exc:
+        if cancel is not None:
+            cancel.raise_if_cancelled()
         raise WorkshopBackendError("download-failed", "The file could not be downloaded.") from exc

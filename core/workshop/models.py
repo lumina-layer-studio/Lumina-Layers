@@ -206,7 +206,7 @@ class _WorkshopManifestBase(StrictFrozenModel):
                 "material.import requires workshopApi.min >= "
                 f"{WORKSHOP_MATERIAL_IMPORT_API_VERSION}"
             )
-        if any(permission.reason_i18n is not None for permission in self.permissions):
+        if any("reason_i18n" in permission.model_fields_set for permission in self.permissions):
             if compare_semver(self.workshop_api.minimum, WORKSHOP_DOWNLOAD_SOURCES_API_VERSION) < 0:
                 raise ValueError("localized permission reasons require workshopApi.min >= 1.2.0")
         return self
@@ -505,10 +505,9 @@ class WorkshopManifestV2(_WorkshopManifestBase):
         # backend module must not claim compatibility with API 1.0.x hosts.
         backend = self.backend
         has_new_fields = (
-            backend.download_sources is not None
-            or backend.artifacts is not None
-            or any(item.mirrors is not None for item in backend.models)
-            or any(item.reason_i18n is not None for item in backend.capabilities)
+            bool({"download_sources", "artifacts"} & backend.model_fields_set)
+            or any("mirrors" in item.model_fields_set for item in backend.models)
+            or any("reason_i18n" in item.model_fields_set for item in backend.capabilities)
         )
         minimum = WORKSHOP_DOWNLOAD_SOURCES_API_VERSION if has_new_fields else WORKSHOP_BACKEND_API_VERSION
         if compare_semver(self.workshop_api.minimum, minimum) < 0:

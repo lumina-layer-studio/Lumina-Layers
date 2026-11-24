@@ -121,6 +121,7 @@ class WorkshopRevocationResponse(WorkshopHttpModel):
 
 class WorkshopCatalogVersionResponse(WorkshopHttpModel):
     version: str
+    workshop_api_min: str
     state: Literal["active", "deprecated", "blocked"]
     permissions: tuple[WorkshopPermissionResponse, ...]
     revocation: WorkshopRevocationResponse | None

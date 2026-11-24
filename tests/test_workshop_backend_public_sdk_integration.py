@@ -213,27 +213,32 @@ def test_download_selection_verifies_mirrors_and_reuses_bytes_across_locks(
     def installer() -> WorkshopInstaller:
         return WorkshopInstaller(data_dir=data_dir, after_extract=runtime.record_package)
 
-    runtime = WorkshopBackendRuntime(
-        data_dir=data_dir,
-        installer_factory=installer,
-        uv_executable=locate_uv_executable(),
-        model_fetcher=model_files.HttpsModelFetcher(),
-        review_context=lambda: ReviewContext(registry=None, attestations=None),
-        external_python=Path(sys._base_executable),
-        track_downloads=True,
-    )
+    def start_runtime(*, offline: bool = False) -> WorkshopBackendRuntime:
+        return WorkshopBackendRuntime(
+            data_dir=data_dir,
+            installer_factory=installer,
+            uv_executable=locate_uv_executable(),
+            model_fetcher=model_files.HttpsModelFetcher(),
+            review_context=lambda: ReviewContext(registry=None, attestations=None),
+            external_python=Path(sys._base_executable),
+            wheel_sources=WheelSourcePolicy(offline=offline),
+            track_downloads=True,
+        )
+
+    runtime = start_runtime()
 
     def install(module_id, lock, expected_bytes):
         manifest = backend_manifest(module_id, "1.0.0")
         manifest["workshopApi"]["min"] = "1.2.0"
         manifest["backend"].update(
-            downloadSources={"wheels": {shared.sha256: [mirror]}},
             artifacts=[{
                 "id": "labels", "fileName": "labels.json", "url": labels_origin,
                 "mirrors": [labels_mirror], "license": "CC0-1.0", "bytes": len(labels),
                 "sha256": hashlib.sha256(labels).hexdigest(),
             }],
         )
+        if shared in lock:
+            manifest["backend"]["downloadSources"] = {"wheels": {shared.sha256: [mirror]}}
         package = write_backend_package(
             tmp_path / module_id, module_id=module_id, version="1.0.0",
             lock=lock_text(lock), manifest=manifest,
@@ -267,5 +272,11 @@ def test_download_selection_verifies_mirrors_and_reuses_bytes_across_locks(
         assert done.status == "succeeded", done.error
         output, _entry = runtime.output_file(first_module, done.task_id, "labels")
         assert output.read_bytes() == labels
+        runtime.shutdown()
+
+        runtime = start_runtime(offline=True)
+        install("fixture.download-three", [extra], 0)
+        assert fetched == [mirror, shared_origin, labels_mirror, extra_origin]
+        assert runtime.storage_overview()["wheel_cache"] == {"files": 2, "bytes": shared.size + extra.size}
     finally:
         runtime.shutdown()

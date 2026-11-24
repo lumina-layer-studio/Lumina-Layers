@@ -212,11 +212,13 @@ class UvTool:
         *,
         cache_dir: Path,
         python_install_dir: Path,
+        download_staging_dir: Path | None = None,
         timeout_seconds: float = _UV_COMMAND_TIMEOUT_SECONDS,
     ) -> None:
         self.executable = Path(executable)
         self.cache_dir = Path(cache_dir)
         self.python_install_dir = Path(python_install_dir)
+        self._download_staging_dir = download_staging_dir or self.cache_dir
         self.timeout_seconds = timeout_seconds
 
     def environment(self) -> dict[str, str]:
@@ -401,12 +403,12 @@ class UvTool:
                 primary, configured = configured, primary
             candidates = (configured, *candidates)
         urls = ordered_sources(primary, candidates, preferred)
-        self.python_install_dir.parent.mkdir(parents=True, exist_ok=True)
+        self._download_staging_dir.mkdir(parents=True, exist_ok=True)
         last_error: WorkshopBackendError | None = None
         for url in urls:
             batch = DownloadBatch((None,), progress)
             try:
-                with TemporaryDirectory(prefix="python-download-", dir=self.python_install_dir.parent) as directory:
+                with TemporaryDirectory(prefix="python-download-", dir=self._download_staging_dir) as directory:
                     local_mirror = Path(directory)
                     archive = local_mirror / revision / archive_name
                     archive.parent.mkdir()

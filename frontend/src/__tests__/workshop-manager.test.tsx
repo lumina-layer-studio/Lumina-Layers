@@ -666,6 +666,7 @@ describe("Workshop installable module manager", () => {
       expect(api.installGithub).toHaveBeenCalledWith(
         "https://github.com/example/fixture",
         "1.0.0",
+        expect.any(Function),
       ),
     );
   });
@@ -911,6 +912,54 @@ describe("Workshop installable module manager", () => {
     );
     expect(materialLibrary.importGradientCardMaterials).toHaveBeenCalledTimes(1);
     expect(materialLibrary.listGradientCardMaterials).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows archive transfer progress and then asks for the staged localized update permission", async () => {
+    const api = fakeApi([installed()]);
+    const published = catalog();
+    published.modules[0].versions[0].workshop_api_min = "1.2.0";
+    published.modules[0].versions[0].permissions.push({ name: "image.pick", reason: "Choose a pattern." });
+    vi.mocked(api.fetchCatalog).mockResolvedValue(published);
+    const updatedVersion = version("1.1.0", ["project.storage"]);
+    updatedVersion.permissions.push({
+      name: "image.pick",
+      reason: "Choose a pattern.",
+      reason_i18n: { zh_cn: "选择用于编辑的图案", en_us: "Choose a pattern." },
+    });
+    const staged = installed({
+      candidate_version: "1.1.0",
+      versions: ["1.0.0", "1.1.0"],
+      version_details: [version("1.0.0"), updatedVersion],
+    });
+    let finishInstall: (() => void) | undefined;
+    vi.mocked(api.installRegistry).mockImplementation((_id, _version, report) => {
+      report?.({
+        phase: "downloading",
+        download: {
+          source: "github.com", file_name: "fixture.hello-1.1.0.lumina-workshop",
+          file_index: 1, file_count: 1, received_bytes: 1024, total_bytes: 4096,
+          bytes_per_second: 1024, eta_seconds: 3,
+        },
+      });
+      return new Promise((resolve) => {
+        finishInstall = () => resolve({ module: staged });
+      });
+    });
+    renderManager(api, fakeStorage(), "desktop-secure");
+
+    fireEvent.click(await screen.findByRole("button", { name: "更新" }));
+    expect(await screen.findByText("下载扩展包")).toBeInTheDocument();
+    expect(screen.getByText("本阶段已下载 1.0 KB / 4.0 KB")).toBeInTheDocument();
+    expect(screen.getByText("1.0 KB/秒")).toBeInTheDocument();
+    expect(screen.getByText("本阶段约剩 3 秒")).toBeInTheDocument();
+    expect(screen.queryByRole("dialog")).toBeNull();
+
+    finishInstall?.();
+    const dialog = await screen.findByRole("dialog", { name: "确认模块权限" });
+    expect(within(dialog).getByText("选择用于编辑的图案")).toBeInTheDocument();
+    expect(within(dialog).queryByText("Choose a pattern.")).toBeNull();
+    expect(api.activateModule).not.toHaveBeenCalled();
+    expect(screen.queryByLabelText("普通模块上传与校准页")).toBeNull();
   });
 
   it("keeps official uninstall tombstones and offers offline seed restore", async () => {

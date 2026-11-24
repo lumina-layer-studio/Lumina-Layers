@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import type {
   WorkshopBackendApi,
   WorkshopBackendStatus,
+  WorkshopBackendTaskResponse,
 } from "../../api/workshop";
 import Button from "../../components/ui/Button";
 import {
@@ -14,10 +15,11 @@ import {
 import { useI18n } from "../../i18n/context";
 import { backendActionErrorKey } from "./backendErrors";
 import { formatBytes } from "./backendSetup";
+import { PreparationProgress } from "./PreparationProgress";
 
 const POLL_INTERVAL_MS = 4_000;
 
-type BackendAction = "stop" | "acceleration";
+type BackendAction = "stop" | "acceleration" | "cancel-preparation";
 
 interface ActionError {
   action: BackendAction;
@@ -63,21 +65,55 @@ export function BackendStatusRow({
   const [refreshFailed, setRefreshFailed] = useState(false);
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<ActionError | null>(null);
+  const [preparation, setPreparation] = useState<WorkshopBackendTaskResponse | null>(null);
+  const preparationTaskId = status?.preparation_task_id ?? null;
+
+  const updateStatus = useCallback((next: WorkshopBackendStatus) => {
+    setStatus((current) => (
+      current && next.preparation_task_id !== null && current.preparation_task_id === next.preparation_task_id
+        ? { ...next, download_estimate: current.download_estimate }
+        : next
+    ));
+  }, []);
 
   const refresh = useCallback(async () => {
     try {
-      setStatus(await api.status(moduleId, version));
+      updateStatus(await api.status(moduleId, version));
       setRefreshFailed(false);
     } catch {
       setRefreshFailed(true);
     }
-  }, [api, moduleId, version]);
+  }, [api, moduleId, updateStatus, version]);
 
   useEffect(() => {
     void refresh();
     const timer = setInterval(() => void refresh(), POLL_INTERVAL_MS);
     return () => clearInterval(timer);
   }, [refresh, refreshKey]);
+
+  useEffect(() => {
+    if (preparationTaskId === null) return;
+    let disposed = false;
+    let timer: ReturnType<typeof setTimeout>;
+    const followPreparation = async () => {
+      try {
+        const task = await api.task(moduleId, preparationTaskId);
+        if (disposed) return;
+        setPreparation(task);
+        if (task.status !== "queued" && task.status !== "running") {
+          await refresh();
+        }
+      } catch {
+        // A transient polling failure leaves the last observation visible.
+      }
+      if (!disposed) timer = setTimeout(() => void followPreparation(), 500);
+    };
+    void followPreparation();
+    return () => {
+      disposed = true;
+      clearTimeout(timer);
+    };
+  }, [api, moduleId, preparationTaskId, refresh]);
 
   const settle = (action: BackendAction) =>
     setActionError((current) => (current?.action === action ? null : current));
@@ -103,6 +139,7 @@ export function BackendStatusRow({
   // A failed stop is resolved once the backend no longer runs.
   const stopError = actionError?.action === "stop" && running ? actionError : null;
   const accelerationError = actionError?.action === "acceleration" ? actionError : null;
+  const cancelError = actionError?.action === "cancel-preparation" && preparationTaskId ? actionError : null;
 
   return (
     <div
@@ -110,9 +147,11 @@ export function BackendStatusRow({
       className={cx(wellPadClass, "mt-3 flex flex-col gap-2 text-xs text-slate-600 dark:text-slate-300")}
     >
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <span role="status" className="font-medium text-slate-800 dark:text-slate-100">
-          {t(`workshop.backend.state.${key}`)}
-        </span>
+        {preparationTaskId === null ? (
+          <span role="status" className="font-medium text-slate-800 dark:text-slate-100">
+            {t(`workshop.backend.state.${key}`)}
+          </span>
+        ) : null}
         <div className="flex gap-2">
           {key === "unprepared" || key === "prepareFailed" || key === "authorizationRequired" ? (
             <Button
@@ -141,8 +180,35 @@ export function BackendStatusRow({
               }}
             />
           ) : null}
+          {preparationTaskId !== null ? (
+            <Button
+              label={t("workshop.backend.cancelPreparation")}
+              size="sm"
+              variant="secondary"
+              loading={busy}
+              onClick={() => {
+                setBusy(true);
+                void api.cancel(moduleId, preparationTaskId)
+                  .then(() => settle("cancel-preparation"))
+                  .catch(fail("cancel-preparation"))
+                  .finally(() => {
+                    setBusy(false);
+                    void refresh();
+                  });
+              }}
+            />
+          ) : null}
         </div>
       </div>
+      {preparationTaskId !== null ? (
+        <PreparationProgress
+          progress={preparation?.task_id === preparationTaskId ? preparation.progress : null}
+          estimate={status.download_estimate}
+        />
+      ) : null}
+      {cancelError ? (
+        <StatusBanner tone="error" role="alert">{t(cancelError.reasonKey)}</StatusBanner>
+      ) : null}
       {status.review_level === "unreviewed" ? (
         <StatusBanner tone="error">{t("workshop.backend.unreviewedRisk")}</StatusBanner>
       ) : null}
@@ -173,14 +239,14 @@ export function BackendStatusRow({
           <span className="w-40">
             <select
               value={status.acceleration ?? ""}
-              disabled={busy}
+              disabled={busy || preparationTaskId !== null}
               onChange={(event) => {
                 const value = event.target.value === "" ? null : event.target.value;
                 setBusy(true);
                 void api
                   .setAcceleration(moduleId, value)
                   .then((next) => {
-                    setStatus(next);
+                    updateStatus(next);
                     settle("acceleration");
                   })
                   .catch(fail("acceleration"))

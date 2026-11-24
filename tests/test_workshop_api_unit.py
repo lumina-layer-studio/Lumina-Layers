@@ -4,7 +4,11 @@ import base64
 import hashlib
 import json
 import logging
+import threading
+import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from uuid import uuid4
 from zipfile import ZIP_DEFLATED, ZipFile
 
 import httpx
@@ -33,6 +37,7 @@ def write_package(
     version: str,
     *,
     module_id: str = "fixture.hello",
+    localized_permissions: bool = False,
 ) -> Path:
     archive = tmp_path / f"{module_id}-{version}.lumina-workshop"
     manifest = {
@@ -65,6 +70,11 @@ def write_package(
             }
         ],
     }
+    if localized_permissions:
+        manifest["workshopApi"]["min"] = "1.2.0"
+        manifest["permissions"][0]["reasonI18n"] = {
+            "zh-CN": "保存测试工程。", "en-US": "Save fixture projects.",
+        }
     with ZipFile(archive, "w", compression=ZIP_DEFLATED) as output:
         output.writestr(
             "manifest.json",
@@ -134,6 +144,7 @@ def registry_index_for(
     official: bool = False,
 ):
     asset_name = f"{module_id}-{version}.lumina-workshop"
+    inspected = inspect_workshop_package(archive)
     revocation = None
     if state == "blocked":
         revocation = {
@@ -174,11 +185,8 @@ def registry_index_for(
                         "sha256": hashlib.sha256(
                             archive.read_bytes()
                         ).hexdigest(),
-                        "manifestSha256": inspect_workshop_package(archive).manifest_sha256,
-                        "workshopApi": {
-                            "min": "1.0.0",
-                            "maxExclusive": "2.0.0",
-                        },
+                        "manifestSha256": inspected.manifest_sha256,
+                        "workshopApi": inspected.manifest.workshop_api.model_dump(by_alias=True),
                         "luminaVersion": {
                             "min": "1.0.0",
                         },
@@ -476,11 +484,16 @@ def test_local_install_creates_a_candidate_without_exposing_paths(
     assert str(installer.data_dir) not in response.text
 
 
+@pytest.mark.parametrize("localized_permissions", [False, True])
 def test_registry_install_uses_exact_verified_candidate(
     api_bundle,
     monkeypatch: pytest.MonkeyPatch,
+    localized_permissions: bool,
 ) -> None:
-    client, _installer, archive, _registry = api_bundle
+    client, _installer, archive, registry = api_bundle
+    if localized_permissions:
+        archive = write_package(archive.parent, "1.0.0", localized_permissions=True)
+        registry.index = registry_index_for(archive)
     monkeypatch.setattr(
         workshop_router,
         "download_registry_package",
@@ -498,6 +511,11 @@ def test_registry_install_uses_exact_verified_candidate(
     assert response.status_code == 200
     assert response.json()["module"]["source"] == "registry"
     assert response.json()["module"]["candidate_version"] == "1.0.0"
+    permission = response.json()["module"]["version_details"][0]["permissions"][0]
+    if localized_permissions:
+        assert permission["reason_i18n"] == {"zh_cn": "保存测试工程。", "en_us": "Save fixture projects."}
+    else:
+        assert "reason_i18n" not in permission
 
 
 def test_registry_install_request_cannot_declare_official_identity(
@@ -515,6 +533,57 @@ def test_registry_install_request_cannot_declare_official_identity(
     )
 
     assert response.status_code == 422
+
+
+def test_registry_archive_status_streams_received_bytes_while_install_request_runs(
+    api_bundle, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client, _installer, archive, _registry = api_bundle
+    data = archive.read_bytes()
+    received = len(data) // 2
+    first_chunk = threading.Event()
+    allow_finish = threading.Event()
+    progress_id = uuid4()
+    progress_path = f"/api/workshop/v1/install/progress/{progress_id}"
+
+    class PausedStream(httpx.SyncByteStream):
+        def __iter__(self):
+            time.sleep(0.3)
+            yield data[:received]
+            first_chunk.set()
+            assert allow_finish.wait(10)
+            yield data[received:]
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, stream=PausedStream(), request=request)
+
+    monkeypatch.setattr(release_client, "TEMP_DIR", str(tmp_path / "downloads"))
+    monkeypatch.setattr(release_client.WorkshopMirror, "from_environment", classmethod(lambda _cls: None))
+    monkeypatch.setattr(
+        release_client, "_new_http_client",
+        lambda: httpx.Client(transport=httpx.MockTransport(handle)),
+    )
+
+    with ThreadPoolExecutor(max_workers=1) as compute:
+        install = compute.submit(
+            client.post, "/api/workshop/v1/install/registry",
+            json={"module_id": "fixture.hello", "version": "1.0.0"},
+            params={"progress_id": str(progress_id)},
+        )
+        try:
+            assert first_chunk.wait(8)
+            status = client.get(progress_path)
+            assert status.headers["Cache-Control"] == "no-store"
+            progress = status.json()
+            assert progress["phase"] == "downloading"
+            assert progress["download"]["received_bytes"] == received
+            assert progress["download"]["total_bytes"] == len(data)
+            assert progress["download"]["bytes_per_second"] > 0
+            assert progress["download"]["eta_seconds"] is not None
+        finally:
+            allow_finish.set()
+        assert install.result(timeout=10).status_code == 200
+    assert client.get(progress_path).json() is None
 
 
 @pytest.mark.parametrize("timeout_type", [httpx.ReadTimeout, httpx.ConnectTimeout])

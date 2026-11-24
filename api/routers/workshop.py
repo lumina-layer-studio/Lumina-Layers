@@ -12,6 +12,7 @@ import time
 from pathlib import Path
 from typing import Annotated, NoReturn
 from urllib.parse import quote
+from uuid import UUID
 
 import httpx
 from fastapi import APIRouter, File, Header, HTTPException, UploadFile
@@ -43,6 +44,7 @@ from api.schemas.workshop import (
 )
 from api.structured_logging import get_logger
 from api.routers.workshop_backend import raise_backend_error
+from api.workshop_install_progress import TrackArchiveInstall, get_archive_progress
 from api.workshop_runtime_service import (
     create_workshop_installer,
     existing_workshop_backend_runtime,
@@ -71,6 +73,7 @@ from core.workshop.constants import (
     WORKSHOP_API_VERSION,
 )
 from core.workshop.errors import WorkshopBackendError
+from core.workshop.install_progress import ArchiveInstallProgress, ArchiveInstallTracker
 from core.workshop.models import (
     RegistryIndex,
     RegistryModule,
@@ -402,6 +405,7 @@ def _catalog_module_response(
         versions.append(
             WorkshopCatalogVersionResponse(
                 version=version.version,
+                workshop_api_min=version.workshop_api.minimum,
                 state=version.state,
                 permissions=tuple(
                     WorkshopPermissionResponse(
@@ -530,6 +534,7 @@ def workshop_modules() -> WorkshopModulesResponse:
 )
 async def workshop_install_local(
     archive: Annotated[UploadFile, File()],
+    progress: TrackArchiveInstall = None,
 ) -> WorkshopModuleMutationResponse:
     """Install a validated local package as an inactive candidate.
 
@@ -553,6 +558,8 @@ async def workshop_install_local(
             suffix=".lumina-workshop",
             max_bytes=MAX_PACKAGE_BYTES,
         )
+        if progress is not None:
+            progress.stage("installing")
         state = get_workshop_installer().install_candidate(
             archive_path,
             source="local",
@@ -606,15 +613,24 @@ _REGISTRY_DOWNLOAD_MAX_ATTEMPTS = 2
 _REGISTRY_DOWNLOAD_RETRY_DELAY_SECONDS = 0.25
 
 
+@router.get("/install/progress/{progress_id}")
+def workshop_archive_install_progress(progress_id: UUID, response: Response) -> ArchiveInstallProgress | None:
+    response.headers["Cache-Control"] = "no-store"
+    return get_archive_progress(progress_id)
+
+
 def _download_registry_package_with_retry(
     candidate: RegistryVersion,
     *,
     module_id: str,
+    progress: ArchiveInstallTracker | None = None,
 ) -> Path:
     """Retry one idempotent download after a timeout or remote disconnect."""
 
     for attempt in range(1, _REGISTRY_DOWNLOAD_MAX_ATTEMPTS + 1):
         try:
+            if progress is not None:
+                return download_registry_package(candidate, progress=progress)
             return download_registry_package(candidate)
         except (
             httpx.ConnectTimeout,
@@ -650,6 +666,7 @@ def _download_registry_package_with_retry(
 )
 def workshop_install_registry(
     payload: RegistryInstallRequest,
+    progress: TrackArchiveInstall = None,
 ) -> WorkshopModuleMutationResponse:
     """Install one exact candidate selected from a trusted Registry.
 
@@ -681,7 +698,10 @@ def workshop_install_registry(
         archive_path = _download_registry_package_with_retry(
             candidate,
             module_id=payload.module_id,
+            progress=progress,
         )
+        if progress is not None:
+            progress.stage("installing")
         state = get_workshop_installer().install_candidate(
             archive_path,
             source="registry",
@@ -782,6 +802,7 @@ def workshop_install_registry(
 )
 def workshop_install_github(
     payload: GithubInstallRequest,
+    progress: TrackArchiveInstall = None,
 ) -> WorkshopModuleMutationResponse:
     """Install a standard package from one exact GitHub Release.
 
@@ -790,10 +811,11 @@ def workshop_install_github(
 
     archive_path: Path | None = None
     try:
-        archive_path = resolve_github_release_package(
-            payload.repository_url,
-            payload.version,
-        )
+        if progress is not None:
+            archive_path = resolve_github_release_package(payload.repository_url, payload.version, progress=progress)
+            progress.stage("installing")
+        else:
+            archive_path = resolve_github_release_package(payload.repository_url, payload.version)
         state = get_workshop_installer().install_candidate(
             archive_path,
             source="github",

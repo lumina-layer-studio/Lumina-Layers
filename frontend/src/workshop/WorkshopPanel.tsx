@@ -11,8 +11,10 @@ import {
   workshopApi,
   workshopBackendFailure as workshopRequestFailure,
   workshopBackendApi,
+  type ArchiveProgressListener,
   type InstalledWorkshopModule,
   type InstalledWorkshopVersion,
+  type WorkshopArchiveInstallProgress,
   type WorkshopBackendApi,
   type WorkshopBackendProgress,
   type WorkshopBackendStatus,
@@ -20,7 +22,9 @@ import {
   type WorkshopCatalogModule,
   type WorkshopCatalogVersion,
   type WorkshopDownloadPreferences,
+  type WorkshopPermission,
   type WorkshopManagerApi,
+  type WorkshopMutation,
   type WorkshopUninstallReport,
 } from "../api/workshop";
 import {
@@ -36,6 +40,7 @@ import { backendActionErrorKey } from "./backend/backendErrors";
 import { BackendStatusRow } from "./backend/BackendStatusRow";
 import { StorageOverview } from "./backend/StorageOverview";
 import { UninstallReportDialog } from "./backend/UninstallReportDialog";
+import { DownloadProgressDetails } from "./DownloadProgressDetails";
 import Button from "../components/ui/Button";
 import { retainWorkshopProject } from "../project/workshopRuntime";
 import CloseButton from "../components/ui/CloseButton";
@@ -634,6 +639,8 @@ export function WorkshopPanel({
   const [busyModuleId, setBusyModuleId] = useState<string | null>(
     null,
   );
+  const nextInstallId = useRef(0);
+  const [archiveInstalls, setArchiveInstalls] = useState<Array<WorkshopArchiveInstallProgress & { id: number }>>([]);
   const [detailsUrl, setDetailsUrl] = useState<string | null>(null);
   const [permissionPrompt, setPermissionPrompt] =
     useState<PermissionPrompt | null>(null);
@@ -1096,43 +1103,8 @@ export function WorkshopPanel({
     [applyMutation, t],
   );
 
-  const installUpdate = useCallback(
-    async (
-      module: InstalledWorkshopModule,
-      version: WorkshopCatalogVersion,
-    ) => {
-      const installed = await runModuleMutation(
-        module.module_id,
-        () =>
-          api.installRegistry(module.module_id, version.version),
-      );
-      if (
-        installed?.candidate_version &&
-        canOpenModule(
-          installed,
-          runtimeMode,
-          catalogById.get(installed.module_id),
-          installed.candidate_version,
-        )
-      ) {
-        const candidateVersion = installed.candidate_version;
-        void ensureBackendReady(installed, candidateVersion, () =>
-          openModule(installed.module_id, candidateVersion),
-        );
-      }
-    },
-    [
-      api,
-      catalogById,
-      ensureBackendReady,
-      openModule,
-      runModuleMutation,
-      runtimeMode,
-    ],
-  );
-
   const requestStagedCandidate = useCallback(
-    (module: InstalledWorkshopModule) => {
+    (module: InstalledWorkshopModule, alreadyApproved: ReadonlyArray<WorkshopPermission["name"]> = []) => {
       const candidateVersion = module.candidate_version;
       if (
         candidateVersion === null ||
@@ -1157,7 +1129,7 @@ export function WorkshopPanel({
         )?.permissions.map((permission) => permission.name) ?? [],
       );
       const added = candidate.permissions.filter(
-        (permission) => !currentPermissions.has(permission.name),
+        (permission) => !currentPermissions.has(permission.name) && !alreadyApproved.includes(permission.name),
       );
       const confirm = () =>
         void ensureBackendReady(module, candidateVersion, () =>
@@ -1176,11 +1148,46 @@ export function WorkshopPanel({
     [catalogById, ensureBackendReady, openModule, runtimeMode, t],
   );
 
+  const runArchiveInstall = useCallback(async (
+    moduleId: string,
+    install: (listener: ArchiveProgressListener) => Promise<WorkshopMutation>,
+  ) => {
+    const id = ++nextInstallId.current;
+    setArchiveInstalls((current) => [...current, { id, phase: "resolving" }]);
+    try {
+      return await runModuleMutation(moduleId, () => install((progress) => {
+        setArchiveInstalls((current) => current.map((item) => item.id === id ? { ...progress, id } : item));
+      }));
+    } finally {
+      setArchiveInstalls((current) => current.filter((item) => item.id !== id));
+    }
+  }, [runModuleMutation]);
+
+  const installUpdate = useCallback(async (
+    module: InstalledWorkshopModule,
+    version: WorkshopCatalogVersion,
+    alreadyApproved?: ReadonlyArray<WorkshopPermission["name"]>,
+  ) => {
+    const installed = await runArchiveInstall(
+      module.module_id,
+      (listener) => api.installRegistry(module.module_id, version.version, listener),
+    );
+    if (installed !== null) {
+      requestStagedCandidate(installed, alreadyApproved);
+    }
+  }, [api, requestStagedCandidate, runArchiveInstall]);
+
   const requestUpdate = useCallback(
     (
       module: InstalledWorkshopModule,
       version: WorkshopCatalogVersion,
     ) => {
+      // The signed v1 catalog carries default text. New packages can supply
+      // translated reasons in their verified, staged manifest.
+      if (version.workshop_api_min && (compareWorkshopSemver(version.workshop_api_min, "1.2.0") ?? -1) >= 0) {
+        void installUpdate(module, version);
+        return;
+      }
       const currentPermissions = new Set(
         moduleVersion(module, module.active_version)?.permissions.map(
           (permission) => permission.name,
@@ -1194,7 +1201,7 @@ export function WorkshopPanel({
           kind: "update",
           added,
           confirm: () => {
-            void installUpdate(module, version);
+            void installUpdate(module, version, added.map((permission) => permission.name));
           },
         });
         return;
@@ -1328,14 +1335,14 @@ export function WorkshopPanel({
         setOperationError(t("workshop.manager.localInvalid"));
         return;
       }
-      const result = await runModuleMutation("local-install", () =>
-        api.installLocal(file),
+      const result = await runArchiveInstall("local-install", (listener) =>
+        api.installLocal(file, listener),
       );
       if (result !== null) {
         requestStagedCandidate(result);
       }
     },
-    [api, requestStagedCandidate, runModuleMutation, t],
+    [api, requestStagedCandidate, runArchiveInstall, t],
   );
 
   const installGithub = useCallback(async () => {
@@ -1350,8 +1357,8 @@ export function WorkshopPanel({
       setOperationError(t("workshop.manager.githubInvalid"));
       return;
     }
-    const result = await runModuleMutation("github-install", () =>
-      api.installGithub(githubRepository, githubVersion),
+    const result = await runArchiveInstall("github-install", (listener) =>
+      api.installGithub(githubRepository, githubVersion, listener),
     );
     if (result !== null) {
       requestStagedCandidate(result);
@@ -1361,20 +1368,20 @@ export function WorkshopPanel({
     githubRepository,
     githubVersion,
     requestStagedCandidate,
-    runModuleMutation,
+    runArchiveInstall,
     t,
   ]);
 
   const installRegistry = useCallback(
     async (moduleId: string, version: string) => {
-      const result = await runModuleMutation(moduleId, () =>
-        api.installRegistry(moduleId, version),
+      const result = await runArchiveInstall(moduleId, (listener) =>
+        api.installRegistry(moduleId, version, listener),
       );
       if (result !== null) {
         requestStagedCandidate(result);
       }
     },
-    [api, requestStagedCandidate, runModuleMutation],
+    [api, requestStagedCandidate, runArchiveInstall],
   );
 
   const restoreOfficialSeed = useCallback(
@@ -1543,6 +1550,15 @@ export function WorkshopPanel({
         {operationError ? (
           <StatusBanner tone="error">{operationError}</StatusBanner>
         ) : null}
+
+        {archiveInstalls.map((item) => (
+          <div className="px-3 py-2" key={item.id}>
+            <p role="status" className="text-sm font-medium text-slate-700 dark:text-slate-200">
+              {t(`workshop.manager.archive.${item.phase}`)}
+            </p>
+            {item.download ? <DownloadProgressDetails download={item.download} /> : null}
+          </div>
+        ))}
 
         {!loadingModules &&
         activeModule !== null &&

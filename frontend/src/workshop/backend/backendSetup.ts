@@ -6,6 +6,19 @@ import type {
 } from "../../api/workshop";
 
 const TERMINAL = new Set(["succeeded", "failed", "cancelled", "interrupted"]);
+const SOURCE_NAMES: Record<string, string> = {
+  "huggingface.co": "Hugging Face",
+  "modelscope.cn": "ModelScope",
+  "hf-mirror.com": "Hugging Face Mirror",
+  "files.pythonhosted.org": "PyPI",
+  "download.pytorch.org": "PyTorch",
+  "github.com": "GitHub",
+  "releases.astral.sh": "Astral",
+};
+
+export function downloadSourceName(source: string): string {
+  return Object.hasOwn(SOURCE_NAMES, source) ? SOURCE_NAMES[source] : source;
+}
 
 export class BackendSetupError extends Error {
   readonly code: string;

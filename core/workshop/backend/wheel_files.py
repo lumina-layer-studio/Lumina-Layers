@@ -9,9 +9,16 @@ from collections.abc import Callable, Mapping
 from dataclasses import replace
 from pathlib import Path
 
-from packaging.markers import Marker, default_environment
+from packaging.markers import (
+    InvalidMarker,
+    Marker,
+    UndefinedComparison,
+    UndefinedEnvironmentName,
+    default_environment,
+)
+from packaging.specifiers import InvalidSpecifier, SpecifierSet
 from packaging.tags import compatible_tags, cpython_tags
-from packaging.utils import parse_wheel_filename
+from packaging.utils import InvalidWheelFilename, parse_wheel_filename
 
 from ..errors import WorkshopBackendError
 from .downloads import DownloadBatch, DownloadProgress, download_https, ordered_sources
@@ -28,6 +35,54 @@ def wheel_urls(wheel: LockedWheel, policy: WheelSourcePolicy, mirrors: Mapping[s
     return urls
 
 
+def select_locked_wheels(lock: BackendLock, python_version: str, full_version: str) -> BackendLock:
+    """Select the locked wheel for each package active on this platform."""
+    if lock.requires_python is not None:
+        try:
+            supported = SpecifierSet(lock.requires_python).contains(full_version)
+        except InvalidSpecifier as exc:
+            raise WorkshopBackendError("dependency-install-failed", "Invalid Python requirement in the backend lock.") from exc
+        if not supported:
+            raise WorkshopBackendError("dependency-install-failed", "The backend lock requires a different Python version.")
+    major, minor = (int(part) for part in python_version.split("."))
+    abi = f"cp{major}{minor}"
+    tags = [*cpython_tags((major, minor), abis=[abi]), *compatible_tags((major, minor), interpreter=abi)]
+    ranks = {}
+    for index, tag in enumerate(tags):
+        ranks.setdefault(tag, index)
+    environment = {
+        **default_environment(),
+        "python_version": python_version,
+        "python_full_version": full_version,
+        "implementation_name": "cpython",
+        "implementation_version": full_version,
+        "platform_python_implementation": "CPython",
+        "extra": "",
+    }
+    packages = []
+    for package in lock.packages:
+        matches = []
+        try:
+            if package.marker and not Marker(package.marker).evaluate(environment, context="lock_file"):
+                continue
+            for wheel in package.wheels:
+                _, _, build, wheel_tags = parse_wheel_filename(wheel.file_name)
+                scores = [ranks[tag] for tag in wheel_tags if tag in ranks]
+                if scores:
+                    matches.append((min(scores), build or (-1, ""), wheel))
+        except (InvalidMarker, UndefinedComparison, UndefinedEnvironmentName, InvalidWheelFilename, KeyError) as exc:
+            raise WorkshopBackendError(
+                "dependency-install-failed", f"Invalid marker or wheel filename locked for {package.name}."
+            ) from exc
+        if not matches:
+            raise WorkshopBackendError(
+                "dependency-install-failed", f"No compatible wheel is locked for {package.name}."
+            )
+        _, _, selected = max(matches, key=lambda item: (-item[0], item[1]))
+        packages.append(replace(package, wheels=(selected,)))
+    return replace(lock, packages=tuple(packages))
+
+
 def _select_wheels(lock: BackendLock, interpreter: BackendInterpreter, cancel: CancelToken) -> BackendLock:
     result = run_tool_command(
         [str(interpreter.executable), "-I", "-c", "import platform; print(platform.python_version())"],
@@ -36,34 +91,7 @@ def _select_wheels(lock: BackendLock, interpreter: BackendInterpreter, cancel: C
     version = result.stdout.strip()
     if result.returncode != 0 or not version.startswith(interpreter.python_version + "."):
         raise WorkshopBackendError("dependency-install-failed", "Could not query the backend Python version.")
-    major, minor = (int(part) for part in interpreter.python_version.split("."))
-    abi = f"cp{major}{minor}"
-    tags = [*cpython_tags((major, minor), abis=[abi]), *compatible_tags((major, minor), interpreter=abi)]
-    ranks = {tag: index for index, tag in enumerate(tags)}
-    environment = {
-        **default_environment(),
-        "python_version": interpreter.python_version,
-        "python_full_version": version,
-        "implementation_name": "cpython",
-        "implementation_version": version,
-        "platform_python_implementation": "CPython",
-    }
-    packages = []
-    for package in lock.packages:
-        if package.marker and not Marker(package.marker).evaluate(environment):
-            continue
-        matches = []
-        for wheel in package.wheels:
-            _, _, _, wheel_tags = parse_wheel_filename(wheel.file_name)
-            scores = [ranks[tag] for tag in wheel_tags if tag in ranks]
-            if scores:
-                matches.append((min(scores), wheel.file_name, wheel))
-        if not matches:
-            raise WorkshopBackendError(
-                "dependency-install-failed", f"No compatible wheel is locked for {package.name}."
-            )
-        packages.append(replace(package, wheels=(min(matches, key=lambda item: item[:2])[2],)))
-    return replace(lock, packages=tuple(packages))
+    return select_locked_wheels(lock, interpreter.python_version, version)
 
 
 class WheelArchiveCache:
@@ -154,7 +182,7 @@ class WheelArchiveCache:
                 local[wheel.sha256] = supplied.resolve().as_uri()
             elif self._matches(self._path(wheel), wheel, cancel):
                 local[wheel.sha256] = self._path(wheel).resolve().as_uri()
-            else:
+            elif not policy.offline:
                 needed.append(wheel)
         batch = DownloadBatch((wheel.size for wheel in needed), on_progress)
         for index, wheel in enumerate(needed):
@@ -177,3 +205,13 @@ class WheelArchiveCache:
                     outcome.freed_bytes += removed.freed_bytes
                     outcome.pending.extend(removed.pending)
         return outcome
+
+    def usage(self) -> dict[str, int]:
+        files = size = 0
+        for archive in self.root.glob("*/*.whl"):
+            try:
+                size += archive.stat().st_size
+            except OSError:
+                continue
+            files += 1
+        return {"files": files, "bytes": size}

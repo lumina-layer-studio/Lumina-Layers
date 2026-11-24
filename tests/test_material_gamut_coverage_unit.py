@@ -135,6 +135,21 @@ def test_fixed_gamut_prefers_saved_smart_cache(tmp_path: Path) -> None:
     ).saved_runtime_budgets == (4_194_304,)
 
 
+def test_layer_cap_cell_reduction_agrees_with_full_prefix_measurements(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    colors = np.asarray([
+        [255, 255, 255], [254, 254, 254], [180, 30, 20], [0, 0, 0],
+        [40, 40, 255], [178, 30, 20], [128, 180, 220], [255, 255, 255],
+    ], dtype=np.uint8)
+    counts = np.asarray([8, 5, 9, 7, 5, 6, 8, 7], dtype=np.int16)
+    monkeypatch.setattr(gamut, "_COVERAGE_BLOCK_ROWS", 3, raising=False)
+    actual = gamut._measure_layer_cap_coverage(gamut.rgb_to_lab(colors), counts, 5, 10)
+    assert [item.coverage for item in actual] == [
+        gamut.measure_srgb_coverage(colors[counts <= cap]) for cap in range(5, 11)
+    ]
+
+
 def test_dynamic_layer_caps_are_cumulative(tmp_path: Path) -> None:
     result = gamut.compute_dynamic_layer_gamut(
         _palette(), 0, 0.08, "white", 5, 7, cache_root=tmp_path

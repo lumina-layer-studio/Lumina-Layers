@@ -66,6 +66,13 @@ def _blocked_crash(source_path: str, marker: str) -> None:
     _blocked_read(source_path, marker, crash=True)
 
 
+def _gamut_worker_crash() -> None:
+    from api.worker_diagnostics import report_worker_stage
+
+    report_worker_stage("gamut_hull", cache_state="warm", row_count=1_368_639)
+    os._exit(23)
+
+
 async def _started(marker: Path) -> int:
     async with asyncio.timeout(20):
         while True:
@@ -137,18 +144,21 @@ def test_crash_log_identifies_the_original_request(
     monkeypatch.setattr(worker_pool, "_log", logger)
     pool = WorkerPoolManager(max_workers=1)
     pool.start()
-    failing = tmp_path / "crash"
-    _release(failing)
     request_token = set_request_id("preview-request")
     session_token = set_session_id("preview-session")
     try:
         with pytest.raises(BrokenProcessPool):
-            asyncio.run(pool.submit(_blocked_crash, "unused", str(failing)))
+            asyncio.run(pool.submit(_gamut_worker_crash))
         payload = json.loads(output.getvalue())
         assert payload["request_id"] == "preview-request"
         assert payload["session_id"] == "preview-session"
-        assert payload["worker_name"] == "_blocked_crash"
+        assert payload["worker_name"] == "_gamut_worker_crash"
         assert payload["surviving_workers"] == 0
+        assert payload["worker_pid"] > 0
+        assert payload["worker_exit_code"] == 23
+        assert payload["worker_phase"] == "gamut_hull"
+        assert payload["worker_cache_state"] == "warm"
+        assert payload["worker_row_count"] == 1_368_639
     finally:
         reset_request_id(request_token)
         reset_session_id(session_token)

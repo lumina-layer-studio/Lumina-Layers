@@ -17,14 +17,17 @@ the memo automatically.
 from __future__ import annotations
 
 import threading
+from dataclasses import replace
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from api.structured_logging import get_logger
+from api.worker_diagnostics import report_worker_stage
 from config import MATERIALS_DIR
 from core import material_cache as _material_cache
 from core import material_lut_synthesis as _material_lut_synthesis
 from core.errors import MaterialArchiveUnavailableError
+from core.system_capacity import get_effective_memory_capacity
 from core.material_cache import DEFAULT_GRID_RESOLUTION
 from core.material_candidate_cache import (
     MaterialCandidateCacheConfig,
@@ -374,6 +377,21 @@ def load_dynamic_candidate_runtime(
     if prepared_runtime is not None:
         return prepared_runtime, prepared_runtime.grid_resolution
 
+    available = get_effective_memory_capacity().available_bytes
+    # Bound prediction scratch and in-flight Sobol batches independently of
+    # the number of samples and the seed assigned to each logical batch.
+    execution_rows = 65_536 if available is None else max(
+        1024, min(65_536, available // (8 * 256)),
+    )
+    config = replace(
+        config,
+        execution_batch_recipe_count=execution_rows,
+        build_worker_count=1 if available is not None and available < 512 * 1024**2 else 2,
+    )
+    report_worker_stage(
+        "dynamic_candidate_prediction",
+        row_count=min(config.candidate_budget, len(materials) ** int(layer_count)),
+    )
     runtime = build_material_candidate_runtime(
         materials=materials,
         layer_count=int(layer_count),
@@ -382,6 +400,7 @@ def load_dynamic_candidate_runtime(
         config=config,
     )
     if persist:
+        report_worker_stage("dynamic_runtime_write", row_count=runtime.valid_cell_count)
         _persist_runtime_best_effort(runtime, cache_root=prepared_root)
     return runtime, runtime.grid_resolution
 

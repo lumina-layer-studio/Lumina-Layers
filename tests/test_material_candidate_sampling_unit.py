@@ -63,6 +63,24 @@ def test_sobol_exception_keeps_existing_seeded_fallback(monkeypatch) -> None:
     np.testing.assert_array_equal(recipes, expected.astype(np.uint16))
 
 
+def test_invalid_later_block_restarts_the_entire_seeded_stream(monkeypatch: pytest.MonkeyPatch) -> None:
+    draw = qmc.Sobol.random
+
+    def broken_draw(sampler, count):
+        generated = sampler.num_generated
+        points = draw(sampler, count)
+        if generated:
+            points[0, 0] = 1.0
+        return points
+
+    monkeypatch.setattr(qmc.Sobol, "random", broken_draw)
+    recipes = sampling._low_discrepancy_recipes(
+        material_count=17, layer_count=5, count=43, seed=7, block_rows=8,
+    )
+    expected = np.floor(np.random.default_rng(7).random((43, 5)) * 17).astype(np.uint16)
+    np.testing.assert_array_equal(recipes, expected)
+
+
 @pytest.mark.parametrize("points", [
     np.full((32, 10), 0.25),
     np.full((32, 10), np.nan),

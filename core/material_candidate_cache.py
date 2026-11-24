@@ -118,6 +118,8 @@ class MaterialCandidateCacheConfig:
     refine_bottom_neighbors: int = 2
     layer_dp_min_layer_count: int = 11
     layer_dp_state_cell_lab: float = _LAYER_DP_DEFAULT_CELL
+    # Execution-only. batch_recipe_count still defines the seeded Sobol stream.
+    execution_batch_recipe_count: int | None = None
 
     def uses_layer_dp(self, layer_count: int) -> bool:
         threshold = int(self.layer_dp_min_layer_count)
@@ -363,22 +365,25 @@ def _predict_candidate_srgb_lab(
     materials: list[MaterialParams],
     layer_height_mm: float,
     substrate: str,
+    execution_rows: int | None = None,
 ) -> tuple[np.ndarray, np.ndarray]:
     affines = _compute_material_affines(materials, float(layer_height_mm))
     substrate_rgb = _substrate_linear(substrate)
     recipe_arr = np.asarray(recipes)
-    colors = np.empty((recipe_arr.shape[0], 3), dtype=np.float64)
-    colors[:] = substrate_rgb
-
-    for layer_index in range(recipe_arr.shape[1]):
-        material_indices = recipe_arr[:, layer_index]
-        colors = (
-            affines.a[material_indices] * colors
-            + affines.b[material_indices]
-        )
-
-    achieved_srgb = linear_to_srgb_uint8(np.clip(colors, 0.0, 1.0))
-    achieved_lab = rgb_to_lab(achieved_srgb).astype(np.float32, copy=False)
+    row_count = len(recipe_arr)
+    block_rows = max(1, int(execution_rows or row_count))
+    achieved_srgb = np.empty((row_count, 3), dtype=np.uint8)
+    achieved_lab = np.empty((row_count, 3), dtype=np.float32)
+    for start in range(0, row_count, block_rows):
+        end = min(start + block_rows, row_count)
+        block = recipe_arr[start:end]
+        colors = np.empty((len(block), 3), dtype=np.float64)
+        colors[:] = substrate_rgb
+        for material_indices in block.T:
+            colors = affines.a[material_indices] * colors + affines.b[material_indices]
+        np.clip(colors, 0.0, 1.0, out=colors)
+        achieved_srgb[start:end] = linear_to_srgb_uint8(colors)
+        achieved_lab[start:end] = rgb_to_lab(achieved_srgb[start:end])
     return achieved_srgb, achieved_lab
 
 
@@ -389,6 +394,7 @@ def _predict_recipe_batch(
     layer_height_mm: float,
     substrate: str,
     recipe_dtype_name: str,
+    execution_rows: int | None = None,
 ) -> CandidatePredictionBatch:
     recipe_dtype = np.dtype(recipe_dtype_name)
     recipe_arr = np.asarray(recipes, dtype=recipe_dtype)
@@ -397,6 +403,7 @@ def _predict_recipe_batch(
         materials=materials,
         layer_height_mm=float(layer_height_mm),
         substrate=substrate,
+        execution_rows=execution_rows,
     )
     return CandidatePredictionBatch(
         recipes=recipe_arr,
@@ -447,6 +454,7 @@ def _predict_low_discrepancy_recipe_batch(
     layer_height_mm: float,
     substrate: str,
     recipe_dtype_name: str,
+    execution_rows: int | None = None,
 ) -> CandidatePredictionBatch:
     recipe_dtype = np.dtype(recipe_dtype_name)
     recipes = _low_discrepancy_recipes(
@@ -454,12 +462,14 @@ def _predict_low_discrepancy_recipe_batch(
         layer_count=int(layer_count),
         count=int(count),
         seed=int(seed),
+        block_rows=execution_rows,
     ).astype(recipe_dtype, copy=False)
     achieved_srgb, achieved_lab = _predict_candidate_srgb_lab(
         recipes=recipes,
         materials=materials,
         layer_height_mm=float(layer_height_mm),
         substrate=substrate,
+        execution_rows=execution_rows,
     )
     return CandidatePredictionBatch(
         recipes=recipes,
@@ -621,13 +631,16 @@ def _streaming_candidate_selection(
     budget = min(requested_budget, total_count)
     worker_count = _resolve_candidate_build_worker_count(config.build_worker_count)
     chunk_size = max(1, int(config.batch_recipe_count))
+    execution_rows = config.execution_batch_recipe_count
+    if execution_rows is not None:
+        execution_rows = max(1, int(execution_rows))
     if total_count <= budget:
         exact_count = int(total_count)
         exact_recipes = np.empty((exact_count, int(layer_count)), dtype=recipe_dtype)
         achieved_srgb = np.empty((exact_count, 3), dtype=np.uint8)
         achieved_lab = np.empty((exact_count, 3), dtype=np.float32)
         pinned_mask = np.zeros(exact_count, dtype=bool)
-        counts = _chunk_counts(exact_count, chunk_size)
+        counts = _chunk_counts(exact_count, execution_rows or chunk_size)
         starts: list[int] = []
         offset = 0
         for count in counts:
@@ -777,6 +790,7 @@ def _streaming_candidate_selection(
                 layer_height_mm=float(layer_height_mm),
                 substrate=substrate,
                 recipe_dtype_name=recipe_dtype.name,
+                execution_rows=execution_rows,
             ),
             pinned=True,
         )
@@ -841,6 +855,7 @@ def _streaming_candidate_selection(
                     layer_height_mm=float(layer_height_mm),
                     substrate=substrate,
                     recipe_dtype_name=recipe_dtype.name,
+                    execution_rows=execution_rows,
                 )
             )
 
@@ -853,10 +868,10 @@ def _streaming_candidate_selection(
                 _submit_next(executor)
 
     return CandidateSelection(
-        recipes=selected[:selected_count].copy(),
-        achieved_srgb=selected_srgb[:selected_count].copy(),
-        achieved_lab=selected_lab[:selected_count].copy(),
-        pinned_mask=pinned_mask[:selected_count].copy(),
+        recipes=selected[:selected_count],
+        achieved_srgb=selected_srgb[:selected_count],
+        achieved_lab=selected_lab[:selected_count],
+        pinned_mask=pinned_mask[:selected_count],
         worker_count=worker_count,
         build_info=build_info,
     )

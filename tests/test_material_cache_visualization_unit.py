@@ -37,6 +37,24 @@ from core.material_cache_visualization import (
     build_material_cache_details,
     build_material_runtime_details,
 )
+
+
+@pytest.mark.parametrize(("points", "expected"), [
+    ([], ()),
+    ([(0, 0), (0, 0)], ()),
+    ([(0, 0), (0, 0), (3, 3), (3, 3)], ()),
+    ([(0, 0), (0, 0), (2, 2), (3, 3), (1, 1)], ((0, 0), (3, 3))),
+    (
+        [(0, 0), (0, 0), (1, 1), (4, 0), (4, 4), (0, 4), (2, 2)],
+        ((0, 0), (4, 0), (4, 4), (0, 4)),
+    ),
+])
+def test_lab_hull_preserves_extrema_across_degenerate_blocks(points, expected) -> None:
+    from core.material_cache_visualization import _compute_lab_hull
+
+    lab = np.zeros((len(points), 3), dtype=np.float32)
+    lab[:, 1:] = np.asarray(points).reshape(-1, 2)
+    assert _compute_lab_hull(lab, block_rows=2) == expected
 from core.material_color_solver import MaterialParams
 
 

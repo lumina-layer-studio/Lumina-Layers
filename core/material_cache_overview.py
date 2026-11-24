@@ -17,6 +17,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
+from api.worker_diagnostics import report_worker_stage
 from core import material_lut_provider
 from core.material_cache import find_any_cached_grid
 from core.material_candidate_cache import (
@@ -260,6 +261,31 @@ def describe_dynamic_layer_caches(
     )
 
 
+def prepare_missing_layer_runtimes(
+    materials: list[MaterialParams],
+    layer_height_mm: float,
+    substrate: str,
+    overview: DynamicLayerCacheOverview,
+    *,
+    cache_root: str | Path | None,
+) -> None:
+    """Prepare reusable per-layer files before taking the merged catalog lock."""
+    if not overview.missing_layer_counts:
+        return
+    report_worker_stage("dynamic_runtime_prepare", cache_state="cold", row_count=0)
+    canonical = _canonical_dynamic_palette(materials)
+    for layer_count in overview.missing_layer_counts:
+        load_dynamic_candidate_runtime(
+            canonical,
+            layer_count,
+            float(layer_height_mm),
+            str(substrate),
+            candidate_budget=overview.candidate_budget,
+            cache_root=cache_root,
+            persist=True,
+        )
+
+
 def prepare_dynamic_layer_cache(
     materials: list[MaterialParams],
     backing_index: int,
@@ -306,18 +332,7 @@ def prepare_dynamic_layer_cache(
         return DynamicLayerCachePrepareResult(overview=before, built=False, elapsed_seconds=0.0)
 
     started = time.perf_counter()
-    # Same canonical order dynamic conversion uses, so the saved files match.
-    canonical = _canonical_dynamic_palette(materials)
-    for layer_count in before.missing_layer_counts:
-        load_dynamic_candidate_runtime(
-            canonical,
-            layer_count,
-            float(layer_height_mm),
-            str(substrate),
-            candidate_budget=before.candidate_budget,
-            cache_root=cache_root,
-            persist=True,
-        )
+    prepare_missing_layer_runtimes(materials, layer_height_mm, substrate, before, cache_root=cache_root)
     load_or_build_persistent_dynamic_catalog(
         materials,
         int(backing_index),

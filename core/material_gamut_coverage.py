@@ -31,12 +31,11 @@ from pathlib import Path
 import numpy as np
 from scipy.spatial import cKDTree
 
+from api.worker_diagnostics import report_worker_stage
 from core import material_lut_provider
 from core.colorchecker.color_metrics import delta_e_2000
-from core.material_cache_overview import (
-    describe_dynamic_layer_caches,
-    prepare_dynamic_layer_cache,
-)
+from core.material_cache import _pack_srgb
+from core.material_cache_overview import describe_dynamic_layer_caches, prepare_missing_layer_runtimes
 from core.material_cache_visualization import (
     MaterialSolverCacheDetails,
     build_color_set_chart_details,
@@ -65,6 +64,7 @@ MIN_COVERAGE_CELL_SIZE: float = 0.5
 # keys never collide.
 _CELL_INDEX_OFFSET = 1 << 9
 _CELL_AXIS_SPAN = 1 << 10
+_COVERAGE_BLOCK_ROWS = 65_536
 
 ACCURACY_TARGET_STEP: int = 8
 """sRGB channel step of the accuracy targets (33³ colors). 精度目标色的 sRGB 通道步长（33³ 色）。"""
@@ -340,6 +340,25 @@ def measure_srgb_coverage(
     return SrgbCoverage(int(reached.shape[0]), int(reference.shape[0]))
 
 
+def _measure_layer_cap_coverage(
+    lab: np.ndarray, minimum_counts: np.ndarray, min_layer: int, max_layer: int,
+) -> tuple[LayerCapCoverage, ...]:
+    reference = srgb_reference_cell_keys()
+    first_layer = np.full(len(reference), max_layer + 1, dtype=np.int16)
+    for start in range(0, len(lab), _COVERAGE_BLOCK_ROWS):
+        block = slice(start, start + _COVERAGE_BLOCK_ROWS)
+        keys = _cell_keys(lab[block], SRGB_COVERAGE_CELL_SIZE)
+        positions = np.searchsorted(reference, keys)
+        in_range = positions < len(reference)
+        positions = positions[in_range]
+        exact = reference[positions] == keys[in_range]
+        np.minimum.at(first_layer, positions[exact], minimum_counts[block][in_range][exact])
+    return tuple(
+        LayerCapCoverage(cap, SrgbCoverage(int(np.count_nonzero(first_layer <= cap)), len(reference)))
+        for cap in range(min_layer, max_layer + 1)
+    )
+
+
 def color_group_masks(lab: np.ndarray) -> dict[str, np.ndarray]:
     """Assign Lab colors to the accuracy color groups (groups may overlap).
     将 Lab 颜色划入各精度颜色组（组之间可重叠）。
@@ -400,14 +419,19 @@ def measure_match_accuracy(srgb: np.ndarray) -> MatchAccuracy:
         MatchAccuracy: Per-group mean error and the printable L* range.
             逐组平均色差与可打印 L* 范围。
     """
-    target_lab, masks = _accuracy_targets()
     colors = _unique_colors(srgb)
-    if colors.shape[0] == 0:
+    return _measure_match_accuracy_lab(
+        rgb_to_lab(colors) if len(colors) else np.empty((0, 3), dtype=np.float64)
+    )
+
+
+def _measure_match_accuracy_lab(color_lab: np.ndarray) -> MatchAccuracy:
+    target_lab, masks = _accuracy_targets()
+    if len(color_lab) == 0:
         groups = tuple(
             ColorGroupAccuracy(group, int(masks[group].sum()), None) for group in COLOR_GROUPS
         )
         return MatchAccuracy(groups, None, None)
-    color_lab = rgb_to_lab(colors)
     neighbor_count = min(_ACCURACY_NEIGHBOR_COUNT, color_lab.shape[0])
     _distance, nearest = cKDTree(color_lab).query(target_lab, k=neighbor_count)
     nearest = np.asarray(nearest).reshape(target_lab.shape[0], neighbor_count)
@@ -519,10 +543,13 @@ def _chart_details(
     layer_height_mm: float,
     substrate: str,
     max_points: int,
+    lab: np.ndarray | None = None,
 ) -> MaterialSolverCacheDetails:
+    if lab is None:
+        lab = rgb_to_lab(srgb) if srgb.shape[0] else np.zeros((0, 3), dtype=np.float32)
     return build_color_set_chart_details(
         srgb,
-        rgb_to_lab(srgb) if srgb.shape[0] else np.zeros((0, 3), dtype=np.float32),
+        lab,
         metadata={
             "layer_count": int(layer_count),
             "layer_height_mm": float(layer_height_mm),
@@ -623,11 +650,8 @@ def compute_dynamic_layer_gamut(
         config.min_layer_count, config.max_layer_count, cache_root=cache_root,
     )
     if not overview.is_ready:
-        # Build expensive per-layer candidates before acquiring the catalog lock.
-        # The final merge and conversion then reuse those isolated prepared files.
-        prepare_dynamic_layer_cache(
-            materials, backing_index, layer_height_mm, substrate,
-            config.min_layer_count, config.max_layer_count, cache_root=cache_root,
+        prepare_missing_layer_runtimes(
+            materials, layer_height_mm, substrate, overview, cache_root=cache_root,
         )
     loaded = load_or_build_persistent_dynamic_catalog(
         materials,
@@ -636,13 +660,14 @@ def compute_dynamic_layer_gamut(
         str(substrate),
         config,
         cache_root=cache_root,
+        colors_only=True,
     )
     catalog = loaded.catalog
     colors = np.asarray(catalog.score_srgb, dtype=np.uint8)
-    minimum_counts = np.asarray(catalog.minimum_actual_layer_counts)
-    layer_caps = tuple(
-        LayerCapCoverage(cap, measure_srgb_coverage(colors[minimum_counts <= cap]))
-        for cap in range(config.min_layer_count, config.max_layer_count + 1)
+    report_worker_stage("gamut_layer_coverage", row_count=len(colors))
+    layer_caps = _measure_layer_cap_coverage(
+        catalog.score_lab, catalog.minimum_actual_layer_counts,
+        config.min_layer_count, config.max_layer_count,
     )
     full_space = sum(
         _stack_space_size(len(materials), layers)
@@ -654,9 +679,13 @@ def compute_dynamic_layer_gamut(
         loaded.candidate_count_before_dedup >= full_space,
         overview.is_ready and loaded.cache_hit,
     )
+    report_worker_stage("gamut_match_accuracy", row_count=len(colors))
+    # Match the existing lexicographic RGB order for KD-tree distance ties.
+    accuracy = _measure_match_accuracy_lab(catalog.score_lab[np.argsort(_pack_srgb(colors))])
+    report_worker_stage("gamut_chart", row_count=len(colors))
     return GamutCoverageResult(
         coverage=layer_caps[-1].coverage,
-        accuracy=measure_match_accuracy(colors),
+        accuracy=accuracy,
         color_count=int(colors.shape[0]),
         source=source,
         layer_cap_coverage=layer_caps,
@@ -666,6 +695,7 @@ def compute_dynamic_layer_gamut(
             layer_height_mm=layer_height_mm,
             substrate=substrate,
             max_points=max_points,
+            lab=catalog.score_lab,
         ),
     )
 

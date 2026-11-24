@@ -4,8 +4,9 @@ from concurrent.futures import Future as ConcurrentFuture
 from concurrent.futures import ProcessPoolExecutor
 from concurrent.futures.process import BrokenProcessPool
 from contextvars import Context, copy_context
-from multiprocessing import get_context
 from multiprocessing.connection import wait as wait_for_process_exit
+from multiprocessing.context import SpawnContext
+from multiprocessing.process import BaseProcess
 from queue import Empty, Queue
 from pathlib import Path
 from typing import Any, Callable, Literal, TypeVar
@@ -17,6 +18,12 @@ import time
 import uuid
 
 from api.structured_logging import get_logger
+from api.worker_diagnostics import (
+    WORKER_PROGRESS_BYTES,
+    bind_worker_progress,
+    read_worker_progress,
+    report_worker_stage,
+)
 from core.task_parallelism_runtime import (
     OuterDemandPublisher,
     task_parallelism_runtime_scope,
@@ -96,7 +103,7 @@ def _normalize_windows_output_stream(stream: Any) -> Any:
     return stream
 
 
-def _worker_init() -> None:
+def _worker_init(progress: Any = None) -> None:
     """Initialize worker logging with UTF-8 streams and the parent's log path.
     初始化 worker 日志，使用 UTF-8 输出流并继承父进程的日志路径。
     """
@@ -111,6 +118,7 @@ def _worker_init() -> None:
     if log_path:
         setup_file_logging(log_path=log_path)
     configure_structured_logging()
+    bind_worker_progress(progress)
 
 
 def _run_in_worker_with_context(
@@ -125,6 +133,7 @@ def _run_in_worker_with_context(
 
     from api.structured_logging import set_request_id, set_session_id
 
+    report_worker_stage("running")
     if request_id is not None:
         set_request_id(request_id)
     if session_id is not None:
@@ -251,6 +260,19 @@ _QueuedTask = tuple[
 ]
 
 
+class _WorkerSpawnContext(SpawnContext):
+    """Keep the child reference after the executor's broken-pool cleanup."""
+
+    def __init__(self) -> None:
+        self.process: BaseProcess | None = None
+        self.progress = None
+
+    def Process(self, *args: Any, **kwargs: Any) -> BaseProcess:
+        child = super().Process(*args, **kwargs)
+        self.process = child
+        return child
+
+
 class _IsolatedProcessExecutor:
     """A shared FIFO feeding independently replaceable, single-process slots.
 
@@ -294,9 +316,10 @@ class _IsolatedProcessExecutor:
 
     def _run_slot(self, index: int) -> None:
         executor: ProcessPoolExecutor | None = None
+        spawn = _WorkerSpawnContext()
         try:
             while (job := self._queue.get()) is not None:
-                executor = self._run_job(index, executor, job)
+                executor = self._run_job(index, executor, job, spawn)
                 # Do not retain the previous request/result while idle.
                 del job
         finally:
@@ -308,19 +331,25 @@ class _IsolatedProcessExecutor:
         index: int,
         executor: ProcessPoolExecutor | None,
         job: _QueuedTask,
+        spawn: _WorkerSpawnContext,
     ) -> ProcessPoolExecutor | None:
         future, fn, args, kwargs, context, task_name = job
         if not future.set_running_or_notify_cancel():
             return executor
         try:
+            if spawn.progress is None:
+                spawn.progress = spawn.RawArray("c", WORKER_PROGRESS_BYTES)
+            spawn.progress.value = b""
             if executor is None:
+                spawn.process = None
                 executor = ProcessPoolExecutor(
                     max_workers=1,
                     initializer=_worker_init,
+                    initargs=(spawn.progress,),
                     max_tasks_per_child=self._max_tasks_per_child,
                     # Dispatchers are threads. Never fork the API process
                     # from one, including when child recycling is disabled.
-                    mp_context=get_context("spawn"),
+                    mp_context=spawn,
                 )
             submitted = False
             try:
@@ -329,11 +358,13 @@ class _IsolatedProcessExecutor:
                 result = result_future.result()
             except BaseException as exc:
                 if not submitted or isinstance(exc, BrokenProcessPool):
+                    progress = read_worker_progress(spawn.progress)
+                    progress.setdefault("worker_phase", "dispatch")
+                    child = spawn.process
                     # Complete the caller only after this slot's child has
                     # stopped. Other dispatchers keep serving their jobs.
                     terminated, survivors = _terminate_executor_workers(executor)
                     _shutdown_executor(executor, wait=True, cancel_futures=True)
-                    executor = None
                     context.run(
                         _log.warning,
                         "Worker process retired after a task failure",
@@ -341,12 +372,16 @@ class _IsolatedProcessExecutor:
                             "event": "worker_process_failed",
                             "worker_index": index,
                             "worker_name": task_name,
+                            "worker_pid": None if child is None else child.pid,
+                            "worker_exit_code": None if child is None else child.exitcode,
+                            **progress,
                             "terminated_workers": terminated,
                             "surviving_workers": survivors,
                             "error_type": type(exc).__name__,
                             "error_message": str(exc),
                         },
                     )
+                    executor = None
                 raise
         except BaseException as exc:
             # Keep the remote traceback cause, without pinning this dispatcher

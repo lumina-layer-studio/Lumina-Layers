@@ -131,6 +131,13 @@ def test_material_api_round_trip_with_real_process_workers(
         assert coverage.status_code == 200, coverage.text
         assert coverage.json()["source"]["kind"] == "dynamic_catalog"
         assert coverage.json()["source"]["candidate_budget"] == expected_budget
+        warm = client.post("/api/extractor/material-gamut/coverage", data=form)
+        assert warm.status_code == 200, warm.text
+        cold_result, warm_result = coverage.json(), warm.json()
+        assert cold_result["source"]["was_cached"] is False
+        assert warm_result["source"]["was_cached"] is True
+        for key in ("coverage", "layer_cap_coverage", "accuracy", "color_count", "lab_hull", "lab_points"):
+            assert cold_result[key] == warm_result[key]
         contributions = client.post("/api/extractor/material-gamut/contributions", data=form)
         assert contributions.status_code == 200, contributions.text
         assert len(contributions.json()["items"]) == 2

@@ -23,6 +23,8 @@ from typing import Any
 
 import numpy as np
 
+from api.worker_diagnostics import report_worker_stage
+
 from core.lut_details.service import (
     AxisRange,
     LutCoverageStats,
@@ -117,18 +119,9 @@ def _project_rgb_points(rgb: np.ndarray) -> np.ndarray:
     return np.stack([x, y], axis=1)
 
 
-def _compute_lab_hull(lab: np.ndarray) -> tuple[tuple[float, float], ...]:
-    """Convex hull of unique Lab a*/b* points (Andrew's monotone chain).
-    Lab a*/b* 唯一点的凸包（Andrew 单调链）。
-    """
-    if lab.size == 0:
-        return ()
-    points = np.unique(np.round(lab[:, 1:3].astype(np.float64), 6), axis=0)
-    if points.shape[0] < 3:
-        return ()
-    sorted_points = sorted(
-        (float(point[0]), float(point[1])) for point in points.tolist()
-    )
+def _monotone_hull(sorted_points: np.ndarray) -> list[tuple[float, float]]:
+    if len(sorted_points) <= 2:
+        return [(float(x), float(y)) for x, y in sorted_points]
 
     def cross(
         o: tuple[float, float],
@@ -137,19 +130,39 @@ def _compute_lab_hull(lab: np.ndarray) -> tuple[tuple[float, float], ...]:
     ) -> float:
         return (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0])
 
-    lower: list[tuple[float, float]] = []
-    for point in sorted_points:
-        while len(lower) >= 2 and cross(lower[-2], lower[-1], point) <= 0:
-            lower.pop()
-        lower.append(point)
+    def scan(rows: np.ndarray) -> list[tuple[float, float]]:
+        boundary: list[tuple[float, float]] = []
+        for x, y in zip(rows[:, 0], rows[:, 1], strict=True):
+            point = (float(x), float(y))
+            while len(boundary) >= 2 and cross(boundary[-2], boundary[-1], point) <= 0:
+                boundary.pop()
+            boundary.append(point)
+        return boundary
 
-    upper: list[tuple[float, float]] = []
-    for point in reversed(sorted_points):
-        while len(upper) >= 2 and cross(upper[-2], upper[-1], point) <= 0:
-            upper.pop()
-        upper.append(point)
+    return scan(sorted_points)[:-1] + scan(sorted_points[::-1])[:-1]
 
-    hull = lower[:-1] + upper[:-1]
+
+def _compute_lab_hull(
+    lab: np.ndarray, *, block_rows: int = 65_536,
+) -> tuple[tuple[float, float], ...]:
+    """Reduce local hulls to the full Lab a*/b* hull in bounded blocks."""
+    report_worker_stage("gamut_hull", row_count=len(lab))
+    hull: list[tuple[float, float]] = []
+    distinct: set[tuple[float, float]] = set()
+    for start in range(0, lab.shape[0], block_rows):
+        block = lab[start : start + block_rows, 1:3].astype(np.float64)
+        # NumPy returns unique rows in the same lexicographic order as the chain.
+        points = np.unique(np.round(block, 6), axis=0)
+        if len(distinct) < 3:
+            distinct.update((float(x), float(y)) for x, y in points[:3])
+        local = _monotone_hull(points)
+        if hull:
+            combined = np.unique(np.asarray(hull + local, dtype=np.float64), axis=0)
+            hull = _monotone_hull(combined)
+        else:
+            hull = local
+    if len(distinct) < 3:
+        return ()
     return tuple((round(point[0], 6), round(point[1], 6)) for point in hull)
 
 

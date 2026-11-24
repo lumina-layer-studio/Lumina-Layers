@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, TypedDict
 
+from api.worker_diagnostics import report_worker_stage
 from core.material_lut_synthesis import load_multiple_materials
 
 if TYPE_CHECKING:
@@ -30,6 +31,7 @@ def _load_materials(params: MaterialWorkbenchParams) -> list[MaterialParams]:
 
 
 def worker_material_gamut_coverage(params: MaterialWorkbenchParams) -> GamutCoverageResult:
+    report_worker_stage("gamut_load_materials")
     from core.material_gamut_coverage import compute_dynamic_layer_gamut, compute_fixed_layer_gamut
 
     materials = _load_materials(params)

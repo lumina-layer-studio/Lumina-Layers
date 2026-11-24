@@ -7,6 +7,7 @@ the exhaustive affine enumerators used by the legacy solver-cache builder.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Callable
 
 import numpy as np
 
@@ -132,6 +133,7 @@ def _rng_points(count: int, layer_count: int, seed: int) -> np.ndarray:
 
 def _validate_sample_points(
     points: np.ndarray, count: int, layer_count: int,
+    *, check_variation: bool = True,
 ) -> np.ndarray:
     points = np.asarray(points)
     if (
@@ -147,9 +149,31 @@ def _validate_sample_points(
         raise ValueError("sample points must be finite and within [0, 1)")
     # Sobol varies in every dimension, even for two samples. A missing SciPy
     # resource can silently collapse a dimension; avoid sorting giant batches.
-    if int(count) > 1 and np.any(points.max(axis=0) == points.min(axis=0)):
+    if check_variation and int(count) > 1 and np.any(points.max(axis=0) == points.min(axis=0)):
         raise ValueError("sample points must not collapse any dimension")
     return points
+
+
+def _quantize_sample_blocks(
+    draw: Callable[[int], np.ndarray], *,
+    material_count: int, layer_count: int, count: int, block_rows: int,
+) -> np.ndarray:
+    recipes = np.empty((count, layer_count), dtype=np.uint16)
+    minimum = np.full(layer_count, np.inf)
+    maximum = np.full(layer_count, -np.inf)
+    # Sobol's first draw must be a power of two to avoid a balance warning.
+    # The same sampler advances across all blocks of this logical stream.
+    block_rows = 1 << (min(int(block_rows), max(1, int(count))).bit_length() - 1)
+    for start in range(0, count, block_rows):
+        size = min(block_rows, count - start)
+        points = _validate_sample_points(draw(size), size, layer_count, check_variation=False)
+        np.minimum(minimum, points.min(axis=0), out=minimum)
+        np.maximum(maximum, points.max(axis=0), out=maximum)
+        recipes[start : start + size] = np.floor(points * material_count)
+    if count > 1 and np.any(minimum == maximum):
+        raise ValueError("sample points must not collapse any dimension")
+    np.clip(recipes, 0, material_count - 1, out=recipes)
+    return recipes
 
 
 def _low_discrepancy_recipes(
@@ -158,7 +182,24 @@ def _low_discrepancy_recipes(
     layer_count: int,
     count: int,
     seed: int,
+    block_rows: int | None = None,
 ) -> np.ndarray:
+    if block_rows is not None:
+        try:
+            from scipy.stats import qmc
+
+            sampler = qmc.Sobol(d=layer_count, scramble=True, seed=seed)
+            return _quantize_sample_blocks(
+                sampler.random, material_count=material_count, layer_count=layer_count,
+                count=count, block_rows=block_rows,
+            )
+        except Exception:
+            rng = np.random.default_rng(seed)
+            return _quantize_sample_blocks(
+                lambda size: rng.random((size, layer_count), dtype=np.float64),
+                material_count=material_count, layer_count=layer_count,
+                count=count, block_rows=block_rows,
+            )
     try:
         points = _validate_sample_points(
             _sobol_points(count, layer_count, seed), count, layer_count,

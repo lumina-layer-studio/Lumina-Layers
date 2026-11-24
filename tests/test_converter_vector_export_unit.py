@@ -591,7 +591,10 @@ class TestVectorBranchExport:
     @patch("core.vector_engine.VectorProcessor")
     def test_vector_add_loop_exports_keychain_geometry(self, MockVP, mock_bambu_export, tmp_path):
         """Vector exports should include the requested keychain loop object."""
+        from shapely.geometry import GeometryCollection, box
+
         from config import ModelingMode
+        from core.vector_structure import VectorStructurePlan
 
         svg_file = tmp_path / "loop-vector.svg"
         svg_file.write_text(
@@ -615,6 +618,10 @@ class TestVectorBranchExport:
         }
         fake_processor.analyze_svg.return_value.slot_names = ["White", "Red", "Yellow", "Blue"]
         fake_processor.analyze_svg.return_value.num_layers = 4
+        footprint = box(-40, -42, 40, 42)
+        fake_processor.analyze_svg.return_value.structure_plan = VectorStructurePlan(
+            footprint, footprint, GeometryCollection(), 0.0,
+        )
         MockVP.return_value = fake_processor
 
         from core.converter import convert_image_to_3d

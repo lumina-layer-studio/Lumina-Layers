@@ -5473,7 +5473,11 @@ export const useConverterStore = create<ConverterState & ConverterActions>()(
         layer_order: layerOrder,
         color_layers: isDynamicMaterialActive(state) ? recipe.length
           : Math.max(recipe.length, state.color_layers ?? recipe.length),
-        layer_height_mm: state.layer_height_mm ?? state.selectedLutInfo?.layer_height_mm ?? 0.08,
+        layer_height_mm: state.layer_height_mm
+          ?? (state.source_version === "material"
+            ? state.materialLayerHeightMm
+            : state.selectedLutInfo?.layer_height_mm)
+          ?? 0.08,
         ...(virtualMaterials?.length ? { virtual_materials: virtualMaterials } : {}),
       });
     },

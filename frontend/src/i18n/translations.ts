@@ -8972,6 +8972,26 @@ export const translations: Record<string, Record<"zh" | "en", string>> = {
     zh: "模块加载失败",
     en: "Module failed to load",
   },
+  workshop_runtime_disconnected: {
+    zh: "模块连接已断开。未保存的编辑可能无法恢复。",
+    en: "The module disconnected. Unsaved edits may be lost.",
+  },
+  workshop_runtime_reload: {
+    zh: "重新加载模块",
+    en: "Reload module",
+  },
+  workshop_project_snapshots_unsupported: {
+    zh: "当前创意工坊模块版本不支持工程快照。请安装支持快照的版本。",
+    en: "This Workshop module version does not support project snapshots. Install a version that supports snapshots.",
+  },
+  workshop_project_save_disconnected: {
+    zh: "创意工坊模块连接已断开。请在创意工坊重新打开或重新加载模块，再保存工程。",
+    en: "The Workshop module disconnected. Reopen or reload it in Creative Workshop, then try saving again.",
+  },
+  workshop_project_restore_disconnected: {
+    zh: "创意工坊模块连接已断开。请在创意工坊重新打开或重新加载模块，再重试打开工程。",
+    en: "The Workshop module disconnected. Reopen or reload it in Creative Workshop, then try opening the project again.",
+  },
   "workshop.manager.eyebrow": {
     zh: "Lumina Studio",
     en: "Lumina Studio",

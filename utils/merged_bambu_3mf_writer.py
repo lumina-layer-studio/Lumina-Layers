@@ -830,6 +830,22 @@ def _resolve_merged_wipe_tower_placement(
             assembly.min_z for assembly in assemblies
         )
         model_translation_locked = False
+    coating_layer_height = None
+    if build_transforms is not None and any(
+        slot.slot_name == "Coating" for item in items for slot in item.slots
+    ):
+        layer_heights = [layout["layer_height"]]
+        if layout["initial_layer_height"] is not None:
+            layer_heights.append(layout["initial_layer_height"])
+        for assembly in assemblies:
+            layer_ranges = assembly.metadata_parts.get("Metadata/layer_config_ranges.xml")
+            if layer_ranges is not None:
+                layer_heights.extend(
+                    float(option.text)
+                    for option in ET.fromstring(layer_ranges).findall(".//option[@opt_key='layer_height']")
+                    if option.text
+                )
+        coating_layer_height = min(layer_heights)
     request = build_wipe_tower_placement_request(
         layout,
         model_bounds=model_bounds,
@@ -845,6 +861,7 @@ def _resolve_merged_wipe_tower_placement(
         printer_id=printer_id,
         slicer=slicer,
         nozzle_size=nozzle_size,
+        coating_layer_height_mm=coating_layer_height,
     )
     if request is None:
         placement = None
@@ -1177,10 +1194,27 @@ class MergedSlicer3MFWriter:
         project_result = self._compose_project(items, assemblies, metadata_target, source_materials)
         final_project = json.loads(project_result["project_settings_json"])
         resolved_slicer = normalize_slicer_software_id(metadata_target.slicer_id)
-        layout = read_project_layout(
-            {**DEFAULT_EXPORT_SETTINGS, **final_project},
-            slicer_id=resolved_slicer,
-        )
+        layout_settings = {**DEFAULT_EXPORT_SETTINGS, **final_project}
+        if build_transforms is not None and resolved_slicer == "OrcaSlicer":
+            # Orca's native default matters for the assembled tower footprint.
+            layout_settings.setdefault("prime_volume", "45")
+        layout = read_project_layout(layout_settings, slicer_id=resolved_slicer)
+        if build_transforms is not None:
+            finest_piece = min(
+                assemblies,
+                key=lambda piece: piece.source_metadata["layout"]["min_layer_height"] or math.inf,
+            )
+            finest_minimum = finest_piece.source_metadata["layout"]["min_layer_height"]
+            if (
+                finest_minimum is not None
+                and 0 < finest_minimum < (layout["min_layer_height"] or math.inf)
+                and "min_layer_height" in finest_piece.project_settings
+            ):
+                # Keep the native value shape (one setting per nozzle in Bambu/Orca).
+                native_minimum = finest_piece.project_settings["min_layer_height"]
+                final_project["min_layer_height"] = native_minimum
+                layout_settings["min_layer_height"] = native_minimum
+                layout = read_project_layout(layout_settings, slicer_id=resolved_slicer)
         source_layout = assemblies[0].source_metadata["layout"]
         source_nozzles = source_layout["nozzle_diameters"]
         source_nozzle = nozzle_size or (source_nozzles[0] if source_nozzles else None)
@@ -1446,24 +1480,20 @@ class MergedSlicer3MFWriter:
     def _source_build_transform(
         item: MergedItem, assembly: _SourceAssembly, source_transform: Sequence[float] | None,
     ) -> list[float]:
-        """Select the computed batch placement or the explicit puzzle transform."""
-        if source_transform is None:
-            dx = item.tx_mm - assembly.min_x
-            dy = item.ty_mm - assembly.min_y
-            dz = assembly.source_build_transform[11]
-            build_transform = [
-                1.0, 0.0, 0.0,
-                0.0, 1.0, 0.0,
-                0.0, 0.0, 1.0,
-                dx, dy, dz,
-            ]
-        else:
-            build_transform = [
-                float(value)
-                for value in source_transform
-            ]
-            dx, dy, dz = build_transform[9:12]
-        return build_transform
+        """Place a piece on the same Z datum used by its source layer ranges."""
+        dz = assembly.source_build_transform[11]
+        if source_transform is not None:
+            build_transform = list(map(float, source_transform))
+            # Lift film below the plate and keep the logical height of
+            # backing-only pieces whose optical cells start higher up.
+            build_transform[11] += max(0.0, dz)
+            return build_transform
+        return [
+            1.0, 0.0, 0.0,
+            0.0, 1.0, 0.0,
+            0.0, 0.0, 1.0,
+            item.tx_mm - assembly.min_x, item.ty_mm - assembly.min_y, dz,
+        ]
 
     @staticmethod
     def _add_source_group(

@@ -103,6 +103,18 @@ def assemble_puzzle_3mf(
 
     from utils.slicer_3mf_writer import MergedSlicer3MFWriter, MergedItem
 
+    coating = next(
+        (slot for slots in piece_slots for slot in slots if slot.slot_name == "Coating"),
+        None,
+    )
+    if slot_names and coating is not None:
+        slot_names = list(dict.fromkeys([*slot_names, coating.slot_name]))
+        preview_colors = {
+            **(preview_colors or {}),
+            coating.slot_name: _resolve_preview_rgb_for_material_name(
+                coating.slot_name, coating.slot_id, None, coating.preview_color,
+            ),
+        }
     selected_piece_slots = _select_puzzle_palette_slots(
         piece_slots=piece_slots,
         slot_names=slot_names,
@@ -183,6 +195,7 @@ def _select_puzzle_palette_slots(
     source_indexes = slot_index_by_name or {
         name: index for index, name in enumerate(palette)
     }
+    optical_palette_size = len(palette) - ("Coating" in palette)
     selected_by_piece: list[tuple[Any, ...]] = []
     for source_slots in piece_slots:
         slots_by_index = {int(slot.slot_id): slot for slot in source_slots}
@@ -192,7 +205,7 @@ def _select_puzzle_palette_slots(
         for output_index, name in enumerate(palette):
             source_index = int(source_indexes.get(name, output_index))
             source_slot = next((slot for slot in source_slots if slot.slot_name == name), None)
-            if source_slot is None and len(source_slots) >= len(palette):
+            if source_slot is None and name != "Coating" and len(source_slots) >= optical_palette_size:
                 # Full piece palettes retain unused slots as "Slot N".
                 # ColorSystem.map indexes layer codes, which can differ from
                 # the exported palette order. Never borrow another named slot.

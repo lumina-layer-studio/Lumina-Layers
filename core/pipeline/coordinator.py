@@ -18,6 +18,7 @@ import time
 import cv2
 
 from api.structured_logging import get_logger
+from api.worker_diagnostics import report_worker_stage
 from core.errors import CachedPreviewAnalysisError
 from core.svg_hole_compensation import validate_svg_compensation_scope
 from core.pipeline import (
@@ -149,7 +150,10 @@ def run_raster_pipeline(ctx: dict) -> dict:
     pipeline_t0 = time.perf_counter()
     step_timings = {}
 
+    export_only = bool(ctx.get("export_only_3mf_path"))
     # ---- S01: Input validation ----
+    if export_only:
+        report_worker_stage("S01")
     _report_progress(ctx, 0.0, "输入验证中... | Validating inputs...")
     t0 = time.perf_counter()
     try:
@@ -165,6 +169,8 @@ def run_raster_pipeline(ctx: dict) -> dict:
     step_timings["S01"] = time.perf_counter() - t0
 
     if ctx.get("error"):
+        if export_only:
+            ctx["error"] = f"[S01] {ctx['error']}"
         return ctx
     if _stop_after_step_if_requested(ctx, "S01", pipeline_t0, step_timings):
         return ctx
@@ -175,6 +181,11 @@ def run_raster_pipeline(ctx: dict) -> dict:
 
     # ---- S02-S12: Raster steps ----
     for module, label, prog_before, prog_after, optional in _RASTER_STEPS:
+        # S05 also computes the keychain loop consumed by S08.
+        if export_only and (label == "S04" or (label == "S05" and not ctx.get("add_loop"))):
+            continue
+        if export_only:
+            report_worker_stage(label)
         _report_progress(ctx, prog_before, f"{label} 执行中...")
         t0 = time.perf_counter()
         try:
@@ -210,14 +221,20 @@ def run_raster_pipeline(ctx: dict) -> dict:
                 return ctx
         step_timings[label] = time.perf_counter() - t0
         if ctx.get("error"):
+            if export_only:
+                ctx["error"] = f"[{label}] {ctx['error']}"
             return ctx
         if _stop_after_step_if_requested(ctx, label, pipeline_t0, step_timings):
             return ctx
         _report_progress(ctx, prog_after)
+        if export_only and label == "S09":
+            ctx["result_tuple"] = (ctx["out_path"], None, None, "[OK] 3MF exported", None)
+            _report_progress(ctx, 1.0)
+            break
 
     total_s = time.perf_counter() - pipeline_t0
     log.debug(
-        "S01-S12 completed in %.2fs",
+        "Raster pipeline completed in %.2fs",
         total_s,
         extra={
             "event": "pipeline_completed",

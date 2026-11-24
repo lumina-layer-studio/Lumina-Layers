@@ -38,7 +38,8 @@ from shapely.geometry.base import BaseGeometry
 import trimesh
 
 from api.structured_logging import get_logger
-from config import BedManager, PrinterConfig, normalize_nozzle_size
+from config import BedManager, normalize_nozzle_size
+from core.print_layers import resolve_coating_height_mm, resolve_layer_height_mm
 from core.errors import (
     CachedPreviewAnalysisError,
 )
@@ -573,7 +574,7 @@ def _inject_vector_keychain_loop(
     )
 
     thickness_mm = max(
-        PrinterConfig.LAYER_HEIGHT,
+        resolve_layer_height_mm(ctx),
         float(bounds[1, 2] - bounds[0, 2]),
     )
     loop_mesh = create_keychain_loop(
@@ -945,38 +946,23 @@ def _update_bambu_base_layer_ctx_for_vector(
             preserves the historical printer default.\uff08\u5b9e\u9645\u77e2\u91cf\u5c42\u9ad8\uff1b``None``
             \u65f6\u6cbf\u7528\u5386\u53f2\u6253\u5370\u673a\u9ed8\u8ba4\u503c\u3002\uff09
     """
-    from config import PrinterConfig
-
-    try:
-        layer_h = float(
-            PrinterConfig.LAYER_HEIGHT
-            if layer_height_mm is None
-            else layer_height_mm
-        )
-    except (TypeError, ValueError):
-        layer_h = float(PrinterConfig.LAYER_HEIGHT)
-    if not np.isfinite(layer_h) or layer_h <= 0:
-        layer_h = float(PrinterConfig.LAYER_HEIGHT)
+    layer_h = resolve_layer_height_mm(ctx if layer_height_mm is None else {"layer_height_mm": layer_height_mm})
     backing_layer_count = max(1, int(round(float(thickness_mm) / layer_h)))
     base_height_mm = backing_layer_count * layer_h
-    coating_layers = 0
-    if bool(ctx.get("enable_coating", False)):
-        try:
-            coating_height_mm = float(ctx.get("coating_height_mm", layer_h))
-        except (TypeError, ValueError):
-            coating_height_mm = layer_h
-        if np.isfinite(coating_height_mm) and coating_height_mm > 0:
-            coating_layers = max(1, int(round(coating_height_mm / layer_h)))
-    color_height_mm = (max(0, int(num_layers)) + coating_layers) * layer_h
+    color_height_mm = max(0, int(num_layers)) * layer_h
+    if ctx.get("enable_coating"):
+        color_height_mm += resolve_coating_height_mm(ctx.get("coating_height_mm"))
 
     structure_mode_text = str(structure_mode or "")
     color_mode_text = str(color_mode or "")
     is_double = "\u53cc\u9762" in structure_mode_text or "Double" in structure_mode_text
     is_5color = "5-Color Extended" in color_mode_text
 
-    if is_double:
+    if is_5color:
+        face_orientation = "up"
+    elif is_double:
         face_orientation = "double"
-    elif is_5color or bool(ctx.get("enable_relief", False)):
+    elif ctx.get("enable_relief"):
         face_orientation = "up"
     else:
         face_orientation = "down"
@@ -1147,19 +1133,8 @@ def _log_vector_color_drift_diagnostics(analysis, raster_cache) -> None:
 
 
 def _resolve_vector_layer_height_mm(ctx: dict) -> float:
-    """Return the validated effective layer height for native vector flows.
-
-    普通矢量生成、预览与大画幅切片必须共享同一有效层高；缺失或非法值
-    回退到打印机配置默认值，保持历史 0.08 mm 行为。
-    """
-    fallback = float(PrinterConfig.LAYER_HEIGHT)
-    try:
-        layer_height_mm = float(ctx.get("layer_height_mm") or fallback)
-    except (TypeError, ValueError):
-        return fallback
-    if not math.isfinite(layer_height_mm) or layer_height_mm <= 0:
-        return fallback
-    return layer_height_mm
+    """Return the effective layer height for native vector flows."""
+    return resolve_layer_height_mm(ctx)
 
 
 def _build_vector_processor(ctx: dict, *, fallback_color_mode: str):
@@ -1757,6 +1732,9 @@ def _run_vector_branch(ctx: dict) -> dict:
     vector_replacements = replacement_regions
     if not vector_replacements:
         vector_replacements = color_replacements
+    coating_height_mm = (
+        resolve_coating_height_mm(ctx.get("coating_height_mm")) if ctx.get("enable_coating") else 0.0
+    )
 
     try:
         from core.vector_engine import (
@@ -1771,8 +1749,8 @@ def _run_vector_branch(ctx: dict) -> dict:
         )
         vec_processor.enable_fridge_magnet = bool(enable_fridge_magnet)
         vec_processor.fridge_magnets = list(fridge_magnets)
-        vec_processor.enable_coating = bool(ctx.get("enable_coating", False))
-        vec_processor.coating_height_mm = float(ctx.get("coating_height_mm", 0.08))
+        vec_processor.enable_coating = coating_height_mm > 0
+        vec_processor.coating_height_mm = coating_height_mm
         vec_processor.coating_material = ctx.get("resolved_coating_material")
         vec_processor.enable_outline = bool(ctx.get("enable_outline", False))
         try:
@@ -2551,6 +2529,7 @@ def _run_vector_branch(ctx: dict) -> dict:
                 ctx.get("backing_infill_density_percent", 100)
             ),
             cover_source=vector_cover_source,
+            coating_height_mm=coating_height_mm,
             device_profile_id=ctx.get("device_profile_id") or None,
             custom_3mf_template_id=ctx.get("custom_3mf_template_id") or None,
             build_plate_id=ctx.get("build_plate_id") or None,

@@ -514,7 +514,9 @@ def test_generate_puzzle_assembles_single_3mf_and_passes_piece_matched_rgb(compe
 
     session_id, preview_cache = _make_session()
     submitted_params: list[dict[str, Any]] = []
+    submitted_assets: list[tuple[dict[str, Any], np.ndarray]] = []
     assembled_calls: list[dict[str, Any]] = []
+
     async def _submit_stub(
         func: object,
         piece_image_path: str,
@@ -522,10 +524,11 @@ def test_generate_puzzle_assembles_single_3mf_and_passes_piece_matched_rgb(compe
         worker_params: dict[str, Any],
     ) -> dict[str, Any]:
         submitted_params.append(worker_params)
-        fd_piece, piece_path = tempfile.mkstemp(suffix=".3mf")
-        os.close(fd_piece)
-        with open(piece_path, "wb") as handle:
-            handle.write(b"piece-3mf")
+        boundary = json.loads(Path(worker_params["piece_boundary_geometry_path"]).read_text(encoding="utf-8"))
+        matched = np.load(worker_params["matched_rgb_path"], allow_pickle=False)
+        submitted_assets.append((boundary, matched))
+        piece_path = worker_params["export_only_3mf_path"]
+        Path(piece_path).write_bytes(b"piece-3mf")
         return {
             "threemf_path": piece_path,
             "glb_path": None,
@@ -615,7 +618,7 @@ def test_generate_puzzle_assembles_single_3mf_and_passes_piece_matched_rgb(compe
     assert body["download_url"].startswith("/api/files/")
     assert body["threemf_disk_path"] is None
     assert len(submitted_params) == 6
-    assert all(os.path.exists(params["piece_boundary_geometry_path"]) for params in submitted_params)
+    assert all(not os.path.exists(params["piece_boundary_geometry_path"]) for params in submitted_params)
     assert all(params["disable_material_dilation"] is True for params in submitted_params)
     assert all(params["center_on_bed"] is False for params in submitted_params)
     assert all(params["add_loop"] is False for params in submitted_params)
@@ -679,15 +682,10 @@ def test_generate_puzzle_assembles_single_3mf_and_passes_piece_matched_rgb(compe
         [piece.bbox_mm[0] for piece in layout.pieces],
         atol=1e-9,
     )
-    first_boundary_path = Path(submitted_params[0]["piece_boundary_geometry_path"])
-    with first_boundary_path.open("r", encoding="utf-8") as handle:
-        boundary = json.load(handle)
-
+    boundary, saved_matched = submitted_assets[0]
     assert boundary["bbox_px"] == list(first_piece.bbox_px)
     assert len(boundary["polygon_px"]) >= 3
     assert len(boundary["holes_px"]) == len(first_piece.holes_px)
-    first_matched_path = Path(submitted_params[0]["matched_rgb_path"])
-    saved_matched = np.load(first_matched_path)
     bbox_px, local_mask = rasterize_piece_mask(first_piece)
     x0, y0, x1, y1 = bbox_px
     expected_worker_w = max(1, int(round((first_piece.bbox_mm[2] - first_piece.bbox_mm[0]) * 10.0)))
@@ -818,8 +816,7 @@ def test_generate_puzzle_places_face_down_single_sided_pieces_with_actual_mirror
         _lut_path: str,
         worker_params: dict[str, Any],
     ) -> dict[str, Any]:
-        fd_piece, piece_path = tempfile.mkstemp(suffix=".3mf")
-        os.close(fd_piece)
+        piece_path = worker_params["export_only_3mf_path"]
         Path(piece_path).write_bytes(b"piece-3mf")
         mirror_span_mm = round(float(worker_params["target_width_mm"]) * 10.0) / 10.0
         return {
@@ -1105,6 +1102,7 @@ def test_generate_puzzle_resizes_heightmap_crop_to_worker_grid() -> None:
 
     session_id, _preview_cache = _make_session()
     submitted_params: list[dict[str, Any]] = []
+    submitted_heightmaps: list[np.ndarray] = []
     heightmap = np.tile(np.arange(120, dtype=np.uint8), (80, 1))
     _test_store.put(session_id, "heightmap_grayscale", heightmap)
 
@@ -1115,10 +1113,10 @@ def test_generate_puzzle_resizes_heightmap_crop_to_worker_grid() -> None:
         worker_params: dict[str, Any],
     ) -> dict[str, Any]:
         submitted_params.append(worker_params)
-        fd_piece, piece_path = tempfile.mkstemp(suffix=".3mf")
-        os.close(fd_piece)
-        with open(piece_path, "wb") as handle:
-            handle.write(b"piece-3mf")
+        with Image.open(worker_params["heightmap_path"]) as piece_heightmap:
+            submitted_heightmaps.append(np.array(piece_heightmap))
+        piece_path = worker_params["export_only_3mf_path"]
+        Path(piece_path).write_bytes(b"piece-3mf")
         return {
             "threemf_path": piece_path,
             "glb_path": None,
@@ -1190,7 +1188,7 @@ def test_generate_puzzle_resizes_heightmap_crop_to_worker_grid() -> None:
     first_piece = layout.pieces[0]
     expected_worker_w = max(1, int(round((first_piece.bbox_mm[2] - first_piece.bbox_mm[0]) * 10.0)))
     expected_worker_h = max(1, int(round((first_piece.bbox_mm[3] - first_piece.bbox_mm[1]) * 10.0)))
-    saved_heightmap = np.array(Image.open(submitted_params[0]["heightmap_path"]))
+    saved_heightmap = submitted_heightmaps[0]
 
     assert saved_heightmap.shape == (expected_worker_h, expected_worker_w)
     assert np.any(saved_heightmap != 0)
@@ -1209,10 +1207,8 @@ def test_generate_puzzle_emits_hybrid_boundary_log_for_each_piece() -> None:
         worker_params: dict[str, Any],
     ) -> dict[str, Any]:
         submitted_params.append(worker_params)
-        fd_piece, piece_path = tempfile.mkstemp(suffix=".3mf")
-        os.close(fd_piece)
-        with open(piece_path, "wb") as handle:
-            handle.write(b"piece-3mf")
+        piece_path = worker_params["export_only_3mf_path"]
+        Path(piece_path).write_bytes(b"piece-3mf")
         return {
             "threemf_path": piece_path,
             "glb_path": None,
@@ -1279,7 +1275,7 @@ def test_submit_puzzle_worker_preserves_boundary_params() -> None:
         captured["params"] = params
         return {"status_msg": "ok"}
 
-    with patch("api.routers.converter.puzzle.worker_generate_model", side_effect=_worker_stub):
+    with patch("api.workers.converter_workers.worker_generate_model", side_effect=_worker_stub):
         result = _submit_puzzle_worker(
             "piece.png",
             "lut.npy",
@@ -1309,10 +1305,8 @@ def test_generate_puzzle_reuses_cached_layout_after_preview() -> None:
         lut_path: str,
         worker_params: dict[str, Any],
     ) -> dict[str, Any]:
-        fd_piece, piece_path = tempfile.mkstemp(suffix=".3mf")
-        os.close(fd_piece)
-        with open(piece_path, "wb") as handle:
-            handle.write(b"piece-3mf")
+        piece_path = worker_params["export_only_3mf_path"]
+        Path(piece_path).write_bytes(b"piece-3mf")
         return {
             "threemf_path": piece_path,
             "glb_path": None,
@@ -1472,10 +1466,8 @@ def test_generate_puzzle_filters_fully_transparent_pieces_during_layout() -> Non
         worker_params: dict[str, Any],
     ) -> dict[str, Any]:
         submitted_params.append(worker_params)
-        fd_piece, piece_path = tempfile.mkstemp(suffix=".3mf")
-        os.close(fd_piece)
-        with open(piece_path, "wb") as handle:
-            handle.write(b"piece-3mf")
+        piece_path = worker_params["export_only_3mf_path"]
+        Path(piece_path).write_bytes(b"piece-3mf")
         return {
             "threemf_path": piece_path,
             "glb_path": None,

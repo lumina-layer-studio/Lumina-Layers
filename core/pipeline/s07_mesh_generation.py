@@ -18,7 +18,7 @@ import numpy as np
 import trimesh
 from shapely.geometry import Polygon
 
-from config import PrinterConfig
+from core.print_layers import resolve_layer_height_mm
 from core.mesh_generators import get_mesher
 from core.system_capacity import get_effective_memory_capacity
 from core.task_parallelism import (
@@ -194,6 +194,7 @@ def run(ctx: dict) -> dict:
     modeling_mode = ctx["modeling_mode"]
     target_h = ctx["target_h"]
     pixel_scale = ctx["pixel_scale"]
+    layer_height_mm = resolve_layer_height_mm(ctx)
     piece_boundary_geometry_path = ctx.get("piece_boundary_geometry_path")
     disable_material_dilation = bool(ctx.get("disable_material_dilation", True))
     boundary_geometry = _load_boundary_geometry(piece_boundary_geometry_path)
@@ -207,16 +208,16 @@ def run(ctx: dict) -> dict:
     transform = np.eye(4)
     transform[0, 0] = pixel_scale
     transform[1, 1] = pixel_scale
-    transform[2, 2] = PrinterConfig.LAYER_HEIGHT
+    transform[2, 2] = layer_height_mm
 
     _log.debug(
         "Transform: XY=%smm/px, Z=%smm/layer",
         pixel_scale,
-        PrinterConfig.LAYER_HEIGHT,
+        layer_height_mm,
         extra={
             "event": "s07_transform_resolved",
             "pixel_scale": float(pixel_scale),
-            "layer_height_mm": float(PrinterConfig.LAYER_HEIGHT),
+            "layer_height_mm": layer_height_mm,
         },
     )
 
@@ -224,6 +225,7 @@ def run(ctx: dict) -> dict:
         modeling_mode,
         disable_material_dilation=disable_material_dilation,
         boundary_geometry=boundary_geometry,
+        boundary_shape=full_matrix.shape[1:] if boundary_geometry is not None else None,
     )
     _log.debug(
         "Using mesher: %s",

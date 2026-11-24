@@ -286,6 +286,11 @@ def resolve_structure_plan(
         writer_grid_mm = resolve_vector_writer_grid_mm(
             max(abs(value) for value in envelope.bounds) * plan_scale
         )
+        if svg_domain is None:
+            # Legacy millimetre analyses must put all three footprints on
+            # the same grid. Snapping only the subtraction leaves fine seams.
+            body = shapely.set_precision(body, writer_grid_mm)
+            envelope = shapely.set_precision(envelope, writer_grid_mm)
         outline = difference(
             envelope, body,
             grid_size=svg_domain.grid_size if svg_domain is not None else writer_grid_mm,

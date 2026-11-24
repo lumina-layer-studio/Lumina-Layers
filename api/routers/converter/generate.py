@@ -76,7 +76,8 @@ from api.workers.converter_workers import (
 )
 from core.batch_layout import LayoutResult, XYBBox, layout_shelf_by_row
 from core.errors import (
-    CachedPreviewAnalysisError, ExternalSpoolSelectionError, KeychainPlacementError, MaterialArchiveUnavailableError,
+    CachedPreviewAnalysisError, CoatingLayerHeightError, ExternalSpoolSelectionError,
+    KeychainPlacementError, MaterialArchiveUnavailableError,
     NativeMaterialSelectionError, TemplateSlotCapacityError, WipeTowerLayoutError,
 )
 from .export_materials import require_material_selection
@@ -273,6 +274,7 @@ router = APIRouter()
 log = get_logger(__name__)
 
 _EXPORT_INPUT_ERRORS = (
+    CoatingLayerHeightError,
     ExternalSpoolSelectionError,
     KeychainPlacementError,
     MaterialArchiveUnavailableError,

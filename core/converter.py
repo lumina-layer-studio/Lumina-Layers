@@ -357,6 +357,7 @@ def convert_image_to_3d(
     final_material_matrix_authority_mask_path: Optional[str] = None,
     cover_source_path: Optional[str] = None,
     export_transform_metadata: Optional[Dict[str, object]] = None,
+    export_only_3mf_path: str | None = None,
     material_dynamic_layer_count_enabled: bool = False,
     material_min_layer_count: int = 5,
     material_max_layer_count: int = 10,
@@ -395,6 +396,7 @@ def convert_image_to_3d(
         export_transform_metadata: Optional mutable result populated with the
             effective export transform. (可选的可变结果容器，用于返回实际导出
             变换。)
+        export_only_3mf_path: Internal output path for a raster 3MF without preview artifacts.
         material_backing_material_index: Optional selected-material index used
             as the backing color when ``material_source`` is
             ``"material_archive"``. Native and legacy LUT flows ignore it.
@@ -554,6 +556,7 @@ def convert_image_to_3d(
         "final_material_matrix_authority_mask_path": final_material_matrix_authority_mask_path,
         "cover_source_path": cover_source_path,
         "export_transform_metadata": export_transform_metadata,
+        "export_only_3mf_path": export_only_3mf_path,
         "material_dynamic_layer_count_enabled": material_dynamic_layer_count_enabled,
         "material_min_layer_count": material_min_layer_count,
         "material_max_layer_count": material_max_layer_count,
@@ -815,6 +818,7 @@ def generate_final_model(
     final_material_matrix_authority_mask_path: Optional[str] = None,
     cover_source_path: Optional[str] = None,
     export_transform_metadata: Optional[Dict[str, object]] = None,
+    export_only_3mf_path: str | None = None,
     material_dynamic_layer_count_enabled: bool = False,
     material_min_layer_count: int = 5,
     material_max_layer_count: int = 10,
@@ -852,6 +856,7 @@ def generate_final_model(
             (可选的封面缩略图源路径，最终透传到 staged pipeline ctx)
         export_transform_metadata: Optional mutable result populated by the
             export stage. (由导出阶段写入实际变换信息的可选可变结果容器。)
+        export_only_3mf_path: Internal output path for a raster 3MF without preview artifacts.
         device_profile_id: Optional generated machine registry device profile
             selection forwarded to ``convert_image_to_3d`` and 3MF export.
             (可选的机器注册表设备配置 ID，透传到主转换与 3MF 导出)
@@ -1050,6 +1055,7 @@ def generate_final_model(
         material_delta_e00_tolerance=material_delta_e00_tolerance,
         cover_source_path=cover_source_path,
         export_transform_metadata=export_transform_metadata,
+        export_only_3mf_path=export_only_3mf_path,
     )
 
 

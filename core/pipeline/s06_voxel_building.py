@@ -16,6 +16,7 @@ import time
 import numpy as np
 
 from config import PrinterConfig, get_source_kind
+from core.print_layers import resolve_coating_height_mm, resolve_layer_height_mm
 
 _log = get_logger(__name__)
 
@@ -44,18 +45,12 @@ def _update_bambu_base_layer_ctx_from_voxels(
         thickness_mm (float): Requested or quantized backing thickness in millimetres.
             （请求值或量化后的底板厚度，单位毫米）
     """
-    layer_h = PrinterConfig.LAYER_HEIGHT
+    layer_h = resolve_layer_height_mm(ctx)
     backing_layer_count = max(1, int(round(float(thickness_mm) / layer_h)))
     base_height_mm = backing_layer_count * layer_h
-    coating_layers = 0
-    if bool(ctx.get("enable_coating", False)):
-        try:
-            coating_height_mm = float(ctx.get("coating_height_mm", layer_h))
-        except (TypeError, ValueError):
-            coating_height_mm = layer_h
-        if np.isfinite(coating_height_mm) and coating_height_mm > 0:
-            coating_layers = max(1, int(round(coating_height_mm / layer_h)))
-    color_height_mm = (max(0, int(num_layers)) + coating_layers) * layer_h
+    color_height_mm = max(0, int(num_layers)) * layer_h
+    if ctx.get("enable_coating"):
+        color_height_mm += resolve_coating_height_mm(ctx.get("coating_height_mm"))
 
     structure_mode_text = str(structure_mode or "")
     color_mode_text = str(color_mode or "")
@@ -211,21 +206,25 @@ def _resolve_fridge_cavity_z_range(
     return (cavity_z_start, cavity_z_end)
 
 
-def _resolve_min_fridge_spacer_thick(fridge_magnets: list[dict] | None) -> float:
+def _resolve_min_fridge_spacer_thick(
+    fridge_magnets: list[dict] | None,
+    *,
+    layer_height_mm: float = PrinterConfig.LAYER_HEIGHT,
+) -> float:
     """Return the minimum backing thickness required after layer quantization."""
     if not fridge_magnets:
         return 0.0
 
-    shell_layers = max(1, int(round(0.4 / PrinterConfig.LAYER_HEIGHT)))
+    shell_layers = max(1, int(round(0.4 / layer_height_mm)))
     required_layers = shell_layers
     for magnet in fridge_magnets:
         thickness_mm = float(magnet.get("thickness_mm") or 0.0)
         if thickness_mm <= 0:
             continue
-        cavity_layers = max(1, int(round(thickness_mm / PrinterConfig.LAYER_HEIGHT)))
+        cavity_layers = max(1, int(round(thickness_mm / layer_height_mm)))
         required_layers = max(required_layers, shell_layers + cavity_layers)
 
-    return required_layers * PrinterConfig.LAYER_HEIGHT
+    return required_layers * layer_height_mm
 
 
 def _build_uniform_backing_z_maps(
@@ -250,12 +249,14 @@ def _carve_fridge_magnet_cavities(
     pixel_scale: float,
     backing_metadata: dict,
     fridge_magnets: list[dict] | None,
+    *,
+    layer_height_mm: float = PrinterConfig.LAYER_HEIGHT,
 ) -> np.ndarray:
     """Carve blind fridge-magnet cavities into backing voxels only."""
     if not fridge_magnets:
         return full_matrix
 
-    shell_layers = max(1, int(round(0.4 / PrinterConfig.LAYER_HEIGHT)))
+    shell_layers = max(1, int(round(0.4 / layer_height_mm)))
     backing_z_min_map = backing_metadata.get("backing_z_min_map")
     backing_z_max_map = backing_metadata.get("backing_z_max_map")
     if backing_z_min_map is None or backing_z_max_map is None:
@@ -267,7 +268,7 @@ def _carve_fridge_magnet_cavities(
 
     for magnet in fridge_magnets:
         thickness_mm = float(magnet.get("thickness_mm") or 0.0)
-        cavity_layers = max(1, int(round(thickness_mm / PrinterConfig.LAYER_HEIGHT)))
+        cavity_layers = max(1, int(round(thickness_mm / layer_height_mm)))
         cavity_z_range = _resolve_fridge_cavity_z_range(
             backing_metadata["backing_z_range"],
             shell_layers,
@@ -347,6 +348,7 @@ def _build_voxel_matrix(
     backing_mask=None,
     *,
     compact_backing: bool = False,
+    layer_height_mm: float = PrinterConfig.LAYER_HEIGHT,
 ):
     """Build complete voxel matrix with backing layer marked using special material_id.
     构建带底板标记的完整体素矩阵。
@@ -377,7 +379,7 @@ def _build_voxel_matrix(
 
     bottom_voxels = np.transpose(material_matrix, (2, 0, 1))
 
-    spacer_layers = max(1, int(round(spacer_thick / PrinterConfig.LAYER_HEIGHT)))
+    spacer_layers = max(1, int(round(spacer_thick / layer_height_mm)))
     stored_spacer_layers = 1 if compact_backing else spacer_layers
     label_dtype = (
         np.result_type(material_matrix.dtype, np.min_scalar_type(backing_color_id), np.int8)
@@ -443,6 +445,8 @@ def _build_voxel_matrix_6layer(
     structure_mode,
     backing_color_id=0,
     backing_mask=None,
+    *,
+    layer_height_mm: float = PrinterConfig.LAYER_HEIGHT,
 ):
     """Build complete voxel matrix for 6-layer structures (5-Color Extended mode).
     构建 6 层体素矩阵（5-Color Extended 模式）。
@@ -464,6 +468,7 @@ def _build_voxel_matrix_6layer(
         structure_mode,
         backing_color_id=backing_color_id,
         backing_mask=backing_mask,
+        layer_height_mm=layer_height_mm,
     )
 
 
@@ -475,6 +480,7 @@ def _build_voxel_matrix_faceup(
     *,
     backing_mask: np.ndarray | None = None,
     compact_backing: bool = False,
+    layer_height_mm: float = PrinterConfig.LAYER_HEIGHT,
 ) -> tuple[np.ndarray, dict]:
     """Face-up voxel matrix for 5-Color Extended mode.
     面朝上体素矩阵（5-Color Extended 模式）。
@@ -510,7 +516,7 @@ def _build_voxel_matrix_faceup(
     """
     target_h, target_w, optical_layers = material_matrix.shape
     footprint = _resolve_backing_mask(backing_mask, mask_solid)
-    spacer_layers = max(1, int(round(spacer_thick / PrinterConfig.LAYER_HEIGHT)))
+    spacer_layers = max(1, int(round(spacer_thick / layer_height_mm)))
     stored_spacer_layers = 1 if compact_backing else spacer_layers
     label_dtype = (
         np.result_type(material_matrix.dtype, np.min_scalar_type(backing_color_id), np.int8)
@@ -561,6 +567,7 @@ def _build_relief_voxel_matrix(
     height_identity_rgb=None,
     *,
     backing_mask: np.ndarray | None = None,
+    layer_height_mm: float = PrinterConfig.LAYER_HEIGHT,
 ):
     """Build 2.5D relief voxel matrix with per-color or per-pixel variable heights.
     构建 2.5D 浮雕体素矩阵，支持按颜色或按像素的可变高度。
@@ -616,7 +623,7 @@ def _build_relief_voxel_matrix(
     OPTICAL_LAYERS = int(material_matrix.shape[2])
     if OPTICAL_LAYERS <= 0:
         raise ValueError("material_matrix must contain at least one optical layer")
-    layer_height = PrinterConfig.LAYER_HEIGHT
+    layer_height = layer_height_mm
     OPTICAL_THICKNESS_MM = OPTICAL_LAYERS * layer_height
 
     _log.debug(f"Building 2.5D relief voxel matrix...")
@@ -648,11 +655,11 @@ def _build_relief_voxel_matrix(
     else:
         occupied = mask_solid | footprint if backing_mask is not None else mask_solid
         max_height_mm = np.max(pixel_heights[occupied]) if np.any(occupied) else default_height
-    max_z_layers = max(OPTICAL_LAYERS + 1, int(np.ceil(max_height_mm / layer_height)))
+    max_z_layers = max(OPTICAL_LAYERS + 1, int(np.ceil(round(max_height_mm / layer_height, 12))))
 
     # Painted columns reserve space for the optical recipe above their backing.
     # A backing-only column has no recipe to subtract from its physical height.
-    requested_layers = np.ceil(np.maximum(layer_height, pixel_heights) / layer_height).astype(int)
+    requested_layers = np.ceil(np.round(np.maximum(layer_height, pixel_heights) / layer_height, 12)).astype(int)
     optical_start_z = np.clip(requested_layers, OPTICAL_LAYERS, max_z_layers) - OPTICAL_LAYERS
     backing_z_max_map = np.where(footprint, optical_start_z - 1, -1)
     if backing_mask is not None:
@@ -706,14 +713,15 @@ def _build_cloisonne_voxel_matrix(
     backing_color_id: int = 0,
     *,
     backing_mask: np.ndarray | None = None,
+    layer_height_mm: float = PrinterConfig.LAYER_HEIGHT,
 ) -> tuple[np.ndarray, dict]:
     """Build voxel matrix for cloisonne mode.
     构建掐丝珐琅模式的体素矩阵。
 
     Layer structure (bottom -> top, Z ascending):
         Z = 0 ... spacer_layers-1   : Base / backing  (backing_color_id)
-        Z = spacer_layers ... +4    : Colour layers   (material_matrix, flipped for face-up)
-        Z = spacer_layers+5 ... +N  : Wire layers     (-3 marker, separate object)
+        The selected recipe stack follows, flipped for face-up.
+        The raised wire spans the remaining layers (-3 marker, separate object).
 
     Cloisonne is always single-sided (face-up).
     Wire uses special marker -3 and is generated as a standalone mesh object.
@@ -734,12 +742,12 @@ def _build_cloisonne_voxel_matrix(
     """
     target_h, target_w = material_matrix.shape[:2]
     footprint = _resolve_backing_mask(backing_mask, mask_solid)
-    OPTICAL = PrinterConfig.COLOR_LAYERS  # 5
+    optical_layers = int(material_matrix.shape[2])
 
-    spacer_layers = max(1, int(round(spacer_thick / PrinterConfig.LAYER_HEIGHT)))
-    wire_layers = max(1, int(round(wire_height_mm / PrinterConfig.LAYER_HEIGHT)))
+    spacer_layers = max(1, int(round(spacer_thick / layer_height_mm)))
+    wire_layers = max(1, int(round(wire_height_mm / layer_height_mm)))
 
-    total_z = spacer_layers + OPTICAL + wire_layers
+    total_z = spacer_layers + optical_layers + wire_layers
     full_matrix = np.full((total_z, target_h, target_w), -1, dtype=int)
 
     # --- Base / backing ---
@@ -748,15 +756,15 @@ def _build_cloisonne_voxel_matrix(
 
     # --- Colour layers (face-up: reverse material order) ---
     colour_start = spacer_layers
-    for i in range(OPTICAL):
-        layer = material_matrix[:, :, OPTICAL - 1 - i]
+    for i in range(optical_layers):
+        layer = material_matrix[:, :, optical_layers - 1 - i]
         z = colour_start + i
         full_matrix[z] = np.where(mask_solid, layer, -1)
 
     # --- Wire layers (only where mask_wireframe AND mask_solid) ---
     wire_mask_2d = mask_wireframe & mask_solid
     wire_slice = np.where(wire_mask_2d, -3, -1).astype(int)
-    wire_start = colour_start + OPTICAL
+    wire_start = colour_start + optical_layers
     full_matrix[wire_start:] = wire_slice[np.newaxis, :, :]
 
     backing_z_range = (0, spacer_layers - 1)
@@ -776,7 +784,7 @@ def _build_cloisonne_voxel_matrix(
 
     _log.debug(
         f"Voxel matrix: {full_matrix.shape} "
-        f"(base={spacer_layers}, colour={OPTICAL}, wire={wire_layers})"
+        f"(base={spacer_layers}, colour={optical_layers}, wire={wire_layers})"
     )
     return full_matrix, backing_metadata
 
@@ -818,6 +826,8 @@ def run(ctx: dict) -> dict:
     material_matrix = ctx["material_matrix"]
     mask_solid = ctx["mask_solid"]
     spacer_thick = ctx["spacer_thick"]
+    layer_height_mm = resolve_layer_height_mm(ctx)
+    ctx["layer_height_mm"] = layer_height_mm
     structure_mode = ctx.get("structure_mode", "单面")
     backing_color_id = ctx.get("backing_color_id", 0)
     color_mode = ctx.get("color_mode", "4-Color")
@@ -836,7 +846,9 @@ def run(ctx: dict) -> dict:
     lut_metadata = ctx.get("lut_metadata")
     effective_backing_color_id = _resolve_generation_backing_color_id(backing_color_id, lut_metadata)
     if enable_fridge_magnet and fridge_magnets:
-        min_fridge_spacer_thick = _resolve_min_fridge_spacer_thick(fridge_magnets)
+        min_fridge_spacer_thick = _resolve_min_fridge_spacer_thick(
+            fridge_magnets, layer_height_mm=layer_height_mm,
+        )
         if spacer_thick + 1e-9 < min_fridge_spacer_thick:
             _log.debug(
                 "Raising spacer_thick from %.3fmm to %.3fmm so fridge cavity fits after layer quantization",
@@ -859,6 +871,7 @@ def run(ctx: dict) -> dict:
                 material_matrix, mask_solid, spacer_thick, effective_backing_color_id,
                 backing_mask=ctx.get("backing_mask"),
                 compact_backing=not enable_fridge_magnet,
+                layer_height_mm=layer_height_mm,
             )
 
         # ========== Cloisonne Mode ==========
@@ -894,6 +907,7 @@ def run(ctx: dict) -> dict:
                 wire_height_mm,
                 effective_backing_color_id,
                 backing_mask=ctx.get("backing_mask"),
+                layer_height_mm=layer_height_mm,
             )
 
         # ========== 2.5D Relief Mode ==========
@@ -943,6 +957,7 @@ def run(ctx: dict) -> dict:
                     height_matrix=heightmap_height_matrix,
                     global_max_height=relief_global_max_height,
                     height_identity_rgb=height_identity_rgb,
+                    layer_height_mm=layer_height_mm,
                 )
             else:
                 # Original flat voxel matrix
@@ -954,6 +969,7 @@ def run(ctx: dict) -> dict:
                     effective_backing_color_id,
                     backing_mask=ctx.get("backing_mask"),
                     compact_backing=not enable_fridge_magnet,
+                    layer_height_mm=layer_height_mm,
                 )
 
         if enable_fridge_magnet:
@@ -963,6 +979,7 @@ def run(ctx: dict) -> dict:
                 pixel_scale,
                 backing_metadata,
                 fridge_magnets,
+                layer_height_mm=layer_height_mm,
             )
 
         z_edges = backing_metadata.get("voxel_z_edges")

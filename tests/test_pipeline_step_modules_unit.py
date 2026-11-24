@@ -1905,7 +1905,7 @@ class TestS08AuxiliaryMeshes:
         from core.pipeline.s08_auxiliary_meshes import run
 
         total_layers = 8
-        coating_layers = 2
+        coating_height_mm = 0.12
         layer_height = PrinterConfig.LAYER_HEIGHT
         mask_solid = np.ones((4, 4), dtype=bool)
         ctx = {
@@ -1927,7 +1927,7 @@ class TestS08AuxiliaryMeshes:
             "separate_backing": False,
             "backing_metadata": {},
             "enable_coating": True,
-            "coating_height_mm": coating_layers * layer_height,
+            "coating_height_mm": coating_height_mm,
             "enable_outline": enable_outline,
             "outline_width": 1.0,
             "free_color_set": None,
@@ -1944,9 +1944,9 @@ class TestS08AuxiliaryMeshes:
         assert result["material_types"]["Coating"] == "PETG"
         assert coating.metadata["bambu_material_name"] == "Coating"
         assert len(coating.split(only_watertight=False)) == 2
-        assert coating.bounds[0, 2] == pytest.approx(-coating_layers * layer_height)
+        assert coating.bounds[0, 2] == pytest.approx(-coating_height_mm)
         assert coating.bounds[1, 2] == pytest.approx(
-            (total_layers + coating_layers) * layer_height
+            total_layers * layer_height + coating_height_mm
         )
         if enable_outline:
             outline = result["scene"].geometry["Outline"]

@@ -231,7 +231,13 @@ class HighFidelityMesher(BaseMesher):
     - Vertices match pixel coordinates exactly
     """
 
-    def __init__(self, disable_material_dilation: bool = False, boundary_geometry=None):
+    def __init__(
+        self,
+        disable_material_dilation: bool = False,
+        boundary_geometry=None,
+        *,
+        boundary_shape: tuple[int, int] | None = None,
+    ):
         """Create a configurable high-fidelity mesher.
         创建可配置的高保真 mesher。
 
@@ -240,9 +246,19 @@ class HighFidelityMesher(BaseMesher):
                 (若为 True，则跳过每材质膨胀)
             boundary_geometry: Optional polygonal boundary in pixel space.
                 (可选的像素空间 polygon 边界)
+            boundary_shape: Shared grid height and width for material meshes.
         """
         self.disable_material_dilation = bool(disable_material_dilation)
         self.boundary_geometry = _normalize_polygonal_geometry(boundary_geometry)
+        self._boundary_mask: np.ndarray | None = None
+        if self.boundary_geometry is not None and boundary_shape is not None:
+            # GEOS can lazily initialize shared geometry during contains_xy.
+            # Sample it before starting the parallel material mesh workers.
+            height_px, width_px = boundary_shape
+            self._boundary_mask = rasterize_boundary_geometry(
+                self.boundary_geometry, height_px=height_px, width_px=width_px,
+            )
+            self._boundary_mask.setflags(write=False)
 
     def generate_mesh(
         self,
@@ -266,6 +282,7 @@ class HighFidelityMesher(BaseMesher):
         Returns:
             trimesh.Trimesh or None
         """
+        boundary_mask = self._boundary_mask if boundary_geometry is None else None
         boundary_geometry = (
             self.boundary_geometry
             if boundary_geometry is None
@@ -317,11 +334,11 @@ class HighFidelityMesher(BaseMesher):
             effective_material_id = True
 
         if boundary_enabled:
-            boundary_mask = rasterize_boundary_geometry(
-                boundary_geometry,
-                height_px=np.asarray(voxel_matrix).shape[1],
-                width_px=np.asarray(voxel_matrix).shape[2],
-            )
+            height, width = np.shape(voxel_matrix)[1:]
+            if boundary_mask is None or boundary_mask.shape != (height, width):
+                boundary_mask = rasterize_boundary_geometry(
+                    boundary_geometry, height_px=height, width_px=width,
+                )
             effective_volume = np.asarray(effective_volume, dtype=bool)
             effective_volume &= boundary_mask[None, :, :]
 
@@ -415,6 +432,8 @@ def get_mesher(
     mode_name: ModelingMode,
     disable_material_dilation: bool = False,
     boundary_geometry=None,
+    *,
+    boundary_shape: tuple[int, int] | None = None,
 ):
     """
     Return corresponding Mesher instance based on mode name
@@ -441,6 +460,7 @@ def get_mesher(
         return HighFidelityMesher(
             disable_material_dilation=disable_material_dilation,
             boundary_geometry=boundary_geometry,
+            boundary_shape=boundary_shape,
         )
 
     # Vector mode uses same algorithm as High-Fidelity
@@ -456,6 +476,7 @@ def get_mesher(
         return HighFidelityMesher(
             disable_material_dilation=disable_material_dilation,
             boundary_geometry=boundary_geometry,
+            boundary_shape=boundary_shape,
         )
 
     # Pixel Art mode (legacy voxel)
@@ -478,4 +499,5 @@ def get_mesher(
     return HighFidelityMesher(
         disable_material_dilation=disable_material_dilation,
         boundary_geometry=boundary_geometry,
+        boundary_shape=boundary_shape,
     )

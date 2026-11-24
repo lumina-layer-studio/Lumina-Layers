@@ -355,7 +355,7 @@ def test_vector_branch_passes_bambu_modifier_kwargs_to_exporter(tmp_path) -> Non
     assert "error" not in result
     assert captured["enable_base_layer_height_modifier"] is True
     assert captured["base_height_mm"] == pytest.approx(1.56)
-    assert captured["color_height_mm"] == pytest.approx(1.92)
+    assert captured["color_height_mm"] == pytest.approx(1.88)
     assert captured["face_orientation"] == "up"
     assert captured["backing_infill_density_percent"] == 35
 

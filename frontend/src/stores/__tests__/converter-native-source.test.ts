@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => ({
   convertGenerateLargeFormat: vi.fn(),
   convertGeneratePuzzle: vi.fn(),
   applyRecipeOverride: vi.fn(),
+  getEditorSelection: vi.fn(),
   getGlbStatus: vi.fn(),
   showBrowserCompletionNotification: vi.fn(),
   fetchExportMaterialSelection: vi.fn(),
@@ -30,6 +31,7 @@ vi.mock("../../api/converter", async () => {
     convertGenerateLargeFormat: mocks.convertGenerateLargeFormat,
     convertGeneratePuzzle: mocks.convertGeneratePuzzle,
     applyRecipeOverride: mocks.applyRecipeOverride,
+    getEditorSelection: mocks.getEditorSelection,
     getGlbStatus: mocks.getGlbStatus,
     fetchExportMaterialSelection: mocks.fetchExportMaterialSelection,
   };
@@ -196,6 +198,7 @@ describe("native bundle converter flow", () => {
     mocks.convertGenerateLargeFormat.mockReset();
     mocks.convertGeneratePuzzle.mockReset();
     mocks.applyRecipeOverride.mockReset();
+    mocks.getEditorSelection.mockReset().mockRejectedValue(new Error("No selection fixture"));
     mocks.getGlbStatus.mockReset();
     mocks.showBrowserCompletionNotification.mockReset();
     mocks.fetchExportMaterialSelection.mockReset().mockResolvedValue({
@@ -2960,6 +2963,22 @@ describe("native bundle converter flow", () => {
 
     expect(mocks.applyRecipeOverride).toHaveBeenCalledOnce();
     expect(useConverterStore.getState().error).toBeNull();
+  });
+
+  it("uses the material archive layer height when overriding a recipe without a session override", async () => {
+    mocks.applyRecipeOverride.mockResolvedValueOnce({ status: "ok", override_count: 1 });
+    useConverterStore.setState({
+      sessionId: "session-material",
+      source_version: "material",
+      layer_height_mm: null,
+      materialLayerHeightMm: 0.04,
+    });
+
+    await useConverterStore.getState().applyCustomRecipeOverride(["region-1"], [1, 1]);
+
+    expect(mocks.applyRecipeOverride).toHaveBeenCalledWith(expect.objectContaining({
+      layer_height_mm: 0.04,
+    }));
   });
 
   it("omits model fields for legacy preview and generate payloads", async () => {

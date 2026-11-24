@@ -26,6 +26,7 @@ def read_worker_progress(progress: Array[c_char]) -> dict[str, str | int]:
 
 def report_worker_stage(
     phase: str, *, cache_state: str | None = None, row_count: int | None = None,
+    piece_label: str | None = None,
 ) -> None:
     """Publish the last stage before a potentially expensive operation."""
     if _worker_progress is None:
@@ -36,5 +37,7 @@ def report_worker_stage(
         fields["worker_cache_state"] = cache_state
     if row_count is not None:
         fields["worker_row_count"] = int(row_count)
+    if piece_label is not None:
+        fields["worker_piece_label"] = piece_label
     # A child may terminate during a write. Avoid a lock that it could leave held.
     _worker_progress.value = json.dumps(fields).encode("ascii")

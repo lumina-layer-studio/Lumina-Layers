@@ -7,6 +7,7 @@ import {
 } from "@testing-library/react";
 import {
   afterEach,
+  beforeEach,
   describe,
   expect,
   it,
@@ -24,12 +25,21 @@ import {
   isWorkshopApiCompatible,
 } from "../workshop/runtime/health";
 import type { WorkshopMessagePort } from "../workshop/runtime/rpcHost";
-import { useWorkshopProjectRuntime } from "../project/workshopRuntime";
+import { useWorkshopProjectRuntime, waitForWorkshopProject } from "../project/workshopRuntime";
 
-class FakeHostPort implements WorkshopMessagePort {
+class FakeHostPort extends EventTarget implements WorkshopMessagePort {
   onmessage: ((event: MessageEvent) => void) | null = null;
   onmessageerror: ((event: MessageEvent) => void) | null = null;
-  readonly postMessage = vi.fn();
+  readonly postMessage = vi.fn((value: unknown) => {
+    const request = value as { operation?: string; requestId?: string; payload?: { token?: string } };
+    if (request.operation !== "discard" || request.payload?.token !== "") return;
+    queueMicrotask(() => this.onmessage?.(new MessageEvent("message", {
+      data: {
+        protocol: "lumina-workshop-project", version: 1, kind: "response",
+        requestId: request.requestId, ok: true, result: null,
+      },
+    })));
+  });
   readonly start = vi.fn();
   readonly close = vi.fn();
 }
@@ -116,9 +126,18 @@ function channelFixture() {
   };
 }
 
+// These tests explicitly schedule load and ready. JSDOM's implicit iframe
+// load would otherwise turn a synthetic first load into a second navigation.
+const ignoreImplicitFrameLoad = (event: Event) => {
+  if (event.isTrusted && event.target instanceof HTMLIFrameElement) event.stopImmediatePropagation();
+};
+beforeEach(() => document.addEventListener("load", ignoreImplicitFrameLoad, true));
+
 afterEach(() => {
+  document.removeEventListener("load", ignoreImplicitFrameLoad, true);
   vi.useRealTimers();
   vi.restoreAllMocks();
+  useWorkshopProjectRuntime.setState({ disconnected: null });
   window.localStorage.clear();
 });
 
@@ -166,6 +185,7 @@ describe("WorkshopFrame", () => {
 
     const project = useWorkshopProjectRuntime.getState().current!;
     const capture = project.capture();
+    await waitFor(() => expect(channel.port1.postMessage).toHaveBeenCalledWith(expect.objectContaining({ operation: "capture" })));
     const captureRequest = channel.port1.postMessage.mock.calls.at(-1)![0] as { requestId: string };
     channel.port1.onmessage?.(new MessageEvent("message", {
       data: {
@@ -177,6 +197,157 @@ describe("WorkshopFrame", () => {
     await expect(capture).resolves.toEqual({ schemaVersion: "editor/v1", state: { cells: [1, 2] } });
     view.unmount();
     expect(useWorkshopProjectRuntime.getState().current).toBeNull();
+  });
+
+  it.each(["failed RPC response", "failed snapshot request", "iframe navigation", "native close event"] as const)("offers a fresh connection after %s", async (failure) => {
+    const disconnected = channelFixture();
+    const replacement = channelFixture();
+    const createChannel = vi.fn()
+      .mockImplementationOnce(disconnected.createChannel)
+      .mockImplementationOnce(replacement.createChannel);
+    const onStartFailure = vi.fn();
+    render(
+      <WorkshopFrame
+        module={installedFixture({
+          permissions: ["project.storage"],
+          projectSnapshotProtocol: 1,
+          projectSnapshotSchemas: ["editor/v1"],
+        })}
+        createChannel={createChannel}
+        onStartFailure={onStartFailure}
+      />,
+    );
+    const originalFrame = screen.getByTitle("Fixture Hello") as HTMLIFrameElement;
+    fireEvent.load(originalFrame);
+    act(() => {
+      postReady(originalFrame.contentWindow, { projectSnapshotProtocol: 1 });
+      disconnected.port1.onmessage?.(new MessageEvent("message", {
+        data: rpcRequest("lifecycle.ready", {}, "original-ready"),
+      }));
+    });
+    await waitFor(() => expect(useWorkshopProjectRuntime.getState().current).not.toBeNull());
+    await waitFor(() => expect(disconnected.port1.postMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ requestId: "original-ready", ok: true }),
+    ));
+    const originalProject = useWorkshopProjectRuntime.getState().current;
+    const oldMessageError = disconnected.port1.onmessageerror;
+    if (failure === "iframe navigation") {
+      fireEvent.load(originalFrame);
+    } else if (failure === "native close event") {
+      act(() => { disconnected.port1.dispatchEvent(new Event("close")); });
+    } else if (failure === "failed snapshot request") {
+      disconnected.port1.postMessage.mockImplementationOnce(() => {
+        throw new DOMException("The port is unavailable", "InvalidStateError");
+      });
+      await act(async () => {
+        await expect(originalProject!.capture()).rejects.toThrow("no longer connected");
+      });
+    } else {
+      disconnected.port1.postMessage.mockImplementationOnce(() => {
+        throw new DOMException("The port is unavailable", "InvalidStateError");
+      });
+      act(() => {
+        disconnected.port1.onmessage?.(new MessageEvent("message", {
+          data: rpcRequest("status.progress", { phase: "autosave", completed: 1, total: 2 }, "failed-response"),
+        }));
+      });
+    }
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("模块连接已断开");
+    expect(originalFrame).not.toBeInTheDocument();
+    expect(useWorkshopProjectRuntime.getState().current).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "重新加载模块" }));
+
+    const replacementFrame = (await screen.findByTitle("Fixture Hello")) as HTMLIFrameElement;
+    expect(replacementFrame).not.toBe(originalFrame);
+    act(() => {
+      postReady(replacementFrame.contentWindow, { projectSnapshotProtocol: 1 });
+      replacement.port1.onmessage?.(new MessageEvent("message", {
+        data: rpcRequest("lifecycle.ready", {}, "replacement-ready"),
+      }));
+    });
+    await waitFor(() => expect(useWorkshopProjectRuntime.getState().current).not.toBeNull());
+    const replacementProject = useWorkshopProjectRuntime.getState().current;
+    expect(replacementProject).not.toBe(originalProject);
+
+    act(() => oldMessageError?.(new MessageEvent("messageerror")));
+    fireEvent.load(originalFrame);
+    expect(useWorkshopProjectRuntime.getState().current).toBe(replacementProject);
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(onStartFailure).not.toHaveBeenCalled();
+  });
+
+  it("ignores a previously mounted host's late readiness after teardown", async () => {
+    const previous = channelFixture();
+    const replacement = channelFixture();
+    let resolveReady!: () => void;
+    const pendingReady = new Promise<void>((resolve) => { resolveReady = resolve; });
+    const upstreamReady = vi.fn().mockReturnValueOnce(pendingReady);
+    const onStartSuccess = vi.fn();
+    const props = {
+      module: installedFixture({
+        permissions: ["project.storage"],
+        projectSnapshotProtocol: 1,
+        projectSnapshotSchemas: ["editor/v1"],
+      }),
+      handlers: { "lifecycle.ready": upstreamReady },
+      onStartSuccess,
+    };
+    const view = render(<WorkshopFrame {...props} createChannel={previous.createChannel} />);
+    const originalFrame = screen.getByTitle("Fixture Hello") as HTMLIFrameElement;
+    act(() => {
+      postReady(originalFrame.contentWindow, { projectSnapshotProtocol: 1 });
+      previous.port1.onmessage?.(new MessageEvent("message", {
+        data: rpcRequest("lifecycle.ready", {}, "original-ready"),
+      }));
+    });
+    await waitFor(() => expect(upstreamReady).toHaveBeenCalledTimes(1));
+
+    view.rerender(<WorkshopFrame
+      {...props}
+      module={{ ...props.module, moduleVersion: "1.0.1" }}
+      createChannel={replacement.createChannel}
+    />);
+    const replacementFrame = (await screen.findByTitle("Fixture Hello")) as HTMLIFrameElement;
+    act(() => postReady(replacementFrame.contentWindow, { moduleVersion: "1.0.1", projectSnapshotProtocol: 1 }));
+    await waitFor(() => expect(replacement.port1.start).toHaveBeenCalledTimes(1));
+    await act(async () => resolveReady());
+    expect(onStartSuccess).not.toHaveBeenCalled();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(useWorkshopProjectRuntime.getState().current).toBeNull();
+
+    act(() => {
+      replacement.port1.onmessage?.(new MessageEvent("message", {
+        data: rpcRequest("lifecycle.ready", {}, "replacement-ready"),
+      }));
+    });
+    await waitFor(() => expect(useWorkshopProjectRuntime.getState().current?.identity.moduleVersion).toBe("1.0.1"));
+    expect(onStartSuccess).toHaveBeenCalledExactlyOnceWith("fixture.hello", "1.0.1");
+  });
+
+  it("stops a project restore waiting for a port that fails before readiness", async () => {
+    const channel = channelFixture();
+    const rejected = vi.fn();
+    const ready = waitForWorkshopProject("fixture.hello", "1.0.0").catch(rejected);
+    render(
+      <WorkshopFrame
+        module={installedFixture({
+          permissions: ["project.storage"],
+          projectSnapshotProtocol: 1,
+          projectSnapshotSchemas: ["editor/v1"],
+        })}
+        createChannel={channel.createChannel}
+      />,
+    );
+    const iframe = screen.getByTitle("Fixture Hello") as HTMLIFrameElement;
+    act(() => postReady(iframe.contentWindow, { projectSnapshotProtocol: 1 }));
+    act(() => channel.port1.onmessageerror?.(new MessageEvent("messageerror")));
+
+    await waitFor(() => expect(rejected).toHaveBeenCalledWith(expect.objectContaining({
+      message: "Workshop editor is no longer connected",
+    })));
+    await ready;
+    expect(screen.getByRole("button", { name: "重新加载模块" })).toBeInTheDocument();
   });
 
   it.each([

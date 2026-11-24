@@ -27,6 +27,10 @@ class CoreValidationError(CoreError):
         super().__init__(detail=detail, error_type="core_validation_error")
 
 
+class CoatingLayerHeightError(CoreValidationError):
+    """The selected nozzle cannot divide the requested film into printable layers."""
+
+
 class KeychainPlacementError(CoreValidationError):
     """The final ring cannot be printed as an attached part with an open bore."""
 

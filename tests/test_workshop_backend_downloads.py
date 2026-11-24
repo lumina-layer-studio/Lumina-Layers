@@ -1,10 +1,13 @@
+import sys
+
 import httpx
 import pytest
+from packaging.tags import cpython_tags
 
-from core.workshop.backend import downloads, preview
+from core.workshop.backend import downloads
 from core.workshop.backend.downloads import DownloadBatch, DownloadPreferences, ordered_sources, source_options
 from core.workshop.backend.locks import BackendLock, LockedPackage, LockedWheel, current_platform_key
-from core.workshop.backend.preview import estimate_dependencies, estimate_download_total
+from core.workshop.backend.preview import estimate_dependencies, estimate_download_total, needs_target_python_version
 from core.workshop.backend.tooling import CancelToken
 from core.workshop.backend.wheel_files import select_locked_wheels
 from core.workshop.errors import WorkshopBackendError
@@ -67,8 +70,7 @@ def test_total_counts_a_shared_wheel_once_and_omits_inactive_packages() -> None:
     assert estimate_download_total(estimates, (), set(), 0) == {"bytes": 70, "incomplete": False}
 
 
-def test_patch_dependent_download_plan_is_marked_incomplete(monkeypatch) -> None:
-    monkeypatch.setattr(preview, "host_python_version", lambda: "3.12.10")
+def test_patch_dependent_download_plan_is_marked_incomplete() -> None:
     item = LockedPackage("demo", "1.0", "python_full_version >= '3.12.15'", (_wheel("demo", "a", 500_000_000),))
     lock = BackendLock((item,), None, "patch")
     estimate = estimate_dependencies(
@@ -83,6 +85,37 @@ def test_patch_dependent_download_plan_is_marked_incomplete(monkeypatch) -> None
     )
     assert estimate_download_total([known_target], (), set(), 0) == {"bytes": 500_000_000, "incomplete": False}
     assert known_target.source_wheels == item.wheels
+
+
+def test_unknown_patch_preserves_native_build_ranking_and_known_platform_constraints() -> None:
+    native_tag = next(cpython_tags((3, 12), abis=["cp312"]))
+    native_name = f"demo-1.0-2-{native_tag}.whl"
+    older_name = f"demo-1.0-1-{native_tag}.whl"
+    native = LockedWheel(native_name, f"https://native.example/{native_name}", "a" * 64, 10)
+    older = LockedWheel(older_name, f"https://older.example/{older_name}", "b" * 64, 100)
+    universal = _wheel("demo", "c", 500)
+    available = LockedPackage(
+        "demo", "1.0", f"python_full_version >= '3.12.16' and sys_platform == '{sys.platform}'",
+        (native, older, universal),
+    )
+    other_platform = "linux" if sys.platform != "linux" else "win32"
+    foreign = LockedPackage(
+        "foreign", "1.0",
+        f"sys_platform == '{other_platform}' and (python_full_version >= '3.12.16' or os_name == 'a and b')",
+        (_wheel("foreign", "d", 20),),
+    )
+    lock = BackendLock((available, foreign), ">=3.12.16,<3.13", "patch")
+    estimate = estimate_dependencies(
+        lock, environment_key=lock.digest, environment_exists=False, package_users={},
+        platform_key=current_platform_key(), python_version="3.12",
+    )
+    assert estimate.source_wheels == (native,)
+    assert estimate.uncertain_selection
+
+
+def test_lock_python_requirement_triggers_target_version_probe() -> None:
+    package = LockedPackage("demo", "1.0", None, (_wheel("demo", "a", 10),))
+    assert needs_target_python_version(BackendLock((package,), ">=3.12.16,<3.13", "patch"))
 
 
 def test_download_observes_cancellation_between_transport_chunks(tmp_path, monkeypatch) -> None:

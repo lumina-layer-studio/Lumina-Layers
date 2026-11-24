@@ -138,7 +138,8 @@ export function BackendSetupDialog({
               {t("workshop.backend.footprint")}
             </h3>
             <ul className="mt-2 flex flex-col gap-1 text-xs leading-5 text-slate-600 dark:text-slate-300">
-              <li>{t("workshop.backend.newDownload").replace("{bytes}", formatBytes(newBytes))}</li>
+              <li>{t(sizeIncomplete ? "workshop.backend.newDownloadPartial" : "workshop.backend.newDownload")
+                .replace("{bytes}", formatBytes(newBytes))}</li>
               {dependencies?.environment_reused ? (
                 <li>{t("workshop.backend.environmentReused")}</li>
               ) : dependencies ? (

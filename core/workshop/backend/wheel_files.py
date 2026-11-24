@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 import threading
 import uuid
 from collections.abc import Callable, Iterator, Mapping
@@ -27,6 +28,37 @@ from .store import RemovalOutcome, remove_tree, sha256_file, unlink_with_retry
 from .tooling import BackendInterpreter, CancelToken, read_python_version
 
 
+_MARKER_TOKENS = re.compile(
+    r"""(?P<literal>'[^']*'|"[^"]*")|(?P<patch>\b(?:python_full_version|implementation_version)\b)"""
+    r"|(?P<boundary>\b(?:and|or)\b|[()])"
+)
+
+
+def marker_depends_on_python_patch(expression: str | None) -> bool:
+    return expression is not None and any(
+        token.lastgroup == "patch" for token in _MARKER_TOKENS.finditer(expression)
+    )
+
+
+def _marker_with_unknown_patch(expression: str) -> Marker:
+    """Keep fixed platform constraints while allowing any target patch."""
+    parts: list[str] = []
+    start = 0
+    depends_on_patch = False
+    # Quoted literals are consumed whole, so only operators outside them can
+    # delimit an atom. PEP 508 combines atoms with and/or and parentheses.
+    for token in _MARKER_TOKENS.finditer(expression):
+        if token.lastgroup == "patch":
+            depends_on_patch = True
+        elif token.lastgroup == "boundary":
+            parts.append(" python_version >= '0' " if depends_on_patch else expression[start:token.start()])
+            parts.append(token.group())
+            start = token.end()
+            depends_on_patch = False
+    parts.append(" python_version >= '0' " if depends_on_patch else expression[start:])
+    return Marker("".join(parts))
+
+
 def wheel_urls(wheel: LockedWheel, policy: WheelSourcePolicy, mirrors: Mapping[str, tuple[str, ...]]) -> tuple[str, ...]:
     urls = mirrors.get(wheel.sha256, ())
     if policy.mirror_prefix and wheel.url.startswith(PYPI_FILES_PREFIX):
@@ -35,14 +67,14 @@ def wheel_urls(wheel: LockedWheel, policy: WheelSourcePolicy, mirrors: Mapping[s
     return urls
 
 
-def select_locked_wheels(lock: BackendLock, python_version: str, full_version: str) -> BackendLock:
-    """Select the locked wheel for each package active on this platform."""
+def select_locked_wheels(lock: BackendLock, python_version: str, full_version: str | None) -> BackendLock:
+    """Select wheels for this platform, allowing unresolved patch predicates in previews."""
     if lock.requires_python is not None:
         try:
-            supported = SpecifierSet(lock.requires_python).contains(full_version)
+            requirement = SpecifierSet(lock.requires_python)
         except InvalidSpecifier as exc:
             raise WorkshopBackendError("dependency-install-failed", "Invalid Python requirement in the backend lock.") from exc
-        if not supported:
+        if full_version is not None and not requirement.contains(full_version):
             raise WorkshopBackendError("dependency-install-failed", "The backend lock requires a different Python version.")
     major, minor = (int(part) for part in python_version.split("."))
     abi = f"cp{major}{minor}"
@@ -50,21 +82,27 @@ def select_locked_wheels(lock: BackendLock, python_version: str, full_version: s
     ranks = {}
     for index, tag in enumerate(tags):
         ranks.setdefault(tag, index)
+    patch = full_version or python_version + ".0"
     environment = {
         **default_environment(),
         "python_version": python_version,
-        "python_full_version": full_version,
+        "python_full_version": patch,
         "implementation_name": "cpython",
-        "implementation_version": full_version,
+        "implementation_version": patch,
         "platform_python_implementation": "CPython",
         "extra": "",
     }
     packages = []
     for package in lock.packages:
         matches = []
+        patch_unresolved = full_version is None and marker_depends_on_python_patch(package.marker)
         try:
-            if package.marker and not Marker(package.marker).evaluate(environment, context="lock_file"):
-                continue
+            if package.marker:
+                marker = Marker(package.marker)
+                if patch_unresolved:
+                    marker = _marker_with_unknown_patch(package.marker)
+                if not marker.evaluate(environment, context="lock_file"):
+                    continue
             for wheel in package.wheels:
                 _, _, build, wheel_tags = parse_wheel_filename(wheel.file_name)
                 scores = [ranks[tag] for tag in wheel_tags if tag in ranks]
@@ -75,6 +113,8 @@ def select_locked_wheels(lock: BackendLock, python_version: str, full_version: s
                 "dependency-install-failed", f"Invalid marker or wheel filename locked for {package.name}."
             ) from exc
         if not matches:
+            if patch_unresolved:
+                continue
             raise WorkshopBackendError(
                 "dependency-install-failed", f"No compatible wheel is locked for {package.name}."
             )

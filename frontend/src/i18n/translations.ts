@@ -9396,6 +9396,10 @@ export const translations: Record<string, Record<"zh" | "en", string>> = {
     zh: "需要下载约 {bytes}",
     en: "About {bytes} to download",
   },
+  "workshop.backend.newDownloadPartial": {
+    zh: "已知需下载约 {bytes}，总量待确认",
+    en: "About {bytes} of known downloads. The total is still being determined.",
+  },
   "workshop.backend.environmentReused": {
     zh: "本机已有相同的运行环境，直接复用，不用再下载运行库。",
     en: "The same environment is already on this computer and will be reused; no libraries need downloading.",

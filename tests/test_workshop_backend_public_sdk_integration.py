@@ -16,7 +16,7 @@ from pathlib import Path
 
 import pytest
 
-from core.workshop.backend import model_files, preview, wheel_files
+from core.workshop.backend import model_files, wheel_files
 from core.workshop.backend.downloads import DownloadPreferences
 from core.workshop.backend.locks import WheelSourcePolicy
 from core.workshop.backend.review import ReviewContext
@@ -188,7 +188,6 @@ def test_download_selection_verifies_mirrors_and_reuses_bytes_across_locks(
     shared, extra = wheels["shared"], wheels["conflict-1"]
     inactive = wheels["accel"]
     target_version = ".".join(str(part) for part in sys.version_info[:3])
-    monkeypatch.setattr(preview, "host_python_version", lambda: f"3.12.{sys.version_info.micro + 1}")
     shared_origin = WHEEL_URL_BASE + shared.path.name
     extra_origin = WHEEL_URL_BASE + extra.path.name
     mirror = f"https://wheel-mirror.example/{shared.path.name}"

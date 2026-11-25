@@ -37,12 +37,6 @@ DEFAULT_EXPORT_SETTINGS = {
 }
 
 
-_CREATOR_5_PRINTER_IDS = frozenset(
-    {"flashforge-creator-5", "flashforge-creator-5-pro"}
-)
-_CREATOR_5_TOWER_MIN_FOOTPRINT_WIDTH_MM = 58.5
-_CREATOR_5_TOWER_MIN_DEPTH_MM = 61.0
-_CREATOR_5_MODEL_TOWER_CLEARANCE_MM = 7.5
 _ANYCUBIC_TOWER_MIN_FOOTPRINT_WIDTH_MM = 50.0
 _ANYCUBIC_TOWER_MIN_DEPTH_MM = 57.5
 _ELEGOO_CC2_PREFERRED_TOP_EDGE_CLEARANCE_MM = 32.0
@@ -221,14 +215,8 @@ def build_wipe_tower_placement_request(
     if len(printable_area) < 3:
         return None
 
-    uses_creator_5_tower_interface = (
-        slicer == "FlashStudio"
-        and printer_id in _CREATOR_5_PRINTER_IDS
-    )
     uses_anycubic_tower_interface = slicer == "AnycubicSlicerNext"
-    uses_native_tower_envelope = (
-        uses_creator_5_tower_interface or uses_anycubic_tower_interface
-    )
+    uses_native_tower_envelope = uses_anycubic_tower_interface
     uses_rib_wall = layout["uses_rib_wall"]
     tower_brim = (
         min(8.0, max(0.0, model_height) / 100.0 * 8.0)
@@ -289,10 +277,7 @@ def build_wipe_tower_placement_request(
         nozzle_change_volume=layout.get("nozzle_change_volume", 0.0),
         separate_material_bands=slicer == "BambuStudio",
         filament_change_volume=layout["filament_change_volume"],
-        model_tower_clearance=(
-            _CREATOR_5_MODEL_TOWER_CLEARANCE_MM
-            if uses_creator_5_tower_interface else 8.0
-        ),
+        model_tower_clearance=8.0,
         edge_clearance=0.0 if uses_native_tower_envelope else 2.0,
         preferred_edge_clearance=4.0,
         preferred_top_edge_clearance=(
@@ -301,15 +286,11 @@ def build_wipe_tower_placement_request(
         ),
         prefer_vertical_strip=printer_id == "bambu-a1-mini",
         minimum_tower_footprint_width=(
-            _CREATOR_5_TOWER_MIN_FOOTPRINT_WIDTH_MM
-            if uses_creator_5_tower_interface
-            else _ANYCUBIC_TOWER_MIN_FOOTPRINT_WIDTH_MM
+            _ANYCUBIC_TOWER_MIN_FOOTPRINT_WIDTH_MM
             if uses_anycubic_tower_interface else 0.0
         ),
         minimum_tower_depth=(
-            _CREATOR_5_TOWER_MIN_DEPTH_MM
-            if uses_creator_5_tower_interface
-            else _ANYCUBIC_TOWER_MIN_DEPTH_MM
+            _ANYCUBIC_TOWER_MIN_DEPTH_MM
             if uses_anycubic_tower_interface else 0.0
         ),
     )

@@ -259,20 +259,30 @@ def estimate_wipe_tower_depth(
         else 0
     )
     line_count = lines_per_transition * transition_count
-    if extruder_count == 2:
-        change_volume = max(0.0, float(filament_change_volume)) * (
-            material_count // 2
+    change_depth = 0.0
+    change_volume = max(0.0, float(filament_change_volume))
+    if extruder_count > 1 and change_volume > _EPSILON:
+        # Each transition can activate another physical nozzle. Without the
+        # sliced tool sequence, reserve ramming for every possible transition.
+        # Native nozzle-change paths use twice the regular line width and a
+        # rounded extrusion cross-section; each change rounds its own row count.
+        change_line_width = 2.0 * tower_line_width
+        change_section = layer_height * max(
+            0.01, change_line_width - layer_height * (1.0 - math.pi / 4.0)
         )
-        change_line_length = change_volume / (layer_height * tower_line_width)
-        if change_line_length > _EPSILON:
-            line_count += math.ceil(change_line_length / usable_line_length)
+        change_line_length = change_volume / change_section
+        change_usable_length = max(change_line_width, width - 2.0 * change_line_width)
+        change_rows = math.floor(change_line_length / change_usable_length) + 1
+        change_depth = change_rows * change_line_width * transition_count
 
     # Native Bambu/Orca-style towers reserve two structural paths around each
     # material-transition block.  The generated path depth is therefore
     # discretely larger than the continuous volume/area preview estimate,
     # especially for a narrow (vertical) strip.
     structural_lines = 2 * transition_count if line_count else 0
-    purge_depth = (line_count + structural_lines) * tower_line_width * spacing_ratio
+    purge_depth = (
+        (line_count + structural_lines) * tower_line_width + change_depth
+    ) * spacing_ratio
     if line_count:
         purge_depth += tower_line_width
     return max(_minimum_depth_for_height(model_height), purge_depth)

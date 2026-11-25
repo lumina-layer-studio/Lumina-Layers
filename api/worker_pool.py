@@ -18,6 +18,7 @@ import time
 import uuid
 
 from api.structured_logging import get_logger
+from api.runtime_limits import configure_blas_thread_limits
 from api.worker_diagnostics import (
     WORKER_PROGRESS_BYTES,
     bind_worker_progress,
@@ -107,6 +108,8 @@ def _worker_init(progress: Any = None) -> None:
     """Initialize worker logging with UTF-8 streams and the parent's log path.
     初始化 worker 日志，使用 UTF-8 输出流并继承父进程的日志路径。
     """
+    if sys.platform == "darwin":
+        configure_blas_thread_limits()
     if sys.platform == "win32":
         sys.stdout = _normalize_windows_output_stream(sys.stdout)
         sys.stderr = _normalize_windows_output_stream(sys.stderr)
@@ -256,7 +259,7 @@ def _terminate_executor_workers(
 
 _QueuedTask = tuple[
     ConcurrentFuture[Any], Callable[..., Any], tuple[Any, ...],
-    dict[str, Any], Context, str,
+    dict[str, Any], Context, str, str | None,
 ]
 
 
@@ -266,6 +269,7 @@ class _WorkerSpawnContext(SpawnContext):
     def __init__(self) -> None:
         self.process: BaseProcess | None = None
         self.progress = None
+        self.runtime_group: str | None = None
 
     def Process(self, *args: Any, **kwargs: Any) -> BaseProcess:
         child = super().Process(*args, **kwargs)
@@ -305,13 +309,13 @@ class _IsolatedProcessExecutor:
 
     def submit(
         self, fn: Callable[..., T], *args: Any,
-        task_name: str, **kwargs: Any,
+        task_name: str, runtime_group: str | None, **kwargs: Any,
     ) -> ConcurrentFuture[T]:
         future: ConcurrentFuture[T] = ConcurrentFuture()
         with self._lock:
             if self._closed:
                 raise RuntimeError("WorkerPool is shut down")
-            self._queue.put((future, fn, args, kwargs, copy_context(), task_name))
+            self._queue.put((future, fn, args, kwargs, copy_context(), task_name, runtime_group))
         return future
 
     def _run_slot(self, index: int) -> None:
@@ -333,15 +337,21 @@ class _IsolatedProcessExecutor:
         job: _QueuedTask,
         spawn: _WorkerSpawnContext,
     ) -> ProcessPoolExecutor | None:
-        future, fn, args, kwargs, context, task_name = job
+        future, fn, args, kwargs, context, task_name, runtime_group = job
         if not future.set_running_or_notify_cancel():
             return executor
         try:
+            if executor is not None and spawn.runtime_group != runtime_group:
+                # Each slot runs jobs serially. Retire the idle child before
+                # switching native runtimes, even when worker reuse is enabled.
+                _shutdown_executor(executor, wait=True, cancel_futures=False)
+                executor = None
             if spawn.progress is None:
                 spawn.progress = spawn.RawArray("c", WORKER_PROGRESS_BYTES)
             spawn.progress.value = b""
             if executor is None:
                 spawn.process = None
+                spawn.runtime_group = runtime_group
                 executor = ProcessPoolExecutor(
                     max_workers=1,
                     initializer=_worker_init,
@@ -499,8 +509,13 @@ class WorkerPoolManager:
                 self._max_workers, self._max_tasks_per_child,
             )
 
-    async def submit(self, fn: Callable[..., T], *args: Any) -> T:
-        result, _timing = await self._submit_internal(fn, args, include_timing=False)
+    async def submit(
+        self, fn: Callable[..., T], *args: Any, macos_runtime: str | None = None,
+    ) -> T:
+        """Run a job, optionally isolating its macOS native runtime on a reused slot."""
+        result, _timing = await self._submit_internal(
+            fn, args, include_timing=False, macos_runtime=macos_runtime,
+        )
         return result
 
     async def submit_timed(
@@ -517,6 +532,7 @@ class WorkerPoolManager:
         args: tuple[Any, ...],
         *,
         include_timing: bool,
+        macos_runtime: str | None = None,
     ) -> tuple[T, dict[str, float] | None]:
         from api.structured_logging import get_request_id, get_session_id
 
@@ -541,6 +557,7 @@ class WorkerPoolManager:
                     str(publisher.snapshot_path) if publisher is not None else None,
                     *args,
                     task_name=getattr(fn, "__name__", type(fn).__name__),
+                    runtime_group=macos_runtime if sys.platform == "darwin" else None,
                     worker_lease_path=(
                         str(publisher.worker_lease_path) if publisher is not None else None
                     ),

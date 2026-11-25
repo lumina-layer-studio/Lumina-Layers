@@ -182,7 +182,9 @@ async def vectorize_image(
         image_path = await ensure_png_tempfile(image)
 
         try:
-            result = await pool.submit(worker_vectorize, image_path, params_clean)
+            result = await pool.submit(
+                worker_vectorize, image_path, params_clean, macos_runtime="neroued_vectorizer",
+            )
         except _VECTORIZER_BOUNDARY_ERRORS as e:
             _log_vectorize_failure("worker", e)
             raise HTTPException(

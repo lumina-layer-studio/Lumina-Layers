@@ -167,7 +167,7 @@ class TestWorkerNonAsciiPath:
 
 
 class _InProcessPool:
-    async def submit(self, fn, *args):
+    async def submit(self, fn, *args, macos_runtime=None):
         return fn(*args)
 
 

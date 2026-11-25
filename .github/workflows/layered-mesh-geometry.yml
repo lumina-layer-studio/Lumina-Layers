@@ -59,7 +59,10 @@ jobs:
         if: runner.os == 'macOS'
         run: |
           .venv/bin/python -m pip install --index-url https://pypi.org/simple -r requirements-dev.txt
-          .venv/bin/python -m pytest -q tests/test_material_native_runtime_integration.py tests/test_runtime_limits_unit.py
+          .venv/bin/python -m pytest -q \
+            tests/test_material_native_runtime_integration.py \
+            tests/test_runtime_limits_unit.py \
+            tests/test_worker_pool_isolation_integration.py
       - name: Retain source-install diagnostics
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4

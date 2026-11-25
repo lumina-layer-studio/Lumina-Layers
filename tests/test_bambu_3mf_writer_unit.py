@@ -1781,7 +1781,7 @@ def test_flash_studio_creator_5_pro_uses_exact_native_profile_with_lumina_proces
     )
     assert project["nozzle_diameter"] == ["0.4"] * 4
     assert project["default_print_profile"] == (
-        "0.20mm Standard @Flashforge AD5M Pro 0.4 Nozzle"
+        "0.20mm Standard @FF C5"
     )
     assert project["print_settings_id"] == "Lumina"
     assert project["auxiliary_fan"] == "1"

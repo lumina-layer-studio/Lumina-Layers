@@ -108,6 +108,9 @@ jobs:
           tests/test_vector_layer_geometry_unit.py
           tests/test_vector_engine_mesh_weld_unit.py
           tests/test_bambu_3mf_writer_unit.py
+          tests/test_bambu_3mf_wipe_tower_placement_unit.py
+          tests/test_wipe_tower_placement_unit.py
+          tests/test_flash_multitool_process_integration.py
           tests/test_3mf_native_dependency_unit.py
           tests/test_source_dependencies_unit.py
           tests/test_start_all_dependencies_unit.py
@@ -160,6 +163,9 @@ jobs:
           tests/test_vector_layer_geometry_unit.py
           tests/test_vector_engine_mesh_weld_unit.py
           tests/test_bambu_3mf_writer_unit.py
+          tests/test_bambu_3mf_wipe_tower_placement_unit.py
+          tests/test_wipe_tower_placement_unit.py
+          tests/test_flash_multitool_process_integration.py
           tests/test_3mf_native_dependency_unit.py
           tests/test_source_dependencies_unit.py
           tests/test_start_all_dependencies_unit.py

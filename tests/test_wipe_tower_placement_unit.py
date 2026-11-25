@@ -72,6 +72,42 @@ def _assert_safe(result) -> None:
     assert result.model_outer_bounds.height > 0
 
 
+@pytest.mark.parametrize("extruder_count", [2, 4, 6])
+def test_every_physical_tool_transition_reserves_custom_ramming(extruder_count) -> None:
+    arguments = dict(
+        width=30.0, model_height=0.24, material_count=4, layer_height=0.08,
+        nozzle_diameter=0.4, purge_volume=30.0, cyclic_toolchanges=True,
+        extruder_count=extruder_count,
+    )
+    ordinary = estimate_wipe_tower_depth(**arguments)
+    ramming_volume = 100.0 * math.pi * 1.75**2 / 4.0
+    with_ramming = estimate_wipe_tower_depth(
+        **arguments, filament_change_volume=ramming_volume,
+    )
+    # Four possible nozzle changes each need this extra physical volume.
+    assert (with_ramming - ordinary) * 30.0 * 0.08 >= 4 * ramming_volume
+    assert estimate_wipe_tower_depth(
+        **{**arguments, "extruder_count": 1}, filament_change_volume=ramming_volume,
+    ) == ordinary
+
+
+def test_four_nozzle_ramming_reserves_native_squared_body() -> None:
+    request = replace(
+        _request(bed_size=(256, 256), model_size=(6, 6), tower_width=30,
+                 material_count=4, purge_volume=30, model_height=0.24),
+        extruder_count=4, cyclic_toolchanges=True, tower_square_rib_body=True,
+        tower_infill_spacing_ratio=1.65,
+        filament_change_volume=100.0 * math.pi * 1.75**2 / 4.0,
+    )
+    depth = wipe_tower_placement._estimate_request_tower_depth(request, request.tower_width)
+    width, height = _tower_footprint_dimensions(request, request.tower_width, depth)
+    # Flash WipeTower::plan_tower_new for these inputs produces a 156.5 mm
+    # square body, using 1 mm nozzle-change paths and rounded cross-sections.
+    # Keep the setting width fixed: the layout solver may choose another width.
+    assert width >= 156.5
+    assert height >= 156.5
+
+
 @pytest.mark.parametrize(
     "bed_size,model_size",
     [((256, 256), (188, 260)), ((180, 180), (100, 185)), ((220, 200), (225, 100))],

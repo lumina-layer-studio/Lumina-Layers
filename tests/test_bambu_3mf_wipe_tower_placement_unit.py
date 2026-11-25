@@ -133,7 +133,7 @@ def _auto_placement_profile_slicer_cases() -> tuple[
         # slicer profiles, not values inferred from a legacy machine template.
         ("bambu-a1-mini", "BambuStudio", 45.0),
         ("bambu-a1-mini", "OrcaSlicer", 30.0),
-        ("flashforge-creator-5", "FlashStudio", 45.0),
+        ("flashforge-creator-5", "FlashStudio", 30.0),
         ("anycubic-kobra-3-v2", "AnycubicSlicerNext", 20.0),
     ),
 )
@@ -158,6 +158,8 @@ def test_tower_planning_uses_native_slicer_prime_volume(
     [
         ("OrcaSlicer", {"wipe_tower_wall_type": "rib"}, 8.0, True),
         ("OrcaSlicer", {"wipe_tower_wall_type": "rectangle"}, 0.0, False),
+        ("FlashStudio", {"wipe_tower_wall_type": "rib"}, 8.0, True),
+        ("FlashStudio", {"wipe_tower_wall_type": "rectangle"}, 0.0, False),
         ("OrcaSlicer", {"wipe_tower_wall_type": "rib", "wipe_tower_rib_width": "0"}, 0.0, True),
         ("BambuStudio", {"prime_tower_rib_wall": "1"}, 8.0, True),
         ("BambuStudio", {"prime_tower_rib_wall": "1", "prime_tower_rib_width": "0"}, 0.0, True),
@@ -165,7 +167,10 @@ def test_tower_planning_uses_native_slicer_prime_volume(
     ],
 )
 def test_layout_consumes_native_rib_settings(slicer, wall_fields, rib_width, square_rib_body) -> None:
-    writer = BambuStudio3MFWriter("rib-layout.3mf", slicer=slicer)
+    writer = BambuStudio3MFWriter(
+        "rib-layout.3mf", slicer=slicer,
+        **({"printer_id": "flashforge-creator-5"} if slicer == "FlashStudio" else {}),
+    )
     prefix = "prime_tower" if slicer == "BambuStudio" else "wipe_tower"
     project = {
         "printable_area": ["0x0", "256x0", "256x256", "0x256"],
@@ -656,17 +661,15 @@ def test_profile_model_brim_is_reserved_unless_explicitly_disabled() -> None:
     "printer_id",
     ["flashforge-creator-5", "flashforge-creator-5-pro"],
 )
-def test_c5_family_uses_30_mm_vertical_strip_for_tall_model(printer_id: str) -> None:
+def test_c5_family_uses_native_rectangle_when_rib_tower_cannot_fit(printer_id: str) -> None:
     writer = BambuStudio3MFWriter(
         "c5-long-strip.3mf",
         printer_id=printer_id,
         slicer="FlashStudio",
     )
-    # The native 35 mm tower is the template input for small models.
-    # Flash Studio expands a nominal narrow tower to a roughly 58.5 x 61 mm
-    # interface footprint. A 200 mm horizontal setting is therefore clamped
-    # back into this tall model; the native-safe fallback is the 30 mm width
-    # idiom plus a left translation of the unchanged model.
+    # A native rib tower squares its body and cannot become a narrow strip.
+    # The supported rectangular wall can fit without shrinking the model or
+    # disabling the native tool-change heating and tower interface features.
     _add_material_boxes(writer, width=180.0, depth=203.0)
 
     settings = _project_settings(writer)
@@ -675,15 +678,17 @@ def test_c5_family_uses_30_mm_vertical_strip_for_tall_model(printer_id: str) -> 
     assert placement is not None
     assert placement.adapted is True
     assert placement.requires_manual_adjustment is False
-    assert placement.reason in {"adapted_right", "adapted_left"}
-    assert float(settings["prime_tower_width"]) == pytest.approx(30.0)
+    assert placement.reason in {"adapted_right_rectangle", "adapted_left_rectangle"}
+    assert settings["wipe_tower_wall_type"] == "rectangle"
+    assert settings["ooze_prevention"] == "1"
+    assert settings["enable_tower_interface_features"] == "1"
     assert settings["enable_prime_tower"] == "1"
-    assert placement.tower_bounds.width == pytest.approx(58.5)
-    assert placement.tower_bounds.height >= 61.0
     assert placement.model_bounds.width == pytest.approx(180.0)
-    assert placement.model_bounds.left == pytest.approx(5.0)
+    assert placement.model_bounds.height == pytest.approx(203.0)
+    assert placement.tower_bounds.right <= 256.0
+    assert placement.tower_bounds.top <= 256.0
     model_brim_right = placement.model_bounds.right + 5.0
-    assert placement.tower_bounds.left - model_brim_right >= 7.5 - 1e-6
+    assert placement.tower_bounds.left - model_brim_right >= 8.0 - 1e-6
 
 
 def test_kobra_3_v2_reserves_anycubic_native_tower_envelope() -> None:

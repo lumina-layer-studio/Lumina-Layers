@@ -119,7 +119,7 @@ python3 scripts/sync_native_project_sources.py \
 unavailable 并报告，不要从别的版本或软件复制默认。
 
 FatCat Python 包名为 `fatcat-metadata`，import 名为 `fatcat_metadata`，版本固定为
-`0.1.0`。Lumina 的打包合同要求 `native_project_source_catalog` 和随包的
+`0.1.8`。Lumina 的打包合同要求 `native_project_source_catalog` 和随包的
 `native_project_sources/source-index.json`。Lumina 只通过公共目录 API 解析 picker
 身份；C++ 消费者可使用 FatCat 的 `native_project_source_catalog` 和
 `compose_builtin_project_settings`，四参 `compose_project_settings` 用于

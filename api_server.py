@@ -354,6 +354,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="Check SciPy data and material sampling without starting a server.",
     )
     args = parser.parse_args(argv)
+    if sys.platform == "darwin":
+        from api.env_loader import load_env_local
+        from api.runtime_limits import configure_blas_thread_limits
+
+        # Both launcher invocations come through here before api.app is imported.
+        load_env_local()
+        configure_blas_thread_limits()
     if (
         args.native_svg_self_test or args.svg_hole_compensation_self_test
         or args.material_sampling_self_test

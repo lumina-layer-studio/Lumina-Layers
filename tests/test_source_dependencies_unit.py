@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib
+import subprocess
 import sys
 from importlib import metadata
 from pathlib import Path
@@ -28,6 +29,7 @@ def runtime(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
         encoding="utf-8",
     )
     monkeypatch.setattr(source_dependencies, "REQUIREMENTS", requirements)
+    monkeypatch.setattr(source_dependencies.sys, "platform", "linux")
     versions = {
         "fastapi": "0.115.0", "uvicorn": "0.35.0", "numpy": "2.2.0",
         "Pillow": "11.0.0", "fatcat-metadata": FATCAT_VERSION,
@@ -160,6 +162,25 @@ def test_installed_but_unloadable_native_modules_are_actionable(runtime, module,
     issues = checker.check_backend_dependencies()
 
     assert any(module in issue and str(failure) in issue for issue in issues)
+
+
+@pytest.mark.parametrize("exit_code", [1, -6])
+def test_macos_preflight_reports_vectorizer_child_failure(runtime, monkeypatch, exit_code) -> None:
+    checker, _, modules = runtime
+    monkeypatch.setattr(checker.sys, "platform", "darwin")
+    modules["neroued_vectorizer"] = AssertionError("Loaded vectorizer in the backend")
+
+    def failed_probe(command, **kwargs):
+        assert command[0] == sys.executable
+        assert kwargs["timeout"] > 0
+        return subprocess.CompletedProcess(command, exit_code, "", "Native vectorizer could not start\n")
+
+    monkeypatch.setattr(subprocess, "run", failed_probe)
+    issues = checker.check_backend_dependencies()
+
+    assert len(issues) == 1
+    assert "neroued_vectorizer" in issues[0] and f"exit {exit_code}" in issues[0]
+    assert "Native vectorizer could not start" in issues[0]
 
 
 def test_same_version_missing_native_entry_point_is_rejected(runtime) -> None:

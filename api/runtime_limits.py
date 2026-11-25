@@ -12,6 +12,7 @@ overrides remain honored.
 from __future__ import annotations
 
 import os
+import sys
 
 BLAS_THREAD_ENV_VARS: tuple[str, ...] = (
     "OMP_NUM_THREADS",
@@ -31,5 +32,10 @@ def configure_blas_thread_limits(default: str = "1") -> None:
             (环境未显式设置时使用的线程数)
     """
 
+    # On macOS the native wheels can create OpenMP teams inside our workers.
+    # Use a hard cap with the default team size. Explicit team sizes and caps
+    # remain under the operator's control.
+    if sys.platform == "darwin" and "OMP_NUM_THREADS" not in os.environ:
+        os.environ.setdefault("OMP_THREAD_LIMIT", default)
     for env_name in BLAS_THREAD_ENV_VARS:
         os.environ.setdefault(env_name, default)

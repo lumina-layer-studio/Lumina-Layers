@@ -398,7 +398,7 @@ def test_api_vectorize_returns_same_svg_as_png(temp_dir, filename, fmt, content_
     from api.file_registry import FileRegistry
     from api.workers.vectorizer_workers import worker_vectorize
 
-    async def _run_inline(fn, *args):
+    async def _run_inline(fn, *args, macos_runtime=None):
         return fn(*args)
 
     def _encode(img_fmt: str) -> bytes:
@@ -511,7 +511,7 @@ def test_api_16bit_grey_tiff_returns_png_equivalent_svg(
     from api.dependencies import get_file_registry, get_worker_pool
     from api.file_registry import FileRegistry
 
-    async def _run_inline(fn, *args):
+    async def _run_inline(fn, *args, macos_runtime=None):
         return fn(*args)
 
     arr = _gray16_bands(levels)

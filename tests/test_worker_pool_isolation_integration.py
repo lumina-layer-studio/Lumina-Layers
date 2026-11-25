@@ -2,7 +2,9 @@
 from __future__ import annotations
 
 import asyncio
+from concurrent.futures import ProcessPoolExecutor
 from concurrent.futures.process import BrokenProcessPool
+from multiprocessing.connection import wait as wait_for_process_exit
 import gc
 import io
 import json
@@ -14,6 +16,7 @@ import weakref
 
 import pytest
 
+from api import worker_pool
 from api.worker_pool import WorkerPoolManager
 
 
@@ -43,6 +46,51 @@ def test_idle_dispatcher_does_not_retain_the_last_preview() -> None:
 
     try:
         asyncio.run(run())
+    finally:
+        pool.shutdown(wait=True)
+
+
+@pytest.mark.parametrize("wakeup_failures", [1, 2])
+def test_runtime_switch_shutdown_failure_retires_worker(
+    monkeypatch: pytest.MonkeyPatch, wakeup_failures: int,
+) -> None:
+    executors: list[ProcessPoolExecutor] = []
+
+    def track_executor(**kwargs) -> ProcessPoolExecutor:
+        executor = ProcessPoolExecutor(**kwargs)
+        executors.append(executor)
+        return executor
+
+    monkeypatch.setattr(worker_pool, "ProcessPoolExecutor", track_executor)
+    pool = worker_pool._IsolatedProcessExecutor(max_workers=1, max_tasks_per_child=None)
+    try:
+        old_pid = pool.submit(os.getpid, task_name="writer", runtime_group=None).result(timeout=20)
+        old_executor = executors[0]
+        sentinel = old_executor._processes[old_pid].sentinel
+        wakeup = old_executor._executor_manager_thread_wakeup
+        notify_manager = wakeup.wakeup
+        attempts = 0
+
+        def fail_shutdown_wakeup() -> None:
+            nonlocal attempts
+            attempts += 1
+            if attempts <= wakeup_failures:
+                raise OSError(f"injected shutdown wakeup failure {attempts}")
+            notify_manager()
+
+        with monkeypatch.context() as fault:
+            fault.setattr(wakeup, "wakeup", fail_shutdown_wakeup)
+            switch = pool.submit(os.getpid, task_name="vectorize", runtime_group="vectorizer")
+            with pytest.raises(OSError, match="injected shutdown wakeup failure 1"):
+                switch.result(timeout=20)
+        assert attempts >= wakeup_failures
+
+        old_worker_exited = bool(wait_for_process_exit([sentinel], timeout=0))
+        # Use the old group first. This would reuse a half-closed executor if
+        # the failed switch never retired it.
+        new_pid = pool.submit(os.getpid, task_name="next writer", runtime_group=None).result(timeout=20)
+        assert new_pid != old_pid
+        assert old_worker_exited, "The old worker was still alive when the failed switch returned"
     finally:
         pool.shutdown(wait=True)
 

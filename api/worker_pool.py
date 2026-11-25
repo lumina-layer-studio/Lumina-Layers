@@ -18,6 +18,7 @@ import time
 import uuid
 
 from api.structured_logging import get_logger
+from api.runtime_limits import configure_blas_thread_limits
 from api.worker_diagnostics import (
     WORKER_PROGRESS_BYTES,
     bind_worker_progress,
@@ -107,6 +108,8 @@ def _worker_init(progress: Any = None) -> None:
     """Initialize worker logging with UTF-8 streams and the parent's log path.
     初始化 worker 日志，使用 UTF-8 输出流并继承父进程的日志路径。
     """
+    if sys.platform == "darwin":
+        configure_blas_thread_limits()
     if sys.platform == "win32":
         sys.stdout = _normalize_windows_output_stream(sys.stdout)
         sys.stderr = _normalize_windows_output_stream(sys.stderr)
@@ -182,7 +185,9 @@ def _shutdown_executor(
 
 
 def _terminate_executor_workers(
-    executor: ProcessPoolExecutor,
+    executor: ProcessPoolExecutor | None,
+    *,
+    child: BaseProcess | None,
 ) -> tuple[int, int]:
     """Terminate worker processes owned by a ProcessPoolExecutor.
 
@@ -191,14 +196,15 @@ def _terminate_executor_workers(
     这里只在清理已经失败的 executor 世代时使用，不限制用户计算的运行时长。
     """
 
-    processes = getattr(executor, "_processes", None)
-    if not processes:
-        return 0, 0
+    processes = list((getattr(executor, "_processes", None) or {}).values())
+    # Shutdown can discard the executor's process table before returning.
+    if child is not None and child not in processes:
+        processes.append(child)
 
     terminated = 0
     survivors = 0
-    for proc in list(processes.values()):
-        if proc is None:
+    for proc in processes:
+        if proc is None or proc.pid is None:
             continue
         try:
             # The executor's manager thread owns join()/waitpid(). Calling
@@ -256,7 +262,7 @@ def _terminate_executor_workers(
 
 _QueuedTask = tuple[
     ConcurrentFuture[Any], Callable[..., Any], tuple[Any, ...],
-    dict[str, Any], Context, str,
+    dict[str, Any], Context, str, str | None,
 ]
 
 
@@ -266,6 +272,7 @@ class _WorkerSpawnContext(SpawnContext):
     def __init__(self) -> None:
         self.process: BaseProcess | None = None
         self.progress = None
+        self.runtime_group: str | None = None
 
     def Process(self, *args: Any, **kwargs: Any) -> BaseProcess:
         child = super().Process(*args, **kwargs)
@@ -305,13 +312,13 @@ class _IsolatedProcessExecutor:
 
     def submit(
         self, fn: Callable[..., T], *args: Any,
-        task_name: str, **kwargs: Any,
+        task_name: str, runtime_group: str | None, **kwargs: Any,
     ) -> ConcurrentFuture[T]:
         future: ConcurrentFuture[T] = ConcurrentFuture()
         with self._lock:
             if self._closed:
                 raise RuntimeError("WorkerPool is shut down")
-            self._queue.put((future, fn, args, kwargs, copy_context(), task_name))
+            self._queue.put((future, fn, args, kwargs, copy_context(), task_name, runtime_group))
         return future
 
     def _run_slot(self, index: int) -> None:
@@ -325,6 +332,8 @@ class _IsolatedProcessExecutor:
         finally:
             if executor is not None:
                 _shutdown_executor(executor, wait=True, cancel_futures=False)
+            elif spawn.process is not None:
+                _terminate_executor_workers(None, child=spawn.process)
 
     def _run_job(
         self,
@@ -333,15 +342,31 @@ class _IsolatedProcessExecutor:
         job: _QueuedTask,
         spawn: _WorkerSpawnContext,
     ) -> ProcessPoolExecutor | None:
-        future, fn, args, kwargs, context, task_name = job
+        future, fn, args, kwargs, context, task_name, runtime_group = job
         if not future.set_running_or_notify_cancel():
             return executor
+        submitted = False
+        phase = "dispatch"
         try:
+            if executor is None and spawn.process is not None:
+                # A process that survived retirement still owns this slot.
+                _, survivors = _terminate_executor_workers(None, child=spawn.process)
+                if survivors:
+                    raise RuntimeError("The previous worker process could not be retired")
+                spawn.process = None
+            if executor is not None and spawn.runtime_group != runtime_group:
+                # Each slot runs jobs serially. Retire the idle child before
+                # switching native runtimes, even when worker reuse is enabled.
+                phase = "runtime_switch"
+                _shutdown_executor(executor, wait=True, cancel_futures=False)
+                executor = None
+                spawn.process = None
+                spawn.runtime_group = None
+                phase = "dispatch"
             if spawn.progress is None:
                 spawn.progress = spawn.RawArray("c", WORKER_PROGRESS_BYTES)
             spawn.progress.value = b""
             if executor is None:
-                spawn.process = None
                 executor = ProcessPoolExecutor(
                     max_workers=1,
                     initializer=_worker_init,
@@ -351,39 +376,52 @@ class _IsolatedProcessExecutor:
                     # from one, including when child recycling is disabled.
                     mp_context=spawn,
                 )
-            submitted = False
-            try:
-                result_future = executor.submit(fn, *args, **kwargs)
-                submitted = True
-                result = result_future.result()
-            except BaseException as exc:
-                if not submitted or isinstance(exc, BrokenProcessPool):
-                    progress = read_worker_progress(spawn.progress)
-                    progress.setdefault("worker_phase", "dispatch")
-                    child = spawn.process
-                    # Complete the caller only after this slot's child has
-                    # stopped. Other dispatchers keep serving their jobs.
-                    terminated, survivors = _terminate_executor_workers(executor)
-                    _shutdown_executor(executor, wait=True, cancel_futures=True)
-                    context.run(
-                        _log.warning,
-                        "Worker process retired after a task failure",
-                        extra={
-                            "event": "worker_process_failed",
-                            "worker_index": index,
-                            "worker_name": task_name,
-                            "worker_pid": None if child is None else child.pid,
-                            "worker_exit_code": None if child is None else child.exitcode,
-                            **progress,
-                            "terminated_workers": terminated,
-                            "surviving_workers": survivors,
-                            "error_type": type(exc).__name__,
-                            "error_message": str(exc),
-                        },
-                    )
-                    executor = None
-                raise
+                spawn.runtime_group = runtime_group
+            result_future = executor.submit(fn, *args, **kwargs)
+            submitted = True
+            result = result_future.result()
         except BaseException as exc:
+            if executor is not None and (not submitted or isinstance(exc, BrokenProcessPool)):
+                # Invalidate the slot before any cleanup can fail. The spawn
+                # context still owns the old process until its exit is confirmed.
+                retired_executor, executor = executor, None
+                child = spawn.process
+                progress = {} if phase == "runtime_switch" else read_worker_progress(spawn.progress)
+                progress.setdefault("worker_phase", phase)
+                terminated, survivors = _terminate_executor_workers(retired_executor, child=child)
+                shutdown_details: dict[str, str] = {}
+                try:
+                    _shutdown_executor(retired_executor, wait=not survivors, cancel_futures=True)
+                except (OSError, RuntimeError, ValueError) as shutdown_error:
+                    shutdown_details = {
+                        "shutdown_error_type": type(shutdown_error).__name__,
+                        "shutdown_error_message": str(shutdown_error),
+                    }
+                    if spawn.process is not child:
+                        late_terminated, survivors = _terminate_executor_workers(
+                            retired_executor, child=spawn.process,
+                        )
+                        terminated += late_terminated
+                spawn.runtime_group = None
+                if not survivors:
+                    spawn.process = None
+                context.run(
+                    _log.warning,
+                    "Worker executor failed and was removed from the slot",
+                    extra={
+                        "event": "worker_process_failed",
+                        "worker_index": index,
+                        "worker_name": task_name,
+                        "worker_pid": None if child is None else child.pid,
+                        "worker_exit_code": None if child is None else child.exitcode,
+                        **progress,
+                        "terminated_workers": terminated,
+                        "surviving_workers": survivors,
+                        "error_type": type(exc).__name__,
+                        "error_message": str(exc),
+                        **shutdown_details,
+                    },
+                )
             # Keep the remote traceback cause, without pinning this dispatcher
             # frame (and its input/result objects) in the caller's exception.
             future.set_exception(exc.with_traceback(None))
@@ -499,8 +537,13 @@ class WorkerPoolManager:
                 self._max_workers, self._max_tasks_per_child,
             )
 
-    async def submit(self, fn: Callable[..., T], *args: Any) -> T:
-        result, _timing = await self._submit_internal(fn, args, include_timing=False)
+    async def submit(
+        self, fn: Callable[..., T], *args: Any, macos_runtime: str | None = None,
+    ) -> T:
+        """Run a job, optionally isolating its macOS native runtime on a reused slot."""
+        result, _timing = await self._submit_internal(
+            fn, args, include_timing=False, macos_runtime=macos_runtime,
+        )
         return result
 
     async def submit_timed(
@@ -517,6 +560,7 @@ class WorkerPoolManager:
         args: tuple[Any, ...],
         *,
         include_timing: bool,
+        macos_runtime: str | None = None,
     ) -> tuple[T, dict[str, float] | None]:
         from api.structured_logging import get_request_id, get_session_id
 
@@ -541,6 +585,7 @@ class WorkerPoolManager:
                     str(publisher.snapshot_path) if publisher is not None else None,
                     *args,
                     task_name=getattr(fn, "__name__", type(fn).__name__),
+                    runtime_group=macos_runtime if sys.platform == "darwin" else None,
                     worker_lease_path=(
                         str(publisher.worker_lease_path) if publisher is not None else None
                     ),

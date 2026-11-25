@@ -44,6 +44,21 @@ def _supported_python() -> bool:
     )
 
 
+def _check_vectorizer_import() -> str | None:
+    """Probe the macOS vectorizer without loading its OpenMP into the server."""
+    try:
+        probe = subprocess.run(
+            [sys.executable, "-c", "import neroued_vectorizer"],
+            capture_output=True, text=True, errors="replace", timeout=30,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return f"neroued_vectorizer: cannot run import check ({exc})"
+    if probe.returncode:
+        detail = probe.stderr.strip().rsplit("\n", 1)[-1]
+        return f"neroued_vectorizer: cannot load module (exit {probe.returncode}) {detail}".rstrip()
+    return None
+
+
 def check_backend_dependencies() -> list[str]:
     """Return missing/incompatible runtime dependencies without loading the app."""
     if not _supported_python():
@@ -78,6 +93,11 @@ def check_backend_dependencies() -> list[str]:
 
     modules: dict[str, Any] = {}
     for name in NATIVE_MODULES:
+        if name == "neroued_vectorizer" and sys.platform == "darwin":
+            issue = _check_vectorizer_import()
+            if issue is not None:
+                issues.append(issue)
+            continue
         try:
             modules[name] = importlib.import_module(name)
         except Exception as exc:  # Native-extension import is an external-library boundary.

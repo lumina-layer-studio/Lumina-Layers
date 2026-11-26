@@ -323,16 +323,21 @@ Registry 收录时还会绑定 GitHub 仓库、Release tag、字节数、包摘�
   每项最多 8 条备注、每个字符串不超过 120 字符；不符合时返回 `rpc-payload-invalid`
   或 `rpc-binary-too-large`，不会弹窗。
 - 宿主在 iframe 外弹出确认框，显示模块名称、ID、版本、发布者、审核等级、文件名与
-  大小，并把模块提供的 `summary` 标为“由模块提供（Lumina 未核实）”。取消、关闭模块或
-  请求超时（5 分钟）返回 `{ status: "cancelled" }`，不会请求服务器。同一模块同时只能有
-  一个待处理的导入，第二次调用返回 `material-import-busy`。
-- 确认后宿主通过耗材库页面使用的同一个前端客户端调用
+  大小，并把模块提供的 `summary` 标为“由模块提供（Lumina 未核实）”。确认阶段最多等待
+  5 分钟：用户取消返回 `{ status: "cancelled" }`；超时或关闭连接会结束请求，均不会上传。
+  宿主确认后发送同一 `requestId` 的 `material-import-prepared` 控制消息；仅仍有效的 SDK
+  请求回复 `material-import-commit` 后才上传，已超时的请求只发送 `material-import-cancel`。
+  同一模块同时只能有一个待处理的导入，第二次调用返回 `material-import-busy`。
+- 提交后关闭确认计时器，宿主通过耗材库页面使用的同一个前端客户端调用
   `POST /api/extractor/gradient-card-materials/import`，不新增服务器接口；校验与回滚
-  仍在服务器完成，失败不会留下半导入的耗材。成功后宿主刷新耗材库状态并返回
+  仍在服务器完成。以 HTTP 返回为准报告结果；成功后异步刷新耗材库状态并立即返回
   `{ status: "imported", materials: [{ directoryName, name }] }`。
+  提交后的取消或断联会中止 HTTP 等待，但不保证服务器未写入；结果未知时返回不可自动重试
+  的错误，并提示先核对耗材库，避免重复导入。
 - 错误码：`material-import-invalid`（HTTP 422，消息为服务器的安全说明）、
   `material-import-unavailable`（HTTP 403，耗材库只接受本机或桌面宿主的导入）、
-  `material-import-failed`（其他失败）。该调用只在耗材库本身允许导入的地方可用。
+  `material-import-failed`（其他失败，不可自动重试）、`material-import-outcome-unknown`
+  （提交后取消或宿主关闭）。该调用只在耗材库本身允许导入的地方可用。
 - 合成 fixture 处理器返回固定结果 `fixture-material`，不触碰耗材库。
 
 A module that produces a Stage-A material archive, such as a calibration
@@ -345,15 +350,25 @@ most 120 characters) and rejects anything else with `rpc-payload-invalid` or
 `rpc-binary-too-large` before any dialog. It then asks the user in a dialog
 outside the frame that shows the module name, id, version, publisher, review
 level, file name and size, and the module's `summary` labelled as provided by
-the module. Cancel, closing the module, or the 5-minute request timeout returns
-`{ status: "cancelled" }` without a server request; a second call while one is
-pending fails with `material-import-busy`. On confirmation the host uploads the
-archive through the same client the material library page uses for
+the module. The 5-minute deadline covers confirmation only. Declining returns
+`{ status: "cancelled" }`; expiry or closing the connection ends the request
+without uploading. After confirmation, the host sends `material-import-prepared`
+for that request ID. Only a still-pending SDK request replies with
+`material-import-commit`; an expired request sends `material-import-cancel`
+instead. A second call while one is pending fails with `material-import-busy`.
+Commit clears the confirmation deadline. The host uploads the archive through
+the same client the material library page uses for
 `POST /api/extractor/gradient-card-materials/import`; there is no new server
-endpoint, and validation and rollback stay on the server. Errors are
+endpoint, and validation and rollback stay on the server. HTTP success returns
+the imported materials immediately; library refresh runs independently.
+Cancellation or disconnection after commit aborts the HTTP wait but does not
+prove that the server did not import the archive. Unknown outcomes are not
+automatically retryable: check the material library first. Errors are
 `material-import-invalid` (HTTP 422, with the server's safe detail),
 `material-import-unavailable` (HTTP 403: the material library accepts imports
-only from a local or desktop host), and `material-import-failed`. The call works
+only from a local or desktop host), `material-import-failed` (not automatically
+retryable), and `material-import-outcome-unknown` (cancelled or closed after
+commit). The call works
 only where the material library itself accepts imports. Synthetic fixture
 handlers return a fixed `fixture-material` result without touching the library.
 

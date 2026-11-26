@@ -239,6 +239,7 @@ function MaterialImportFrame(props: WorkshopFrameProps) {
                 moduleVersion: props.module.moduleVersion,
               },
               signal: new AbortController().signal,
+              commitMaterialImport: async () => true,
             },
           );
           setResult(JSON.stringify(value));

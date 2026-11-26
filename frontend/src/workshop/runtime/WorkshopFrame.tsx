@@ -256,8 +256,8 @@ export function WorkshopFrame({
     detachProjectRef.current = null;
     const detach = detachPortRef.current;
     detachPortRef.current = null;
-    detach?.();
     host?.close();
+    detach?.();
   }, [clearHandshakeTimer]);
 
   useEffect(() => {

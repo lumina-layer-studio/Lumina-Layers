@@ -24,6 +24,7 @@ import type { ManagedWorkshopProjectStorage } from "../projectStorage";
 import type { WorkshopDiagnosticSummary } from "../types";
 import { hasControlCharacter } from "./payloadValidation";
 import {
+  MATERIAL_IMPORT_OUTCOME_UNKNOWN_MESSAGE,
   WorkshopRpcHandlerError,
   type WorkshopRpcHandler,
   type WorkshopRpcHandlerContext,
@@ -64,7 +65,7 @@ export interface WorkshopMaterialImportServices {
     signal: AbortSignal,
   ): Promise<boolean>;
   /** Defaults to the material library page's import client. */
-  importArchive?(file: File): Promise<GradientCardMaterialBulkImportResponse>;
+  importArchive?(file: File, signal: AbortSignal): Promise<GradientCardMaterialBulkImportResponse>;
   /** Defaults to reloading the host's saved-material library state. */
   refreshLibrary?(): Promise<void>;
 }
@@ -72,8 +73,6 @@ export interface WorkshopMaterialImportServices {
 const MATERIAL_IMPORT_UNAVAILABLE_MESSAGE =
   "Material import is only available on a local or desktop host.";
 const MATERIAL_IMPORT_INVALID_MESSAGE = "The material archive is invalid.";
-const MATERIAL_IMPORT_FAILED_MESSAGE =
-  "The host could not import the material archive.";
 const MAX_MODULE_ERROR_MESSAGE_LENGTH = 300;
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -115,8 +114,7 @@ function materialImportError(error: unknown): WorkshopRpcHandlerError {
   }
   return new WorkshopRpcHandlerError(
     "material-import-failed",
-    MATERIAL_IMPORT_FAILED_MESSAGE,
-    status === null || status >= 500,
+    MATERIAL_IMPORT_OUTCOME_UNKNOWN_MESSAGE,
   );
 }
 
@@ -131,7 +129,7 @@ export function createWorkshopMaterialImportHandler(
 ): WorkshopRpcHandler {
   const importArchive =
     services.importArchive ??
-    ((file: File) => importGradientCardMaterials([file]));
+    ((file: File, signal: AbortSignal) => importGradientCardMaterials([file], { signal }));
   const refreshLibrary =
     services.refreshLibrary ?? refreshWorkshopMaterialLibrary;
   const pendingModules = new Set<string>();
@@ -159,21 +157,23 @@ export function createWorkshopMaterialImportHandler(
       if (!confirmed || context.signal.aborted) {
         return { status: "cancelled" };
       }
+      if (!await context.commitMaterialImport?.() || context.signal.aborted) {
+        return { status: "cancelled" };
+      }
       let response: GradientCardMaterialBulkImportResponse;
       try {
         response = await importArchive(
           new File([request.archiveBytes], request.fileName, {
             type: "application/zip",
           }),
+          context.signal,
         );
       } catch (error) {
         throw materialImportError(error);
       }
-      try {
-        await refreshLibrary();
-      } catch {
-        // The import succeeded; library pages reload when they open.
-      }
+      // The import already committed. A slow/offline refresh must not turn
+      // that known result into a timeout; pages also reload when they open.
+      void Promise.resolve().then(refreshLibrary).catch(() => undefined);
       return {
         status: "imported",
         materials: (response.imported_materials ?? [])

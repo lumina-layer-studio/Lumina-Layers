@@ -6,6 +6,7 @@ import {
   isWorkshopRpcMethod,
   responseEnvelope,
   type HostWorkshopRpcMethod,
+  type WorkshopMaterialImportControl,
   type WorkshopModuleIdentity,
   type WorkshopPermissionName,
   type WorkshopRpcEventName,
@@ -31,7 +32,7 @@ export {
 const REQUEST_TIMEOUT_MS = 30_000;
 const IMAGE_PICK_TIMEOUT_MS = 300_000;
 const HANDOFF_TIMEOUT_MS = 120_000;
-/** Material import waits for the user's answer in a host dialog. */
+/** Only the reversible confirmation/commit handshake has this deadline. */
 const MATERIAL_IMPORT_TIMEOUT_MS = 300_000;
 const TOKEN_REFILL_PER_SECOND = 30;
 const TOKEN_BURST_CAPACITY = 60;
@@ -53,9 +54,14 @@ export class WorkshopRpcHandlerError extends Error {
   }
 }
 
+export const MATERIAL_IMPORT_OUTCOME_UNKNOWN_MESSAGE =
+  "The host could not confirm the material import outcome. Check the material library before trying again.";
+
 export interface WorkshopRpcHandlerContext {
   readonly identity: WorkshopModuleIdentity;
   readonly signal: AbortSignal;
+  /** After host confirmation, wait for the still-live SDK request to commit. */
+  readonly commitMaterialImport?: () => Promise<boolean>;
 }
 
 export type WorkshopRpcHandler = (
@@ -109,6 +115,10 @@ interface PendingRequest {
   controller: AbortController;
   timer: unknown;
   finish(response: WorkshopRpcResponse): void;
+  materialImport?: {
+    phase: "confirming" | "prepared" | "committed";
+    resolveCommit?: (committed: boolean) => void;
+  };
 }
 
 const DEFAULT_SCHEDULER: WorkshopRpcScheduler = {
@@ -380,6 +390,7 @@ class WorkshopRpcHostImpl implements WorkshopRpcHost {
     }, () => this.disconnect(port));
     port.onmessage = (event) => {
       if (this.activePort !== port) return;
+      if (this.receiveMaterialImportControl(event.data)) return;
       if (this.projectChannel?.receive(event.data)) return;
       void this.dispatch(event.data).then((response) => {
         if (this.activePort !== port || this.closed) {
@@ -446,25 +457,104 @@ class WorkshopRpcHostImpl implements WorkshopRpcHost {
     port.close();
   }
 
+  private receiveMaterialImportControl(value: unknown): boolean {
+    if (!value || typeof value !== "object" || !("kind" in value) || value.kind !== "control") {
+      return false;
+    }
+    // Invalid controls must not accidentally resolve a pending request as an
+    // invalid RPC response. Controls only act on this port's existing import.
+    const control = value as Partial<WorkshopMaterialImportControl>;
+    const keys = Object.keys(control);
+    if (
+      Array.isArray(control) ||
+      keys.length !== 5 ||
+      !keys.every((key) => ["protocol", "version", "kind", "requestId", "action"].includes(key)) ||
+      control.protocol !== "lumina-workshop-rpc" ||
+      control.version !== WORKSHOP_RPC_VERSION ||
+      typeof control.requestId !== "string" ||
+      (control.action !== "material-import-commit" && control.action !== "material-import-cancel")
+    ) return true;
+    const pending = this.pending.get(control.requestId);
+    const state = pending?.materialImport;
+    if (!pending || !state) return true;
+    if (control.action === "material-import-cancel") {
+      pending.controller.abort();
+      pending.finish(
+        state.phase === "committed"
+          ? errorResponseEnvelope(
+              control.requestId,
+              "material-import-outcome-unknown",
+              MATERIAL_IMPORT_OUTCOME_UNKNOWN_MESSAGE,
+            )
+          : responseEnvelope(control.requestId, { status: "cancelled" }),
+      );
+    } else if (state.phase === "prepared") {
+      state.phase = "committed";
+      this.scheduler.clear(pending.timer);
+      state.resolveCommit?.(true);
+      state.resolveCommit = undefined;
+    }
+    return true;
+  }
+
+  private prepareMaterialImport(requestId: string, pending: PendingRequest): Promise<boolean> {
+    const port = this.activePort;
+    const state = pending.materialImport;
+    if (
+      this.closed ||
+      port === null ||
+      pending.controller.signal.aborted ||
+      this.pending.get(requestId) !== pending ||
+      state?.phase !== "confirming"
+    ) return Promise.resolve(false);
+    return new Promise<boolean>((resolve) => {
+      state.phase = "prepared";
+      state.resolveCommit = resolve;
+      const prepared: WorkshopMaterialImportControl = {
+        protocol: "lumina-workshop-rpc",
+        version: WORKSHOP_RPC_VERSION,
+        kind: "control",
+        requestId,
+        action: "material-import-prepared",
+      };
+      try {
+        port.postMessage(prepared);
+      } catch {
+        this.disconnect(port);
+      }
+    });
+  }
+
   close(): void {
     if (this.closed) {
       return;
     }
     this.closed = true;
     this.projectChannel?.close();
-    this.detachPort();
     for (const [requestId, pending] of [
       ...this.pending.entries(),
     ]) {
       pending.controller.abort();
-      pending.finish(
-        errorResponseEnvelope(
-          requestId,
-          "rpc-host-closed",
-          "The Workshop frame has been closed.",
-        ),
+      const response = errorResponseEnvelope(
+        requestId,
+        pending.materialImport?.phase === "committed"
+          ? "material-import-outcome-unknown"
+          : "rpc-host-closed",
+        pending.materialImport?.phase === "committed"
+          ? MATERIAL_IMPORT_OUTCOME_UNKNOWN_MESSAGE
+          : "The Workshop frame has been closed.",
       );
+      // Send the terminal result before closing. MessagePort close events
+      // are not available in every browser, and committed imports no longer
+      // have a confirmation deadline that could otherwise settle the SDK.
+      try {
+        this.activePort?.postMessage(response);
+      } catch {
+        // A disconnected port cannot receive a final response.
+      }
+      pending.finish(response);
     }
+    this.detachPort();
   }
 
   private runHandler(
@@ -479,6 +569,7 @@ class WorkshopRpcHostImpl implements WorkshopRpcHost {
       const pending: PendingRequest = {
         controller,
         timer: undefined,
+        materialImport: method === "material.import" ? { phase: "confirming" } : undefined,
         finish: (response) => {
           if (settled) {
             return;
@@ -486,11 +577,14 @@ class WorkshopRpcHostImpl implements WorkshopRpcHost {
           settled = true;
           this.scheduler.clear(pending.timer);
           this.pending.delete(requestId);
+          pending.materialImport?.resolveCommit?.(false);
+          if (pending.materialImport) pending.materialImport.resolveCommit = undefined;
           resolve(response);
         },
       };
       this.pending.set(requestId, pending);
       pending.timer = this.scheduler.set(() => {
+        if (pending.materialImport?.phase === "committed") return;
         controller.abort();
         pending.finish(
           errorResponseEnvelope(
@@ -507,6 +601,9 @@ class WorkshopRpcHostImpl implements WorkshopRpcHost {
           handler(payload, {
             identity: this.identity,
             signal: controller.signal,
+            ...(method === "material.import"
+              ? { commitMaterialImport: () => this.prepareMaterialImport(requestId, pending) }
+              : {}),
           }),
         )
         .then(

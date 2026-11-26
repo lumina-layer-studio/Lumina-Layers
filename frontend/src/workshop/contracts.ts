@@ -84,6 +84,18 @@ export type WorkshopMaterialImportResult =
       materials: Array<{ directoryName: string; name: string }>;
     };
 
+/** Confirmation is reversible until the live SDK request commits it. */
+export interface WorkshopMaterialImportControl {
+  protocol: "lumina-workshop-rpc";
+  version: typeof WORKSHOP_RPC_VERSION;
+  kind: "control";
+  requestId: string;
+  action:
+    | "material-import-prepared"
+    | "material-import-commit"
+    | "material-import-cancel";
+}
+
 export interface WorkshopModuleIdentity {
   readonly moduleId: string;
   readonly moduleVersion: string;

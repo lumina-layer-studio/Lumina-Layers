@@ -1,5 +1,7 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
+import apiClient from "../api/client";
+import { importGradientCardMaterials } from "../api/extractor";
 import type { GradientCardMaterialBulkImportResponse } from "../api/types";
 import {
   WORKSHOP_PERMISSION_NAMES,
@@ -12,9 +14,35 @@ import {
   type WorkshopMaterialImportServices,
 } from "../workshop/runtime/handlers";
 import { WORKSHOP_MATERIAL_IMPORT_MAX_BYTES } from "../workshop/runtime/payloadValidation";
-import { createWorkshopRpcHost } from "../workshop/runtime/rpcHost";
+import {
+  createWorkshopRpcHost,
+  type WorkshopMessagePort,
+  type WorkshopRpcHost,
+} from "../workshop/runtime/rpcHost";
 
 const identity = { moduleId: "example.calibration", moduleVersion: "1.0.0" };
+const hosts: WorkshopRpcHost[] = [];
+
+afterEach(() => {
+  hosts.splice(0).forEach((host) => host.close());
+  vi.restoreAllMocks();
+});
+
+function control(action: string, requestId = "import-1") {
+  return {
+    protocol: "lumina-workshop-rpc",
+    version: 1,
+    kind: "control",
+    requestId,
+    action,
+  };
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((finish) => { resolve = finish; });
+  return { promise, resolve };
+}
 
 function request(payload: unknown, requestId = "import-1") {
   return {
@@ -51,6 +79,7 @@ function httpError(status: number, detail: unknown = "detail") {
 function setup(
   overrides: Partial<WorkshopMaterialImportServices> = {},
   permissions: string[] = ["material.import"],
+  autoCommit = true,
 ) {
   const prompts: Array<{
     request: WorkshopMaterialImportConfirmation;
@@ -69,18 +98,50 @@ function setup(
     refreshLibrary: vi.fn().mockResolvedValue(undefined),
     ...overrides,
   };
+  const timers = new Set<() => void>();
+  const messages: unknown[] = [];
+  const port: WorkshopMessagePort = {
+    onmessage: null,
+    onmessageerror: null,
+    start() {},
+    close() { messages.push({ kind: "port-closed" }); },
+    postMessage(message) {
+      messages.push(message);
+      const value = message as Record<string, unknown>;
+      if (autoCommit && value.action === "material-import-prepared") {
+        queueMicrotask(() => {
+          port.onmessage?.({
+            data: control("material-import-commit", value.requestId as string),
+          } as MessageEvent);
+        });
+      }
+    },
+  };
   const host = createWorkshopRpcHost({
     identity,
     permissions: new Set(permissions),
     handlers: {
       "material.import": createWorkshopMaterialImportHandler(services),
     },
+    scheduler: {
+      set(callback) { timers.add(callback); return callback; },
+      clear(handle) { timers.delete(handle as () => void); },
+    },
   });
+  host.attach(port);
+  hosts.push(host);
   const nextPrompt = async () => {
     await vi.waitFor(() => expect(prompts.length).toBeGreaterThan(0));
     return prompts.shift()!;
   };
-  return { host, services, nextPrompt };
+  return {
+    host,
+    services,
+    nextPrompt,
+    messages,
+    receive(data: unknown) { port.onmessage?.({ data } as MessageEvent); },
+    expireRequests() { [...timers].forEach((expire) => expire()); },
+  };
 }
 
 describe("Workshop material.import contract", () => {
@@ -219,8 +280,8 @@ describe("Workshop material.import contract", () => {
     [httpError(422, "Bad file /tmp/upload-123/archive.zip"), "material-import-invalid", "The material archive is invalid.", false],
     [httpError(422, [{ msg: "field required" }]), "material-import-invalid", "The material archive is invalid.", false],
     [httpError(403), "material-import-unavailable", "Material import is only available on a local or desktop host.", false],
-    [httpError(500), "material-import-failed", "The host could not import the material archive.", true],
-    [new Error("Network Error"), "material-import-failed", "The host could not import the material archive.", true],
+    [httpError(500), "material-import-failed", "The host could not confirm the material import outcome. Check the material library before trying again.", false],
+    [new Error("Network Error"), "material-import-failed", "The host could not confirm the material import outcome. Check the material library before trying again.", false],
   ])("maps import failure %# to a stable code", async (error, code, message, retryable) => {
     const { host, services, nextPrompt } = setup({
       importArchive: vi.fn().mockRejectedValue(error),
@@ -275,6 +336,150 @@ describe("Workshop material.import contract", () => {
     expect(await pending).toMatchObject({ ok: false, error: { code: "rpc-host-closed" } });
     await Promise.resolve();
     expect(services.importArchive).not.toHaveBeenCalled();
+  });
+
+  it("waits for a matching commit after the host confirmation", async () => {
+    const { host, services, nextPrompt, receive, messages } = setup({}, undefined, false);
+    const pending = host.dispatch(request({ archiveBytes: archive(), fileName: "material.zip" }));
+    const prompt = await nextPrompt();
+    receive(control("material-import-commit"));
+    prompt.answer(true);
+    await vi.waitFor(() => expect(messages).toContainEqual(control("material-import-prepared")));
+    expect(services.importArchive).not.toHaveBeenCalled();
+
+    for (const invalid of [
+      control("material-import-commit", "other-request"),
+      { ...control("material-import-commit"), version: 2 },
+      { ...control("material-import-commit"), protocol: "other-protocol" },
+      { ...control("material-import-commit"), extra: true },
+      Object.assign([], control("material-import-commit")),
+      control("material-import-prepared"),
+    ]) receive(invalid);
+    await Promise.resolve();
+    expect(services.importArchive).not.toHaveBeenCalled();
+
+    receive(control("material-import-commit"));
+    receive(control("material-import-commit"));
+    expect(await pending).toMatchObject({ ok: true, result: { status: "imported" } });
+    expect(services.importArchive).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(["before-confirmation", "after-prepared"])(
+    "cancels %s without accepting a later commit",
+    async (phase) => {
+      const { host, services, nextPrompt, receive, messages } = setup({}, undefined, false);
+      const pending = host.dispatch(request({ archiveBytes: archive(), fileName: "material.zip" }));
+      const prompt = await nextPrompt();
+      if (phase === "after-prepared") {
+        prompt.answer(true);
+        await vi.waitFor(() => expect(messages).toContainEqual(control("material-import-prepared")));
+      }
+      receive(control("material-import-cancel"));
+      expect(prompt.signal.aborted).toBe(true);
+      expect(await pending).toMatchObject({ ok: true, result: { status: "cancelled" } });
+      prompt.answer(true);
+      receive(control("material-import-commit"));
+      await Promise.resolve();
+      expect(services.importArchive).not.toHaveBeenCalled();
+    },
+  );
+
+  it("expires an uncommitted request and refuses its late commit", async () => {
+    const { host, services, nextPrompt, receive, messages, expireRequests } = setup({}, undefined, false);
+    const pending = host.dispatch(request({ archiveBytes: archive(), fileName: "material.zip" }));
+    (await nextPrompt()).answer(true);
+    await vi.waitFor(() => expect(messages).toContainEqual(control("material-import-prepared")));
+    expireRequests();
+    receive(control("material-import-commit"));
+    expect(await pending).toMatchObject({ ok: false, error: { code: "rpc-timeout", retryable: true } });
+    expect(services.importArchive).not.toHaveBeenCalled();
+  });
+
+  it("does not apply the confirmation deadline after upload starts", async () => {
+    const upload = deferred<GradientCardMaterialBulkImportResponse>();
+    const { host, services, nextPrompt, expireRequests } = setup({
+      importArchive: vi.fn().mockReturnValue(upload.promise),
+    });
+    const pending = host.dispatch(request({ archiveBytes: archive(), fileName: "material.zip" }));
+    (await nextPrompt()).answer(true);
+    await vi.waitFor(() => expect(services.importArchive).toHaveBeenCalledTimes(1));
+    expireRequests();
+    upload.resolve(importResponse());
+    expect(await pending).toMatchObject({ ok: true, result: { status: "imported" } });
+  });
+
+  it.each(["cancel", "close"])(
+    "aborts an in-flight upload on %s without promising it was not imported",
+    async (action) => {
+      const upload = deferred<GradientCardMaterialBulkImportResponse>();
+      let uploadSignal: AbortSignal | undefined;
+      const { host, services, nextPrompt, receive } = setup({
+        importArchive: vi.fn((_file: File, signal: AbortSignal) => {
+          uploadSignal = signal;
+          return upload.promise;
+        }),
+      });
+      const pending = host.dispatch(request({ archiveBytes: archive(), fileName: "material.zip" }));
+      (await nextPrompt()).answer(true);
+      await vi.waitFor(() => expect(services.importArchive).toHaveBeenCalledTimes(1));
+      if (action === "cancel") receive(control("material-import-cancel"));
+      else host.close();
+      expect(uploadSignal?.aborted).toBe(true);
+      expect(await pending).toMatchObject({
+        ok: false,
+        error: { code: "material-import-outcome-unknown", retryable: false },
+      });
+      // Simulate a server commit that completed despite the HTTP abort.
+      upload.resolve(importResponse());
+    },
+  );
+
+  it("reports the committed import without waiting for the library refresh", async () => {
+    const refresh = deferred<void>();
+    const { host, services, nextPrompt } = setup({
+      refreshLibrary: vi.fn().mockReturnValue(refresh.promise),
+    });
+    let response: unknown;
+    const pending = host.dispatch(request({ archiveBytes: archive(), fileName: "material.zip" }))
+      .then((value) => { response = value; });
+    (await nextPrompt()).answer(true);
+    try {
+      await vi.waitFor(() => expect(services.refreshLibrary).toHaveBeenCalledTimes(1));
+      await vi.waitFor(() => expect(response).toMatchObject({ ok: true, result: { status: "imported" } }));
+    } finally {
+      refresh.resolve();
+      await pending;
+    }
+  });
+
+  it("sends the committed request's terminal outcome before closing the port", async () => {
+    const upload = deferred<GradientCardMaterialBulkImportResponse>();
+    const { host, services, nextPrompt, messages } = setup({
+      importArchive: vi.fn().mockReturnValue(upload.promise),
+    });
+    const pending = host.dispatch(request({ archiveBytes: archive(), fileName: "material.zip" }));
+    (await nextPrompt()).answer(true);
+    await vi.waitFor(() => expect(services.importArchive).toHaveBeenCalledTimes(1));
+    host.close();
+    expect(messages.slice(-2)).toMatchObject([
+      { kind: "response", requestId: "import-1", ok: false,
+        error: { code: "material-import-outcome-unknown", retryable: false } },
+      { kind: "port-closed" },
+    ]);
+    await pending;
+    upload.resolve(importResponse());
+  });
+
+  it("passes the upload signal to the shared HTTP client", async () => {
+    const controller = new AbortController();
+    const post = vi.spyOn(apiClient, "post").mockResolvedValue({ data: importResponse() });
+    const file = new File([archive()], "material.zip", { type: "application/zip" });
+    await importGradientCardMaterials([file], { signal: controller.signal });
+    expect(post).toHaveBeenCalledWith(
+      "/extractor/gradient-card-materials/import",
+      expect.any(FormData),
+      expect.objectContaining({ signal: controller.signal }),
+    );
   });
 
   it("returns a fixture result from synthetic handlers without touching the library", async () => {

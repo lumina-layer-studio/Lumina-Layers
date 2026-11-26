@@ -9373,12 +9373,12 @@ export const translations: Record<string, Record<"zh" | "en", string>> = {
     en: "Unreviewed: this version has no review record.",
   },
   "workshop.backend.capabilities": {
-    zh: "模块声明需要",
-    en: "The module says it needs",
+    zh: "模块声明",
+    en: "Module declaration",
   },
   "workshop.backend.noCapabilities": {
-    zh: "模块声明不需要联网、启动其他程序或访问任务文件夹以外的文件。",
-    en: "The module says it doesn't need network access, other programs, or files outside its task folder.",
+    zh: "模块声明不会联网、启动其他程序或访问任务文件夹以外的文件。",
+    en: "The module declares that it will not access the network, start other programs, or access files outside its task folder.",
   },
   "workshop.backend.capability.network": {
     zh: "联网",
@@ -9456,6 +9456,22 @@ export const translations: Record<string, Record<"zh" | "en", string>> = {
     zh: "首选下载源",
     en: "Preferred download sources",
   },
+  "workshop.backend.sourcePlan": {
+    zh: "预计首选下载源",
+    en: "Expected download sources",
+  },
+  "workshop.backend.sourcePlanFiles": {
+    zh: "{source} · {count} 个文件",
+    en: "{source} · {count} file(s)",
+  },
+  "workshop.backend.sourcePending": {
+    zh: "来源待确认",
+    en: "Source pending",
+  },
+  "workshop.backend.source.tuna": {
+    zh: "清华 PyPI 镜像",
+    en: "Tsinghua PyPI mirror",
+  },
   "workshop.backend.source.python": {
     zh: "Python 解释器",
     en: "Python interpreter",
@@ -9523,6 +9539,74 @@ export const translations: Record<string, Record<"zh" | "en", string>> = {
   "workshop.backend.phase.complete": {
     zh: "安装完成",
     en: "Installation complete",
+  },
+  "workshop.backend.progress.step": {
+    zh: "第 {index}/{count} 步",
+    en: "Step {index} of {count}",
+  },
+  "workshop.backend.progress.starting": {
+    zh: "正在准备安装",
+    en: "Preparing installation",
+  },
+  "workshop.backend.progress.currentFile": {
+    zh: "当前文件",
+    en: "Current file",
+  },
+  "workshop.backend.progress.fileIndex": {
+    zh: "第 {index}/{count} 个",
+    en: "{index} of {count}",
+  },
+  "workshop.backend.progress.phaseBytes": {
+    zh: "本阶段已下载",
+    en: "This phase",
+  },
+  "workshop.backend.progress.speed": {
+    zh: "下载速度",
+    en: "Speed",
+  },
+  "workshop.backend.progress.phaseRemaining": {
+    zh: "本阶段剩余",
+    en: "Phase time left",
+  },
+  "workshop.backend.progress.totalBytes": {
+    zh: "合计已下载",
+    en: "Total downloaded",
+  },
+  "workshop.backend.progress.totalRemaining": {
+    zh: "全部下载剩余",
+    en: "All downloads left",
+  },
+  "workshop.backend.progress.measuring": {
+    zh: "测速中",
+    en: "Measuring",
+  },
+  "workshop.backend.progress.calculating": {
+    zh: "计算中",
+    en: "Calculating",
+  },
+  "workshop.backend.progress.unknown": {
+    zh: "未知",
+    en: "Unknown",
+  },
+  "workshop.backend.progress.done": {
+    zh: "已完成",
+    en: "Done",
+  },
+  "workshop.backend.progress.downloadsDone": {
+    zh: "下载已完成",
+    en: "Downloads finished",
+  },
+  "workshop.backend.progress.etaSeconds": {
+    zh: "约 {count} 秒",
+    en: "About {count} sec",
+  },
+  "workshop.backend.progress.etaMinutes": {
+    zh: "约 {count} 分钟",
+    en: "About {count} min",
+  },
+  "workshop.backend.progress.cancelling": {
+    zh: "正在取消…",
+    en: "Cancelling…",
   },
   "workshop.backend.downloadFile": {
     zh: "{file} · {source} · 第 {index}/{count} 个",

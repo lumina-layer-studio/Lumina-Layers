@@ -41,10 +41,16 @@ from ..models import (
     WorkshopManifestV2,
     parse_workshop_manifest_json,
 )
-from .downloads import DownloadPreferences, DownloadProgress, source_options
+from .downloads import (
+    DownloadPreferences,
+    DownloadProgress,
+    DownloadSourceRoute,
+    source_options,
+    summarize_source_routes,
+)
 from .environments import EnvironmentManager, environment_key, environment_python
 from .locks import BackendLock, LockedWheel, WheelSourcePolicy, current_platform_key, parse_backend_lock
-from .model_files import ModelFetcher, ModelManager
+from .model_files import ModelFetcher, ModelManager, model_download_urls
 from .preview import (
     DependencyEstimate,
     MANAGED_PYTHON_DISK_ESTIMATE_BYTES,
@@ -87,7 +93,7 @@ from .tooling import (
     ManagedInterpreterProvider,
     UvTool,
 )
-from .wheel_files import WheelArchiveCache, wheel_urls
+from .wheel_files import WheelArchiveCache, wheel_download_urls
 
 
 log = get_logger(__name__)
@@ -642,6 +648,9 @@ class WorkshopBackendRuntime:
             "models": model_estimates(declaration.models, present_models),
             "artifacts": model_estimates(declaration.artifacts or (), present_models),
             "download_sources": self._download_options(declaration, source_wheels),
+            "download_plan": self._download_plan(
+                declaration, download_dependencies, present_models, interpreter_needed,
+            ),
             "download_preferences": record.download_preferences or DownloadPreferences().model_dump(),
             "download_estimate": estimate_download_total(
                 download_dependencies, declaration.download_files, present_models, interpreter_bytes,
@@ -667,7 +676,7 @@ class WorkshopBackendRuntime:
         wheel_urls_for_host = [
             url
             for wheel in wheels
-            for url in (wheel.url, *wheel_urls(wheel, self._wheel_sources, wheel_mirrors))
+            for url in wheel_download_urls(wheel, self._wheel_sources, wheel_mirrors, "auto")
         ]
         return {
             "python": source_options(python_urls),
@@ -677,6 +686,49 @@ class WorkshopBackendRuntime:
                 url for item in declaration.artifacts or () for url in (item.url, *(item.mirrors or ()))
             ),
         }
+
+    def _download_plan(
+        self,
+        declaration: BackendDeclaration,
+        dependencies: list[DependencyEstimate],
+        present_files: set[str],
+        interpreter_needed: bool,
+    ) -> dict[str, list[DownloadSourceRoute]]:
+        declared = declaration.download_sources
+        wheel_mirrors = (declared.wheels or {}) if declared is not None else {}
+        python_mirrors = (declared.python or ()) if declared is not None else ()
+        python_routes: list[tuple[str, tuple[str, ...]]] = []
+        if interpreter_needed and self._uv is not None:
+            try:
+                _version, original = self._uv.preferred_python_download(declaration.python)
+            except (WorkshopBackendError, OSError, ValueError):
+                original = ""
+            candidates = (self._python_mirror or original, original, *python_mirrors)
+            # The interpreter must resolve one of uv's pinned distributions first.
+            python_routes.append((original, candidates if original else ()))
+
+        wheels: dict[str, LockedWheel] = {}
+        if self._wheel_archives is not None and not self._wheel_sources.offline:
+            for estimate in dependencies:
+                for wheel in estimate.source_wheels:
+                    if wheel.sha256 in estimate.missing_wheels:
+                        wheels.setdefault(wheel.sha256, wheel)
+        plan = {
+            "python": summarize_source_routes(python_routes),
+            "wheels": summarize_source_routes(
+                (wheel.url, wheel_download_urls(wheel, self._wheel_sources, wheel_mirrors, "auto"))
+                for wheel in wheels.values()
+            ),
+        }
+        seen = set(present_files)
+        for category, files in (("models", declaration.models), ("artifacts", declaration.artifacts or ())):
+            routes = []
+            for item in files:
+                if item.sha256 not in seen:
+                    routes.append((item.url, model_download_urls(item, "auto")))
+                    seen.add(item.sha256)
+            plan[category] = summarize_source_routes(routes)
+        return plan
 
     def _active_preparation(self, module_id: str, version: str) -> str | None:
         with self._lock:

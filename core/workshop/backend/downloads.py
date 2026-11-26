@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import math
 import re
 import time
+from collections import Counter
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Annotated
+from typing import TYPE_CHECKING, Annotated, TypedDict
 from urllib.parse import urljoin, urlsplit
 
 import httpx
@@ -23,6 +25,8 @@ if TYPE_CHECKING:
 
 _SOURCE_ID_PATTERN = r"^[a-z0-9.:][a-z0-9.:-]{0,252}$"
 SourceId = Annotated[str, Field(pattern=_SOURCE_ID_PATTERN)]
+_SAMPLE_INTERVAL_SECONDS = 0.25
+_SAMPLE_EXPIRY_SECONDS = 4.0
 _SOURCE_ALIASES = {
     "www.modelscope.cn": "modelscope.cn",
     "modelscope.ai": "modelscope.cn",
@@ -55,15 +59,39 @@ def source_options(urls: Iterable[str]) -> list[str]:
     return sorted({source_id(url) for url in urls} - {""})
 
 
-def ordered_sources(primary: str, alternatives: Iterable[str], preferred: str) -> tuple[str, ...]:
+def ordered_sources(
+    primary: str,
+    alternatives: Iterable[str],
+    preferred: str,
+    *,
+    auto_source: str | None = None,
+) -> tuple[str, ...]:
     """Keep the declared order within a source and preserve the primary fallback."""
 
     urls = tuple(dict.fromkeys((primary, *alternatives)))
     if preferred == "original":
         return (primary,)
-    if preferred == "auto":
-        return urls
-    return tuple(sorted(urls, key=lambda url: source_id(url) != preferred))
+    selected = auto_source if preferred == "auto" else preferred
+    return tuple(sorted(urls, key=lambda url: source_id(url) != selected)) if selected else urls
+
+
+class DownloadSourceRoute(TypedDict):
+    original: str
+    sources: list[str]
+    count: int
+
+
+def summarize_source_routes(
+    routes: Iterable[tuple[str, tuple[str, ...]]],
+) -> list[DownloadSourceRoute]:
+    counts = Counter(
+        (source_id(original), tuple(dict.fromkeys(source_id(url) for url in urls if url)))
+        for original, urls in routes
+    )
+    return [
+        {"original": original, "sources": list(sources), "count": count}
+        for (original, sources), count in counts.items()
+    ]
 
 
 @dataclass(frozen=True, slots=True)
@@ -92,31 +120,47 @@ class DownloadBatch:
         self._sizes = list(self._declared_sizes)
         self._publish = publish
         self._completed_bytes = 0
+        self._rate_source: str | None = None
+        self._sample_at = 0.0
+        self._sample_bytes = 0
+        self._rate: float | None = None
 
     def attempt(self, index: int, name: str, url: str) -> Callable[[int, int | None], None]:
         self._sizes[index] = self._declared_sizes[index]
-        last_at = time.monotonic()
+        last_report_at = time.monotonic()
+        source = source_id(url)
+        if source != self._rate_source or last_report_at - self._sample_at > _SAMPLE_EXPIRY_SECONDS:
+            self._rate_source = source
+            self._sample_at = last_report_at
+            self._sample_bytes = 0
+            self._rate = None
         last_received = 0
-        rate: float | None = None
-        self._report(index, name, url, 0, None)
+        self._report(index, name, source, 0)
 
         def update(received: int, total: int | None) -> None:
-            nonlocal last_at, last_received, rate
+            nonlocal last_report_at, last_received
             if total is not None and self._declared_sizes[index] is None:
                 self._sizes[index] = total
             now = time.monotonic()
-            elapsed = now - last_at
-            if elapsed < 0.25 and received != total and received != 0:
+            self._sample_bytes += max(0, received - last_received)
+            last_received = received
+            elapsed = now - self._sample_at
+            if elapsed >= _SAMPLE_INTERVAL_SECONDS and self._sample_bytes:
+                sample = self._sample_bytes / elapsed
+                self._rate = (
+                    sample if self._rate is None or elapsed > _SAMPLE_EXPIRY_SECONDS
+                    else (self._rate + sample) / 2
+                )
+                self._sample_at = now
+                self._sample_bytes = 0
+            if now - last_report_at < _SAMPLE_INTERVAL_SECONDS and received not in (0, total):
                 return
-            if elapsed >= 0.2 and received > last_received:
-                sample = (received - last_received) / elapsed
-                rate = sample if rate is None else (rate + sample) / 2
-                last_at, last_received = now, received
-            self._report(index, name, url, received, rate)
+            last_report_at = now
+            self._report(index, name, source, received)
 
         return update
 
-    def _report(self, index: int, name: str, url: str, received: int, rate: float | None) -> None:
+    def _report(self, index: int, name: str, source: str, received: int) -> None:
         total = (
             sum(size for size in self._sizes if size is not None)
             if None not in self._sizes
@@ -129,15 +173,18 @@ class DownloadBatch:
         )
         self._publish(DownloadProgress(
             file_name=name,
-            source=source_id(url),
+            source=source,
             file_index=index + 1,
             file_count=len(self._sizes),
             file_received_bytes=received,
             file_total_bytes=file_size,
             received_bytes=received_total,
             total_bytes=total,
-            bytes_per_second=rate,
-            eta_seconds=round(max(0, remaining) / rate) if rate and remaining is not None else None,
+            bytes_per_second=self._rate,
+            eta_seconds=(
+                math.ceil(max(0, remaining) / self._rate)
+                if self._rate and remaining is not None else None
+            ),
         ))
 
     def finish(self, index: int, size: int) -> None:

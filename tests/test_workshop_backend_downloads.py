@@ -1,3 +1,4 @@
+import hashlib
 import json
 import sys
 import threading
@@ -13,12 +14,12 @@ from core.workshop.backend import downloads
 from core.workshop.backend.downloads import (
     DownloadBatch, DownloadPreferences, DownloadProgress, ordered_sources, source_options,
 )
-from core.workshop.backend.locks import BackendLock, LockedPackage, LockedWheel, current_platform_key
+from core.workshop.backend.locks import BackendLock, LockedPackage, LockedWheel, WheelSourcePolicy, current_platform_key
 from core.workshop.backend.preview import estimate_dependencies, estimate_download_total, needs_target_python_version
 from core.workshop.backend.state import BackendStateStore, BackendVersionRecord
 from core.workshop.backend.tasks import TaskProgress, TaskStore
-from core.workshop.backend.tooling import CancelToken, ManagedInterpreterProvider
-from core.workshop.backend.wheel_files import select_locked_wheels
+from core.workshop.backend.tooling import BackendInterpreter, CancelToken, ManagedInterpreterProvider
+from core.workshop.backend.wheel_files import WheelArchiveCache, select_locked_wheels, wheel_download_urls
 from core.workshop.errors import WorkshopBackendError
 
 
@@ -117,6 +118,70 @@ def test_backend_state_writes_only_explicit_source_preferences(tmp_path: Path) -
 def _wheel(name: str, digest: str, size: int, build: str = "") -> LockedWheel:
     path = f"{name}-1.0{build}-py3-none-any.whl"
     return LockedWheel(path, f"https://example.com/{path}", digest * 64, size)
+
+
+def test_automatic_wheel_sources_preserve_the_distinction_between_pypi_and_pytorch() -> None:
+    name = "demo-1.0-py3-none-any.whl"
+    suffix = f"packages/ab/cd/{name}"
+    pypi = LockedWheel(name, f"https://files.pythonhosted.org/{suffix}", "a" * 64, 10)
+    pytorch = LockedWheel(name, f"https://download.pytorch.org/whl/cpu/{name}", "b" * 64, 10)
+    signed = LockedWheel(name, pypi.url + "?signature=example", "c" * 64, 10)
+    tuna = f"https://pypi.tuna.tsinghua.edu.cn/{suffix}"
+    policy = WheelSourcePolicy()
+
+    assert wheel_download_urls(pypi, policy, {}, "auto") == (tuna, pypi.url)
+    assert wheel_download_urls(pypi, policy, {}, "pypi.tuna.tsinghua.edu.cn") == (tuna, pypi.url)
+    assert wheel_download_urls(pypi, policy, {}, "original") == (pypi.url,)
+    assert wheel_download_urls(pytorch, policy, {}, "auto") == (pytorch.url,)
+    assert wheel_download_urls(pytorch, policy, {}, "pypi.tuna.tsinghua.edu.cn") == (pytorch.url,)
+    assert wheel_download_urls(signed, policy, {}, "auto") == (signed.url,)
+
+    override = WheelSourcePolicy(mirror_prefix="https://regional.example/pypi")
+    assert wheel_download_urls(pypi, override, {}, "auto") == (
+        f"https://regional.example/pypi/{suffix}", pypi.url,
+    )
+
+
+@pytest.mark.parametrize("connection_failure", [True, False], ids=["unreachable", "wrong-hash"])
+def test_wheel_cache_falls_back_to_pypi_and_keeps_verified_bytes(tmp_path, monkeypatch, connection_failure) -> None:
+    payloads = [b"first verified wheel", b"second verified wheel"]
+    wheels = [
+        LockedWheel(name, f"https://files.pythonhosted.org/packages/ab/cd/{name}", hashlib.sha256(data).hexdigest(), len(data))
+        for name, data in zip(("alpha-1.0-py3-none-any.whl", "beta-1.0-py3-none-any.whl"), payloads, strict=True)
+    ]
+    requests = []
+    original_client = httpx.Client
+
+    def serve(request: httpx.Request) -> httpx.Response:
+        requests.append((request.url.host, Path(request.url.path).name))
+        for index, wheel in enumerate(wheels):
+            if request.url.path.endswith(wheel.file_name):
+                if request.url.host == "pypi.tuna.tsinghua.edu.cn" and index == 0:
+                    if connection_failure:
+                        raise httpx.ConnectTimeout("mirror unreachable", request=request)
+                    return httpx.Response(200, content=b"X" * len(payloads[index]))
+                return httpx.Response(200, content=payloads[index])
+        pytest.fail("unexpected wheel request")
+
+    transport = httpx.MockTransport(serve)
+    monkeypatch.setattr(downloads.httpx, "Client", lambda **kwargs: original_client(transport=transport, **kwargs))
+    lock = BackendLock(tuple(
+        LockedPackage(name, "1.0", None, (wheel,))
+        for name, wheel in zip(("alpha", "beta"), wheels, strict=True)
+    ), None, "test")
+    python = BackendInterpreter("test", f"{sys.version_info.major}.{sys.version_info.minor}", Path(sys.executable), False)
+    cache = WheelArchiveCache(tmp_path)
+    samples = []
+    cache.prepare(lock, python, WheelSourcePolicy(), {}, "auto", CancelToken(), samples.append)
+
+    assert requests == [
+        ("pypi.tuna.tsinghua.edu.cn", wheels[0].file_name),
+        ("files.pythonhosted.org", wheels[0].file_name),
+        ("files.pythonhosted.org" if connection_failure else "pypi.tuna.tsinghua.edu.cn", wheels[1].file_name),
+    ]
+    for wheel, expected in zip(wheels, payloads, strict=True):
+        assert (tmp_path / wheel.sha256 / wheel.file_name).read_bytes() == expected
+    assert samples[-1].received_bytes == sum(map(len, payloads))
 
 
 def test_selection_uses_lock_markers_and_prefers_the_newest_equal_tag_build() -> None:
@@ -242,3 +307,26 @@ def test_progress_tracks_completed_batch_bytes_and_restarts_failed_attempts(monk
     retry(20, 20)
     assert samples[-1].received_bytes == samples[-1].total_bytes == 30
     assert samples[-1].eta_seconds == 0
+
+
+def test_progress_keeps_the_rate_across_files_at_the_same_source(monkeypatch) -> None:
+    now = 0.0
+    monkeypatch.setattr(downloads.time, "monotonic", lambda: now)
+    samples: list[DownloadProgress] = []
+    batch = DownloadBatch((100, 100, 100), samples.append)
+    first = batch.attempt(0, "first.whl", "https://mirror.example/first.whl")
+    now = 0.5
+    first(100, 100)
+    batch.finish(0, 100)
+
+    now = 0.6
+    batch.attempt(1, "second.whl", "https://mirror.example/second.whl")
+    assert samples[-1].file_received_bytes == 0
+    assert samples[-1].received_bytes == 100
+    assert samples[-1].bytes_per_second == 200
+    assert samples[-1].eta_seconds == 1
+
+    batch.attempt(1, "second.whl", "https://another.example/second.whl")
+    assert samples[-1].received_bytes == 100
+    assert samples[-1].bytes_per_second is None
+    assert samples[-1].eta_seconds is None

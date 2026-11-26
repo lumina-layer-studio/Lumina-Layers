@@ -378,6 +378,11 @@ handlers return a fixed `fixture-material` result without touching the library.
 `docs/backend-protocol.md`。新增下载声明和本地化权限说明要求 `workshopApi.min`
 为 `1.2.0` 或更高，原有模块可继续使用 1.1.0 的声明。
 
+仅依赖 Python 包的模块可省略 `backend.models`、`backend.artifacts` 和
+`backend.downloadSources`。宿主从 `pylock.toml` 识别 wheel 原始 URL，并为支持的
+站点匹配内置镜像。需由宿主下载的模型和附加文件应在相应清单字段中声明原始 URL、
+大小和 SHA-256。若其他站点提供同一文件，模块作者可在该项的 `mirrors` 中声明 URL。
+
 宿主行为：
 
 - 安装只暂存代码；授权前只解析声明与 `pylock.toml`，不执行模块代码。管理界面展示
@@ -389,6 +394,11 @@ handlers return a fixed `fixture-material` result without touching the library.
   权限后才开始准备或激活。
 - 本地包与目录包都可选择 Python、wheel、模型和数据包来源。宿主识别 URL 所属站点，
   按选择优先尝试同站点的候选地址，并在失败时回退。选择原始地址时仅使用原始地址。
+  自动模式优先尝试清华 PyPI 镜像上的锁定 wheel，以及模块声明的 ModelScope 镜像。
+  PyTorch 专用 wheel 使用锁定地址和模块为该文件声明的镜像。
+  安装前的下载与磁盘占用区按 Python、依赖包、模型和附加文件显示预计首选源与文件数量。
+  后端状态的 `download_plan` 按类别列出待下载文件的原始站点、自动尝试顺序和数量，
+  相同下载顺序合并为一项。已共享的文件不计入下载计划。
   镜像不会改变 wheel、模型或数据包的 SHA-256。Python 归档由 uv 校验。声明支持
   Windows 的模块须使用可在 Windows 创建的模型和附加文件名。
 - 准备是可取消的后台任务，单独开启 GPU 加速时也可查看进度。界面显示来源、已下载量、

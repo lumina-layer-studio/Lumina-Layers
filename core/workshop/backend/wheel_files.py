@@ -9,7 +9,9 @@ import uuid
 from collections.abc import Callable, Iterator, Mapping
 from dataclasses import replace
 from pathlib import Path
+from urllib.parse import urlsplit
 
+import httpx
 from packaging.markers import (
     InvalidMarker,
     Marker,
@@ -59,12 +61,25 @@ def _marker_with_unknown_patch(expression: str) -> Marker:
     return Marker("".join(parts))
 
 
-def wheel_urls(wheel: LockedWheel, policy: WheelSourcePolicy, mirrors: Mapping[str, tuple[str, ...]]) -> tuple[str, ...]:
-    urls = mirrors.get(wheel.sha256, ())
-    if policy.mirror_prefix and wheel.url.startswith(PYPI_FILES_PREFIX):
-        alias = policy.mirror_prefix.rstrip("/") + "/" + wheel.url[len(PYPI_FILES_PREFIX):]
-        return (alias, *urls)
-    return urls
+_TUNA_PYPI_MIRROR = "https://pypi.tuna.tsinghua.edu.cn/"
+
+
+def wheel_download_urls(
+    wheel: LockedWheel,
+    policy: WheelSourcePolicy,
+    mirrors: Mapping[str, tuple[str, ...]],
+    preferred: str,
+) -> tuple[str, ...]:
+    alternatives = mirrors.get(wheel.sha256, ())
+    mirror = policy.mirror_prefix
+    if mirror is None and wheel.url.startswith(PYPI_FILES_PREFIX + "packages/") and "?" not in wheel.url:
+        mirror = _TUNA_PYPI_MIRROR
+    if mirror and wheel.url.startswith(PYPI_FILES_PREFIX):
+        alias = mirror.rstrip("/") + "/" + wheel.url[len(PYPI_FILES_PREFIX):]
+        if preferred == "auto":
+            return ordered_sources(alias, (wheel.url, *alternatives), preferred)
+        alternatives = (alias, *alternatives)
+    return ordered_sources(wheel.url, alternatives, preferred)
 
 
 def select_locked_wheels(lock: BackendLock, python_version: str, full_version: str | None) -> BackendLock:
@@ -171,6 +186,7 @@ class WheelArchiveCache:
         batch: DownloadBatch,
         index: int,
         cancel: CancelToken,
+        unreachable_mirrors: set[str],
     ) -> tuple[Path, int]:
         with self._guard:
             lock = self._locks.setdefault(wheel.sha256, threading.Lock())
@@ -182,11 +198,20 @@ class WheelArchiveCache:
             target.parent.mkdir(parents=True, exist_ok=True)
             self._staging_dir.mkdir(parents=True, exist_ok=True)
             last_error: WorkshopBackendError | None = None
+            last_source = ""
             for url in urls:
+                mirror = url != wheel.url
+                authority = urlsplit(url).netloc
+                if mirror and authority in unreachable_mirrors:
+                    continue
                 temporary = self._staging_dir / f"wheel-{uuid.uuid4().hex}.part"
                 report = batch.attempt(index, wheel.file_name, url)
                 try:
-                    download_https(url, temporary, cancel=cancel, progress=report, size=wheel.size)
+                    timeout = httpx.Timeout(60, connect=5) if mirror and url.startswith(_TUNA_PYPI_MIRROR) else None
+                    download_https(
+                        url, temporary, cancel=cancel, progress=report, size=wheel.size,
+                        timeout=timeout,
+                    )
                     if not self._matches(temporary, wheel, cancel):
                         raise WorkshopBackendError(
                             "download-verification-failed", "The wheel did not match its locked SHA-256 or size."
@@ -197,13 +222,16 @@ class WheelArchiveCache:
                 except WorkshopBackendError as exc:
                     if exc.code == "cancelled":
                         raise
+                    if mirror and isinstance(exc.__cause__, (httpx.ConnectError, httpx.ConnectTimeout, httpx.ProxyError)):
+                        unreachable_mirrors.add(authority)
                     last_error = exc
+                    last_source = source_id(url)
                 finally:
                     if temporary.exists():
                         unlink_with_retry(temporary)
             message = f"Could not download and verify {wheel.file_name}."
             if last_error is not None:
-                message += f" {source_id(url) or 'Download source'}: {last_error}"
+                message += f" {last_source or 'Download source'}: {last_error}"
             raise WorkshopBackendError("dependency-install-failed", message) from last_error
 
     def prepare(
@@ -233,12 +261,10 @@ class WheelArchiveCache:
             elif not policy.offline:
                 needed.append(wheel)
         batch = DownloadBatch((wheel.size for wheel in needed), on_progress)
+        unreachable_mirrors: set[str] = set()
         for index, wheel in enumerate(needed):
-            alternatives = wheel_urls(wheel, policy, mirrors)
-            urls = ordered_sources(wheel.url, alternatives, preferred)
-            if preferred == "auto" and policy.mirror_prefix and wheel.url.startswith(PYPI_FILES_PREFIX):
-                urls = ordered_sources(alternatives[0], (wheel.url, *alternatives[1:]), preferred)
-            archive, size = self._download(wheel, urls, batch, index, cancel)
+            urls = wheel_download_urls(wheel, policy, mirrors, preferred)
+            archive, size = self._download(wheel, urls, batch, index, cancel, unreachable_mirrors)
             batch.finish(index, size)
             local[wheel.sha256] = archive.resolve().as_uri()
             cached.add(wheel.sha256)

@@ -169,6 +169,32 @@ def test_cached_library_discovers_new_materials_below_existing_empty_groups(tmp_
     assert _listed_names(tmp_path) == {"Brand/Nested/Material"}
 
 
+@pytest.mark.parametrize("had_material", [False, True], ids=["new", "restored"])
+def test_material_cache_detects_new_children_with_unchanged_directory_stats(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, had_material: bool,
+) -> None:
+    group = tmp_path / "Brand/Nested"
+    group.mkdir(parents=True)
+    name = "Brand/Nested/Material"
+    if had_material:
+        archive, _ = _write_material(tmp_path, name)
+        assert _listed_names(tmp_path) == {name}
+        shutil.rmtree(archive.parent)
+
+    read_path_state = material_files._material_library_path_state
+    stable_states = {path: read_path_state(path) for path in (tmp_path, group.parent, group)}
+
+    def path_state_with_unchanged_group_stats(path: Path) -> tuple[int, ...] | None:
+        if path in stable_states:
+            return stable_states[path]
+        return read_path_state(path)
+
+    monkeypatch.setattr(material_files, "_material_library_path_state", path_state_with_unchanged_group_stats)
+    assert _listed_names(tmp_path) == set()
+    _write_material(tmp_path, name)
+    assert _listed_names(tmp_path) == {name}
+
+
 @pytest.mark.parametrize("blocked_directory", ["Brand", "Brand/Material"])
 def test_material_cache_recovers_after_directory_access_is_restored(
     tmp_path: Path, blocked_directory: str,

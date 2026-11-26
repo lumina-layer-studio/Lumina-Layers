@@ -32,6 +32,8 @@ from .constants import (
     WORKSHOP_BACKEND_API_VERSION,
     WORKSHOP_BACKEND_MANIFEST_VERSION,
     WORKSHOP_MANIFEST_VERSION,
+    WORKSHOP_MATERIAL_IMPORT_API_VERSION,
+    WORKSHOP_MATERIAL_IMPORT_PERMISSION,
 )
 
 
@@ -192,6 +194,16 @@ class _WorkshopManifestBase(StrictFrozenModel):
             raise ValueError("manifest contains duplicate permission entries")
         if self.project_snapshots and "project.storage" not in names:
             raise ValueError("project snapshots require project.storage permission")
+        # Like backends: older hosts filter Registry candidates by
+        # workshopApi.min, so material import must not claim API < 1.2.0.
+        if WORKSHOP_MATERIAL_IMPORT_PERMISSION in names and compare_semver(
+            self.workshop_api.minimum,
+            WORKSHOP_MATERIAL_IMPORT_API_VERSION,
+        ) < 0:
+            raise ValueError(
+                "material.import requires workshopApi.min >= "
+                f"{WORKSHOP_MATERIAL_IMPORT_API_VERSION}"
+            )
         return self
 
 

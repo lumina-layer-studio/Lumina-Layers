@@ -49,6 +49,7 @@ import { useWorkspaceMode } from "../hooks/useWorkspaceMode";
 import { useI18n } from "../i18n/context";
 import { useSettingsStore } from "../stores/settingsStore";
 import ModuleDetails from "./ModuleDetails";
+import { MaterialImportDialog } from "./MaterialImportDialog";
 import {
   createWorkshopProjectStorage,
   type ManagedWorkshopProjectStorage,
@@ -69,11 +70,17 @@ import {
   createSyntheticWorkshopHandlers,
   createWorkshopManagerHandlers,
   createWorkshopUiState,
+  type WorkshopMaterialImportConfirmation,
 } from "./runtime/handlers";
 import {
   type WorkshopAuditStatus,
   useWorkshopStore,
 } from "./store";
+
+interface MaterialImportPrompt {
+  request: WorkshopMaterialImportConfirmation;
+  finish(confirmed: boolean): void;
+}
 
 interface PermissionPrompt {
   kind: "staged" | "update";
@@ -637,6 +644,9 @@ export function WorkshopPanel({
   const [backendRefreshKey, setBackendRefreshKey] = useState(0);
   const [uninstallReport, setUninstallReport] =
     useState<WorkshopUninstallReport | null>(null);
+  const [materialImportPrompt, setMaterialImportPrompt] =
+    useState<MaterialImportPrompt | null>(null);
+  const materialImportPromptRef = useRef<MaterialImportPrompt | null>(null);
   const backendSetupCancelled = useRef(false);
   const returnHomeTimerRef = useRef<number | null>(null);
   const snapshotIds = useRef(new Map<string, string>());
@@ -970,6 +980,51 @@ export function WorkshopPanel({
     setActiveRuntimeContext,
   ]);
 
+  // Host dialog for `material.import`; Cancel, frame close, and request
+  // timeout all resolve false. 取消、关闭模块或请求超时都视为未确认。
+  const confirmMaterialImport = useCallback(
+    (request: WorkshopMaterialImportConfirmation, signal: AbortSignal) =>
+      new Promise<boolean>((resolve) => {
+        if (signal.aborted) {
+          resolve(false);
+          return;
+        }
+        materialImportPromptRef.current?.finish(false);
+        const prompt: MaterialImportPrompt = {
+          request,
+          finish: (confirmed) => {
+            signal.removeEventListener("abort", onAbort);
+            if (materialImportPromptRef.current === prompt) {
+              materialImportPromptRef.current = null;
+              setMaterialImportPrompt(null);
+            }
+            resolve(confirmed);
+          },
+        };
+        const onAbort = () => prompt.finish(false);
+        signal.addEventListener("abort", onAbort, { once: true });
+        materialImportPromptRef.current = prompt;
+        setMaterialImportPrompt(prompt);
+      }),
+    [],
+  );
+  useEffect(
+    () => () => materialImportPromptRef.current?.finish(false),
+    [],
+  );
+  const materialImportModule = materialImportPrompt
+    ? modules.find(
+        (module) =>
+          module.module_id === materialImportPrompt.request.identity.moduleId,
+      ) ?? null
+    : null;
+  const materialImportVersion = materialImportModule && materialImportPrompt
+    ? moduleVersion(
+        materialImportModule,
+        materialImportPrompt.request.identity.moduleVersion,
+      )
+    : null;
+
   const handlers = useMemo(
     () =>
       createWorkshopManagerHandlers({
@@ -981,8 +1036,9 @@ export function WorkshopPanel({
         theme: () => useSettingsStore.getState().theme,
         onDiagnostics: setDiagnostics,
         backend: backendApi,
+        materialImport: { confirm: confirmMaterialImport },
       }),
-    [backendApi, projectStorage, setDiagnostics],
+    [backendApi, confirmMaterialImport, projectStorage, setDiagnostics],
   );
   const syntheticHandlers = useMemo(
     () => createSyntheticWorkshopHandlers(),
@@ -1330,6 +1386,30 @@ export function WorkshopPanel({
     [api, requestStagedCandidate, runModuleMutation],
   );
 
+  // Rendered outside the module frame in both the runtime and manager views.
+  const materialImportDialog = materialImportPrompt ? (
+    <MaterialImportDialog
+      request={materialImportPrompt.request}
+      moduleName={
+        materialImportModule
+          ? moduleDisplayName(
+              materialImportModule,
+              materialImportPrompt.request.identity.moduleVersion,
+              lang,
+            )
+          : materialImportPrompt.request.identity.moduleId
+      }
+      publisher={materialImportVersion?.publisher ?? null}
+      reviewLevel={
+        materialImportModule
+          ? t(`workshop.manager.source.${sourceKey(materialImportModule)}`)
+          : t("workshop.manager.source.unreviewed")
+      }
+      onConfirm={() => materialImportPrompt.finish(true)}
+      onCancel={() => materialImportPrompt.finish(false)}
+    />
+  ) : null;
+
   if (selectedModule && selectedVersion && activeModule) {
     return (
       <div
@@ -1402,6 +1482,7 @@ export function WorkshopPanel({
             }
           />
         </div>
+        {materialImportDialog}
       </div>
     );
   }
@@ -1750,6 +1831,8 @@ export function WorkshopPanel({
           onCancel={cancelBackendSetup}
         />
       ) : null}
+
+      {materialImportDialog}
 
       {uninstallReport ? (
         <UninstallReportDialog

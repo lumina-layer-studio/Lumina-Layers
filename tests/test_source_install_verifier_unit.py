@@ -182,12 +182,13 @@ def test_server_cleanup_keeps_an_outside_process_alive(tmp_path: Path, parent_ex
 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX process-group cleanup")
-@pytest.mark.parametrize("denied_signal", [signal.SIGTERM, signal.SIGKILL])
+@pytest.mark.parametrize("signal_name", ["SIGTERM", "SIGKILL"])
 def test_darwin_cleanup_accepts_eperm_only_after_the_group_disappears(
-    monkeypatch: pytest.MonkeyPatch, denied_signal: int,
+    monkeypatch: pytest.MonkeyPatch, signal_name: str,
 ) -> None:
     from scripts import verify_source_install
 
+    denied_signal = getattr(signal, signal_name)
     monkeypatch.setattr(verify_source_install.sys, "platform", "darwin")
     signals: list[int] = []
     waits: list[float] = []
@@ -282,12 +283,13 @@ def test_cleanup_reaps_a_parent_that_exited_before_the_first_signal() -> None:
 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX process-group cleanup")
-@pytest.mark.parametrize("failed_signal", [signal.SIGTERM, signal.SIGKILL])
+@pytest.mark.parametrize("signal_name", ["SIGTERM", "SIGKILL"])
 def test_cleanup_propagates_other_signal_errors(
-    monkeypatch: pytest.MonkeyPatch, failed_signal: int,
+    monkeypatch: pytest.MonkeyPatch, signal_name: str,
 ) -> None:
     from scripts import verify_source_install
 
+    failed_signal = getattr(signal, signal_name)
     failure = OSError(22, "invalid signal request")
 
     def killpg(_pid: int, sig: int) -> None:

@@ -303,5 +303,9 @@ def test_download_selection_verifies_mirrors_and_reuses_bytes_across_locks(
         install("fixture.download-three", [aliased], 0)
         assert fetched == [mirror, shared_origin, labels_mirror, extra_origin]
         assert runtime.storage_overview()["wheel_cache"] == {"files": 2, "bytes": shared.size + extra.size}
+        # The declared lock is non-empty, but its only dependency belongs to
+        # another platform. The selected empty lock must remain valid for uv.
+        install("fixture.download-no-platform-wheels", [], 0)
+        assert fetched == [mirror, shared_origin, labels_mirror, extra_origin]
     finally:
         runtime.shutdown()

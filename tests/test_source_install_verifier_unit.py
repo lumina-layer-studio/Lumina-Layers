@@ -179,3 +179,123 @@ def test_server_cleanup_keeps_an_outside_process_alive(tmp_path: Path, parent_ex
                 pass
         outside.terminate()
         outside.wait(timeout=5)
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX process-group cleanup")
+@pytest.mark.parametrize("denied_signal", [signal.SIGTERM, signal.SIGKILL])
+def test_darwin_cleanup_accepts_eperm_only_after_the_group_disappears(
+    monkeypatch: pytest.MonkeyPatch, denied_signal: int,
+) -> None:
+    from scripts import verify_source_install
+
+    monkeypatch.setattr(verify_source_install.sys, "platform", "darwin")
+    signals: list[int] = []
+    waits: list[float] = []
+    probes = 0
+
+    def killpg(pid: int, sig: int) -> None:
+        nonlocal probes
+        assert pid == 12345
+        signals.append(sig)
+        if sig == denied_signal:
+            raise PermissionError(1, "group is exiting")
+        if sig == 0:
+            probes += 1
+            if probes == 1:
+                raise PermissionError(1, "group is still exiting")
+            raise ProcessLookupError(3, "group disappeared")
+
+    monkeypatch.setattr(verify_source_install.os, "killpg", killpg)
+    proc = SimpleNamespace(pid=12345, poll=lambda: 0, wait=lambda *, timeout: waits.append(timeout))
+
+    verify_source_install._stop_server(proc, timeout=0.1)
+
+    assert probes >= 2
+    assert signal.SIGKILL in signals, "successful parent exit must not skip worker cleanup"
+    assert len(waits) == 2
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX process-group cleanup")
+@pytest.mark.parametrize("probe_denied", [True, False], ids=["permission-denied", "still-exists"])
+def test_darwin_cleanup_propagates_permission_errors_for_a_remaining_group(
+    monkeypatch: pytest.MonkeyPatch, probe_denied: bool,
+) -> None:
+    from scripts import verify_source_install
+
+    monkeypatch.setattr(verify_source_install.sys, "platform", "darwin")
+    failure = PermissionError(1, "cannot signal this group")
+    ticks = iter(range(100))
+    monkeypatch.setattr(time, "monotonic", lambda: next(ticks) / 10)
+    monkeypatch.setattr(time, "sleep", lambda _seconds: None)
+
+    def killpg(_pid: int, sig: int) -> None:
+        if sig != 0 or probe_denied:
+            raise failure
+
+    monkeypatch.setattr(verify_source_install.os, "killpg", killpg)
+    proc = SimpleNamespace(pid=12345, poll=lambda: 0, wait=lambda *, timeout: 0)
+
+    with pytest.raises(PermissionError) as error:
+        verify_source_install._stop_server(proc, timeout=0.1)
+    assert error.value is failure
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX process-group cleanup")
+def test_non_darwin_cleanup_does_not_retry_permission_errors(monkeypatch: pytest.MonkeyPatch) -> None:
+    from scripts import verify_source_install
+
+    monkeypatch.setattr(verify_source_install.sys, "platform", "linux")
+    signals: list[int] = []
+
+    def killpg(_pid: int, sig: int) -> None:
+        signals.append(sig)
+        raise PermissionError(1, "cannot signal this group")
+
+    monkeypatch.setattr(verify_source_install.os, "killpg", killpg)
+    proc = SimpleNamespace(pid=12345, poll=lambda: 0, wait=lambda *, timeout: 0)
+
+    with pytest.raises(PermissionError):
+        verify_source_install._stop_server(proc, timeout=0.1)
+    assert signals == [signal.SIGTERM]
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX exited-but-unreaped parent")
+def test_cleanup_reaps_a_parent_that_exited_before_the_first_signal() -> None:
+    from scripts.verify_source_install import _stop_server
+
+    proc = subprocess.Popen([sys.executable, "-c", "pass"], start_new_session=True)
+    parent = psutil.Process(proc.pid)
+    try:
+        deadline = time.monotonic() + 5
+        while parent.status() != psutil.STATUS_ZOMBIE and time.monotonic() < deadline:
+            time.sleep(0.01)
+        assert parent.status() == psutil.STATUS_ZOMBIE
+        assert proc.returncode is None, "test must not poll or wait before cleanup"
+
+        _stop_server(proc, timeout=0.2)
+
+        assert proc.returncode == 0
+        with pytest.raises(ProcessLookupError):
+            os.killpg(proc.pid, 0)
+    finally:
+        proc.wait(timeout=5)
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX process-group cleanup")
+@pytest.mark.parametrize("failed_signal", [signal.SIGTERM, signal.SIGKILL])
+def test_cleanup_propagates_other_signal_errors(
+    monkeypatch: pytest.MonkeyPatch, failed_signal: int,
+) -> None:
+    from scripts import verify_source_install
+
+    failure = OSError(22, "invalid signal request")
+
+    def killpg(_pid: int, sig: int) -> None:
+        if sig == failed_signal:
+            raise failure
+
+    monkeypatch.setattr(verify_source_install.os, "killpg", killpg)
+    proc = SimpleNamespace(pid=12345, poll=lambda: 0, wait=lambda *, timeout: 0)
+    with pytest.raises(OSError) as error:
+        verify_source_install._stop_server(proc, timeout=0.1)
+    assert error.value is failure

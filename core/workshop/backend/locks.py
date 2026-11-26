@@ -244,6 +244,8 @@ def render_install_lock(
         'lock-version = "1.0"',
         'created-by = "lumina-workshop-host"',
     ]
+    if not lock.packages:
+        lines.append("packages = []")
     if lock.requires_python:
         lines.append(f"requires-python = {_toml_string(lock.requires_python)}")
     for package in lock.packages:

@@ -372,21 +372,32 @@ commit). The call works
 only where the material library itself accepts imports. Synthetic fixture
 handlers return a fixed `fixture-material` result without touching the library.
 
-## 模块后端（Workshop API 1.1.0）
+## 模块后端（Workshop API 1.1.0–1.2.0）
 
-需要本机 Python 处理的模块声明 manifest v2 后端；公开契约见 SDK 仓库
-`docs/backend-protocol.md`（SDK 1.1.0 尚未发布，宿主仍锁定 SDK 1.0.1，后端 RPC 契约
-由宿主侧 `frontend/src/workshop/contracts.ts` 承接，与此前支持 1.0.2 扩展的方式相同）。
+需要本机 Python 处理的模块声明 manifest v2 后端。公开契约见 SDK 仓库的
+`docs/backend-protocol.md`。新增下载声明和本地化权限说明要求 `workshopApi.min`
+为 `1.2.0` 或更高，原有模块可继续使用 1.1.0 的声明。
 
 宿主行为：
 
 - 安装只暂存代码；授权前只解析声明与 `pylock.toml`，不执行模块代码。管理界面展示
   来源、审核等级（官方 / 签名 `reviews-v1.json` 中按包摘要列出的已审核社区版本 /
   未审核）、声明的能力、预计新增与已共享的依赖/模型/Python 运行时。未审核代码需要
-  用户勾选风险确认；声明不受系统强制限制，本机进程模式不是沙箱。
-- 准备是可取消的后台任务：托管 Python → 按锁内容区分的环境（相同锁共用，冲突版本
-  各自独立，大文件经 `runtime/store` 按 SHA-256 硬链接共享）→ 模型下载校验 → 后端
-  自检。失败或取消会撤销本次新增内容；只有准备成功的版本才能激活。
+  用户勾选红色风险提示下的确认框。后端以用户账户权限运行，能力仅说明开发者声明的用途。
+- 目录和 GitHub 安装显示扩展包的下载、校验与暂存阶段，本地安装显示传输与暂存。
+  声明 API 1.2.0 或更高版本的目录更新在包通过校验后从清单读取翻译，用户批准新增
+  权限后才开始准备或激活。
+- 本地包与目录包都可选择 Python、wheel、模型和数据包来源。宿主识别 URL 所属站点，
+  按选择优先尝试同站点的候选地址，并在失败时回退。选择原始地址时仅使用原始地址。
+  镜像不会改变 wheel、模型或数据包的 SHA-256。Python 归档由 uv 校验。声明支持
+  Windows 的模块须使用可在 Windows 创建的模型和附加文件名。
+- 准备是可取消的后台任务，单独开启 GPU 加速时也可查看进度。界面显示来源、已下载量、
+  总量、速度和预计剩余时间，并区分 Python 安装、依赖安装、文件准备和后端自检。
+  估算时按 SHA-256 合并 CPU 与 GPU 都需要的 wheel。相同平台和锁可共用环境，不同锁
+  可复用已经校验的 wheel、模型和数据包。存储页面单列下载缓存的实际占用。
+  失败或取消会清除未完成的内容。已校验的下载会保留到存储清理，重试时可以复用。
+  只有准备成功的版本才能激活。
+  取消单独进行的 GPU 准备后，CPU 环境仍可用，可从状态卡片重试。
 - 任务归宿主：落盘于 `runtime/tasks/<模块>/<任务>/`，切页、关闭 iframe 或停止后端都
   不取消任务；取消先协作、宽限期后终止整棵进程树（Windows Job Object；POSIX 进程组
   与进程树）。停用、卸载、退出程序会结束该模块的任务和进程。空闲（默认 5 分钟，模块

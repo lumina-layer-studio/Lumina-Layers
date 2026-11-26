@@ -144,6 +144,19 @@ def test_package_accepts_backend_sources_and_validates_locks(tmp_path: Path) -> 
         inspect_workshop_package(write_package(broken, manifest, backend_files('lock-version = "9.0"\n')))
 
 
+def test_artifact_name_must_be_writable_on_declared_windows_platform() -> None:
+    manifest = backend_manifest("fixture.files", "1.0.0")
+    manifest["workshopApi"]["min"] = "1.2.0"
+    manifest["backend"]["artifacts"] = [{
+        "id": "labels", "fileName": "aux.json", "url": "https://example.com/labels.json",
+        "sha256": SHA, "bytes": 12, "license": "CC0-1.0",
+    }]
+    with pytest.raises(ValueError, match="reserved on Windows"):
+        WorkshopManifestV2.model_validate(manifest)
+    manifest["backend"]["platforms"] = ["linux-x86_64"]
+    assert WorkshopManifestV2.model_validate(manifest).backend.artifacts[0].file_name == "aux.json"
+
+
 def test_backend_package_preserves_project_snapshot_capability(tmp_path: Path) -> None:
     manifest = backend_manifest("fixture.editor", "1.0.0")
     manifest["permissions"] = [{"name": "project.storage", "reason": "Save edits."}]

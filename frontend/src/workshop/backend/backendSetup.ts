@@ -2,17 +2,33 @@ import type {
   WorkshopBackendApi,
   WorkshopBackendStatus,
   WorkshopBackendTaskResponse,
+  WorkshopDownloadPreferences,
 } from "../../api/workshop";
 
 const TERMINAL = new Set(["succeeded", "failed", "cancelled", "interrupted"]);
+const SOURCE_NAMES: Record<string, string> = {
+  "huggingface.co": "Hugging Face",
+  "modelscope.cn": "ModelScope",
+  "hf-mirror.com": "Hugging Face Mirror",
+  "files.pythonhosted.org": "PyPI",
+  "download.pytorch.org": "PyTorch",
+  "github.com": "GitHub",
+  "releases.astral.sh": "Astral",
+};
+
+export function downloadSourceName(source: string): string {
+  return Object.hasOwn(SOURCE_NAMES, source) ? SOURCE_NAMES[source] : source;
+}
 
 export class BackendSetupError extends Error {
   readonly code: string;
+  readonly detail: string | null;
 
-  constructor(code: string) {
-    super(`Workshop backend setup failed: ${code}`);
+  constructor(code: string, detail: string | null = null) {
+    super(detail ?? `Workshop backend setup failed: ${code}`);
     this.name = "BackendSetupError";
     this.code = code;
+    this.detail = detail;
   }
 }
 
@@ -20,6 +36,11 @@ export interface WaitOptions {
   intervalMs?: number;
   onProgress?(task: WorkshopBackendTaskResponse): void;
   isCancelled?(): boolean;
+}
+
+interface PreparationOptions extends WaitOptions {
+  sources?: WorkshopDownloadPreferences;
+  onTask?(taskId: string): void;
 }
 
 function delay(milliseconds: number): Promise<void> {
@@ -57,23 +78,32 @@ export async function authorizeAndPrepare(
   moduleId: string,
   version: string,
   acknowledgeUnreviewed: boolean,
-  options: WaitOptions & { onTask?(taskId: string): void } = {},
+  options: PreparationOptions = {},
 ): Promise<WorkshopBackendStatus> {
   let status = await api.status(moduleId, version);
   if (status.authorization === "required") {
+    if (options.isCancelled?.()) throw new BackendSetupError("cancelled");
     status = await api.authorize(moduleId, version, acknowledgeUnreviewed);
   }
   if (status.preparation === "prepared" && status.preparation_task_id === null) {
     return status;
   }
+  if (status.preparation_task_id === null && options.isCancelled?.()) {
+    throw new BackendSetupError("cancelled");
+  }
   const task =
     status.preparation_task_id !== null
       ? await api.task(moduleId, status.preparation_task_id)
-      : await api.prepare(moduleId, version);
+      : options.sources
+        ? await api.prepare(moduleId, version, options.sources)
+        : await api.prepare(moduleId, version);
   options.onTask?.(task.task_id);
-  const finished = await waitForBackendTask(api, moduleId, task.task_id, options);
+  const finished = await waitForBackendTask(api, moduleId, task.task_id, {
+    intervalMs: options.intervalMs,
+    onProgress: options.onProgress,
+  });
   if (finished.status !== "succeeded") {
-    throw new BackendSetupError(finished.error?.code ?? finished.status);
+    throw new BackendSetupError(finished.error?.code ?? finished.status, finished.error?.message);
   }
   return api.status(moduleId, version);
 }

@@ -81,12 +81,14 @@ export function StorageOverview({ api }: StorageOverviewProps) {
     );
   }
   const copies = storage.model_copies ?? { files: 0, bytes: 0 };
+  const wheelCache = storage.wheel_cache;
   const empty =
     storage.environments.length === 0 &&
     storage.retained_models.length === 0 &&
     storage.task_data.length === 0 &&
     storage.shared_store.objects === 0 &&
-    copies.files === 0;
+    copies.files === 0 &&
+    !wheelCache?.files;
 
   return (
     <section className={resolveSectionCardClass("standard")} aria-label={t("workshop.storage.title")}>
@@ -147,6 +149,14 @@ export function StorageOverview({ api }: StorageOverviewProps) {
           {t("workshop.storage.modelCopies")
             .replace("{count}", String(copies.files))
             .replace("{bytes}", formatBytes(copies.bytes))}
+        </p>
+      ) : null}
+
+      {wheelCache && wheelCache.files > 0 ? (
+        <p className="mt-3 text-xs text-slate-600 dark:text-slate-300">
+          {t("workshop.storage.wheelCache")
+            .replace("{count}", String(wheelCache.files))
+            .replace("{bytes}", formatBytes(wheelCache.bytes))}
         </p>
       ) : null}
 

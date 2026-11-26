@@ -7,13 +7,17 @@ SDK copy under ``backend/`` exactly as module authors are told to.
 
 from __future__ import annotations
 
+import hashlib
 import os
 import sys
 import time
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
 
+from core.workshop.backend import model_files, wheel_files
+from core.workshop.backend.downloads import DownloadPreferences
 from core.workshop.backend.locks import WheelSourcePolicy
 from core.workshop.backend.review import ReviewContext
 from core.workshop.backend.runtime import RuntimeSettings, TaskInputFile, WorkshopBackendRuntime
@@ -26,6 +30,7 @@ from workshop_backend_fixture import (
     encode_png_rgba,
     lock_text,
     write_backend_package,
+    WHEEL_URL_BASE,
 )
 
 SDK_SOURCE = os.environ.get("LUMINA_WORKSHOP_SDK_PYTHON_SRC", "")
@@ -66,6 +71,11 @@ def long_running(task):
 @backend.operation("reject")
 def reject(task):
     raise TaskFailure("sample-rejected", "The sample was rejected.")
+
+
+@backend.operation("labels")
+def labels(task):
+    task.write_output("labels", "labels.json", "application/json", task.artifacts["labels"].read_bytes())
 
 
 if __name__ == "__main__":
@@ -167,5 +177,135 @@ def test_public_python_sdk_runs_through_the_host_runtime(tmp_path: Path) -> None
         assert _wait(runtime, module_id, long_task.task_id).status == "cancelled"
         # Cooperative cancellation through the SDK keeps the process alive.
         assert runtime.describe(module_id, "1.0.0")["runtime"]["pid"] == pid
+    finally:
+        runtime.shutdown()
+
+
+def test_download_selection_verifies_mirrors_and_reuses_bytes_across_locks(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    wheels = build_fixture_wheelhouse(tmp_path / "fixtures")
+    shared, extra = wheels["shared"], wheels["conflict-1"]
+    inactive = wheels["accel"]
+    target_version = ".".join(str(part) for part in sys.version_info[:3])
+    shared_origin = WHEEL_URL_BASE + shared.path.name
+    extra_origin = WHEEL_URL_BASE + extra.path.name
+    mirror = f"https://wheel-mirror.example/{shared.path.name}"
+    labels = b'["dog", "cat"]'
+    labels_origin = "https://huggingface.co/example/labels.json"
+    labels_mirror = "https://modelscope.cn/example/labels.json"
+    payloads = {
+        mirror: b"x" * shared.size,
+        shared_origin: shared.path.read_bytes(),
+        extra_origin: extra.path.read_bytes(),
+        labels_mirror: labels,
+    }
+    fetched: list[str] = []
+
+    def fetch(url, target, *, cancel, progress, **_kwargs):
+        fetched.append(url)
+        data = payloads[url]
+        progress(0, len(data))
+        target.write_bytes(data)
+        progress(len(data), len(data))
+
+    monkeypatch.setattr(wheel_files, "download_https", fetch)
+    monkeypatch.setattr(model_files, "download_https", fetch)
+    data_dir = tmp_path / "workshop"
+
+    def installer() -> WorkshopInstaller:
+        return WorkshopInstaller(data_dir=data_dir, after_extract=runtime.record_package)
+
+    def start_runtime(*, offline: bool = False) -> WorkshopBackendRuntime:
+        return WorkshopBackendRuntime(
+            data_dir=data_dir,
+            installer_factory=installer,
+            uv_executable=locate_uv_executable(),
+            model_fetcher=model_files.HttpsModelFetcher(),
+            review_context=lambda: ReviewContext(registry=None, attestations=None),
+            external_python=Path(sys._base_executable),
+            wheel_sources=WheelSourcePolicy(offline=offline),
+            track_downloads=True,
+        )
+
+    runtime = start_runtime()
+
+    def install(module_id, lock, expected_bytes):
+        manifest = backend_manifest(module_id, "1.0.0")
+        manifest["workshopApi"]["min"] = "1.2.0"
+        manifest["backend"].update(
+            artifacts=[{
+                "id": "labels", "fileName": "labels.json", "url": labels_origin,
+                "mirrors": [labels_mirror], "license": "CC0-1.0", "bytes": len(labels),
+                "sha256": hashlib.sha256(labels).hexdigest(),
+            }],
+        )
+        mirrors = {inactive.sha256: ["https://unavailable-platform.example/unused.whl"]}
+        if shared in lock:
+            mirrors[shared.sha256] = [mirror]
+        manifest["backend"]["downloadSources"] = {"wheels": mirrors}
+        declared_lock = lock_text([*lock, inactive]).replace(
+            f'name = "{inactive.name}"\n', f'name = "{inactive.name}"\nmarker = "sys_platform == \'unavailable\'"\n',
+        )
+        if shared in lock:
+            declared_lock = declared_lock.replace(
+                f'name = "{shared.name}"\n',
+                f'name = "{shared.name}"\nmarker = "python_full_version == \'{target_version}\'"\n',
+            )
+        package = write_backend_package(
+            tmp_path / module_id, module_id=module_id, version="1.0.0",
+            lock=declared_lock, manifest=manifest,
+            extra_files={**_vendored_sdk(), "backend/main.py": SDK_MODULE_MAIN.encode("utf-8")},
+        )
+        installer().install_candidate(package, source="local", source_repository="local", official=False)
+        description = runtime.describe(module_id, "1.0.0")
+        assert description["download_sources"]["artifacts"] == ["huggingface.co", "modelscope.cn"]
+        assert description["download_estimate"] == {"bytes": expected_bytes, "incomplete": False}
+        assert "unavailable-platform.example" not in description["download_sources"]["wheels"]
+        if shared in lock:
+            assert "wheel-mirror.example" in description["download_sources"]["wheels"]
+        runtime.authorize(module_id, "1.0.0", acknowledge_unreviewed=True)
+        task = runtime.start_preparation(
+            module_id, "1.0.0",
+            sources=DownloadPreferences(wheels="wheel-mirror.example", artifacts="modelscope.cn"),
+        )
+        prepared = _wait(runtime, module_id, task.task_id)
+        assert prepared.status == "succeeded", prepared.error
+        assert prepared.progress is not None
+        assert (prepared.progress.phase, prepared.progress.downloaded_bytes) == ("complete", expected_bytes)
+        assert runtime.describe(module_id, "1.0.0")["download_preferences"]["artifacts"] == "modelscope.cn"
+
+    try:
+        first_module = "fixture.download-one"
+        install(first_module, [shared], shared.size + len(labels))
+        assert fetched == [mirror, shared_origin, labels_mirror]
+        install("fixture.download-two", [shared, extra], extra.size)
+        assert fetched == [mirror, shared_origin, labels_mirror, extra_origin]
+
+        task = runtime.submit(
+            first_module, "1.0.0", operation="labels", params={}, inputs=[], idempotency_key=None,
+        )
+        done = _wait(runtime, first_module, task.task_id)
+        assert done.status == "succeeded", done.error
+        output, _entry = runtime.output_file(first_module, done.task_id, "labels")
+        assert output.read_bytes() == labels
+        runtime.shutdown()
+
+        alternative_name = extra.path.name.replace("lumina_fixture_conflict", "lumina.fixture.conflict", 1)
+        assert alternative_name != extra.path.name
+        aliased = replace(extra, path=extra.path.with_name(alternative_name))
+        aliased.path.write_bytes(extra.path.read_bytes())
+        leftover = runtime.root / "wheels" / extra.sha256 / ".old-download.part"
+        leftover.write_bytes(b"leftover")
+        runtime = start_runtime(offline=True)
+        runtime.startup()
+        assert not leftover.exists()
+        install("fixture.download-three", [aliased], 0)
+        assert fetched == [mirror, shared_origin, labels_mirror, extra_origin]
+        assert runtime.storage_overview()["wheel_cache"] == {"files": 2, "bytes": shared.size + extra.size}
+        # The declared lock is non-empty, but its only dependency belongs to
+        # another platform. The selected empty lock must remain valid for uv.
+        install("fixture.download-no-platform-wheels", [], 0)
+        assert fetched == [mirror, shared_origin, labels_mirror, extra_origin]
     finally:
         runtime.shutdown()

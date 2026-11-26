@@ -10,6 +10,7 @@ import signal
 import socket
 import subprocess
 import sys
+import time
 import zipfile
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -42,6 +43,37 @@ def verify_3mf(payload: bytes) -> None:
             raise ValueError("Downloaded 3MF has no triangle geometry")
 
 
+def _signal_owned_process_group(proc: subprocess.Popen, sig: int, *, deadline: float) -> None:
+    """Signal the owned group, allowing Darwin's brief exiting-group race."""
+    try:
+        os.killpg(proc.pid, sig)
+    except ProcessLookupError:
+        return
+    except PermissionError as failure:
+        if sys.platform != "darwin":
+            raise
+        # Darwin can report EPERM after every member has exited but before
+        # the group disappears. Only ESRCH proves cleanup is complete; a
+        # surviving or persistently inaccessible group must still fail.
+        deadline = min(deadline, time.monotonic() + 1.0)
+        while True:
+            # An exited, unreaped parent can itself keep the group around.
+            # Reap only our Popen; surviving workers still require cleanup.
+            proc.poll()
+            try:
+                os.killpg(proc.pid, 0)
+            except ProcessLookupError:
+                return
+            except PermissionError:
+                pass
+            else:
+                raise failure
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise failure
+            time.sleep(min(0.01, remaining))
+
+
 def _stop_server(
     proc: subprocess.Popen, *, timeout: float = 10.0,
     windows_job: WindowsJob | None = None,
@@ -60,22 +92,18 @@ def _stop_server(
             windows_job.terminate()
             proc.wait(timeout=timeout)
         return
+    deadline = time.monotonic() + timeout
+    _signal_owned_process_group(proc, signal.SIGTERM, deadline=deadline)
     try:
-        os.killpg(proc.pid, signal.SIGTERM)
-    except ProcessLookupError:
-        pass
-    try:
-        proc.wait(timeout=timeout)
+        proc.wait(timeout=max(0.0, deadline - time.monotonic()))
     except subprocess.TimeoutExpired:
         pass
     finally:
         # The parent may have exited while a worker ignored TERM. The group is
         # owned by start_new_session below and never includes the calling shell.
-        try:
-            os.killpg(proc.pid, signal.SIGKILL)
-        except ProcessLookupError:
-            pass
-        proc.wait(timeout=5)
+        deadline = time.monotonic() + 5.0
+        _signal_owned_process_group(proc, signal.SIGKILL, deadline=deadline)
+        proc.wait(timeout=max(0.0, deadline - time.monotonic()))
 
 
 @contextmanager

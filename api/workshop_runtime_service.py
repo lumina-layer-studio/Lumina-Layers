@@ -104,6 +104,7 @@ def _build_runtime(data_dir: Path) -> WorkshopBackendRuntime:
         installer_factory=lambda: create_workshop_installer(data_dir),
         uv_executable=locate_uv_executable(),
         model_fetcher=HttpsModelFetcher(),
+        track_downloads=True,
         review_context=_CachedReviewContext(data_dir),
         wheel_sources=WheelSourcePolicy(
             wheelhouse=Path(wheelhouse) if wheelhouse else None,

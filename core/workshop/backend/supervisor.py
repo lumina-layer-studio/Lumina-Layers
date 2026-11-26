@@ -18,7 +18,7 @@ import threading
 import time
 from collections import deque
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal
 
@@ -61,6 +61,7 @@ class RunTarget:
     models: dict[str, str]
     idle_timeout_seconds: float
     fallback: "RunTarget | None" = None
+    artifacts: dict[str, str] = field(default_factory=dict)
 
 
 TargetResolver = Callable[[TaskRecord], RunTarget]
@@ -121,6 +122,7 @@ class ModuleBackendSupervisor:
         self._idle_timeout = 300.0
         self._last_progress_write = 0.0
         self._cancel_current = False
+        self._run_dispatched = False
         self._stop_reason: tuple[str, str] | None = None
 
     # ----- public API -------------------------------------------------
@@ -161,7 +163,8 @@ class ModuleBackendSupervisor:
                     return current
                 self._cancel_current = True
                 record = self._tasks.update(self.module_id, task_id, cancel_requested=True)
-                self._send({"type": "cancel", "taskId": task_id})
+                if self._run_dispatched:
+                    self._send({"type": "cancel", "taskId": task_id})
                 self._condition.notify_all()
                 return record if record is not None else self._tasks.get(self.module_id, task_id)
         record = self._tasks.get(self.module_id, task_id)
@@ -190,6 +193,7 @@ class ModuleBackendSupervisor:
             queued = list(self._queue)
             self._queue.clear()
             current = self._current_task
+            run_dispatched = self._run_dispatched
             if current is not None:
                 self._cancel_current = True
             self._state = "stopping" if self._process is not None else "stopped"
@@ -205,7 +209,8 @@ class ModuleBackendSupervisor:
             )
         if current is not None:
             self._tasks.update(self.module_id, current, cancel_requested=True)
-            self._send({"type": "cancel", "taskId": current})
+            if run_dispatched:
+                self._send({"type": "cancel", "taskId": current})
             deadline = time.monotonic() + grace
             with self._condition:
                 while self._current_task == current and time.monotonic() < deadline:
@@ -336,6 +341,7 @@ class ModuleBackendSupervisor:
             finally:
                 with self._condition:
                     self._current_task = None
+                    self._run_dispatched = False
                     if self._state == "busy":
                         self._state = "ready"
                     self._condition.notify_all()
@@ -398,11 +404,22 @@ class ModuleBackendSupervisor:
             "outputDir": str(outputs_dir),
             "workDir": str(work_dir),
             "models": target.models,
+            "artifacts": target.artifacts,
             "variant": target.variant or "cpu",
         }
         with self._condition:
-            self._state = "busy"
-        self._send(message)
+            should_dispatch = not self._cancel_current
+            if should_dispatch:
+                self._state = "busy"
+            else:
+                self._outcome = _Outcome("cancelled", {})
+        if should_dispatch:
+            self._send(message)
+            with self._condition:
+                self._run_dispatched = True
+                # A cancellation requested during the write must follow the run.
+                if self._cancel_current:
+                    self._send({"type": "cancel", "taskId": task_id})
         self._await_outcome(running)
 
     def _await_outcome(self, record: TaskRecord) -> None:

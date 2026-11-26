@@ -13,7 +13,7 @@ import tempfile
 from collections.abc import Callable, Iterator
 from contextlib import AbstractContextManager, closing, contextmanager
 from pathlib import Path
-from urllib.parse import quote, urljoin, urlsplit
+from urllib.parse import quote, unquote, urljoin, urlsplit
 
 import httpx
 
@@ -21,6 +21,7 @@ from config import TEMP_DIR
 
 from .constants import MAX_PACKAGE_BYTES
 from .errors import WorkshopPackageError, WorkshopReleaseError
+from .install_progress import ArchiveInstallTracker
 from .mirror import WorkshopMirror, WorkshopMirrorUnavailable
 from .models import MODULE_ID_PATTERN, RegistryVersion, validate_semver
 from .package_validator import inspect_workshop_package
@@ -186,13 +187,18 @@ def stream_package_download(
     url: str,
     expected_bytes: int | None = None,
     expected_sha256: str | None = None,
+    *,
+    progress: ArchiveInstallTracker | None = None,
 ) -> Path:
     """Stream one package into a bounded temporary file.
 
     将一个模块包流式写入有界临时文件。
     """
 
-    return _save_package(_stream_github_package(url), expected_bytes, expected_sha256)
+    report = None
+    if progress is not None:
+        report = progress.download(unquote(urlsplit(url).path.rsplit("/", 1)[-1]), url, expected_bytes)
+    return _save_package(_stream_github_package(url), expected_bytes, expected_sha256, report)
 
 
 @contextmanager
@@ -207,6 +213,7 @@ def _save_package(
     source: AbstractContextManager[httpx.Response],
     expected_bytes: int | None,
     expected_sha256: str | None,
+    report: Callable[[int, int | None], None] | None = None,
 ) -> Path:
     Path(TEMP_DIR).mkdir(parents=True, exist_ok=True)
     fd, raw_path = tempfile.mkstemp(
@@ -224,12 +231,16 @@ def _save_package(
                     f"package download failed with status {response.status_code}"
                 )
             _content_length_within_limit(response, MAX_PACKAGE_BYTES)
+            if report is not None:
+                report(0, expected_bytes)
             for chunk in response.iter_bytes():
                 received += len(chunk)
                 if received > MAX_PACKAGE_BYTES:
                     raise WorkshopReleaseError("package download exceeds the size limit")
                 digest.update(chunk)
                 output.write(chunk)
+                if report is not None:
+                    report(received, expected_bytes)
             output.flush()
             os.fsync(output.fileno())
         if expected_bytes is not None and received != expected_bytes:
@@ -246,6 +257,8 @@ def _save_package(
             raise WorkshopReleaseError(
                 "downloaded package digest does not match release metadata"
             )
+        if report is not None:
+            report(received, received)
         return path
     except (OSError, httpx.HTTPError, WorkshopReleaseError, WorkshopMirrorUnavailable):
         _remove_rejected_download(path)
@@ -291,7 +304,9 @@ def _remove_rejected_download(path: Path) -> None:
         pass
 
 
-def _download_preferred_package(candidate: RegistryVersion, module_id: str) -> Path:
+def _download_preferred_package(
+    candidate: RegistryVersion, module_id: str, progress: ArchiveInstallTracker | None,
+) -> Path:
     mirror = WorkshopMirror.from_environment()
     if mirror is not None:
         try:
@@ -302,9 +317,14 @@ def _download_preferred_package(candidate: RegistryVersion, module_id: str) -> P
                 ),
                 candidate.asset_bytes,
                 candidate.sha256,
+                progress.download(candidate.asset_name, mirror.base_url, candidate.asset_bytes) if progress else None,
             )
         except WorkshopMirrorUnavailable:
             pass
+    if progress is not None:
+        return stream_package_download(
+            candidate.download_url, candidate.asset_bytes, candidate.sha256, progress=progress,
+        )
     return stream_package_download(candidate.download_url, candidate.asset_bytes, candidate.sha256)
 
 
@@ -312,6 +332,7 @@ def download_registry_package(
     candidate: RegistryVersion,
     *,
     package_downloader: PackageDownloader | None = None,
+    progress: ArchiveInstallTracker | None = None,
 ) -> Path:
     """Download and re-verify one exact Registry candidate.
 
@@ -323,11 +344,13 @@ def download_registry_package(
     if module_id == candidate.asset_name or MODULE_ID_PATTERN.fullmatch(module_id) is None:
         raise WorkshopReleaseError("Registry asset name is invalid")
     path = (
-        _download_preferred_package(candidate, module_id)
+        _download_preferred_package(candidate, module_id, progress)
         if package_downloader is None
         else package_downloader(candidate.download_url, candidate.asset_bytes, candidate.sha256)
     )
     try:
+        if progress is not None:
+            progress.stage("verifying")
         _inspect_remote_package(
             path,
             expected_module_id=module_id,
@@ -399,6 +422,7 @@ def resolve_github_release_package(
     *,
     fetch_json: JsonFetcher | None = None,
     package_downloader: PackageDownloader | None = None,
+    progress: ArchiveInstallTracker | None = None,
 ) -> Path:
     """Resolve a full public Release, including confirmed repository moves.
 
@@ -480,13 +504,15 @@ def resolve_github_release_package(
         possible_digest = digest_value.removeprefix("sha256:")
         if re.fullmatch(r"[0-9a-f]{64}", possible_digest):
             expected_digest = possible_digest
-    downloader = package_downloader or stream_package_download
-    path = downloader(
-        expected_url,
-        asset_size,
-        expected_digest,
-    )
+    if package_downloader is not None:
+        path = package_downloader(expected_url, asset_size, expected_digest)
+    elif progress is not None:
+        path = stream_package_download(expected_url, asset_size, expected_digest, progress=progress)
+    else:
+        path = stream_package_download(expected_url, asset_size, expected_digest)
     try:
+        if progress is not None:
+            progress.stage("verifying")
         _inspect_remote_package(
             path,
             expected_module_id=name_match.group("module_id"),

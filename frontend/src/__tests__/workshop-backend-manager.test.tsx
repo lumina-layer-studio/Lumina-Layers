@@ -19,6 +19,7 @@ import type {
 import { I18nProvider } from "../i18n/context";
 import { useSettingsStore } from "../stores/settingsStore";
 import { WorkshopPanel } from "../workshop/WorkshopPanel";
+import { BackendSetupDialog } from "../workshop/backend/BackendSetupDialog";
 import type { ManagedWorkshopProjectStorage } from "../workshop/projectStorage";
 import type { WorkshopFrameProps } from "../workshop/runtime/WorkshopFrame";
 import { useWorkshopStore } from "../workshop/store";
@@ -309,7 +310,8 @@ describe("Workshop backend management UI", () => {
     const dialog = await screen.findByRole("dialog", { name: "运行本机后端" });
     expect(within(dialog).getByText("未审核：此版本没有审核记录。")).toBeInTheDocument();
     expect(within(dialog).getByText("联网")).toBeInTheDocument();
-    expect(within(dialog).getByText(/权限与你的账户相同/)).toBeInTheDocument();
+    expect(within(dialog).getByRole("alert")).toHaveAttribute("data-tone", "error");
+    expect(within(dialog).getByText(/以你的账户权限运行，可以读取、修改或删除/)).toBeInTheDocument();
     const confirm = within(dialog).getByRole("button", { name: "允许并安装" });
     expect(confirm).toBeDisabled();
     expect(backend.authorize).not.toHaveBeenCalled();
@@ -319,6 +321,84 @@ describe("Workshop backend management UI", () => {
     await waitFor(() => expect(backend.authorize).toHaveBeenCalledWith(MODULE_ID, "1.0.0", true));
     await waitFor(() => expect(backend.prepare).toHaveBeenCalledWith(MODULE_ID, "1.0.0"));
     expect(await screen.findByText(`opened ${MODULE_ID}@1.0.0 backend=true`)).toBeInTheDocument();
+  });
+
+  it("displays download failure details from the preparation task", async () => {
+    const backend = fakeBackend(status({
+      review_level: "reviewed",
+      requires_unreviewed_confirmation: false,
+    }));
+    const task = await backend.prepare(MODULE_ID, "1.0.0");
+    const detail = "Could not verify demo.whl. files.example returned HTTP 503.";
+    vi.mocked(backend.task).mockResolvedValue({
+      ...task,
+      status: "failed",
+      error: { code: "dependency-install-failed", message: detail },
+    });
+    renderPanel(fakeApi([backendModule()]), backend);
+
+    fireEvent.click(await screen.findByRole("button", { name: "打开" }));
+    const dialog = await screen.findByRole("dialog", { name: "运行本机后端" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "允许并安装" }));
+    expect(await within(dialog).findByText(detail)).toBeInTheDocument();
+  });
+
+  it.each(["official", "reviewed"] as const)("uses localized capability text and the chosen model source for %s code", async (reviewLevel) => {
+    const api = fakeApi([backendModule()]);
+    const backend = fakeBackend(status({
+      review_level: reviewLevel,
+      requires_unreviewed_confirmation: false,
+      capabilities: [{
+        name: "network",
+        reason: "Download data.",
+        reason_i18n: { zh_cn: "下载检测数据", en_us: "Download detection data." },
+      }],
+      download_sources: { python: [], wheels: [], models: ["huggingface.co", "modelscope.cn"], artifacts: [] },
+    }));
+    renderPanel(api, backend);
+
+    fireEvent.click(await screen.findByRole("button", { name: "打开" }));
+    const dialog = await screen.findByRole("dialog", { name: "运行本机后端" });
+    expect(within(dialog).queryByRole("alert")).toBeNull();
+    expect(within(dialog).getByText("下载检测数据")).toBeInTheDocument();
+    expect(within(dialog).queryByText("Download data.")).toBeNull();
+    fireEvent.change(within(dialog).getByRole("combobox", { name: "模型" }), { target: { value: "modelscope.cn" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "允许并安装" }));
+    await waitFor(() => expect(backend.prepare).toHaveBeenCalledWith(MODULE_ID, "1.0.0", { models: "modelscope.cn" }));
+  });
+
+  it("shows transfer totals, speed, ETA, and cumulative bytes through installation", () => {
+    const props = {
+      moduleName: "Backend fixture", status: status(), phase: "preparing" as const,
+      failureCode: null, onConfirm: vi.fn(), onRetry: vi.fn(), onCancel: vi.fn(),
+    };
+    const view = render(
+      <I18nProvider>
+        <BackendSetupDialog {...props} progress={{
+          completed: 1, total: 5, phase: "wheel-download", downloaded_bytes: 2048,
+          download: {
+            file_name: "demo.whl", source: "files.pythonhosted.org", file_index: 1, file_count: 1,
+            received_bytes: 1024, total_bytes: 4096, bytes_per_second: 1024, eta_seconds: 3,
+          },
+        }} />
+      </I18nProvider>,
+    );
+    expect(screen.getByText(/demo.whl · PyPI/)).toBeInTheDocument();
+    expect(screen.getByText("本阶段已下载 1.0 KB / 4.0 KB")).toBeInTheDocument();
+    expect(screen.getByText("1.0 KB/秒")).toBeInTheDocument();
+    expect(screen.getByText("本阶段约剩 3 秒")).toBeInTheDocument();
+    expect(screen.getByRole("progressbar", { name: "下载进度" })).toHaveAttribute("value", "25");
+
+    view.rerender(
+      <I18nProvider>
+        <BackendSetupDialog {...props} progress={{
+          completed: 1, total: 5, phase: "environment", downloaded_bytes: 5120,
+        }} />
+      </I18nProvider>,
+    );
+    expect(screen.getByRole("status")).toHaveTextContent("安装运行库");
+    expect(screen.getByText(/合计已下载 5.0 KB/)).toBeInTheDocument();
+    expect(screen.queryByRole("progressbar", { name: "下载进度" })).toBeNull();
   });
 
   it("opens a prepared, authorized backend without asking again", async () => {
@@ -448,6 +528,53 @@ describe("Workshop backend management errors", () => {
     expect(within(row).getByRole("combobox")).toHaveValue("");
   });
 
+  it("follows the download task when an installed backend enables GPU acceleration", async () => {
+    const prepared = status({
+      authorization: "granted",
+      preparation: "prepared",
+      requires_unreviewed_confirmation: false,
+      variants: [{
+        id: "accel", name: { "zh-CN": "GPU 加速", "en-US": "GPU acceleration" },
+        description: { "zh-CN": "测试", "en-US": "Test" },
+        available: true, prepared: false, failure_code: null, dependencies: null,
+      }],
+    });
+    const backend = fakeBackend(prepared);
+    const task = prepareTask("running");
+    vi.mocked(backend.setAcceleration).mockResolvedValue({
+      ...prepared, acceleration: "accel", preparation_task_id: task.task_id,
+      download_estimate: { bytes: 4096, incomplete: false },
+    });
+    vi.mocked(backend.task).mockResolvedValue({
+      ...task, progress: {
+        completed: 4, total: 5, phase: "variant-download", downloaded_bytes: 1024,
+        download: {
+          source: "download.pytorch.org", file_name: "gpu.whl", file_index: 1, file_count: 1,
+          received_bytes: 1024, total_bytes: 4096, bytes_per_second: 1024, eta_seconds: 3,
+        },
+      },
+    });
+    renderPanel(fakeApi([backendModule()]), backend);
+    const row = await screen.findByTestId(`workshop-backend-${MODULE_ID}`);
+    fireEvent.change(within(row).getByRole("combobox"), { target: { value: "accel" } });
+
+    expect(await within(row).findByText(/下载加速运行库/)).toBeInTheDocument();
+    expect(within(row).getByText("本阶段已下载 1.0 KB / 4.0 KB")).toBeInTheDocument();
+    expect(within(row).getByText("全部下载约剩 3 秒")).toBeInTheDocument();
+    expect(backend.task).toHaveBeenCalledWith(MODULE_ID, task.task_id);
+    expect(within(row).getByRole("combobox")).toBeDisabled();
+
+    vi.mocked(backend.cancel).mockResolvedValue(prepareTask("cancelled"));
+    vi.mocked(backend.status).mockResolvedValue({
+      ...prepared, acceleration: "accel", failure_code: "cancelled",
+    });
+    fireEvent.click(within(row).getByRole("button", { name: "取消安装" }));
+    expect(await within(row).findByText("已取消加速准备，当前可使用 CPU。")).toBeInTheDocument();
+    fireEvent.click(within(row).getByRole("button", { name: "重试加速安装" }));
+    expect(backend.setAcceleration).toHaveBeenCalledTimes(2);
+    expect(backend.setAcceleration).toHaveBeenLastCalledWith(MODULE_ID, "accel");
+  });
+
   it("keeps a refused deletion beside its item after the list refreshes", async () => {
     const backend = fakeBackend(status());
     vi.mocked(backend.deleteTaskData).mockRejectedValue(refused(409, "task-active"));
@@ -478,5 +605,45 @@ describe("Workshop backend management errors", () => {
     expect(await within(dialog).findByRole("alert")).toHaveTextContent("未能取消，安装仍在继续");
     expect(within(dialog).getByRole("button", { name: "取消安装" })).toBeInTheDocument();
     taskStatus = "cancelled";
+  });
+
+  it("does not start downloading when cancelled while authorizing", async () => {
+    const backend = fakeBackend(status());
+    let finishAuthorization: (() => void) | undefined;
+    vi.mocked(backend.authorize).mockImplementation(() => new Promise((resolve) => {
+      finishAuthorization = () => resolve(status({ authorization: "granted" }));
+    }));
+    renderPanel(fakeApi([backendModule()]), backend);
+    fireEvent.click(await screen.findByRole("button", { name: "打开" }));
+    const dialog = await screen.findByRole("dialog", { name: "运行本机后端" });
+    fireEvent.click(within(dialog).getByRole("checkbox", { name: /我信任发布者/ }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "允许并安装" }));
+    await waitFor(() => expect(backend.authorize).toHaveBeenCalled());
+    fireEvent.click(within(dialog).getByRole("button", { name: "取消安装" }));
+    finishAuthorization?.();
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(backend.prepare).not.toHaveBeenCalled();
+    expect(screen.queryByText(/^opened /)).toBeNull();
+  });
+
+  it("cancels a task whose ID arrives after the user stops preparation", async () => {
+    const backend = fakeBackend(status());
+    let finishSubmission: (() => void) | undefined;
+    vi.mocked(backend.prepare).mockImplementation(() => new Promise((resolve) => {
+      finishSubmission = () => resolve(prepareTask("running"));
+    }));
+    vi.mocked(backend.cancel).mockResolvedValue(prepareTask("cancelled"));
+    vi.mocked(backend.task).mockResolvedValue(prepareTask("succeeded"));
+    renderPanel(fakeApi([backendModule()]), backend);
+    fireEvent.click(await screen.findByRole("button", { name: "打开" }));
+    const dialog = await screen.findByRole("dialog", { name: "运行本机后端" });
+    fireEvent.click(within(dialog).getByRole("checkbox", { name: /我信任发布者/ }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "允许并安装" }));
+    await waitFor(() => expect(backend.prepare).toHaveBeenCalled());
+    fireEvent.click(within(dialog).getByRole("button", { name: "取消安装" }));
+    finishSubmission?.();
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(backend.cancel).toHaveBeenCalledWith(MODULE_ID, prepareTask("running").task_id);
+    expect(screen.queryByText(/^opened /)).toBeNull();
   });
 });

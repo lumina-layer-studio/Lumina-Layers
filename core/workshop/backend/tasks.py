@@ -24,6 +24,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from ..errors import WorkshopBackendError
 from ..install_store import _atomic_write
 from ..models import MODULE_ID_PATTERN
+from .downloads import DownloadProgress
 from .store import RemovalOutcome, remove_tree
 
 
@@ -71,6 +72,8 @@ class TaskProgress(_TaskModel):
     completed: float = Field(ge=0)
     total: float = Field(ge=0)
     phase: str = Field(max_length=200)
+    download: DownloadProgress | None = None
+    downloaded_bytes: int | None = Field(default=None, ge=0)
 
 
 class TaskError(_TaskModel):
@@ -143,8 +146,14 @@ class TaskStore:
         return self.task_dir(record.module_id, record.task_id) / "work"
 
     def _write(self, record: TaskRecord) -> TaskRecord:
+        # Older readers accept ordinary task progress. Keep required nullable
+        # fields inside a real download observation when it is present.
+        unused_progress_fields = {
+            name for name in ("download", "downloaded_bytes")
+            if getattr(record.progress, name, None) is None
+        }
         payload = json.dumps(
-            record.model_dump(mode="json"),
+            record.model_dump(mode="json", exclude={"progress": unused_progress_fields}),
             ensure_ascii=False,
             sort_keys=True,
             separators=(",", ":"),

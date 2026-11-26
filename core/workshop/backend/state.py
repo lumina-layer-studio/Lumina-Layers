@@ -69,6 +69,7 @@ class BackendVersionRecord(_StateModel):
     variant_environments: dict[str, str] = Field(default_factory=dict)
     variant_failures: dict[str, str] = Field(default_factory=dict)
     model_sha256s: tuple[str, ...] = ()
+    download_preferences: dict[str, str] | None = None
     authorization: BackendAuthorization | None = None
     footprint: InstallFootprint | None = None
     prepared_at: str | None = None
@@ -139,9 +140,13 @@ class BackendStateStore:
     ) -> BackendStateDocument:
         with self._lock:
             replacement = callback(self.read())
+            document = replacement.model_dump(mode="json")
+            for version in document["versions"]:
+                if version["download_preferences"] is None:
+                    del version["download_preferences"]
             payload = (
                 json.dumps(
-                    replacement.model_dump(mode="json"),
+                    document,
                     ensure_ascii=False,
                     sort_keys=True,
                     separators=(",", ":"),

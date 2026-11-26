@@ -1,7 +1,8 @@
 import type { WorkshopPermissionName } from "../workshop/contracts";
-import axios from "axios";
+import axios, { type AxiosRequestConfig } from "axios";
 
 import apiClient from "./client";
+import { createRandomId } from "../utils/randomId";
 
 export interface WorkshopLocalizedText {
   zh_cn: string;
@@ -11,12 +12,19 @@ export interface WorkshopLocalizedText {
 export interface WorkshopPermission {
   name: WorkshopPermissionName;
   reason: string;
+  reason_i18n?: WorkshopLocalizedText | null;
+}
+
+export interface WorkshopBackendCapability {
+  name: string;
+  reason: string;
+  reason_i18n?: WorkshopLocalizedText | null;
 }
 
 export interface WorkshopBackendSummary {
   python: string;
   platforms: string[];
-  capabilities: Array<{ name: string; reason: string }>;
+  capabilities: WorkshopBackendCapability[];
   model_count: number;
   variants: Array<{
     id: string;
@@ -76,6 +84,7 @@ export interface WorkshopModules {
 
 export interface WorkshopCatalogVersion {
   version: string;
+  workshop_api_min?: string;
   state: "active" | "deprecated" | "blocked";
   permissions: WorkshopPermission[];
   revocation: {
@@ -139,6 +148,16 @@ export interface WorkshopUninstallOptions {
 }
 
 export type WorkshopReviewLevel = "official" | "reviewed" | "unreviewed";
+export type WorkshopDownloadCategory = "python" | "wheels" | "models" | "artifacts";
+export type WorkshopDownloadPreferences = Partial<Record<WorkshopDownloadCategory, string>>;
+
+export interface WorkshopDownloadFile {
+  id: string;
+  file_name: string;
+  bytes: number;
+  license: string;
+  shared: boolean;
+}
 
 export interface WorkshopDependencyEstimate {
   environment_key: string;
@@ -176,14 +195,12 @@ export interface WorkshopBackendStatus {
   python: string;
   interpreter_download_bytes: number;
   interpreter_disk_bytes: number;
-  capabilities: Array<{ name: string; reason: string }>;
-  models: Array<{
-    id: string;
-    file_name: string;
-    bytes: number;
-    license: string;
-    shared: boolean;
-  }>;
+  capabilities: WorkshopBackendCapability[];
+  models: WorkshopDownloadFile[];
+  artifacts?: WorkshopDownloadFile[];
+  download_sources?: Partial<Record<WorkshopDownloadCategory, string[]>>;
+  download_preferences?: WorkshopDownloadPreferences;
+  download_estimate?: WorkshopDownloadEstimate;
   dependencies: WorkshopDependencyEstimate | null;
   variants: Array<{
     id: string;
@@ -205,6 +222,39 @@ export interface WorkshopBackendStatus {
   runtime: WorkshopBackendRuntimeState;
 }
 
+export interface WorkshopDownloadEstimate {
+  bytes: number;
+  incomplete: boolean;
+}
+
+export interface WorkshopDownloadProgress {
+  file_name: string;
+  source: string;
+  file_index: number;
+  file_count: number;
+  file_received_bytes?: number;
+  file_total_bytes?: number | null;
+  received_bytes: number;
+  total_bytes: number | null;
+  bytes_per_second: number | null;
+  eta_seconds: number | null;
+}
+
+export interface WorkshopArchiveInstallProgress {
+  phase: "resolving" | "uploading" | "downloading" | "verifying" | "installing";
+  download?: WorkshopDownloadProgress | null;
+}
+
+export type ArchiveProgressListener = (progress: WorkshopArchiveInstallProgress) => void;
+
+export interface WorkshopBackendProgress {
+  completed: number;
+  total: number;
+  phase: string;
+  downloaded_bytes?: number | null;
+  download?: WorkshopDownloadProgress | null;
+}
+
 export interface WorkshopBackendTaskResponse {
   task_id: string;
   module_id: string;
@@ -218,7 +268,7 @@ export interface WorkshopBackendTaskResponse {
     | "failed"
     | "cancelled"
     | "interrupted";
-  progress: { completed: number; total: number; phase: string } | null;
+  progress: WorkshopBackendProgress | null;
   error: { code: string; message: string } | null;
   inputs: Array<{ name: string; file_name: string; mime_type: string; size_bytes: number }>;
   outputs: Array<{ name: string; file_name: string; mime_type: string; size_bytes: number }>;
@@ -266,6 +316,7 @@ export interface WorkshopBackendStorage {
   }>;
   interpreters: Array<{ key: string; python: string; managed: boolean }>;
   shared_store: { objects: number; bytes: number };
+  wheel_cache?: { files: number; bytes: number };
   /** Model views that are full copies (drive without hard links). */
   model_copies?: { files: number; bytes: number };
   models: Array<{ sha256: string; users: string[]; bytes?: number }>;
@@ -296,7 +347,9 @@ export interface WorkshopBackendApi {
     version: string,
     acknowledgeUnreviewed: boolean,
   ): Promise<WorkshopBackendStatus>;
-  prepare(moduleId: string, version: string): Promise<WorkshopBackendTaskResponse>;
+  prepare(
+    moduleId: string, version: string, sources?: WorkshopDownloadPreferences,
+  ): Promise<WorkshopBackendTaskResponse>;
   setAcceleration(
     moduleId: string,
     variant: string | null,
@@ -330,12 +383,14 @@ export interface WorkshopManagerApi {
   installRegistry(
     moduleId: string,
     version: string,
+    onProgress?: ArchiveProgressListener,
   ): Promise<WorkshopMutation>;
   installGithub(
     repositoryUrl: string,
     version: string,
+    onProgress?: ArchiveProgressListener,
   ): Promise<WorkshopMutation>;
-  installLocal(file: File): Promise<WorkshopMutation>;
+  installLocal(file: File, onProgress?: ArchiveProgressListener): Promise<WorkshopMutation>;
   activateModule(
     moduleId: string,
     version: string,
@@ -356,6 +411,61 @@ export interface WorkshopManagerApi {
 }
 
 const MUTATION_TIMEOUT_MS = 3_600_000;
+
+async function installArchive(
+  kind: "registry" | "github" | "local",
+  payload: unknown,
+  onProgress?: ArchiveProgressListener,
+  localFileName?: string,
+): Promise<WorkshopMutation> {
+  const endpoint = `/workshop/v1/install/${kind}`;
+  const options: AxiosRequestConfig = kind === "registry"
+    ? { timeout: MUTATION_TIMEOUT_MS, suppressErrorTicket: true }
+    : { timeout: MUTATION_TIMEOUT_MS };
+  if (!onProgress) {
+    return (await apiClient.post<WorkshopMutation>(endpoint, payload, options)).data;
+  }
+  let stopped = false;
+  let hasServerProgress = false;
+  if (localFileName !== undefined) {
+    options.onUploadProgress = ({ loaded, total, rate, estimated }) => {
+      if (stopped || hasServerProgress) return;
+      onProgress({
+        phase: "uploading",
+        download: {
+          file_name: localFileName, source: "local", file_index: 1, file_count: 1,
+          received_bytes: loaded, total_bytes: total ?? null,
+          bytes_per_second: rate ?? null, eta_seconds: estimated == null ? null : Math.ceil(estimated),
+        },
+      });
+    };
+  }
+  const id = createRandomId();
+  let timer: ReturnType<typeof setTimeout>;
+  const poll = async () => {
+    try {
+      const { data } = await apiClient.get<WorkshopArchiveInstallProgress | null>(
+        `/workshop/v1/install/progress/${id}`, { suppressErrorTicket: true },
+      );
+      if (!stopped && data) {
+        hasServerProgress = true;
+        onProgress(data);
+      }
+    } catch {
+      // A progress request can fail without changing the install request.
+    }
+    if (!stopped) timer = setTimeout(() => void poll(), 500);
+  };
+  timer = setTimeout(() => void poll(), 300);
+  try {
+    return (await apiClient.post<WorkshopMutation>(endpoint, payload, {
+      ...options, params: { progress_id: id },
+    })).data;
+  } finally {
+    stopped = true;
+    clearTimeout(timer);
+  }
+}
 
 function encoded(value: string): string {
   return encodeURIComponent(value);
@@ -391,34 +501,18 @@ export const workshopApi: WorkshopManagerApi = {
     return response.data;
   },
 
-  async installRegistry(moduleId, version) {
-    const response = await apiClient.post<WorkshopMutation>(
-      "/workshop/v1/install/registry",
-      { module_id: moduleId, version },
-      // The manager explains install failures; retain logs without a second prompt.
-      { timeout: MUTATION_TIMEOUT_MS, suppressErrorTicket: true },
-    );
-    return response.data;
+  installRegistry(moduleId, version, onProgress) {
+    return installArchive("registry", { module_id: moduleId, version }, onProgress);
   },
 
-  async installGithub(repositoryUrl, version) {
-    const response = await apiClient.post<WorkshopMutation>(
-      "/workshop/v1/install/github",
-      { repository_url: repositoryUrl, version },
-      { timeout: MUTATION_TIMEOUT_MS },
-    );
-    return response.data;
+  installGithub(repositoryUrl, version, onProgress) {
+    return installArchive("github", { repository_url: repositoryUrl, version }, onProgress);
   },
 
-  async installLocal(file) {
+  installLocal(file, onProgress) {
     const payload = new FormData();
     payload.append("archive", file, file.name);
-    const response = await apiClient.post<WorkshopMutation>(
-      "/workshop/v1/install/local",
-      payload,
-      { timeout: MUTATION_TIMEOUT_MS },
-    );
-    return response.data;
+    return installArchive("local", payload, onProgress, file.name);
   },
 
   async activateModule(moduleId, version) {
@@ -516,10 +610,10 @@ export const workshopBackendApi: WorkshopBackendApi = {
     return response.data;
   },
 
-  async prepare(moduleId, version) {
+  async prepare(moduleId, version, sources) {
     const response = await apiClient.post<WorkshopBackendTaskResponse>(
       `${backendVersionPath(moduleId, version)}/prepare`,
-      {},
+      sources ? { sources } : {},
     );
     return response.data;
   },

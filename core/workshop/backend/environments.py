@@ -24,7 +24,7 @@ from pathlib import Path
 from ..errors import WorkshopBackendError
 from .locks import BackendLock, WheelSourcePolicy, render_install_lock
 from .store import ContentStore, RemovalOutcome, remove_tree
-from .tooling import BackendInterpreter, CancelToken, UvTool
+from .tooling import BackendInterpreter, CancelToken, UvTool, cancellable_lock
 
 
 ENVIRONMENT_RECORD_NAME = "lumina-environment.json"
@@ -45,6 +45,7 @@ class EnvironmentRecord:
     new_bytes: int
     shared_bytes: int
     copied_without_links: bool
+    wheel_sha256s: tuple[str, ...] = ()
 
     def as_json(self) -> dict[str, object]:
         return {
@@ -59,6 +60,7 @@ class EnvironmentRecord:
             "newBytes": self.new_bytes,
             "sharedBytes": self.shared_bytes,
             "copiedWithoutLinks": self.copied_without_links,
+            "wheelSha256s": list(self.wheel_sha256s),
         }
 
     @classmethod
@@ -66,7 +68,8 @@ class EnvironmentRecord:
         if value.get("schemaVersion") != _ENVIRONMENT_SCHEMA:
             raise ValueError("unsupported environment record")
         packages = value.get("packages")
-        if not isinstance(packages, list):
+        wheels = value.get("wheelSha256s", [])
+        if not isinstance(packages, list) or not isinstance(wheels, list):
             raise ValueError("environment packages are invalid")
         return cls(
             key=str(value["key"]),
@@ -79,6 +82,7 @@ class EnvironmentRecord:
             new_bytes=int(value["newBytes"]),
             shared_bytes=int(value["sharedBytes"]),
             copied_without_links=bool(value["copiedWithoutLinks"]),
+            wheel_sha256s=tuple(str(item) for item in wheels),
         )
 
 
@@ -174,6 +178,8 @@ class EnvironmentManager:
         platform_key: str,
         interpreter: BackendInterpreter,
         cancel: CancelToken | None,
+        prepare_lock: Callable[[], tuple[str, tuple[str, ...]]] | None = None,
+        on_install: Callable[[], None] | None = None,
     ) -> tuple[EnvironmentRecord, bool]:
         """Return the environment for ``lock``, building it if absent."""
 
@@ -182,7 +188,7 @@ class EnvironmentManager:
             platform_key=platform_key,
             python_version=interpreter.python_version,
         )
-        with self._key_lock(key):
+        with cancellable_lock(self._key_lock(key), cancel):
             existing = self.get(key)
             if existing is not None:
                 return existing, False
@@ -204,15 +210,20 @@ class EnvironmentManager:
             # PEP 751 file names: ``pylock.<name>.toml`` with no dots in name.
             install_lock = self.staging_dir / f"pylock.{transaction}.toml"
             try:
+                lock_text, wheel_sha256s = (
+                    prepare_lock() if prepare_lock is not None else (render_install_lock(lock, self._sources), ())
+                )
                 install_lock.write_text(
-                    render_install_lock(lock, self._sources),
+                    lock_text,
                     encoding="utf-8",
                 )
+                if on_install is not None:
+                    on_install()
                 self._uv.create_venv(staging, interpreter.executable, cancel=cancel)
                 self._uv.sync(
                     environment_python(staging),
                     install_lock,
-                    offline=self._sources.offline,
+                    offline=self._sources.offline or prepare_lock is not None,
                     cancel=cancel,
                 )
                 stats = self._store.adopt_tree(staging, cancel=cancel)
@@ -229,6 +240,7 @@ class EnvironmentManager:
                     new_bytes=stats.new_bytes,
                     shared_bytes=stats.shared_bytes,
                     copied_without_links=stats.copied_without_links,
+                    wheel_sha256s=wheel_sha256s,
                 )
                 (staging / ENVIRONMENT_RECORD_NAME).write_text(
                     json.dumps(record.as_json(), sort_keys=True),

@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import threading
 import time
 from pathlib import Path
 
+import pytest
+
 from core.workshop.backend.process import BackendLaunch
 from core.workshop.backend.supervisor import ModuleBackendSupervisor, RunTarget
-from core.workshop.backend.tasks import TaskStore
+from core.workshop.backend.tasks import TaskRecord, TaskStore
 
 
 class ScriptedProcess:
@@ -97,21 +100,74 @@ def wait_terminal(tasks: TaskStore, task_id: str):  # noqa: ANN201
     raise AssertionError("task did not finish")
 
 
-def test_late_result_after_cancel_request_stays_cancelled(tmp_path: Path) -> None:
+def test_late_result_after_cancel_request_stays_cancelled(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     supervisor, tasks = supervisor_for(tmp_path, {"on_cancel": "late-result"})
+    dispatching = threading.Event()
+    release_dispatch = threading.Event()
+    sent: list[str] = []
+    send = supervisor._send
+
+    def paused_send(message: dict) -> None:
+        if message["type"] == "run":
+            dispatching.set()
+            assert release_dispatch.wait(10)
+        sent.append(message["type"])
+        send(message)
+
+    monkeypatch.setattr(supervisor, "_send", paused_send)
     record, _created = tasks.create(module_id="fixture.fake", module_version="1.0.0", kind="operation", operation="work")
     supervisor.enqueue(record.task_id)
-    deadline = time.monotonic() + 10
-    while tasks.get("fixture.fake", record.task_id).status != "running":
-        assert time.monotonic() < deadline
-        time.sleep(0.02)
-    supervisor.cancel(record.task_id)
-    final = wait_terminal(tasks, record.task_id)
-    assert final.status == "cancelled"
-    assert final.outputs == ()
-    time.sleep(0.2)
-    assert tasks.get("fixture.fake", record.task_id).status == "cancelled"
-    supervisor.stop(code="test-end", message="Test finished.")
+    try:
+        assert dispatching.wait(10)
+        cancelled = supervisor.cancel(record.task_id)
+        assert cancelled is not None and cancelled.cancel_requested
+        release_dispatch.set()
+        final = wait_terminal(tasks, record.task_id)
+        assert sent == ["run", "cancel"]
+        assert final.status == "cancelled"
+        assert final.outputs == ()
+    finally:
+        release_dispatch.set()
+        supervisor.stop(code="test-end", message="Test finished.")
+
+
+def test_cancel_before_dispatch_does_not_run_backend(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    supervisor, tasks = supervisor_for(tmp_path, {})
+    preparing = threading.Event()
+    release_preparation = threading.Event()
+    outputs_dir = tasks.outputs_dir
+    sent: list[str] = []
+    send = supervisor._send
+
+    def paused_outputs(task: TaskRecord) -> Path:
+        preparing.set()
+        assert release_preparation.wait(10)
+        return outputs_dir(task)
+
+    def record_send(message: dict) -> None:
+        sent.append(message["type"])
+        send(message)
+
+    monkeypatch.setattr(tasks, "outputs_dir", paused_outputs)
+    monkeypatch.setattr(supervisor, "_send", record_send)
+    record, _ = tasks.create(
+        module_id="fixture.fake", module_version="1.0.0", kind="operation", operation="work"
+    )
+    supervisor.enqueue(record.task_id)
+    try:
+        assert preparing.wait(10)
+        cancelled = supervisor.cancel(record.task_id)
+        assert cancelled is not None and cancelled.cancel_requested
+        release_preparation.set()
+        assert wait_terminal(tasks, record.task_id).status == "cancelled"
+        assert sent == []
+    finally:
+        release_preparation.set()
+        supervisor.stop(code="test-end", message="Test finished.")
 
 
 def test_cancel_after_success_does_not_rewrite_the_outcome(tmp_path: Path) -> None:

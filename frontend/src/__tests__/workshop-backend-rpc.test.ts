@@ -178,7 +178,7 @@ describe("Workshop backend RPC", () => {
 });
 
 describe("Workshop ready handshake negotiation", () => {
-  it("accepts 1.0.0, backend 1.1.0, and material-import 1.2.0 modules on this host", () => {
+  it("accepts 1.0.0, backend 1.1.0, and import/download 1.2.0 modules on this host", () => {
     expect(isAcceptedHandshakeApiVersion("1.0.0")).toBe(true);
     expect(isAcceptedHandshakeApiVersion("1.1.0")).toBe(true);
     expect(isAcceptedHandshakeApiVersion("1.2.0")).toBe(true);

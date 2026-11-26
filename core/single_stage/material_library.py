@@ -12,6 +12,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Sequence
 
+from api.structured_logging import get_logger
 from core.filament_display import filament_display
 from . import (
     material_files,
@@ -20,6 +21,8 @@ from . import (
     material_runs,
     material_sync,
 )
+
+_log = get_logger(__name__)
 
 
 @dataclass(frozen=True)
@@ -173,13 +176,16 @@ def _saved_material_library_item_from_archive(
     archive_payload: dict[str, Any],
 ) -> dict[str, Any]:
     archive_path = material_dir / "material.json"
-    try:
-        stage_a_path = material_files._resolve_stage_a_params_path(material_dir, archive_payload)
-    except ValueError:
-        stage_a_path = material_dir / "stage_A_parameters.json"
-    fit_summary = archive_payload.get("fit_summary") or {}
-    material_summary = archive_payload.get("material_summary") or {}
-    overall_validation = fit_summary.get("overall_validation") or {}
+    stage_a_path = material_files._resolve_stage_a_params_path(material_dir, archive_payload)
+    archive_payload = dict(archive_payload)
+    for field in ("fit_summary", "material_summary"):
+        if not isinstance(archive_payload.get(field), dict):
+            archive_payload[field] = {}
+    fit_summary = archive_payload["fit_summary"]
+    material_summary = archive_payload["material_summary"]
+    overall_validation = fit_summary.get("overall_validation")
+    if not isinstance(overall_validation, dict):
+        overall_validation = {}
     estimated_rgb = material_summary.get("estimated_rgb")
     if not isinstance(estimated_rgb, list):
         estimated_rgb = []
@@ -979,6 +985,8 @@ def list_saved_stage_a_material_archives(
     Returns:
         list[dict[str, Any]]: Material archive summaries sorted by recency. (按时间倒序的耗材档案摘要)
     """
+    from core.material_lut_synthesis import load_material_params
+
     target_root = Path(materials_dir or material_files.MATERIALS_DIR)
     if not target_root.exists():
         return []
@@ -987,24 +995,40 @@ def list_saved_stage_a_material_archives(
         return material_registry_client._apply_official_registry_metadata(cached_items)
 
     items: list[dict[str, Any]] = []
+    path_states: dict[Path, tuple[int, ...] | None] = {}
     sync_metadata_by_directory = material_sync._material_sync_metadata_by_directory(target_root)
 
     for material_dir in sorted(
-        material_files._discover_saved_material_dirs(target_root),
-        key=lambda path: path.stat().st_mtime,
+        material_files._discover_saved_material_dirs(target_root, path_states=path_states),
+        key=lambda path: (path_states.get(path) or (0,))[0],
         reverse=True,
     ):
+        directory_name = material_files._relative_directory_name(target_root, material_dir)
         try:
-            archive_payload = json.loads((material_dir / "material.json").read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError, UnicodeDecodeError):
+            archive_payload = material_files._load_json_object(
+                material_dir / "material.json", "Saved material archive is not valid UTF-8 JSON",
+            )
+            # Watch the declared path even when missing/invalid, so repairing an
+            # incomplete archive makes it visible without waiting for the TTL.
+            stage_name = material_files._normalize_relative_directory_name(
+                archive_payload.get("stage_a_params_file") or "stage_A_parameters.json",
+            )
+            stage_path = material_dir / stage_name
+            path_states[stage_path] = material_files._material_library_path_state(stage_path)
+            load_material_params(directory_name, materials_dir=str(target_root))
+            item = _saved_material_library_item_from_archive(
+                target_root,
+                material_dir,
+                archive_payload,
+            )
+        except (OSError, ValueError, TypeError, OverflowError) as exc:
+            _log.debug("Skipped unavailable saved material", extra={
+                "event": "material_library_archive_skipped",
+                "directory_name": directory_name,
+                "error_type": type(exc).__name__,
+                "error_message": str(exc),
+            })
             continue
-        if not isinstance(archive_payload, dict):
-            continue
-        item = _saved_material_library_item_from_archive(
-            target_root,
-            material_dir,
-            archive_payload,
-        )
         content_hash = material_package._local_material_content_hash(material_dir, archive_payload)
         if content_hash:
             item["content_hash"] = content_hash
@@ -1023,5 +1047,5 @@ def list_saved_stage_a_material_archives(
                     item["display"]["preview_swatches"] = local_swatches
         items.append(item)
     material_registry_client._apply_official_registry_metadata(items)
-    material_files._store_material_library_cache(target_root, items)
+    material_files._store_material_library_cache(target_root, items, path_states=path_states)
     return items

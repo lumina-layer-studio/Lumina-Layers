@@ -190,6 +190,30 @@ def test_generate_late_template_capacity_error_preserves_422_and_slot_counts(tmp
     assert detail["available_slots"] == 4
 
 
+def test_generate_late_template_mapping_error_keeps_actionable_422_after_pickling(tmp_path: Path) -> None:
+    import pickle
+    from core.errors import TemplateMaterialMappingError
+
+    original = TemplateMaterialMappingError(
+        field="filament_volume_map", material_count=8, value_count=7,
+        mapping_mode="Nozzle Manual",
+    )
+    pool = MagicMock(spec=WorkerPoolManager)
+    pool.submit_timed = AsyncMock(side_effect=pickle.loads(pickle.dumps(original)))
+
+    response = _post_generate_with_pool(tmp_path, pool)
+
+    assert pool.submit_timed.await_count == 1
+    assert response.status_code == 422, response.text
+    detail = response.json()["detail"]
+    assert detail["code"] == "template_material_mapping"
+    assert detail["field"] == "filament_volume_map"
+    assert detail["material_count"] == 8
+    assert detail["value_count"] == 7
+    assert detail["mapping_mode"] == "Nozzle Manual"
+    assert detail["message"] == str(original)
+
+
 def test_generate_missing_worker_output_uses_public_error_language(tmp_path: Path) -> None:
     private_path = "/Users/min/private/model.3mf"
     pool = MagicMock(spec=WorkerPoolManager)

@@ -773,6 +773,10 @@ export const translations: Record<string, Record<"zh" | "en", string>> = {
     zh: "当前模型需要 {requiredSlots} 个耗材槽，但所选 3MF 模板只有 {availableSlots} 个。请换用至少 {requiredSlots} 槽的模板，或减少模型使用的耗材。",
     en: "This model needs {requiredSlots} material slots, but the selected 3MF template has {availableSlots}. Choose a template with at least {requiredSlots} slots or use fewer materials.",
   },
+  api_error_template_material_mapping: {
+    zh: "所选 3MF 模板的喷头分配不完整。请在 Bambu Studio 中为每种耗材指定喷头，或选择自动耗材分组，然后保存并重新导入模板。",
+    en: "The selected 3MF template has incomplete nozzle assignments. In Bambu Studio, assign every material to a nozzle or choose automatic material grouping, then save and import the template again.",
+  },
   api_error_source_image_unreadable: {
     zh: "无法读取这张图片。请确认文件未损坏，并重新导出为 PNG、JPEG 或 WebP 后再上传。",
     en: "The image could not be read. Check that the file is not damaged, then re-export it as PNG, JPEG, or WebP and upload it again.",

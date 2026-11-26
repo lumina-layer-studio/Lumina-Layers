@@ -4,6 +4,8 @@ from pathlib import Path
 
 from fastapi import HTTPException
 
+from api.errors import to_http_exception
+from core.errors import TemplateMaterialMappingError
 from core.machine_registry import (
     MachineRegistrySelectionError,
     load_machine_registry,
@@ -63,6 +65,8 @@ def validate_export_device_selection(
                 device_profile_id,
                 custom_3mf_template_id=custom_3mf_template_id,
             )
+        except TemplateMaterialMappingError as exc:
+            raise to_http_exception(exc, "Custom 3MF template") from exc
         except FileNotFoundError as exc:
             raise HTTPException(
                 status_code=404,

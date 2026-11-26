@@ -8164,9 +8164,30 @@ class VectorProcessor:
         )
         root_output_width = _finite_float(getattr(svg, "width", None), root_user_width)
         root_output_height = _finite_float(getattr(svg, "height", None), root_user_height)
+        root_output_x = _finite_float(getattr(svg, "x", None), 0.0)
+        root_output_y = _finite_float(getattr(svg, "y", None), 0.0)
+        root_output_viewport = None
+        if root_output_width > 0.0 and root_output_height > 0.0:
+            # Reified shapes already include the viewBox-to-viewport map.
+            # Resolve physical units and apply the root transform once for
+            # both viewport clipping and the final canvas bounds.
+            transform = svg.transform
+            root_output_viewport = affinity.affine_transform(
+                box(
+                    root_output_x,
+                    root_output_y,
+                    root_output_x + root_output_width,
+                    root_output_y + root_output_height,
+                ),
+                [transform.a, transform.c, transform.b, transform.d, transform.e, transform.f],
+            )
+        root_overflow = _normalize_svg_css_token(_element_value(svg, "overflow", ""))
+        root_style_overflow = _style_property(_element_value(root, "style", ""), "overflow")
+        if root_style_overflow is not None:
+            root_overflow = root_style_overflow
         root_output_viewport_clip = (
-            box(0.0, 0.0, root_output_width, root_output_height)
-            if root_output_width > 0.0 and root_output_height > 0.0
+            root_output_viewport
+            if root_overflow != "visible"
             else None
         )
 
@@ -8630,7 +8651,12 @@ class VectorProcessor:
             except TypeError:
                 return
 
-        _index_group_clip_contexts(svg)
+        # Preserve legacy root overflow when unspecified; explicit clipping
+        # must also reach direct root children, not only nested viewports.
+        _index_group_clip_contexts(
+            svg,
+            inherited_viewport_clip=root_output_viewport_clip if root_overflow else None,
+        )
         clip_target_local_bounds_cache = {}
 
         def _iter_clip_target_shapes(target):
@@ -9278,22 +9304,14 @@ class VectorProcessor:
         gx1, gy1 = max(max_xs), max(max_ys)
 
         svg_viewport_bounds = None
-        try:
-            vb = getattr(svg, "viewbox", None)
-            if vb is not None:
-                vb_x = float(getattr(vb, "x", 0) or 0)
-                vb_y = float(getattr(vb, "y", 0) or 0)
-                vb_w = float(getattr(vb, "width", 0) or 0)
-                vb_h = float(getattr(vb, "height", 0) or 0)
-                if vb_w > 0 and vb_h > 0:
-                    svg_viewport_bounds = (vb_x, vb_y, vb_w, vb_h)
-                    gx0 = min(gx0, vb_x)
-                    gy0 = min(gy0, vb_y)
-                    gx1 = max(gx1, vb_x + vb_w)
-                    gy1 = max(gy1, vb_y + vb_h)
-                    _log.debug("SVG viewBox: (%s, %s, %s, %s)", vb_x, vb_y, vb_w, vb_h)
-        except VECTOR_HANDLED_ERRORS:
-            pass
+        if getattr(svg, "viewbox", None) is not None and root_output_viewport is not None:
+            vx0, vy0, vx1, vy1 = root_output_viewport.bounds
+            svg_viewport_bounds = (vx0, vy0, vx1 - vx0, vy1 - vy0)
+            gx0 = min(gx0, vx0)
+            gy0 = min(gy0, vy0)
+            gx1 = max(gx1, vx1)
+            gy1 = max(gy1, vy1)
+            _log.debug("SVG viewport: (%s, %s, %s, %s)", *svg_viewport_bounds)
 
         real_w = gx1 - gx0
         real_h = gy1 - gy0

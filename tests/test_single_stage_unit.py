@@ -2180,6 +2180,7 @@ def _write_updatable_material_archive(
             "channels": [
                 {"color_name": material_name, "E": [0.1, 0.2, 0.3], "k": [1.0, 1.1, 1.2]}
             ],
+            "substrates": [{"substrate_id": "white", "C0": [1.0, 1.0, 1.0]}],
         },
     }
     stage_a_path = material_dir / "stage_A_parameters.json"
@@ -3823,7 +3824,7 @@ def test_list_saved_stage_a_material_archives_reads_saved_material_directory(tmp
     material_dir.mkdir(parents=True)
     stage_a_path = material_dir / "stage_A_parameters.json"
     archive_path = material_dir / "material.json"
-    stage_a_path.write_text(json.dumps({"parameters": {}}), encoding="utf-8")
+    stage_a_path.write_bytes(_minimal_solver_stage_a_bytes())
     archive_path.write_text(
         json.dumps(
             {
@@ -3898,7 +3899,7 @@ def test_saved_material_library_ignores_internal_archives(tmp_path: Path) -> Non
         archive = materials_root / directory_name / "material.json"
         archive.parent.mkdir(parents=True)
         archive.write_text(json.dumps({"material_name": archive.parent.name}), encoding="utf-8")
-    (materials_root / "爱丽兹/PLA 白/stage_A_parameters.json").write_text("{}", encoding="utf-8")
+    (materials_root / "爱丽兹/PLA 白/stage_A_parameters.json").write_bytes(_minimal_solver_stage_a_bytes())
 
     assert material_files._discover_saved_material_dirs(materials_root) == [materials_root / "爱丽兹/PLA 白"]
     assert [entry["directory_name"] for entry in list_saved_stage_a_material_archives(
@@ -3912,10 +3913,7 @@ def test_list_saved_stage_a_material_archives_exposes_picker_metadata(
     materials_root = tmp_path / "materials"
     material_dir = materials_root / "BrandA" / "PLA Red"
     material_dir.mkdir(parents=True)
-    (material_dir / "stage_A_parameters.json").write_text(
-        json.dumps({"parameters": {}}),
-        encoding="utf-8",
-    )
+    (material_dir / "stage_A_parameters.json").write_bytes(_minimal_solver_stage_a_bytes("PLA Red"))
     (material_dir / "material.json").write_text(
         json.dumps(
             {
@@ -3959,10 +3957,7 @@ def test_saved_material_picker_metadata_classifies_only_exact_legacy_tokens(
     materials_root = tmp_path / "materials"
     material_dir = materials_root / "sample"
     material_dir.mkdir(parents=True)
-    (material_dir / "stage_A_parameters.json").write_text(
-        json.dumps({"parameters": {}}),
-        encoding="utf-8",
-    )
+    (material_dir / "stage_A_parameters.json").write_bytes(_minimal_solver_stage_a_bytes(material_name))
     (material_dir / "material.json").write_text(
         json.dumps(
             {
@@ -4073,10 +4068,7 @@ def test_list_saved_stage_a_material_archives_reuses_cached_scan(
     materials_root = tmp_path / "materials"
     material_dir = materials_root / "pla-basic"
     material_dir.mkdir(parents=True)
-    (material_dir / "stage_A_parameters.json").write_text(
-        json.dumps({"parameters": {}}),
-        encoding="utf-8",
-    )
+    (material_dir / "stage_A_parameters.json").write_bytes(_minimal_solver_stage_a_bytes())
     (material_dir / "material.json").write_text(
         json.dumps(
             {

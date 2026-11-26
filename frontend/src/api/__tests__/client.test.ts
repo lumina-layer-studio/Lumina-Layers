@@ -360,6 +360,34 @@ describe("apiClient", () => {
     },
   );
 
+  it.each([
+    {
+      language: "zh" as const,
+      expected: "所选 3MF 模板的喷头分配不完整。请在 Bambu Studio 中为每种耗材指定喷头，或选择自动耗材分组，然后保存并重新导入模板。",
+    },
+    {
+      language: "en" as const,
+      expected: "The selected 3MF template has incomplete nozzle assignments. In Bambu Studio, assign every material to a nozzle or choose automatic material grouping, then save and import the template again.",
+    },
+  ])("explains incomplete template nozzle assignments in $language", async ({ language, expected }) => {
+    useSettingsStore.setState({ language });
+    const detail = {
+      code: "template_material_mapping", field: "filament_nozzle_map",
+      material_count: 8, value_count: 7, mapping_mode: "Manual",
+      message: "Server fallback for older clients.",
+    };
+    const error = Object.assign(new Error("Request failed with status code 422"), {
+      config: { method: "post", url: "/convert/generate" },
+      response: { status: 422, data: { detail } },
+    });
+    apiClient.defaults.adapter = vi.fn().mockRejectedValueOnce(error);
+
+    const rejected = await apiClient.post("/convert/generate", {}).catch((err) => err);
+
+    expect(rejected.message).toBe(expected);
+    expect(rejected.response.data.detail).toEqual(detail);
+  });
+
   it("keeps the server capacity message when slot counts are unavailable", async () => {
     const fallback = "Choose a template with enough material slots.";
     const error = Object.assign(new Error("Request failed with status code 422"), {

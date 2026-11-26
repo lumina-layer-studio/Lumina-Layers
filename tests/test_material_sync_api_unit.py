@@ -3313,7 +3313,12 @@ def test_material_library_api_marks_official_synced_material(
         ),
         encoding="utf-8",
     )
-    (material_dir / "stage_A_parameters.json").write_text("{}", encoding="utf-8")
+    (material_dir / "stage_A_parameters.json").write_text(json.dumps({
+        "parameters": {
+            "channels": [{"E": [0.1, 0.2, 0.3], "k": [1.0, 1.1, 1.2]}],
+            "substrates": [{"substrate_id": "white", "C0": [1.0, 1.0, 1.0]}],
+        },
+    }), encoding="utf-8")
     (materials_root / "_sync").mkdir()
     (materials_root / "_sync" / "index.json").write_text(
         json.dumps(
@@ -3364,7 +3369,12 @@ def test_material_library_api_marks_cloud_official_matching_local_material(
         },
         ensure_ascii=False,
     )
-    stage_a_payload = json.dumps({"parameters": {}}, ensure_ascii=False)
+    stage_a_payload = json.dumps({
+        "parameters": {
+            "channels": [{"E": [0.1, 0.2, 0.3], "k": [1.0, 1.1, 1.2]}],
+            "substrates": [{"substrate_id": "white", "C0": [1.0, 1.0, 1.0]}],
+        },
+    }, ensure_ascii=False)
     (material_dir / "material.json").write_text(material_payload, encoding="utf-8")
     (material_dir / "stage_A_parameters.json").write_text(
         stage_a_payload,

@@ -63,6 +63,22 @@ def _material_library_cache_key(target_root: Path) -> str:
         return str(target_root.absolute())
 
 
+def _material_library_path_state(path: Path) -> tuple[int, ...] | None:
+    """Track replacement, edits, and symlink changes without reading file data.
+
+    The first field is the target mtime, also used for the library's recency order.
+    """
+    try:
+        state, link_state = path.stat(), path.lstat()
+    except OSError:
+        return None
+    return (
+        state.st_mtime_ns, state.st_ctime_ns, state.st_size,
+        state.st_dev, state.st_ino, state.st_mode,
+        link_state.st_mtime_ns, link_state.st_ctime_ns, link_state.st_ino,
+    )
+
+
 def _cached_material_library_items(target_root: Path) -> list[dict[str, Any]] | None:
     cache_key = _material_library_cache_key(target_root)
     now = time.monotonic()
@@ -74,18 +90,32 @@ def _cached_material_library_items(target_root: Path) -> list[dict[str, Any]] | 
         if now - cached_at > _MATERIAL_LIBRARY_CACHE_TTL_S:
             _MATERIAL_LIBRARY_CACHE.pop(cache_key, None)
             return None
-        payload = cached.get("payload")
-        if not isinstance(payload, list):
-            return None
-        return _json_clone(payload)
+        payload, path_states = cached.get("payload"), cached.get("path_states")
+    if not isinstance(payload, list) or not isinstance(path_states, dict):
+        return None
+    if any(_material_library_path_state(path) != state for path, state in path_states.items()):
+        with _MATERIAL_LIBRARY_CACHE_LOCK:
+            if _MATERIAL_LIBRARY_CACHE.get(cache_key) is cached:
+                _MATERIAL_LIBRARY_CACHE.pop(cache_key, None)
+        return None
+    return _json_clone(payload)
 
 
-def _store_material_library_cache(target_root: Path, payload: list[dict[str, Any]]) -> None:
+def _store_material_library_cache(
+    target_root: Path,
+    payload: list[dict[str, Any]],
+    *,
+    path_states: dict[Path, tuple[int, ...] | None],
+) -> None:
+    # Never pair already-built summaries with a newer, unvalidated file state.
+    if any(_material_library_path_state(path) != state for path, state in path_states.items()):
+        return
     cache_key = _material_library_cache_key(target_root)
     with _MATERIAL_LIBRARY_CACHE_LOCK:
         _MATERIAL_LIBRARY_CACHE[cache_key] = {
             "cached_at": time.monotonic(),
             "payload": _json_clone(payload),
+            "path_states": dict(path_states),
         }
 
 
@@ -331,20 +361,34 @@ def invalidate_material_library_cache(materials_dir: str | None = None) -> None:
 
 
 def _is_internal_material_directory(directory_name: str) -> bool:
-    return directory_name.split("/", 1)[0].casefold() in INTERNAL_MATERIAL_ROOT_NAMES
+    return any(
+        part.casefold() in INTERNAL_MATERIAL_ROOT_NAMES
+        for part in directory_name.replace("\\", "/").split("/")
+    )
 
 
 def _discover_saved_material_dirs(
     material_root: Path, *, include_internal: bool = False,
+    path_states: dict[Path, tuple[int, ...] | None] | None = None,
 ) -> list[Path]:
     """Find archives, excluding internal stores by default and nested runs always."""
     archives: list[Path] = []
     for directory, subdirs, _ in material_root.walk():
-        if directory == material_root and not include_internal:
+        if not include_internal:
             subdirs[:] = [name for name in subdirs if not _is_internal_material_directory(name)]
-        if (directory / "material.json").is_file():
+        archive = directory / "material.json"
+        if path_states is not None:
+            path_states[directory] = _material_library_path_state(directory)
+            path_states[archive] = _material_library_path_state(archive)
+        if archive.is_file():
             archives.append(directory)
             subdirs.clear()
+        if path_states is not None:
+            # walk() skips unreadable children; keep their permission state so a
+            # repaired subtree can invalidate an otherwise empty cached list.
+            for name in subdirs:
+                child = directory / name
+                path_states[child] = _material_library_path_state(child)
     return archives
 
 

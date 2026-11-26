@@ -685,6 +685,7 @@ def load_export_project_settings(
     source = native_source_for_target(target)
     if custom_3mf_template_id:
         from core.custom_3mf_templates import load_template
+        from core.template_material_mapping import prepare_template_for_export
 
         template = load_template(custom_3mf_template_id)
         source_slicer = template.pop("_lumina_template_slicer")
@@ -706,7 +707,7 @@ def load_export_project_settings(
             source_slicer,
             normalize_slicer_software_id(slicer),
         )
-        return template
+        return prepare_template_for_export(template, target=target)
 
     request = build_builtin_project_settings_request(
         {}, [{"name": "PLA", "colour": "#808080", "material_type": "PLA"}],

@@ -260,10 +260,9 @@ def load_material_params(
 
     if not materials_dir:
         relative_path = material_dir.relative_to(root.resolve())
-        supplied_root = directory_name.strip().replace("\\", "/").split("/", 1)[0]
         if (
-            supplied_root.casefold() in material_files.INTERNAL_MATERIAL_ROOT_NAMES
-            or (relative_path.parts and relative_path.parts[0].casefold() in material_files.INTERNAL_MATERIAL_ROOT_NAMES)
+            material_files._is_internal_material_directory(directory_name)
+            or material_files._is_internal_material_directory(relative_path.as_posix())
         ):
             raise ValueError(
                 f"Material '{directory_name}' belongs to an internal library directory. "
@@ -296,7 +295,9 @@ def load_material_params(
     )
 
     # Estimated sRGB for preview
-    material_summary = archive.get("material_summary") or {}
+    material_summary = archive.get("material_summary")
+    if not isinstance(material_summary, dict):
+        material_summary = {}
     estimated_rgb_raw = material_summary.get("estimated_rgb")
     if isinstance(estimated_rgb_raw, list) and len(estimated_rgb_raw) >= 3:
         estimated_rgb = np.asarray(estimated_rgb_raw[:3], dtype=np.uint8)

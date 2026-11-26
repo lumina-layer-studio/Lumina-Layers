@@ -71,6 +71,27 @@ class TemplateSlotCapacityError(CoreValidationError):
         self.error_type = "template_slot_capacity"
 
 
+class TemplateMaterialMappingError(CoreValidationError):
+    """An imported template has unresolved material-to-nozzle assignments."""
+
+    def __init__(self, field: str, material_count: int, value_count: int, mapping_mode: str) -> None:
+        self.field = field
+        self.material_count = material_count
+        self.value_count = value_count
+        self.mapping_mode = mapping_mode
+        super().__init__(
+            f"The selected 3MF template has incomplete nozzle assignments "
+            f"({value_count} entries for {material_count} materials) in {mapping_mode} mode. Open it in "
+            "Bambu Studio, assign every material to a nozzle, then save and import "
+            "the project again. Alternatively, select automatic material grouping "
+            "in Bambu Studio before saving and importing the template."
+        )
+        self.error_type = "template_material_mapping"
+
+    def __reduce__(self) -> tuple[type[TemplateMaterialMappingError], tuple[str, int, int, str]]:
+        return type(self), (self.field, self.material_count, self.value_count, self.mapping_mode)
+
+
 class NativeMaterialSelectionError(CoreValidationError):
     """Report a native preset or plate choice the user must resolve.
 

@@ -78,7 +78,8 @@ from core.batch_layout import LayoutResult, XYBBox, layout_shelf_by_row
 from core.errors import (
     CachedPreviewAnalysisError, CoatingLayerHeightError, ExternalSpoolSelectionError,
     KeychainPlacementError, MaterialArchiveUnavailableError,
-    NativeMaterialSelectionError, TemplateSlotCapacityError, WipeTowerLayoutError,
+    NativeMaterialSelectionError, TemplateMaterialMappingError, TemplateSlotCapacityError,
+    WipeTowerLayoutError,
 )
 from .export_materials import require_material_selection
 from core.model_surface.types import ModelSurfaceError
@@ -279,6 +280,7 @@ _EXPORT_INPUT_ERRORS = (
     KeychainPlacementError,
     MaterialArchiveUnavailableError,
     NativeMaterialSelectionError,
+    TemplateMaterialMappingError,
     TemplateSlotCapacityError,
     WipeTowerLayoutError,
 )

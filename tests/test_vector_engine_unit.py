@@ -1140,7 +1140,7 @@ class TestVectorCoatingBuildMeshRegression:
         processor = _make_parse_only_processor()
         processor.color_mode = "4-Color"
         processor.enable_coating = True
-        processor.coating_height_mm = PrinterConfig.LAYER_HEIGHT * 2
+        processor.coating_height_mm = 0.12
         analysis = VectorAnalysis(
             shape_data=[],
             clipped_shapes=[{"geometry": box(0, 0, 20, 20), "color": (255, 0, 0), "draw_order": 0}],
@@ -1160,7 +1160,8 @@ class TestVectorCoatingBuildMeshRegression:
         coating = scene.geometry["Coating"]
 
         assert "Coating" in scene.geometry
-        assert coating.bounds[0][2] == pytest.approx(-PrinterConfig.LAYER_HEIGHT * 2)
+        assert coating.extents[2] == pytest.approx(0.12)
+        assert coating.bounds[0][2] == pytest.approx(-0.12)
         assert coating.bounds[1][2] == pytest.approx(0.0)
         assert analysis.preview_colors["Coating"] == [200, 200, 200, 80]
 
@@ -1169,7 +1170,7 @@ class TestVectorCoatingBuildMeshRegression:
         processor.color_mode = "4-Color"
         processor.layer_height_mm = 0.10
         processor.enable_coating = True
-        processor.coating_height_mm = processor.layer_height_mm * 2
+        processor.coating_height_mm = 0.12
         analysis = VectorAnalysis(
             shape_data=[],
             clipped_shapes=[
@@ -1207,14 +1208,16 @@ class TestVectorCoatingBuildMeshRegression:
             structure_mode="Double-sided",
         )
         coating = scene.geometry["Coating"]
-        coating_height = processor.layer_height_mm * 2
+        coating_height = 0.12
         expected_top = (
             thickness_mm
             + analysis.num_layers * processor.layer_height_mm * 2
             + coating_height
         )
 
-        assert len(coating.split(only_watertight=False)) == 2
+        faces = coating.split(only_watertight=False)
+        assert len(faces) == 2
+        assert [face.extents[2] for face in faces] == pytest.approx([0.12, 0.12])
         assert coating.bounds[0][2] == pytest.approx(-coating_height)
         assert coating.bounds[1][2] == pytest.approx(expected_top)
 

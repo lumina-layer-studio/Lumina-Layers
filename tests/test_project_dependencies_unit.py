@@ -138,7 +138,9 @@ def test_native_snapshot_rebinds_model_and_exact_database_without_original_paths
     np.testing.assert_array_equal(exact[1], [[0] * 5])
 
 
-@pytest.mark.parametrize("directory_name", ["Brand/cyan", "_sync/curation-backups/source-materials/cyan"])
+@pytest.mark.parametrize("directory_name", [
+    "Brand/cyan", "_sync/curation-backups/source-materials/cyan", "Brand/_sync/source-materials/cyan",
+])
 def test_material_resources_use_session_directory_and_are_cleaned_with_session(
     tmp_path: Path, directory_name: str,
 ) -> None:

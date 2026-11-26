@@ -167,12 +167,14 @@ def resolve_export_material_selection(
     """
     if params.get("custom_3mf_template_id"):
         from core.custom_3mf_templates import load_template, require_template_slot_capacity
+        from core.template_material_mapping import prepare_template_for_export
 
         template = load_template(str(params["custom_3mf_template_id"]))
         target = select_user_template_metadata_target(
             slicer=str(params.get("slicer") or template["_lumina_template_slicer"]),
             build_plate_id=params.get("build_plate_id"),
         )
+        template = prepare_template_for_export(template, target=target)
         require_template_slot_capacity(
             template, len(_source_materials(params, source_context)), target=target,
         )

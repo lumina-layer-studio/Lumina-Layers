@@ -10,6 +10,7 @@ from core.errors import (
     CoreValidationError,
     MaterialArchiveUnavailableError,
     NativeMaterialSelectionError,
+    TemplateMaterialMappingError,
     TemplateSlotCapacityError,
 )
 from core.material_dynamic_solver import (
@@ -68,6 +69,18 @@ def to_http_exception(exc: Exception, context: str) -> HTTPException:
                 "message": exc.detail,
                 "required_slots": exc.required_slots,
                 "available_slots": exc.available_slots,
+            },
+        )
+    if isinstance(exc, TemplateMaterialMappingError):
+        return HTTPException(
+            status_code=422,
+            detail={
+                "code": exc.error_type,
+                "message": exc.detail,
+                "field": exc.field,
+                "material_count": exc.material_count,
+                "value_count": exc.value_count,
+                "mapping_mode": exc.mapping_mode,
             },
         )
     if isinstance(exc, NativeMaterialSelectionError):

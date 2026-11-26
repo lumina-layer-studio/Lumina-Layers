@@ -766,7 +766,7 @@ class WorkshopBackendRuntime:
                 module_id, version,
                 preparation="prepared" if record.preparation == "prepared" else "preparing",
                 failure_code=None,
-                download_preferences=preferences.model_dump(),
+                download_preferences=preferences.model_dump(exclude_defaults=True) or None,
             )
             self._preparations[task.task_id] = (token, thread, module_id, version)
             thread.start()
@@ -1017,11 +1017,9 @@ class WorkshopBackendRuntime:
                 self._leave_preparation_work()
             with self._lock:
                 self._preparations.pop(task.task_id, None)
-            # Roll back anything this transaction added but nothing uses,
-            # before the task reports a terminal state. On failure or cancel
-            # nothing references the new files any more, so they go now (or
-            # with the next pass if another preparation is still working).
-            self.collect_garbage()
+            # Remove unfinished staging before the terminal state. Verified
+            # downloads remain reusable on retry until storage cleanup.
+            self.collect_garbage(preserve_downloads=True)
             status, error = outcome
             self.tasks.finish(module_id, task.task_id, status, error=error)  # type: ignore[arg-type]
 
@@ -1600,7 +1598,7 @@ class WorkshopBackendRuntime:
                 users.setdefault(sha256, set()).add(record.module_id)
         return users
 
-    def collect_garbage(self) -> GarbageReport:
+    def collect_garbage(self, *, preserve_downloads: bool = False) -> GarbageReport:
         """Remove unreferenced environments, objects, and interpreters.
 
         Order matters: environments and model views drop their links first,
@@ -1667,12 +1665,13 @@ class WorkshopBackendRuntime:
             maintenance = self._begin_maintenance()
             try:
                 if maintenance:
-                    self._clean_transient_files(report)
-                objects = self.store.collect_garbage(keep=referenced_models)
-                report.object_bytes += objects.freed_bytes
-                report.pending.extend(objects.pending)
-                if maintenance:
-                    self._release_unused_interpreters(report)
+                    self._clean_transient_files(report, preserve_downloads=preserve_downloads)
+                if not preserve_downloads:
+                    objects = self.store.collect_garbage(keep=referenced_models)
+                    report.object_bytes += objects.freed_bytes
+                    report.pending.extend(objects.pending)
+                    if maintenance:
+                        self._release_unused_interpreters(report)
             finally:
                 if maintenance:
                     self._end_maintenance()
@@ -1695,14 +1694,14 @@ class WorkshopBackendRuntime:
             )
         return report
 
-    def _clean_transient_files(self, report: GarbageReport) -> None:
+    def _clean_transient_files(self, report: GarbageReport, *, preserve_downloads: bool) -> None:
         """Staging, download cache, and temporary downloads (no preparation runs)."""
 
         staging = self.environments.remove_staging_leftovers()
         temporary = self.store.clear_temporary()
         report.other_bytes += staging.freed_bytes + temporary.freed_bytes
         report.pending.extend([*staging.pending, *temporary.pending])
-        if self._wheel_archives is not None:
+        if self._wheel_archives is not None and not preserve_downloads:
             retained = {digest for env in self.environments.list() for digest in env.wheel_sha256s}
             archives = self._wheel_archives.prune(retained)
             report.other_bytes += archives.freed_bytes

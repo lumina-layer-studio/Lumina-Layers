@@ -323,6 +323,26 @@ describe("Workshop backend management UI", () => {
     expect(await screen.findByText(`opened ${MODULE_ID}@1.0.0 backend=true`)).toBeInTheDocument();
   });
 
+  it("displays download failure details from the preparation task", async () => {
+    const backend = fakeBackend(status({
+      review_level: "reviewed",
+      requires_unreviewed_confirmation: false,
+    }));
+    const task = await backend.prepare(MODULE_ID, "1.0.0");
+    const detail = "Could not verify demo.whl. files.example returned HTTP 503.";
+    vi.mocked(backend.task).mockResolvedValue({
+      ...task,
+      status: "failed",
+      error: { code: "dependency-install-failed", message: detail },
+    });
+    renderPanel(fakeApi([backendModule()]), backend);
+
+    fireEvent.click(await screen.findByRole("button", { name: "打开" }));
+    const dialog = await screen.findByRole("dialog", { name: "运行本机后端" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "允许并安装" }));
+    expect(await within(dialog).findByText(detail)).toBeInTheDocument();
+  });
+
   it.each(["official", "reviewed"] as const)("uses localized capability text and the chosen model source for %s code", async (reviewLevel) => {
     const api = fakeApi([backendModule()]);
     const backend = fakeBackend(status({

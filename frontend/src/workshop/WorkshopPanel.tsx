@@ -109,6 +109,7 @@ interface BackendSetupState {
   phase: BackendSetupPhase;
   progress: WorkshopBackendProgress | null;
   failureCode: string | null;
+  failureDetail?: string | null;
   taskId: string | null;
   /** Translation key of a cancel request that did not go through. */
   cancelErrorKey?: string | null;
@@ -771,6 +772,7 @@ export function WorkshopPanel({
                   phase: "failed",
                   failureCode:
                     error instanceof BackendSetupError ? error.code : "request-failed",
+                  failureDetail: error instanceof BackendSetupError ? error.detail : null,
                 },
           );
         })
@@ -1870,6 +1872,7 @@ export function WorkshopPanel({
           progress={backendSetup.progress}
           cancelling={backendSetup.cancelling}
           failureCode={backendSetup.failureCode}
+          failureDetail={backendSetup.failureDetail}
           cancelError={
             backendSetup.cancelErrorKey
               ? t("workshop.backend.cancelFailed").replace("{reason}", t(backendSetup.cancelErrorKey))
@@ -1878,7 +1881,9 @@ export function WorkshopPanel({
           onConfirm={confirmBackendSetup}
           onRetry={() =>
             setBackendSetup((current) =>
-              current === null ? current : { ...current, phase: "review", taskId: null, failureCode: null },
+              current === null
+                ? current
+                : { ...current, phase: "review", taskId: null, failureCode: null, failureDetail: null },
             )
           }
           onCancel={cancelBackendSetup}

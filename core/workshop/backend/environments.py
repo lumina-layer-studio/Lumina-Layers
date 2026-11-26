@@ -24,7 +24,7 @@ from pathlib import Path
 from ..errors import WorkshopBackendError
 from .locks import BackendLock, WheelSourcePolicy, render_install_lock
 from .store import ContentStore, RemovalOutcome, remove_tree
-from .tooling import BackendInterpreter, CancelToken, UvTool
+from .tooling import BackendInterpreter, CancelToken, UvTool, cancellable_lock
 
 
 ENVIRONMENT_RECORD_NAME = "lumina-environment.json"
@@ -188,7 +188,7 @@ class EnvironmentManager:
             platform_key=platform_key,
             python_version=interpreter.python_version,
         )
-        with self._key_lock(key):
+        with cancellable_lock(self._key_lock(key), cancel):
             existing = self.get(key)
             if existing is not None:
                 return existing, False

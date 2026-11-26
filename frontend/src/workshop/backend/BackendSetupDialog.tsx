@@ -29,6 +29,7 @@ interface BackendSetupDialogProps {
   progress: WorkshopBackendProgress | null;
   cancelling?: boolean;
   failureCode: string | null;
+  failureDetail?: string | null;
   /** Why the last cancel request failed; preparation is still running. */
   cancelError?: string | null;
   onConfirm(acknowledgeUnreviewed: boolean, sources?: WorkshopDownloadPreferences): void;
@@ -50,6 +51,7 @@ export function BackendSetupDialog({
   progress,
   cancelling = false,
   failureCode,
+  failureDetail,
   cancelError = null,
   onConfirm,
   onRetry,
@@ -289,6 +291,7 @@ export function BackendSetupDialog({
           <div className="mt-5">
             <StatusBanner tone="error">
               {t("workshop.backend.prepareFailed").replace("{code}", failureCode ?? "unknown")}
+              {failureDetail ? <p className="mt-1 break-words">{failureDetail}</p> : null}
             </StatusBanner>
             <div className="mt-5 flex justify-end gap-2">
               <Button label={t("workshop.manager.close")} variant="secondary" onClick={onCancel} />

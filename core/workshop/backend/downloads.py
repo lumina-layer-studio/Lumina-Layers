@@ -179,8 +179,9 @@ def download_https(
                         url = urljoin(url, response.headers["Location"])
                         continue
                     if response.status_code != 200:
+                        host = source_id(url) or "The download source"
                         raise WorkshopBackendError(
-                            "download-failed", f"The download server returned HTTP {response.status_code}."
+                            "download-failed", f"{host} returned HTTP {response.status_code}."
                         )
                     length = response.headers.get("Content-Length", "")
                     total = size
@@ -203,7 +204,12 @@ def download_https(
                     progress(received, received)
                     return
             raise WorkshopBackendError("download-failed", "The download server redirected too many times.")
-    except (httpx.HTTPError, httpx.InvalidURL, OSError, ValueError) as exc:
+    except OSError as exc:
         if cancel is not None:
             cancel.raise_if_cancelled()
-        raise WorkshopBackendError("download-failed", "The file could not be downloaded.") from exc
+        raise WorkshopBackendError("download-failed", "The download could not be written to local storage.") from exc
+    except (httpx.HTTPError, httpx.InvalidURL, ValueError) as exc:
+        if cancel is not None:
+            cancel.raise_if_cancelled()
+        host = source_id(url) or "the download source"
+        raise WorkshopBackendError("download-failed", f"Could not download the file from {host}.") from exc

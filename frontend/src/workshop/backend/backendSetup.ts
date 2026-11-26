@@ -22,11 +22,13 @@ export function downloadSourceName(source: string): string {
 
 export class BackendSetupError extends Error {
   readonly code: string;
+  readonly detail: string | null;
 
-  constructor(code: string) {
-    super(`Workshop backend setup failed: ${code}`);
+  constructor(code: string, detail: string | null = null) {
+    super(detail ?? `Workshop backend setup failed: ${code}`);
     this.name = "BackendSetupError";
     this.code = code;
+    this.detail = detail;
   }
 }
 
@@ -101,7 +103,7 @@ export async function authorizeAndPrepare(
     onProgress: options.onProgress,
   });
   if (finished.status !== "succeeded") {
-    throw new BackendSetupError(finished.error?.code ?? finished.status);
+    throw new BackendSetupError(finished.error?.code ?? finished.status, finished.error?.message);
   }
   return api.status(moduleId, version);
 }

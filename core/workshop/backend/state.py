@@ -140,9 +140,13 @@ class BackendStateStore:
     ) -> BackendStateDocument:
         with self._lock:
             replacement = callback(self.read())
+            document = replacement.model_dump(mode="json")
+            for version in document["versions"]:
+                if version["download_preferences"] is None:
+                    del version["download_preferences"]
             payload = (
                 json.dumps(
-                    replacement.model_dump(mode="json"),
+                    document,
                     ensure_ascii=False,
                     sort_keys=True,
                     separators=(",", ":"),

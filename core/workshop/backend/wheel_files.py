@@ -22,10 +22,10 @@ from packaging.tags import compatible_tags, cpython_tags
 from packaging.utils import InvalidWheelFilename, parse_wheel_filename
 
 from ..errors import WorkshopBackendError
-from .downloads import DownloadBatch, DownloadProgress, download_https, ordered_sources
+from .downloads import DownloadBatch, DownloadProgress, download_https, ordered_sources, source_id
 from .locks import BackendLock, LockedWheel, WheelSourcePolicy, PYPI_FILES_PREFIX, render_install_lock
 from .store import RemovalOutcome, remove_tree, sha256_file, unlink_with_retry
-from .tooling import BackendInterpreter, CancelToken, read_python_version
+from .tooling import BackendInterpreter, CancelToken, cancellable_lock, read_python_version
 
 
 _MARKER_TOKENS = re.compile(
@@ -174,9 +174,7 @@ class WheelArchiveCache:
     ) -> tuple[Path, int]:
         with self._guard:
             lock = self._locks.setdefault(wheel.sha256, threading.Lock())
-        while not lock.acquire(timeout=0.15):
-            cancel.raise_if_cancelled()
-        try:
+        with cancellable_lock(lock, cancel):
             cached = self._cached(wheel, cancel)
             if cached is not None:
                 return cached, 0
@@ -203,11 +201,10 @@ class WheelArchiveCache:
                 finally:
                     if temporary.exists():
                         unlink_with_retry(temporary)
-            raise WorkshopBackendError(
-                "dependency-install-failed", f"Could not download and verify {wheel.file_name}."
-            ) from last_error
-        finally:
-            lock.release()
+            message = f"Could not download and verify {wheel.file_name}."
+            if last_error is not None:
+                message += f" {source_id(url) or 'Download source'}: {last_error}"
+            raise WorkshopBackendError("dependency-install-failed", message) from last_error
 
     def prepare(
         self,

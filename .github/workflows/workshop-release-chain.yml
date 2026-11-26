@@ -16,6 +16,8 @@ on:
       - "frontend/pnpm-lock.yaml"
       - "requirements.txt"
       - "scripts/verify_workshop_release_chain.py"
+      - "tests/test_workshop_backend_downloads.py"
+      - "tests/test_workshop_backend_package_unit.py"
       - "tests/test_workshop_backend_runtime_integration.py"
       - "tests/test_workshop_backend_store_unit.py"
       - "tests/test_workshop_backend_supervisor_unit.py"
@@ -143,7 +145,7 @@ jobs:
           python-version: "3.12"
 
       - name: Install lifecycle test dependencies
-        # Test tools plus the psutil and uv pins the host runtime uses.
+        # Test tools plus the requirements the backend runtime uses.
         run: >-
           python -m pip install
           "cryptography>=44.0.0,<46.0.0"
@@ -152,7 +154,7 @@ jobs:
           "pillow>=10.0.0,<12.0.0"
           "pydantic>=2.10.0,<3.0.0"
           "pytest>=8.0.0,<9.0.0"
-          $(grep -E '^(psutil|uv)[=<>]' requirements.txt)
+          $(grep -E '^(packaging|psutil|uv)[=<>]' requirements.txt)
 
       - name: Run backend lifecycle tests with real processes
         # Windows ends a backend tree through a job object; POSIX walks the
@@ -160,6 +162,8 @@ jobs:
         run: >-
           python -m pytest
           tests/test_workshop_backend_supervisor_unit.py
+          tests/test_workshop_backend_downloads.py
+          tests/test_workshop_backend_package_unit.py
           tests/test_workshop_backend_store_unit.py
           tests/test_workshop_backend_runtime_integration.py
           -q

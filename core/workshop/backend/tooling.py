@@ -16,7 +16,8 @@ import subprocess
 import sys
 import threading
 import time
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Iterator, Sequence
+from contextlib import contextmanager
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
@@ -28,7 +29,7 @@ import psutil
 
 from ..constants import BACKEND_PYTHON_VERSIONS
 from ..errors import WorkshopBackendError
-from .downloads import DownloadBatch, DownloadProgress, download_https, ordered_sources
+from .downloads import DownloadBatch, DownloadProgress, download_https, ordered_sources, source_id
 
 
 PINNED_UV_VERSION = "0.13.7"
@@ -63,6 +64,21 @@ class CancelToken:
 
     def wait(self, seconds: float) -> bool:
         return self._event.wait(seconds)
+
+
+@contextmanager
+def cancellable_lock(lock: threading.Lock, cancel: CancelToken | None) -> Iterator[None]:
+    if cancel is None:
+        with lock:
+            yield
+        return
+    while not lock.acquire(timeout=0.15):
+        cancel.raise_if_cancelled()
+    try:
+        cancel.raise_if_cancelled()
+        yield
+    finally:
+        lock.release()
 
 
 @dataclass(frozen=True, slots=True)
@@ -338,10 +354,7 @@ class UvTool:
             *arguments,
             cancel=cancel,
             failure_code="interpreter-install-failed",
-            failure_message=(
-                "The backend Python runtime could not be downloaded. "
-                "Check the network, then retry."
-            ),
+            failure_message="The backend Python runtime could not be downloaded, verified or installed.",
         )
 
     def find_python(self, python_version: str) -> Path | None:
@@ -434,7 +447,10 @@ class UvTool:
                 if exc.code == "cancelled":
                     raise
                 last_error = exc
-        raise WorkshopBackendError("interpreter-install-failed", "The Python runtime could not be downloaded and installed.") from last_error
+        message = "The Python runtime could not be downloaded and installed."
+        if last_error is not None:
+            message += f" {source_id(url) or 'Download source'}: {last_error}"
+        raise WorkshopBackendError("interpreter-install-failed", message) from last_error
 
     def uninstall_python(self, python_version: str) -> None:
         self.run(
@@ -507,6 +523,7 @@ class ManagedInterpreterProvider:
         self._uv = uv
         self._mirror = mirror
         self._lock = threading.Lock()
+        self._installed_lock = threading.Lock()
         self._installed_cache: tuple[BackendInterpreter, ...] | None = None
 
     def ensure(
@@ -519,18 +536,23 @@ class ManagedInterpreterProvider:
         progress: Callable[[DownloadProgress], None] | None = None,
         installing: Callable[[], None] = lambda: None,
     ) -> BackendInterpreter:
-        with self._lock:
-            self._installed_cache = None
+        with cancellable_lock(self._lock, cancel):
             executable = self._uv.find_python(python_version)
             if executable is None:
-                if progress is None:
-                    self._uv.install_python(python_version, mirror=self._mirror, cancel=cancel)
-                else:
-                    self._uv.download_and_install_python(
-                        python_version, mirrors=mirrors, preferred=preferred, configured_mirror=self._mirror,
-                        cancel=cancel,
-                        progress=progress, installing=installing,
-                    )
+                # Status requests can read the last complete snapshot during installation.
+                self.installed()
+                try:
+                    if progress is None:
+                        self._uv.install_python(python_version, mirror=self._mirror, cancel=cancel)
+                    else:
+                        self._uv.download_and_install_python(
+                            python_version, mirrors=mirrors, preferred=preferred,
+                            configured_mirror=self._mirror, cancel=cancel,
+                            progress=progress, installing=installing,
+                        )
+                finally:
+                    with self._installed_lock:
+                        self._installed_cache = None
                 executable = self._uv.find_python(python_version)
             if executable is None:
                 raise WorkshopBackendError(
@@ -548,14 +570,18 @@ class ManagedInterpreterProvider:
         if not interpreter.managed:
             return 0
         with self._lock:
-            self._installed_cache = None
+            self.installed()
             before = _directory_bytes(self._uv.python_install_dir)
-            self._uv.uninstall_python(interpreter.python_version)
+            try:
+                self._uv.uninstall_python(interpreter.python_version)
+            finally:
+                with self._installed_lock:
+                    self._installed_cache = None
             after = _directory_bytes(self._uv.python_install_dir)
             return max(0, before - after)
 
     def installed(self) -> tuple[BackendInterpreter, ...]:
-        with self._lock:
+        with self._installed_lock:
             if self._installed_cache is not None:
                 return self._installed_cache
             found: list[BackendInterpreter] = []

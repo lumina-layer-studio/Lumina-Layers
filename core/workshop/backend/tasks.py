@@ -146,8 +146,14 @@ class TaskStore:
         return self.task_dir(record.module_id, record.task_id) / "work"
 
     def _write(self, record: TaskRecord) -> TaskRecord:
+        # Older readers accept ordinary task progress. Keep required nullable
+        # fields inside a real download observation when it is present.
+        unused_progress_fields = {
+            name for name in ("download", "downloaded_bytes")
+            if getattr(record.progress, name, None) is None
+        }
         payload = json.dumps(
-            record.model_dump(mode="json"),
+            record.model_dump(mode="json", exclude={"progress": unused_progress_fields}),
             ensure_ascii=False,
             sort_keys=True,
             separators=(",", ":"),

@@ -84,13 +84,13 @@ class HoldingFetcher(FakeModelFetcher):
                 cancel.raise_if_cancelled()
 
 
-def model_spec(url: str, file_name: str) -> dict[str, object]:
+def model_spec(url: str, file_name: str, data: bytes = MODEL_BYTES) -> dict[str, object]:
     return {
         "id": file_name.split(".", 1)[0],
         "fileName": file_name,
         "url": url,
-        "sha256": hashlib.sha256(MODEL_BYTES).hexdigest(),
-        "bytes": len(MODEL_BYTES),
+        "sha256": hashlib.sha256(data).hexdigest(),
+        "bytes": len(data),
         "license": "CC0-1.0",
     }
 
@@ -583,9 +583,37 @@ def test_cancelled_preparation_leaves_no_environment(tmp_path: Path) -> None:
         harness.runtime.cancel_task("fixture.alpha", task.task_id)
         assert wait_terminal(harness.runtime, "fixture.alpha", task.task_id).status == "cancelled"
         assert harness.runtime.environments.list() == ()
+        assert list(harness.runtime.environments.staging_dir.iterdir()) == []
+        assert list(harness.runtime.store.temporary_dir.iterdir()) == []
+        assert not harness.runtime.store.has(model["sha256"])
+        harness.runtime.collect_garbage()
         assert _runtime_program_bytes(harness.runtime) == 0
     finally:
         block.set()
+        harness.close()
+
+
+def test_preparation_retry_reuses_already_verified_model(tmp_path: Path) -> None:
+    first = "https://models.example.invalid/fixture/first.bin"
+    second = "https://models.example.invalid/fixture/second.bin"
+    second_bytes = b"second model fixture"
+    fetcher = FakeModelFetcher({first: MODEL_BYTES, second: b"invalid"})
+    harness = Harness(tmp_path, fetcher=fetcher)
+    try:
+        harness.install(
+            "fixture.alpha", "1.0.0", lock_text([harness.wheels["shared"]]),
+            models=[model_spec(first, "first.bin"), model_spec(second, "second.bin", second_bytes)],
+        )
+        harness.runtime.authorize("fixture.alpha", "1.0.0", acknowledge_unreviewed=True)
+        task = harness.runtime.start_preparation("fixture.alpha", "1.0.0")
+        assert wait_terminal(harness.runtime, "fixture.alpha", task.task_id, timeout=120).status == "failed"
+        assert harness.runtime.environments.list() == ()
+        assert list(harness.runtime.store.temporary_dir.iterdir()) == []
+
+        fetcher.files[second] = second_bytes
+        harness.prepare("fixture.alpha", "1.0.0")
+        assert fetcher.calls == [first, second, second]
+    finally:
         harness.close()
 
 

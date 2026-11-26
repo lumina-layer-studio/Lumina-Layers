@@ -395,7 +395,8 @@ handlers return a fixed `fixture-material` result without touching the library.
   总量、速度和预计剩余时间，并区分 Python 安装、依赖安装、文件准备和后端自检。
   估算时按 SHA-256 合并 CPU 与 GPU 都需要的 wheel。相同平台和锁可共用环境，不同锁
   可复用已经校验的 wheel、模型和数据包。存储页面单列下载缓存的实际占用。
-  失败或取消会撤销未被引用的新增内容，只有准备成功的版本才能激活。
+  失败或取消会清除未完成的内容。已校验的下载会保留到存储清理，重试时可以复用。
+  只有准备成功的版本才能激活。
   取消单独进行的 GPU 准备后，CPU 环境仍可用，可从状态卡片重试。
 - 任务归宿主：落盘于 `runtime/tasks/<模块>/<任务>/`，切页、关闭 iframe 或停止后端都
   不取消任务；取消先协作、宽限期后终止整棵进程树（Windows Job Object；POSIX 进程组

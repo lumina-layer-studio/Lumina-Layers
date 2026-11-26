@@ -86,9 +86,17 @@ export function BackendStatusRow({
   }, [api, moduleId, updateStatus, version]);
 
   useEffect(() => {
-    void refresh();
-    const timer = setInterval(() => void refresh(), POLL_INTERVAL_MS);
-    return () => clearInterval(timer);
+    let disposed = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const poll = async () => {
+      await refresh();
+      if (!disposed) timer = setTimeout(() => void poll(), POLL_INTERVAL_MS);
+    };
+    void poll();
+    return () => {
+      disposed = true;
+      clearTimeout(timer);
+    };
   }, [refresh, refreshKey]);
 
   useEffect(() => {

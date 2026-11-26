@@ -1,14 +1,21 @@
+import json
 import sys
+import threading
+from concurrent.futures import ThreadPoolExecutor
+from types import SimpleNamespace
 
 import httpx
 import pytest
 from packaging.tags import cpython_tags
 
 from core.workshop.backend import downloads
-from core.workshop.backend.downloads import DownloadBatch, DownloadPreferences, ordered_sources, source_options
+from core.workshop.backend.downloads import (
+    DownloadBatch, DownloadPreferences, DownloadProgress, ordered_sources, source_options,
+)
 from core.workshop.backend.locks import BackendLock, LockedPackage, LockedWheel, current_platform_key
 from core.workshop.backend.preview import estimate_dependencies, estimate_download_total, needs_target_python_version
-from core.workshop.backend.tooling import CancelToken
+from core.workshop.backend.tasks import TaskProgress, TaskStore
+from core.workshop.backend.tooling import CancelToken, ManagedInterpreterProvider
 from core.workshop.backend.wheel_files import select_locked_wheels
 from core.workshop.errors import WorkshopBackendError
 
@@ -31,6 +38,61 @@ def test_internationalized_source_can_be_selected() -> None:
     selected = DownloadPreferences(models=source)
     assert selected.models == "xn--fsqu00a.example"
     assert ordered_sources(original, (mirror,), selected.models) == (mirror, original)
+
+
+def test_managed_runtime_status_and_cancel_stay_available_during_install(tmp_path) -> None:
+    started = threading.Event()
+    release = threading.Event()
+    installation = threading.Event()
+    executable = tmp_path / "python"
+
+    def install_python(*_args, **_kwargs) -> None:
+        started.set()
+        assert release.wait(10)
+        installation.set()
+
+    uv = SimpleNamespace(
+        python_install_dir=tmp_path,
+        find_python=lambda version: executable if version == "3.12" and installation.is_set() else None,
+        install_python=install_python,
+    )
+    provider = ManagedInterpreterProvider(uv)
+    with ThreadPoolExecutor(max_workers=3) as pool:
+        first = pool.submit(provider.ensure, "3.12", CancelToken())
+        try:
+            assert started.wait(5)
+            assert pool.submit(provider.installed).result(timeout=3) == ()
+            token = CancelToken()
+            other = pool.submit(provider.ensure, "3.12", token)
+            token.cancel()
+            with pytest.raises(WorkshopBackendError) as failure:
+                other.result(timeout=3)
+            assert failure.value.code == "cancelled"
+        finally:
+            release.set()
+        assert first.result(timeout=5).executable == executable
+    assert [item.executable for item in provider.installed()] == [executable]
+
+
+def test_task_progress_preserves_unknown_download_totals(tmp_path) -> None:
+    store = TaskStore(tmp_path)
+    module = "fixture.progress"
+    task, _ = store.create(module_id=module, module_version="1.0.0", kind="prepare", operation="prepare")
+    store.update(module, task.task_id, progress=TaskProgress(completed=0, total=5, phase="python"))
+    task_file = store.task_dir(module, task.task_id) / "task.json"
+    assert json.loads(task_file.read_text(encoding="utf-8"))["progress"] == {
+        "completed": 0, "total": 5, "phase": "python",
+    }
+
+    observation = DownloadProgress(
+        file_name="runtime.tar.gz", source="downloads.example", file_index=1, file_count=1,
+        file_received_bytes=42, file_total_bytes=None, received_bytes=42, total_bytes=None,
+        bytes_per_second=None, eta_seconds=None,
+    )
+    store.update(module, task.task_id, progress=TaskProgress(
+        completed=0, total=5, phase="python-download", download=observation, downloaded_bytes=42,
+    ))
+    assert store.require(module, task.task_id).progress.download == observation
 
 
 def _wheel(name: str, digest: str, size: int, build: str = "") -> LockedWheel:

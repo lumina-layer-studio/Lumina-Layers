@@ -27,7 +27,7 @@ from ..errors import WorkshopBackendError
 from ..models import BackendModelFile, MODULE_ID_PATTERN, validate_semver
 from .downloads import DownloadBatch, DownloadProgress, download_https, ordered_sources
 from .store import ContentStore, RemovalOutcome, remove_tree, unlink_with_retry
-from .tooling import CancelToken
+from .tooling import CancelToken, cancellable_lock
 
 
 _CHUNK_BYTES = 1024 * 1024
@@ -204,10 +204,7 @@ class ModelManager:
             index = indices.pop(model.sha256, None)
             with self._lock:
                 lock = self._download_locks.setdefault(model.sha256, threading.Lock())
-            while not lock.acquire(timeout=0.15):
-                if cancel is not None:
-                    cancel.raise_if_cancelled()
-            try:
+            with cancellable_lock(lock, cancel):
                 cached_size = self._store.object_size(model.sha256)
                 if cached_size is not None and cached_size != model.size_bytes:
                     raise WorkshopBackendError(
@@ -228,8 +225,6 @@ class ModelManager:
                         index=index or 0,
                     )
                     downloaded = model.size_bytes
-            finally:
-                lock.release()
             if batch is not None and index is not None:
                 batch.finish(index, downloaded)
             new_bytes += downloaded

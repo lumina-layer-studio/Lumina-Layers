@@ -2,6 +2,7 @@ import json
 import sys
 import threading
 from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 from types import SimpleNamespace
 
 import httpx
@@ -14,6 +15,7 @@ from core.workshop.backend.downloads import (
 )
 from core.workshop.backend.locks import BackendLock, LockedPackage, LockedWheel, current_platform_key
 from core.workshop.backend.preview import estimate_dependencies, estimate_download_total, needs_target_python_version
+from core.workshop.backend.state import BackendStateStore, BackendVersionRecord
 from core.workshop.backend.tasks import TaskProgress, TaskStore
 from core.workshop.backend.tooling import CancelToken, ManagedInterpreterProvider
 from core.workshop.backend.wheel_files import select_locked_wheels
@@ -93,6 +95,23 @@ def test_task_progress_preserves_unknown_download_totals(tmp_path) -> None:
         completed=0, total=5, phase="python-download", download=observation, downloaded_bytes=42,
     ))
     assert store.require(module, task.task_id).progress.download == observation
+
+
+def test_backend_state_writes_only_explicit_source_preferences(tmp_path: Path) -> None:
+    path = tmp_path / "backend-state.json"
+    store = BackendStateStore(path)
+    record = BackendVersionRecord(
+        module_id="fixture.sources", version="1.0.0", package_sha256="a" * 64,
+        manifest_sha256="b" * 64, declaration_sha256="c" * 64,
+        recorded_at="2026-11-26T00:00:00+00:00",
+    )
+    store.upsert_version(record)
+    assert "download_preferences" not in json.loads(path.read_text(encoding="utf-8"))["versions"][0]
+
+    preferences = {"models": "modelscope.cn"}
+    store.update_version(record.module_id, record.version, download_preferences=preferences)
+    persisted = store.get_version(record.module_id, record.version)
+    assert persisted is not None and persisted.download_preferences == preferences
 
 
 def _wheel(name: str, digest: str, size: int, build: str = "") -> LockedWheel:

@@ -995,12 +995,12 @@ def list_saved_stage_a_material_archives(
         return material_registry_client._apply_official_registry_metadata(cached_items)
 
     items: list[dict[str, Any]] = []
-    path_states: dict[Path, tuple[int, ...] | None] = {}
+    snapshot = material_files._MaterialLibrarySnapshot()
     sync_metadata_by_directory = material_sync._material_sync_metadata_by_directory(target_root)
 
     for material_dir in sorted(
-        material_files._discover_saved_material_dirs(target_root, path_states=path_states),
-        key=lambda path: (path_states.get(path) or (0,))[0],
+        material_files._discover_saved_material_dirs(target_root, snapshot=snapshot),
+        key=lambda path: (snapshot.path_states.get(path) or (0,))[0],
         reverse=True,
     ):
         directory_name = material_files._relative_directory_name(target_root, material_dir)
@@ -1014,7 +1014,7 @@ def list_saved_stage_a_material_archives(
                 archive_payload.get("stage_a_params_file") or "stage_A_parameters.json",
             )
             stage_path = material_dir / stage_name
-            path_states[stage_path] = material_files._material_library_path_state(stage_path)
+            snapshot.path_states[stage_path] = material_files._material_library_path_state(stage_path)
             load_material_params(directory_name, materials_dir=str(target_root))
             item = _saved_material_library_item_from_archive(
                 target_root,
@@ -1047,5 +1047,5 @@ def list_saved_stage_a_material_archives(
                     item["display"]["preview_swatches"] = local_swatches
         items.append(item)
     material_registry_client._apply_official_registry_metadata(items)
-    material_files._store_material_library_cache(target_root, items, path_states=path_states)
+    material_files._store_material_library_cache(target_root, items, snapshot=snapshot)
     return items

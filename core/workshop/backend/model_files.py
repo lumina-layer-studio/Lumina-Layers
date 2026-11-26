@@ -79,6 +79,10 @@ class HttpsModelFetcher:
         )
 
 
+def model_download_urls(model: BackendModelFile, preferred: str) -> tuple[str, ...]:
+    return ordered_sources(model.url, model.mirrors or (), preferred, auto_source="modelscope.cn")
+
+
 class ModelManager:
     """Prepare, expose, retain, and release backend model files.
 
@@ -119,7 +123,7 @@ class ModelManager:
     ) -> bool:
         """Download, verify, publish, and expose one model; ``False`` = copied view."""
 
-        urls = ordered_sources(model.url, model.mirrors or (), preferred)
+        urls = model_download_urls(model, preferred)
         last_error: WorkshopBackendError | None = None
         for url in urls:
             if cancel is not None:

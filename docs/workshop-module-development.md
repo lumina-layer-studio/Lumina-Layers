@@ -378,6 +378,11 @@ handlers return a fixed `fixture-material` result without touching the library.
 `docs/backend-protocol.md`。新增下载声明和本地化权限说明要求 `workshopApi.min`
 为 `1.2.0` 或更高，原有模块可继续使用 1.1.0 的声明。
 
+仅依赖 Python 包的模块可省略 `backend.models`、`backend.artifacts` 和
+`backend.downloadSources`。宿主从 `pylock.toml` 识别 wheel 原始 URL，并为支持的
+站点匹配内置镜像。需由宿主下载的模型和附加文件应在相应清单字段中声明原始 URL、
+大小和 SHA-256。若其他站点提供同一文件，模块作者可在该项的 `mirrors` 中声明 URL。
+
 宿主行为：
 
 - 安装只暂存代码；授权前只解析声明与 `pylock.toml`，不执行模块代码。管理界面展示
@@ -389,10 +394,16 @@ handlers return a fixed `fixture-material` result without touching the library.
   权限后才开始准备或激活。
 - 本地包与目录包都可选择 Python、wheel、模型和数据包来源。宿主识别 URL 所属站点，
   按选择优先尝试同站点的候选地址，并在失败时回退。选择原始地址时仅使用原始地址。
+  自动模式优先尝试清华 PyPI 镜像上的锁定 wheel，以及模块声明的 ModelScope 镜像。
+  PyTorch 专用 wheel 使用锁定地址和模块为该文件声明的镜像。
+  安装前的下载与磁盘占用区按 Python、依赖包、模型和附加文件显示预计首选源、文件数量和下载大小。
+  后端状态的 `download_plan` 按类别汇总待下载文件的原始站点、自动尝试顺序、文件数量、
+  已知字节数和大小待确认的文件数量。已共享的文件不计入下载计划。
   镜像不会改变 wheel、模型或数据包的 SHA-256。Python 归档由 uv 校验。声明支持
   Windows 的模块须使用可在 Windows 创建的模型和附加文件名。
 - 准备是可取消的后台任务，单独开启 GPU 加速时也可查看进度。界面显示来源、已下载量、
-  总量、速度和预计剩余时间，并区分 Python 安装、依赖安装、文件准备和后端自检。
+  总量、速度和经过滤波的预计剩余时间。界面分别显示安装总进度和当前阶段，安装与自检没有
+  百分比时以动态进度条表示。
   估算时按 SHA-256 合并 CPU 与 GPU 都需要的 wheel。相同平台和锁可共用环境，不同锁
   可复用已经校验的 wheel、模型和数据包。存储页面单列下载缓存的实际占用。
   失败或取消会清除未完成的内容。已校验的下载会保留到存储清理，重试时可以复用。

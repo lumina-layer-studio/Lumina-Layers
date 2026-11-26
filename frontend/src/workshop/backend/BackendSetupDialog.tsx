@@ -1,9 +1,8 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import type {
   WorkshopBackendProgress,
   WorkshopBackendStatus,
-  WorkshopDownloadCategory,
   WorkshopDownloadPreferences,
 } from "../../api/workshop";
 import Button from "../../components/ui/Button";
@@ -13,10 +12,10 @@ import {
   StatusBanner,
   cx,
   wellPadClass,
-  workstationInputClass,
 } from "../../components/ui/panelPrimitives";
 import { useI18n } from "../../i18n/context";
-import { downloadSourceName, formatBytes } from "./backendSetup";
+import { BackendDownloadSources } from "./BackendDownloadSources";
+import { formatBytes } from "./backendSetup";
 import { PreparationProgress } from "./PreparationProgress";
 import { backendDialogShellClass, backendDialogTitleClass } from "./dialogClasses";
 
@@ -36,8 +35,6 @@ interface BackendSetupDialogProps {
   onRetry(): void;
   onCancel(): void;
 }
-
-const SOURCE_CATEGORIES: WorkshopDownloadCategory[] = ["python", "wheels", "models", "artifacts"];
 
 /**
  * Consent and preparation for a module backend. Declarations explain intent
@@ -60,6 +57,10 @@ export function BackendSetupDialog({
   const { t, lang } = useI18n();
   const [acknowledged, setAcknowledged] = useState(false);
   const [sources, setSources] = useState<WorkshopDownloadPreferences>(status.download_preferences ?? {});
+  const heading = useRef<HTMLHeadingElement>(null);
+  useEffect(() => {
+    if (phase === "preparing") heading.current?.focus();
+  }, [phase]);
   const needsAcknowledgement = status.requires_unreviewed_confirmation;
   const blocked = status.blocked;
   const unavailable =
@@ -76,7 +77,6 @@ export function BackendSetupDialog({
   const sizeIncomplete = status.download_estimate?.incomplete ?? (
     (dependencies?.unknown_size_packages ?? 0)
     + (acceleration?.dependencies?.unknown_size_packages ?? 0) > 0);
-  const sourceCategories = SOURCE_CATEGORIES.filter((key) => status.download_sources?.[key]?.length);
   const confirmLabel =
     status.authorization === "required"
       ? t("workshop.backend.authorizeAndPrepare")
@@ -84,7 +84,7 @@ export function BackendSetupDialog({
   const variantNames = status.variants
     .filter((variant) => variant.available)
     .map((variant) => (lang === "zh" ? variant.name["zh-CN"] : variant.name["en-US"]));
-  const title = t("workshop.backend.setupTitle");
+  const title = t(phase === "preparing" ? "workshop.backend.preparing" : "workshop.backend.setupTitle");
   return (
     <div
       role="dialog"
@@ -94,17 +94,25 @@ export function BackendSetupDialog({
     >
       <section className={cx(backendDialogShellClass, "max-w-xl max-h-[calc(100dvh-2rem)] overflow-y-auto overscroll-y-contain")}>
         <div className="flex items-start justify-between gap-3">
-          <h2 className={backendDialogTitleClass}>{title}</h2>
+          <h2 ref={heading} tabIndex={-1} className={cx(backendDialogTitleClass, "focus:outline-none")}>{title}</h2>
           {phase !== "preparing" ? (
             <CloseButton label={t("common_close")} onClick={onCancel} />
           ) : null}
         </div>
-        <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">
-          {t("workshop.backend.setupIntro").replace("{name}", moduleName)}
-        </p>
-        <p className="mt-3 text-sm font-medium text-slate-800 dark:text-slate-100">
-          {t(`workshop.backend.review.${status.review_level}`)}
-        </p>
+        {phase === "preparing" ? (
+          <p className="mt-1 truncate text-sm text-slate-600 dark:text-slate-300" title={moduleName}>
+            {moduleName}
+          </p>
+        ) : (
+          <>
+            <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">
+              {t("workshop.backend.setupIntro").replace("{name}", moduleName)}
+            </p>
+            <p className="mt-3 text-sm font-medium text-slate-800 dark:text-slate-100">
+              {t(`workshop.backend.review.${status.review_level}`)}
+            </p>
+          </>
+        )}
         {phase !== "preparing" && status.review_level === "unreviewed" ? (
           <StatusBanner tone="error" role="alert" className="mt-4">
             <strong className="block">{t("workshop.backend.unreviewedRisk")}</strong>
@@ -139,9 +147,12 @@ export function BackendSetupDialog({
             <h3 className="mt-5 text-sm font-semibold text-slate-900 dark:text-slate-50">
               {t("workshop.backend.footprint")}
             </h3>
-            <ul className="mt-2 flex flex-col gap-1 text-xs leading-5 text-slate-600 dark:text-slate-300">
-              <li>{t(sizeIncomplete ? "workshop.backend.newDownloadPartial" : "workshop.backend.newDownload")
-                .replace("{bytes}", formatBytes(newBytes))}</li>
+            <p className="mt-2 text-xs leading-5 text-slate-600 dark:text-slate-300">
+              {t(sizeIncomplete ? "workshop.backend.newDownloadPartial" : "workshop.backend.newDownload")
+                .replace("{bytes}", formatBytes(newBytes))}
+            </p>
+            <BackendDownloadSources status={status} preferences={sources} disabled={unavailable} onChange={setSources} />
+            <ul className="mt-3 flex flex-col gap-1 text-xs leading-5 text-slate-600 dark:text-slate-300">
               {dependencies?.environment_reused ? (
                 <li>{t("workshop.backend.environmentReused")}</li>
               ) : dependencies ? (
@@ -195,35 +206,6 @@ export function BackendSetupDialog({
               ) : null}
             </ul>
 
-            {sourceCategories.length > 0 ? (
-              <fieldset className="mt-5 grid gap-3 sm:grid-cols-2" disabled={unavailable}>
-                <legend className="mb-2 text-sm font-semibold text-slate-900 dark:text-slate-50">
-                  {t("workshop.backend.sources")}
-                </legend>
-                {sourceCategories.map((key) => {
-                  const candidates = status.download_sources?.[key] ?? [];
-                  const selected = sources[key] ?? "auto";
-                  const value = selected === "original" || candidates.includes(selected) ? selected : "auto";
-                  return (
-                    <label key={key} className="flex flex-col gap-1 text-xs text-slate-600 dark:text-slate-300">
-                      {t("workshop.backend.source." + key)}
-                      <select
-                        className={workstationInputClass}
-                        value={value}
-                        onChange={(event) => setSources({ ...sources, [key]: event.target.value })}
-                      >
-                        <option value="auto">{t("workshop.backend.source.auto")}</option>
-                        <option value="original">{t("workshop.backend.source.original")}</option>
-                        {candidates.map((candidate) => (
-                          <option value={candidate} key={candidate}>{downloadSourceName(candidate)}</option>
-                        ))}
-                      </select>
-                    </label>
-                  );
-                })}
-              </fieldset>
-            ) : null}
-
             {blocked ? (
               <StatusBanner tone="error" className="mt-4">
                 {t("workshop.backend.blocked")}
@@ -269,17 +251,29 @@ export function BackendSetupDialog({
         ) : null}
 
         {phase === "preparing" ? (
-          <div className="mt-5">
+          <div className="mt-4 text-sm">
             <PreparationProgress progress={progress} estimate={{ bytes: newBytes, incomplete: sizeIncomplete }} />
-            {cancelError ? (
-              <StatusBanner tone="error" role="alert" className="mt-4">
-                {cancelError}
-              </StatusBanner>
-            ) : null}
-            <div className="mt-5 flex justify-end">
+            {/* Fixed-height footer: the cancel notice sits in a reserved slot beside the button. */}
+            <div className="mt-5 flex min-h-12 items-center justify-end gap-3">
+              <div className="min-w-0 flex-1">
+                {cancelError ? (
+                  <p
+                    role="alert"
+                    className="line-clamp-3 break-words text-xs leading-4 text-red-600 dark:text-red-400"
+                    title={cancelError}
+                  >
+                    {cancelError}
+                  </p>
+                ) : cancelling ? (
+                  <p role="status" className="truncate text-xs leading-4 text-slate-500 dark:text-slate-400">
+                    {t("workshop.backend.progress.cancelling")}
+                  </p>
+                ) : null}
+              </div>
               <Button
                 label={t("workshop.backend.cancelPreparation")}
                 variant="secondary"
+                className="shrink-0"
                 loading={cancelling}
                 onClick={onCancel}
               />

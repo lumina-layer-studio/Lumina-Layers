@@ -224,6 +224,7 @@ export function BackendStatusRow({
       </div>
       {preparationTaskId !== null ? (
         <PreparationProgress
+          key={preparationTaskId}
           progress={preparation?.task_id === preparationTaskId ? preparation.progress : null}
           estimate={status.download_estimate}
         />

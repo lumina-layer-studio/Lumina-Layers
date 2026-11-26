@@ -111,8 +111,21 @@ def _wait(runtime: WorkshopBackendRuntime, module_id: str, task_id: str, timeout
     raise AssertionError("task did not finish")
 
 
-def test_public_python_sdk_runs_through_the_host_runtime(tmp_path: Path) -> None:
+def test_python_dependency_only_packages_prepare_and_run_with_the_public_sdk(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
     wheels = build_fixture_wheelhouse(tmp_path / "wheelhouse")
+    wheel = wheels["shared"]
+    wheel_path = f"packages/ab/cd/{wheel.path.name}"
+    origin = f"https://files.pythonhosted.org/{wheel_path}"
+    downloaded_from: list[str] = []
+
+    def fetch(url, target, *, cancel, progress, **_kwargs):
+        downloaded_from.append(url)
+        target.write_bytes(wheel.path.read_bytes())
+        progress(wheel.size, wheel.size)
+
+    monkeypatch.setattr(wheel_files, "download_https", fetch)
     data_dir = tmp_path / "workshop"
     holder: dict[str, WorkshopBackendRuntime] = {}
 
@@ -126,26 +139,54 @@ def test_public_python_sdk_runs_through_the_host_runtime(tmp_path: Path) -> None
         uv_executable=locate_uv_executable(),
         model_fetcher=None,  # type: ignore[arg-type]
         review_context=lambda: ReviewContext(registry=None, attestations=None),
-        wheel_sources=WheelSourcePolicy(wheelhouse=tmp_path / "wheelhouse", offline=True),
+        track_downloads=True,
         external_python=Path(sys._base_executable),
         settings=RuntimeSettings(cancel_grace_seconds=2.0, start_timeout_seconds=60.0),
     )
     holder["runtime"] = runtime
-    module_id = "fixture.public-sdk"
     files = {**_vendored_sdk(), "backend/png_codec.py": _png_codec_source().encode("utf-8")}
-    package = write_backend_package(
-        tmp_path / "package",
-        module_id=module_id,
-        version="1.0.0",
-        lock=lock_text([wheels["shared"]]),
-        manifest=backend_manifest(module_id, "1.0.0"),
-        extra_files={**files, "backend/main.py": SDK_MODULE_MAIN.encode("utf-8")},
-    )
-    try:
+
+    def stage(module_id: str) -> dict:
+        manifest = backend_manifest(module_id, "1.0.0")
+        del manifest["backend"]["models"]
+        package = write_backend_package(
+            tmp_path / "package",
+            module_id=module_id,
+            version="1.0.0",
+            lock=lock_text([wheel]).replace(WHEEL_URL_BASE + wheel.path.name, origin),
+            manifest=manifest,
+            extra_files={**files, "backend/main.py": SDK_MODULE_MAIN.encode("utf-8")},
+        )
         installer().install_candidate(package, source="local", source_repository="local", official=False)
+        return runtime.describe(module_id, "1.0.0")
+
+    try:
+        module_id = "fixture.public-sdk"
+        before = stage(module_id)
+        assert before["download_plan"] == {
+            "python": [], "models": [], "artifacts": [],
+            "wheels": [{
+                "original": "files.pythonhosted.org",
+                "sources": ["pypi.tuna.tsinghua.edu.cn", "files.pythonhosted.org"],
+                "count": 1, "bytes": wheel.size, "unknown_size_count": 0,
+            }],
+        }
+        assert before["download_estimate"] == {"bytes": wheel.size, "incomplete": False}
         runtime.authorize(module_id, "1.0.0", acknowledge_unreviewed=True)
         prepared = _wait(runtime, module_id, runtime.start_preparation(module_id, "1.0.0").task_id)
         assert prepared.status == "succeeded", prepared.error
+        assert prepared.progress is not None and prepared.progress.downloaded_bytes == wheel.size
+        assert downloaded_from == [f"https://pypi.tuna.tsinghua.edu.cn/{wheel_path}"]
+
+        second = "fixture.other-python-module"
+        shared = stage(second)
+        assert shared["download_plan"] == {"python": [], "wheels": [], "models": [], "artifacts": []}
+        assert shared["dependencies"]["environment_reused"]
+        runtime.authorize(second, "1.0.0", acknowledge_unreviewed=True)
+        prepared = _wait(runtime, second, runtime.start_preparation(second, "1.0.0").task_id)
+        assert prepared.status == "succeeded", prepared.error
+        assert prepared.progress is not None and prepared.progress.downloaded_bytes == 0
+        assert downloaded_from == [f"https://pypi.tuna.tsinghua.edu.cn/{wheel_path}"]
 
         width, height = 6, 3
         pixels = bytes(value for index in range(width * height) for value in (10, 20, 30, index * 13 % 256))
@@ -188,7 +229,7 @@ def test_download_selection_verifies_mirrors_and_reuses_bytes_across_locks(
     shared, extra = wheels["shared"], wheels["conflict-1"]
     inactive = wheels["accel"]
     target_version = ".".join(str(part) for part in sys.version_info[:3])
-    shared_origin = WHEEL_URL_BASE + shared.path.name
+    shared_origin = "https://files.pythonhosted.org/packages/ab/cd/" + shared.path.name
     extra_origin = WHEEL_URL_BASE + extra.path.name
     mirror = f"https://wheel-mirror.example/{shared.path.name}"
     labels = b'["dog", "cat"]'
@@ -251,7 +292,7 @@ def test_download_selection_verifies_mirrors_and_reuses_bytes_across_locks(
             declared_lock = declared_lock.replace(
                 f'name = "{shared.name}"\n',
                 f'name = "{shared.name}"\nmarker = "python_full_version == \'{target_version}\'"\n',
-            )
+            ).replace(WHEEL_URL_BASE + shared.path.name, shared_origin)
         package = write_backend_package(
             tmp_path / module_id, module_id=module_id, version="1.0.0",
             lock=declared_lock, manifest=manifest,
@@ -264,16 +305,38 @@ def test_download_selection_verifies_mirrors_and_reuses_bytes_across_locks(
         assert "unavailable-platform.example" not in description["download_sources"]["wheels"]
         if shared in lock:
             assert "wheel-mirror.example" in description["download_sources"]["wheels"]
+        plan = description["download_plan"]
+        if expected_bytes == shared.size + len(labels):
+            assert plan["wheels"] == [{
+                "original": "files.pythonhosted.org",
+                "sources": ["pypi.tuna.tsinghua.edu.cn", "files.pythonhosted.org", "wheel-mirror.example"],
+                "count": 1, "bytes": shared.size, "unknown_size_count": 0,
+            }]
+            assert plan["artifacts"] == [{
+                "original": "huggingface.co", "sources": ["modelscope.cn", "huggingface.co"], "count": 1,
+                "bytes": len(labels), "unknown_size_count": 0,
+            }]
+        else:
+            assert plan["artifacts"] == []
+            assert plan["wheels"] == (
+                [{
+                    "original": "files.example.invalid", "sources": ["files.example.invalid"],
+                    "count": 1, "bytes": extra.size, "unknown_size_count": 0,
+                }]
+                if expected_bytes else []
+            )
         runtime.authorize(module_id, "1.0.0", acknowledge_unreviewed=True)
         task = runtime.start_preparation(
             module_id, "1.0.0",
-            sources=DownloadPreferences(wheels="wheel-mirror.example", artifacts="modelscope.cn"),
+            sources=DownloadPreferences(wheels="wheel-mirror.example"),
         )
         prepared = _wait(runtime, module_id, task.task_id)
         assert prepared.status == "succeeded", prepared.error
         assert prepared.progress is not None
         assert (prepared.progress.phase, prepared.progress.downloaded_bytes) == ("complete", expected_bytes)
-        assert runtime.describe(module_id, "1.0.0")["download_preferences"]["artifacts"] == "modelscope.cn"
+        final_description = runtime.describe(module_id, "1.0.0")
+        assert final_description["download_preferences"]["wheels"] == "wheel-mirror.example"
+        assert final_description["download_plan"] == {"python": [], "wheels": [], "models": [], "artifacts": []}
 
     try:
         first_module = "fixture.download-one"

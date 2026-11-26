@@ -151,6 +151,14 @@ export type WorkshopReviewLevel = "official" | "reviewed" | "unreviewed";
 export type WorkshopDownloadCategory = "python" | "wheels" | "models" | "artifacts";
 export type WorkshopDownloadPreferences = Partial<Record<WorkshopDownloadCategory, string>>;
 
+export interface WorkshopDownloadRoute {
+  original: string;
+  sources: string[];
+  count: number;
+  bytes?: number;
+  unknown_size_count?: number;
+}
+
 export interface WorkshopDownloadFile {
   id: string;
   file_name: string;
@@ -199,6 +207,7 @@ export interface WorkshopBackendStatus {
   models: WorkshopDownloadFile[];
   artifacts?: WorkshopDownloadFile[];
   download_sources?: Partial<Record<WorkshopDownloadCategory, string[]>>;
+  download_plan?: Partial<Record<WorkshopDownloadCategory, WorkshopDownloadRoute[]>>;
   download_preferences?: WorkshopDownloadPreferences;
   download_estimate?: WorkshopDownloadEstimate;
   dependencies: WorkshopDependencyEstimate | null;

@@ -11,12 +11,14 @@ const SOURCE_NAMES: Record<string, string> = {
   "modelscope.cn": "ModelScope",
   "hf-mirror.com": "Hugging Face Mirror",
   "files.pythonhosted.org": "PyPI",
+  "pypi.tuna.tsinghua.edu.cn": "TUNA (PyPI)",
   "download.pytorch.org": "PyTorch",
   "github.com": "GitHub",
   "releases.astral.sh": "Astral",
 };
 
-export function downloadSourceName(source: string): string {
+export function downloadSourceName(source: string, translate?: (key: string) => string): string {
+  if (source === "pypi.tuna.tsinghua.edu.cn" && translate) return translate("workshop.backend.source.tuna");
   return Object.hasOwn(SOURCE_NAMES, source) ? SOURCE_NAMES[source] : source;
 }
 

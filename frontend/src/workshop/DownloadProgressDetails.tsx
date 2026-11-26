@@ -12,7 +12,7 @@ export function DownloadProgressDetails({
   const received = fileOnly ? download.file_received_bytes ?? 0 : download.received_bytes;
   const remaining = download.eta_seconds;
   const etaKey = fileOnly ? "workshop.backend.downloadFileEta" : "workshop.backend.downloadEta";
-  const source = uploading ? t("workshop.manager.archive.localFile") : downloadSourceName(download.source);
+  const source = uploading ? t("workshop.manager.archive.localFile") : downloadSourceName(download.source, t);
   const bytesKey = uploading
     ? "workshop.manager.archive.uploadedBytes"
     : fileOnly ? "workshop.backend.downloadFileBytes" : "workshop.backend.downloadBytes";

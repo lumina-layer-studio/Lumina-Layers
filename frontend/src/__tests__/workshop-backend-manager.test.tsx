@@ -12,6 +12,7 @@ import type {
   InstalledWorkshopModule,
   InstalledWorkshopVersion,
   WorkshopBackendApi,
+  WorkshopBackendProgress,
   WorkshopBackendStatus,
   WorkshopBackendTaskResponse,
   WorkshopManagerApi,
@@ -367,38 +368,140 @@ describe("Workshop backend management UI", () => {
     await waitFor(() => expect(backend.prepare).toHaveBeenCalledWith(MODULE_ID, "1.0.0", { models: "modelscope.cn" }));
   });
 
-  it("shows transfer totals, speed, ETA, and cumulative bytes through installation", () => {
+  it("shows the module declaration and updates the expected sources before starting preparation", async () => {
+    const backend = fakeBackend(status({
+      capabilities: [],
+      download_plan: {
+        python: [{ original: "github.com", sources: ["github.com"], count: 1, bytes: 32 * 1024 * 1024 }],
+        wheels: [
+          {
+            original: "files.pythonhosted.org", sources: ["pypi.tuna.tsinghua.edu.cn", "files.pythonhosted.org"],
+            count: 2, bytes: 2048, unknown_size_count: 1,
+          },
+          { original: "download.pytorch.org", sources: ["download.pytorch.org"], count: 1, bytes: 4096 },
+        ],
+        models: [
+          { original: "huggingface.co", sources: ["modelscope.cn", "huggingface.co"], count: 3, bytes: 3072 },
+          { original: "huggingface.co", sources: ["huggingface.co"], count: 6, bytes: 6144 },
+        ],
+        artifacts: [],
+      },
+    }));
+    renderPanel(fakeApi([backendModule()]), backend);
+
+    fireEvent.click(await screen.findByRole("button", { name: "打开" }));
+    const dialog = within(await screen.findByRole("dialog", { name: "运行本机后端" }));
+    expect(dialog.getByRole("heading", { name: "模块声明" })).toBeInTheDocument();
+    expect(dialog.getByText("模块声明不会联网、启动其他程序或访问任务文件夹以外的文件。")).toBeInTheDocument();
+    expect(dialog.getByRole("alert")).toHaveAttribute("data-tone", "error");
+    expect(dialog.getByRole("heading", { name: "预计首选下载源" })).toBeInTheDocument();
+    expect(dialog.getByText("GitHub · 1 个文件 · 约 32 MB")).toBeInTheDocument();
+    expect(dialog.getByText("清华 PyPI 镜像 · 2 个文件 · 已知部分约 2.0 KB")).toBeInTheDocument();
+    expect(dialog.getByText("PyTorch · 1 个文件 · 约 4.0 KB")).toBeInTheDocument();
+    expect(dialog.getByText("ModelScope · 3 个文件 · 约 3.0 KB")).toBeInTheDocument();
+    expect(dialog.getByText("Hugging Face · 6 个文件 · 约 6.0 KB")).toBeInTheDocument();
+
+    const wheels = dialog.getByRole("combobox", { name: "Python 依赖包" });
+    expect(within(wheels).getByRole("option", { name: "清华 PyPI 镜像" })).toBeInTheDocument();
+    expect(within(wheels).queryByRole("option", { name: "PyTorch" })).toBeNull();
+    fireEvent.change(wheels, { target: { value: "original" } });
+    fireEvent.change(dialog.getByRole("combobox", { name: "模型" }), { target: { value: "original" } });
+    expect(dialog.getByText("PyPI · 2 个文件 · 已知部分约 2.0 KB")).toBeInTheDocument();
+    expect(dialog.getByText("Hugging Face · 9 个文件 · 约 9.0 KB")).toBeInTheDocument();
+    expect(backend.prepare).not.toHaveBeenCalled();
+
+    fireEvent.click(dialog.getByRole("checkbox", { name: /我信任发布者/ }));
+    fireEvent.click(dialog.getByRole("button", { name: "允许并安装" }));
+    await waitFor(() => expect(backend.prepare).toHaveBeenCalledWith(
+      MODULE_ID, "1.0.0", { wheels: "original", models: "original" },
+    ));
+  });
+
+  it("stabilizes both remaining times and keeps the overall and stage bars through each step", () => {
     const props = {
-      moduleName: "Backend fixture", status: status(), phase: "preparing" as const,
+      moduleName: "Backend fixture",
+      status: status({ download_estimate: { bytes: 8192, incomplete: false } }),
+      phase: "preparing" as const,
       failureCode: null, onConfirm: vi.fn(), onRetry: vi.fn(), onCancel: vi.fn(),
     };
-    const view = render(
+    const viewOf = (progress: WorkshopBackendProgress | null) => (
       <I18nProvider>
-        <BackendSetupDialog {...props} progress={{
-          completed: 1, total: 5, phase: "wheel-download", downloaded_bytes: 2048,
-          download: {
-            file_name: "demo.whl", source: "files.pythonhosted.org", file_index: 1, file_count: 1,
-            received_bytes: 1024, total_bytes: 4096, bytes_per_second: 1024, eta_seconds: 3,
-          },
-        }} />
-      </I18nProvider>,
+        <BackendSetupDialog {...props} progress={progress} />
+      </I18nProvider>
     );
-    expect(screen.getByText(/demo.whl · PyPI/)).toBeInTheDocument();
-    expect(screen.getByText("本阶段已下载 1.0 KB / 4.0 KB")).toBeInTheDocument();
-    expect(screen.getByText("1.0 KB/秒")).toBeInTheDocument();
-    expect(screen.getByText("本阶段约剩 3 秒")).toBeInTheDocument();
-    expect(screen.getByRole("progressbar", { name: "下载进度" })).toHaveAttribute("value", "25");
+    const view = render(viewOf(null));
+    const dialog = within(screen.getByRole("dialog", { name: "正在安装后端" }));
+    const speed = dialog.getByText("下载速度").nextElementSibling;
+    const phaseTime = dialog.getByText("本阶段剩余").nextElementSibling;
+    const totalTime = dialog.getByText("全部下载剩余").nextElementSibling;
+    expect(speed).toHaveTextContent("测速中");
+    expect(phaseTime).toHaveTextContent("计算中");
+    expect(totalTime).toHaveTextContent("计算中");
+    expect(dialog.queryByText(/此版本没有审核记录/)).toBeNull();
 
-    view.rerender(
-      <I18nProvider>
-        <BackendSetupDialog {...props} progress={{
-          completed: 1, total: 5, phase: "environment", downloaded_bytes: 5120,
-        }} />
-      </I18nProvider>,
-    );
+    const transfer = {
+      file_name: "demo.whl", source: "pypi.tuna.tsinghua.edu.cn", file_index: 1, file_count: 2,
+      received_bytes: 1024, total_bytes: 4096, bytes_per_second: 1024, eta_seconds: 3,
+    };
+    const progress = {
+      completed: 1, total: 5, phase: "wheel-download", downloaded_bytes: 2048, download: transfer,
+    };
+    const early = {
+      ...progress, downloaded_bytes: 1536,
+      download: { ...transfer, received_bytes: 512, bytes_per_second: 16 * 1024, eta_seconds: 1 },
+    };
+    view.rerender(viewOf(early));
+    expect(phaseTime).toHaveTextContent("计算中");
+    expect(totalTime).toHaveTextContent("计算中");
+    view.rerender(viewOf({ ...early }));
+    view.rerender(viewOf({
+      ...progress, downloaded_bytes: 1792,
+      download: { ...transfer, received_bytes: 768, eta_seconds: 4 },
+    }));
+    expect(phaseTime).toHaveTextContent("计算中");
+    expect(totalTime).toHaveTextContent("计算中");
+
+    view.rerender(viewOf(progress));
+    expect(dialog.getByText("demo.whl")).toBeInTheDocument();
+    expect(dialog.getByText("清华 PyPI 镜像")).toBeInTheDocument();
+    expect(dialog.getByText("本阶段已下载").nextElementSibling).toHaveTextContent("1.0 KB / 4.0 KB");
+    expect(speed).toHaveTextContent("1.0 KB/秒");
+    expect(phaseTime).toHaveTextContent("约 3 秒");
+    expect(totalTime).toHaveTextContent("约 6 秒");
+    expect(dialog.getByRole("progressbar", { name: "安装总进度" })).toHaveAttribute("value", "20");
+    expect(dialog.getByRole("progressbar", { name: "下载运行库" })).toHaveAttribute("value", "25");
+
+    view.rerender(viewOf({
+      ...progress, downloaded_bytes: 2304,
+      download: { ...transfer, received_bytes: 1280, bytes_per_second: 1, eta_seconds: 2816 },
+    }));
+    expect(phaseTime).toHaveTextContent(/^约 [34] 秒$/);
+    expect(totalTime).toHaveTextContent(/^约 [67] 秒$/);
+    const lastPhase = phaseTime?.textContent;
+    const lastTotal = totalTime?.textContent;
+
+    view.rerender(viewOf({ ...progress, download: {
+      ...transfer, file_name: "different.whl", source: "files.pythonhosted.org",
+      file_index: 2, bytes_per_second: null, eta_seconds: null,
+    } }));
+    expect(dialog.getByText("different.whl")).toBeInTheDocument();
+    expect(speed).toHaveTextContent("测速中");
+    expect(phaseTime?.textContent).toBe(lastPhase);
+    expect(totalTime?.textContent).toBe(lastTotal);
+
+    view.rerender(viewOf({ completed: 1, total: 5, phase: "environment", downloaded_bytes: 5120 }));
     expect(screen.getByRole("status")).toHaveTextContent("安装运行库");
-    expect(screen.getByText(/合计已下载 5.0 KB/)).toBeInTheDocument();
-    expect(screen.queryByRole("progressbar", { name: "下载进度" })).toBeNull();
+    expect(dialog.getByText("合计已下载").nextElementSibling).toHaveTextContent("5.0 KB / 约 8.0 KB");
+    expect(dialog.getByRole("progressbar", { name: "安装总进度" })).toHaveAttribute("value", "20");
+    expect(dialog.getByRole("progressbar", { name: "安装运行库" })).not.toHaveAttribute("value");
+    expect(phaseTime).toHaveTextContent("—");
+    expect(speed).toHaveTextContent("—");
+
+    view.rerender(viewOf({ completed: 3, total: 5, phase: "self-check", downloaded_bytes: 5120 }));
+    expect(totalTime?.textContent).toBe(lastTotal);
+    view.rerender(viewOf({ completed: 4, total: 5, phase: "variant-check", downloaded_bytes: 8192 }));
+    expect(totalTime).toHaveTextContent("下载已完成");
+    expect(dialog.getByRole("button", { name: "取消安装" })).toBeEnabled();
   });
 
   it("opens a prepared, authorized backend without asking again", async () => {
@@ -559,8 +662,8 @@ describe("Workshop backend management errors", () => {
     fireEvent.change(within(row).getByRole("combobox"), { target: { value: "accel" } });
 
     expect(await within(row).findByText(/下载加速运行库/)).toBeInTheDocument();
-    expect(within(row).getByText("本阶段已下载 1.0 KB / 4.0 KB")).toBeInTheDocument();
-    expect(within(row).getByText("全部下载约剩 3 秒")).toBeInTheDocument();
+    expect(within(row).getByText("本阶段已下载").nextElementSibling).toHaveTextContent("1.0 KB / 4.0 KB");
+    expect(within(row).getByText("全部下载剩余").nextElementSibling).toHaveTextContent("计算中");
     expect(backend.task).toHaveBeenCalledWith(MODULE_ID, task.task_id);
     expect(within(row).getByRole("combobox")).toBeDisabled();
 

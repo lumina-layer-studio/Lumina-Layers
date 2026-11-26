@@ -713,6 +713,23 @@ body.lumina-canvas-orbiting [data-widget-id] {
   }
 }
 
+.workshop-install-progress:indeterminate {
+  background-image: linear-gradient(var(--button-primary), var(--button-primary));
+  background-position: 0 50%;
+  background-repeat: no-repeat;
+  background-size: 28% 100%;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .workshop-install-progress:indeterminate {
+    animation: workshop-install-progress-slide 1.3s ease-in-out infinite alternate;
+  }
+}
+
+@keyframes workshop-install-progress-slide {
+  to { background-position: 100% 50%; }
+}
+
 @keyframes custom-spin {
   from {
     transform: rotate(0deg);

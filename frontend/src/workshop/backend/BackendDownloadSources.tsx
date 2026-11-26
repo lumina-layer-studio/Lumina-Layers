@@ -1,12 +1,19 @@
 import type { WorkshopBackendStatus, WorkshopDownloadCategory, WorkshopDownloadPreferences, WorkshopDownloadRoute } from "../../api/workshop";
 import { workstationInputClass } from "../../components/ui/panelPrimitives";
 import { useI18n } from "../../i18n/context";
-import { downloadSourceName } from "./backendSetup";
+import { downloadSourceName, formatBytes } from "./backendSetup";
 
 const CATEGORIES: WorkshopDownloadCategory[] = ["python", "wheels", "models", "artifacts"];
 
-function expectedSources(routes: WorkshopDownloadRoute[], preferred: string): [string, number][] {
-  const counts = new Map<string, number>();
+interface ExpectedSource {
+  source: string;
+  count: number;
+  bytes: number;
+  unknownSizeCount: number;
+}
+
+function expectedSources(routes: WorkshopDownloadRoute[], preferred: string): ExpectedSource[] {
+  const groups = new Map<string, ExpectedSource>();
   for (const route of routes) {
     let source = route.original;
     if (preferred === "auto") {
@@ -14,9 +21,13 @@ function expectedSources(routes: WorkshopDownloadRoute[], preferred: string): [s
     } else if (route.sources.includes(preferred)) {
       source = preferred;
     }
-    counts.set(source, (counts.get(source) ?? 0) + route.count);
+    const entry = groups.get(source) ?? { source, count: 0, bytes: 0, unknownSizeCount: 0 };
+    entry.count += route.count;
+    entry.bytes += route.bytes ?? 0;
+    entry.unknownSizeCount += route.unknown_size_count ?? (route.bytes == null ? route.count : 0);
+    groups.set(source, entry);
   }
-  return [...counts];
+  return [...groups.values()];
 }
 
 export function BackendDownloadSources({ status, preferences, disabled, onChange }: {
@@ -25,7 +36,7 @@ export function BackendDownloadSources({ status, preferences, disabled, onChange
   disabled: boolean;
   onChange: (preferences: WorkshopDownloadPreferences) => void;
 }) {
-  const { t, lang } = useI18n();
+  const { t } = useI18n();
   const items = CATEGORIES.map((category) => {
     const routes = status.download_plan?.[category];
     const choices = routes
@@ -40,6 +51,12 @@ export function BackendDownloadSources({ status, preferences, disabled, onChange
   const plans = items.filter((item) => item.plan.length > 0);
   const controls = items.filter((item) => item.choices.length > 0);
 
+  const sizeText = ({ bytes, unknownSizeCount }: ExpectedSource) => {
+    if (unknownSizeCount > 0 && bytes === 0) return t("workshop.backend.downloadSizeUnknown");
+    return t(unknownSizeCount > 0 ? "workshop.backend.downloadKnownSizes" : "workshop.backend.downloadAbout")
+      .replace("{bytes}", formatBytes(bytes));
+  };
+
   return (
     <>
       {plans.length > 0 ? (
@@ -50,9 +67,16 @@ export function BackendDownloadSources({ status, preferences, disabled, onChange
               <div key={category} className="contents">
                 <dt>{t(`workshop.backend.source.${category}`)}</dt>
                 <dd className="break-words">
-                  {plan.map(([source, count]) => t("workshop.backend.sourcePlanFiles")
-                    .replace("{source}", source ? downloadSourceName(source, t) : t("workshop.backend.sourcePending"))
-                    .replace("{count}", String(count))).join(lang === "zh" ? "、" : ", ")}
+                  <ul>
+                    {plan.map((item) => (
+                      <li key={item.source}>
+                        {t("workshop.backend.sourcePlanFiles")
+                          .replace("{source}", item.source ? downloadSourceName(item.source, t) : t("workshop.backend.sourcePending"))
+                          .replace("{count}", String(item.count))
+                          .replace("{size}", sizeText(item))}
+                      </li>
+                    ))}
+                  </ul>
                 </dd>
               </div>
             ))}

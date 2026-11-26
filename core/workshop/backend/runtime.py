@@ -697,7 +697,7 @@ class WorkshopBackendRuntime:
         declared = declaration.download_sources
         wheel_mirrors = (declared.wheels or {}) if declared is not None else {}
         python_mirrors = (declared.python or ()) if declared is not None else ()
-        python_routes: list[tuple[str, tuple[str, ...]]] = []
+        python_routes: list[tuple[str, tuple[str, ...], int]] = []
         if interpreter_needed and self._uv is not None:
             try:
                 _version, original = self._uv.preferred_python_download(declaration.python)
@@ -705,19 +705,22 @@ class WorkshopBackendRuntime:
                 original = ""
             candidates = (self._python_mirror or original, original, *python_mirrors)
             # The interpreter must resolve one of uv's pinned distributions first.
-            python_routes.append((original, candidates if original else ()))
+            python_routes.append((original, candidates if original else (), MANAGED_PYTHON_DOWNLOAD_ESTIMATE_BYTES))
 
-        wheels: dict[str, LockedWheel] = {}
+        wheels: dict[str, tuple[LockedWheel, int | None]] = {}
         if self._wheel_archives is not None and not self._wheel_sources.offline:
             for estimate in dependencies:
                 for wheel in estimate.source_wheels:
                     if wheel.sha256 in estimate.missing_wheels:
-                        wheels.setdefault(wheel.sha256, wheel)
+                        first_wheel, size = wheels.get(wheel.sha256, (wheel, None))
+                        if size is None:
+                            size = estimate.missing_wheels[wheel.sha256]
+                        wheels[wheel.sha256] = (first_wheel, size)
         plan = {
             "python": summarize_source_routes(python_routes),
             "wheels": summarize_source_routes(
-                (wheel.url, wheel_download_urls(wheel, self._wheel_sources, wheel_mirrors, "auto"))
-                for wheel in wheels.values()
+                (wheel.url, wheel_download_urls(wheel, self._wheel_sources, wheel_mirrors, "auto"), size)
+                for wheel, size in wheels.values()
             ),
         }
         seen = set(present_files)
@@ -725,7 +728,7 @@ class WorkshopBackendRuntime:
             routes = []
             for item in files:
                 if item.sha256 not in seen:
-                    routes.append((item.url, model_download_urls(item, "auto")))
+                    routes.append((item.url, model_download_urls(item, "auto"), item.size_bytes))
                     seen.add(item.sha256)
             plan[category] = summarize_source_routes(routes)
         return plan

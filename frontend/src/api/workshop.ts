@@ -155,6 +155,8 @@ export interface WorkshopDownloadRoute {
   original: string;
   sources: string[];
   count: number;
+  bytes?: number;
+  unknown_size_count?: number;
 }
 
 export interface WorkshopDownloadFile {

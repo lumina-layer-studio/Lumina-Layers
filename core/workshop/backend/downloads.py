@@ -5,7 +5,6 @@ from __future__ import annotations
 import math
 import re
 import time
-from collections import Counter
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from pathlib import Path
@@ -79,19 +78,26 @@ class DownloadSourceRoute(TypedDict):
     original: str
     sources: list[str]
     count: int
+    bytes: int
+    unknown_size_count: int
 
 
 def summarize_source_routes(
-    routes: Iterable[tuple[str, tuple[str, ...]]],
+    routes: Iterable[tuple[str, tuple[str, ...], int | None]],
 ) -> list[DownloadSourceRoute]:
-    counts = Counter(
-        (source_id(original), tuple(dict.fromkeys(source_id(url) for url in urls if url)))
-        for original, urls in routes
-    )
-    return [
-        {"original": original, "sources": list(sources), "count": count}
-        for (original, sources), count in counts.items()
-    ]
+    groups: dict[tuple[str, tuple[str, ...]], DownloadSourceRoute] = {}
+    for url, candidates, size in routes:
+        original = source_id(url)
+        sources = tuple(dict.fromkeys(source_id(candidate) for candidate in candidates if candidate))
+        item = groups.setdefault(
+            (original, sources),
+            {"original": original, "sources": list(sources), "count": 0, "bytes": 0, "unknown_size_count": 0},
+        )
+        item["count"] += 1
+        item["bytes"] += size or 0
+        if size is None:
+            item["unknown_size_count"] += 1
+    return list(groups.values())
 
 
 @dataclass(frozen=True, slots=True)

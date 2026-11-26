@@ -9461,8 +9461,8 @@ export const translations: Record<string, Record<"zh" | "en", string>> = {
     en: "Expected download sources",
   },
   "workshop.backend.sourcePlanFiles": {
-    zh: "{source} · {count} 个文件",
-    en: "{source} · {count} file(s)",
+    zh: "{source} · {count} 个文件 · {size}",
+    en: "{source} · {count} file(s) · {size}",
   },
   "workshop.backend.sourcePending": {
     zh: "来源待确认",
@@ -9543,6 +9543,10 @@ export const translations: Record<string, Record<"zh" | "en", string>> = {
   "workshop.backend.progress.step": {
     zh: "第 {index}/{count} 步",
     en: "Step {index} of {count}",
+  },
+  "workshop.backend.progress.overall": {
+    zh: "安装总进度",
+    en: "Overall installation progress",
   },
   "workshop.backend.progress.starting": {
     zh: "正在准备安装",

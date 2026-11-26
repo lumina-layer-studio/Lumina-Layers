@@ -168,7 +168,7 @@ def test_python_dependency_only_packages_prepare_and_run_with_the_public_sdk(
             "wheels": [{
                 "original": "files.pythonhosted.org",
                 "sources": ["pypi.tuna.tsinghua.edu.cn", "files.pythonhosted.org"],
-                "count": 1,
+                "count": 1, "bytes": wheel.size, "unknown_size_count": 0,
             }],
         }
         assert before["download_estimate"] == {"bytes": wheel.size, "incomplete": False}
@@ -310,15 +310,19 @@ def test_download_selection_verifies_mirrors_and_reuses_bytes_across_locks(
             assert plan["wheels"] == [{
                 "original": "files.pythonhosted.org",
                 "sources": ["pypi.tuna.tsinghua.edu.cn", "files.pythonhosted.org", "wheel-mirror.example"],
-                "count": 1,
+                "count": 1, "bytes": shared.size, "unknown_size_count": 0,
             }]
             assert plan["artifacts"] == [{
                 "original": "huggingface.co", "sources": ["modelscope.cn", "huggingface.co"], "count": 1,
+                "bytes": len(labels), "unknown_size_count": 0,
             }]
         else:
             assert plan["artifacts"] == []
             assert plan["wheels"] == (
-                [{"original": "files.example.invalid", "sources": ["files.example.invalid"], "count": 1}]
+                [{
+                    "original": "files.example.invalid", "sources": ["files.example.invalid"],
+                    "count": 1, "bytes": extra.size, "unknown_size_count": 0,
+                }]
                 if expected_bytes else []
             )
         runtime.authorize(module_id, "1.0.0", acknowledge_unreviewed=True)

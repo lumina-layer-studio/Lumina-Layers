@@ -4,6 +4,7 @@ import type { WorkshopBackendProgress, WorkshopDownloadEstimate } from "../../ap
 import { cardDividerClass, cx } from "../../components/ui/panelPrimitives";
 import { useI18n } from "../../i18n/context";
 import { downloadSourceName, formatBytes } from "./backendSetup";
+import { useFilteredDownloadTime } from "./useFilteredDownloadTime";
 
 const LOCAL_PHASES = new Set(["python-install", "environment", "variant-install", "variant-check", "self-check"]);
 /** Not applicable in the current phase (DESIGN: unknown/absent values use “—”). */
@@ -44,6 +45,21 @@ function DataRows({ rows, className }: { rows: Row[]; className?: string }) {
   );
 }
 
+function ProgressBar({ label, value }: { label: string; value?: number }) {
+  return (
+    <progress
+      className={cx(
+        "workshop-install-progress h-2 w-full appearance-none overflow-hidden rounded-full bg-slate-200 dark:bg-slate-700",
+        "[&::-webkit-progress-bar]:bg-transparent [&::-webkit-progress-value]:rounded-full [&::-webkit-progress-value]:bg-[var(--button-primary)]",
+        "[&::-moz-progress-bar]:rounded-full [&::-moz-progress-bar]:bg-[var(--button-primary)]",
+      )}
+      max={100}
+      value={value}
+      aria-label={label}
+    />
+  );
+}
+
 /**
  * Backend preparation progress built only from server observations. Every
  * data row is always rendered on one line, so the block keeps its height
@@ -75,6 +91,12 @@ export function PreparationProgress({
       .replace("{index}", String(stepIndex))
       .replace("{count}", String(stepTotal))
     : null;
+  const overallLabel = t("workshop.backend.progress.overall");
+  const overallPercent = mode === "complete"
+    ? 100
+    : stepTotal > 0
+      ? Math.min(100, Math.max(0, 100 * (progress?.completed ?? 0) / stepTotal))
+      : undefined;
 
   const duration = (seconds: number) => {
     const whole = Math.max(0, Math.ceil(seconds));
@@ -90,10 +112,11 @@ export function PreparationProgress({
   // Current transfer, as reported by the host for this phase.
   const phaseTotal = transfer?.total_bytes ?? null;
   const phaseReceived = transfer?.received_bytes ?? 0;
-  const rate = transfer?.bytes_per_second != null && transfer.bytes_per_second > 0
+  const rate = transfer?.bytes_per_second != null
+    && Number.isFinite(transfer.bytes_per_second) && transfer.bytes_per_second > 0
     ? transfer.bytes_per_second
     : null;
-  const percent = mode === "complete"
+  const phasePercent = mode === "complete"
     ? 100
     : phaseTotal != null && phaseTotal > 0
       ? Math.min(100, Math.max(0, (100 * phaseReceived) / phaseTotal))
@@ -129,14 +152,6 @@ export function PreparationProgress({
   const speed = transfer
     ? rate !== null ? t("workshop.backend.downloadSpeed").replace("{speed}", formatBytes(rate)) : measuring
     : mode === "waiting" ? measuring : NONE;
-  const phaseRemaining = transfer
-    ? phaseTotal == null
-      ? unknown
-      : phaseReceived >= phaseTotal
-        ? done
-        : transfer.eta_seconds != null ? duration(transfer.eta_seconds) : calculating
-    : mode === "waiting" ? calculating : NONE;
-
   // Whole download: host byte counter against the host estimate. The time is
   // only derived when that estimate covers every file and a rate is observed.
   const downloaded = progress?.downloaded_bytes ?? null;
@@ -152,6 +167,22 @@ export function PreparationProgress({
     : t("workshop.backend.downloadSizeUnknown");
   const receivedText = downloaded == null ? NONE : formatBytes(downloaded);
   const totalBytes = mode === "complete" ? receivedText : `${receivedText} / ${totalText}`;
+  const batch = transfer ? `${phase}:${transfer.source}` : null;
+  const phaseRawSeconds = phaseTotal !== null && rate !== null ? transfer?.eta_seconds ?? null : null;
+  const totalRawSeconds = hasTotalEstimate && bytesLeft > 0 && rate !== null ? bytesLeft / rate : null;
+  const phaseSeconds = useFilteredDownloadTime(phase, batch, phaseReceived, phaseRawSeconds);
+  const totalSeconds = useFilteredDownloadTime("total", batch, phaseReceived, totalRawSeconds);
+
+  let phaseRemaining = NONE;
+  if (mode === "waiting" || mode === "transfer") {
+    if (phaseTotal !== null && phaseReceived >= phaseTotal) {
+      phaseRemaining = done;
+    } else if (phaseSeconds !== null) {
+      phaseRemaining = duration(phaseSeconds);
+    } else {
+      phaseRemaining = transfer && phaseTotal === null ? unknown : calculating;
+    }
+  }
   // CPU self-check can be followed by a download for the selected acceleration.
   const totalRemaining =
     mode === "complete" || phase === "variant-check"
@@ -160,7 +191,7 @@ export function PreparationProgress({
         ? unknown
         : bytesLeft <= 0
           ? NONE
-          : rate !== null ? duration(bytesLeft / rate) : calculating;
+          : totalSeconds !== null ? duration(totalSeconds) : calculating;
 
   const phaseRows: Row[] = [
     { id: "file", label: t("workshop.backend.progress.currentFile"), value: fileValue, title: fileTitle },
@@ -175,26 +206,18 @@ export function PreparationProgress({
 
   return (
     <div className="flex min-w-0 flex-col gap-2">
-      {/* Only the phase and step are announced; byte counters are not live. */}
-      <p role="status" className="flex min-w-0 items-baseline justify-between gap-3 leading-5">
-        <span className="min-w-0 truncate font-medium text-slate-800 dark:text-slate-100" title={phaseName}>
-          {phaseName}
-        </span>
+      <p className="flex min-w-0 items-baseline justify-between gap-3 leading-5">
+        <span className="min-w-0 truncate font-medium text-slate-800 dark:text-slate-100">{overallLabel}</span>
         {step ? (
           <span className="shrink-0 text-xs tabular-nums text-slate-500 dark:text-slate-400">{step}</span>
         ) : null}
       </p>
-      <progress
-        className={cx(
-          "h-2 w-full appearance-none overflow-hidden rounded-full bg-slate-200 dark:bg-slate-700",
-          "[&::-webkit-progress-bar]:bg-transparent [&::-webkit-progress-value]:rounded-full [&::-webkit-progress-value]:bg-[var(--button-primary)]",
-          "[&::-moz-progress-bar]:rounded-full [&::-moz-progress-bar]:bg-[var(--button-primary)]",
-          percent === undefined && "motion-safe:animate-pulse",
-        )}
-        max={100}
-        value={percent}
-        aria-label={phaseName}
-      />
+      <ProgressBar label={overallLabel} value={overallPercent} />
+      {/* Announce phase changes without repeating byte counts or timing samples. */}
+      <p role="status" className="mt-1 min-w-0 truncate font-medium leading-5 text-slate-800 dark:text-slate-100" title={phaseName}>
+        {phaseName}
+      </p>
+      <ProgressBar label={phaseName} value={phasePercent} />
       <DataRows rows={phaseRows} />
       <DataRows rows={totalRows} className={cx(cardDividerClass, "pt-2")} />
     </div>

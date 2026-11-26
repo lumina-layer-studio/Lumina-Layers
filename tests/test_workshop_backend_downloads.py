@@ -12,7 +12,7 @@ from packaging.tags import cpython_tags
 
 from core.workshop.backend import downloads
 from core.workshop.backend.downloads import (
-    DownloadBatch, DownloadPreferences, DownloadProgress, ordered_sources, source_options,
+    DownloadBatch, DownloadPreferences, DownloadProgress, ordered_sources, source_options, summarize_source_routes,
 )
 from core.workshop.backend.locks import BackendLock, LockedPackage, LockedWheel, WheelSourcePolicy, current_platform_key
 from core.workshop.backend.preview import estimate_dependencies, estimate_download_total, needs_target_python_version
@@ -41,6 +41,28 @@ def test_internationalized_source_can_be_selected() -> None:
     selected = DownloadPreferences(models=source)
     assert selected.models == "xn--fsqu00a.example"
     assert ordered_sources(original, (mirror,), selected.models) == (mirror, original)
+
+
+def test_source_routes_preserve_known_bytes_with_unknown_files() -> None:
+    original = "https://files.pythonhosted.org/packages/demo.whl"
+    mirror = "https://pypi.tuna.tsinghua.edu.cn/packages/demo.whl"
+    pytorch = "https://download.pytorch.org/whl/torch.whl"
+    assert summarize_source_routes([
+        (original, (mirror, original), 4096),
+        (original, (mirror, original), None),
+        (pytorch, (pytorch,), 8192),
+    ]) == [
+        {
+            "original": "files.pythonhosted.org",
+            "sources": ["pypi.tuna.tsinghua.edu.cn", "files.pythonhosted.org"],
+            "count": 2, "bytes": 4096, "unknown_size_count": 1,
+        },
+        {
+            "original": "download.pytorch.org",
+            "sources": ["download.pytorch.org"],
+            "count": 1, "bytes": 8192, "unknown_size_count": 0,
+        },
+    ]
 
 
 def test_managed_runtime_status_and_cancel_stay_available_during_install(tmp_path) -> None:

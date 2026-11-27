@@ -1752,11 +1752,13 @@ def _run_vector_branch(ctx: dict) -> dict:
         vec_processor.enable_coating = coating_height_mm > 0
         vec_processor.coating_height_mm = coating_height_mm
         vec_processor.coating_material = ctx.get("resolved_coating_material")
-        vec_processor.enable_outline = bool(ctx.get("enable_outline", False))
+        enable_outline = bool(ctx.get("enable_outline", False))
         try:
-            vec_processor.outline_width_mm = float(ctx.get("outline_width", 2.0) or 2.0)
+            outline_width_mm = float(ctx.get("outline_width", 2.0) or 2.0)
         except (TypeError, ValueError):
-            vec_processor.outline_width_mm = 2.0
+            outline_width_mm = 2.0
+        vec_processor.enable_outline = enable_outline
+        vec_processor.outline_width_mm = outline_width_mm
         vec_processor.auto_dynamic_range = bool(ctx.get("auto_dynamic_range", False))
         if hasattr(vec_processor, "backing_color_id"):
             vec_processor.backing_color_id = backing_channel_idx
@@ -2074,7 +2076,10 @@ def _run_vector_branch(ctx: dict) -> dict:
         # adding a second mesh afterwards would duplicate the optical volume.
         analysis = _prepare_vector_free_colors(analysis, ctx.get("free_color_set"))
         if ctx.get("add_loop"):
-            analysis.structure_plan = resolve_structure_plan(analysis)
+            analysis.structure_plan = resolve_structure_plan(
+                analysis,
+                outline_width_mm if enable_outline else 0.0,
+            )
         # 1b. Build 3D mesh from analysis
         build_mesh_kwargs = {
             "analysis": analysis,
@@ -2298,11 +2303,7 @@ def _run_vector_branch(ctx: dict) -> dict:
 
         # 1.6 Inject vector Outline mesh.
         # Use the shared structure plan, never the post-match color partition.
-        if bool(ctx.get("enable_outline", False)):
-            try:
-                outline_width_mm = float(ctx.get("outline_width", 2.0) or 2.0)
-            except (TypeError, ValueError):
-                outline_width_mm = 2.0
+        if enable_outline:
             outline_color, outline_material_name = (
                 _resolve_vector_outline_base_aux_style(
                     ctx, vec_preview_colors, list(vec_slot_list)

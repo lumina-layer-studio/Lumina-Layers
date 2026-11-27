@@ -690,3 +690,109 @@ class TestErrorHandling:
         assert records[0].context == "Single-stage kit preview registration"
         assert records[0].export_ids == [kit_id, manifest_id]
         assert records[0].error_type == "RuntimeError"
+
+    def test_single_stage_kit_incompatible_build_plate_returns_422_not_500(
+        self,
+        caplog,
+    ) -> None:
+        failing_client = TestClient(create_app(), raise_server_exceptions=False)
+        target_logger = logging.getLogger("lumina")
+        target_logger.addHandler(caplog.handler)
+        caplog.set_level(logging.WARNING, logger=target_logger.name)
+        try:
+            response = failing_client.post(
+                "/api/calibration/generate-single-stage-kit",
+                json={
+                    "palette": [
+                        {
+                            "color": "Sample",
+                            "material": "PLA Basic",
+                            "hex_color": "#808080",
+                            "color_name": "Sample",
+                        }
+                    ],
+                    "substrate_id": "white",
+                    "substrate_display_name": "White",
+                    "material_default": "PLA Basic",
+                    "layer_height_mm": 0.08,
+                    "printer_id": "bambu-x1c",
+                    "slicer": "BambuStudio",
+                    "nozzle_size": "0.4",
+                    "device_profile_id": "BambuStudio:bbl:bambu-lab-x1-carbon:0.4",
+                    "build_plate_id": "engineering-plate",
+                },
+            )
+        finally:
+            failing_client.close()
+            target_logger.removeHandler(caplog.handler)
+
+        assert response.status_code == 422, response.text
+        detail = response.json()["detail"]
+        assert detail["error"] == "native_material_selection_required"
+        assert "Engineering Plate" in detail["message"]
+        events = {getattr(record, "event", None) for record in caplog.records}
+        assert "api_unhandled_exception" not in events
+        assert "calibration_core_operation_failed" not in events
+
+    def test_legacy_calibration_incompatible_build_plate_returns_422_not_500(
+        self,
+        caplog,
+    ) -> None:
+        failing_client = TestClient(create_app(), raise_server_exceptions=False)
+        target_logger = logging.getLogger("lumina")
+        target_logger.addHandler(caplog.handler)
+        caplog.set_level(logging.WARNING, logger=target_logger.name)
+        try:
+            response = failing_client.post(
+                "/api/calibration/generate",
+                json={
+                    "color_mode": "BW (Black & White)",
+                    "block_size": 5,
+                    "gap": 0.84,
+                    "backing_thickness": 1.2,
+                    "printer_id": "bambu-x1c",
+                    "slicer": "BambuStudio",
+                    "nozzle_size": "0.4",
+                    "device_profile_id": "BambuStudio:bbl:bambu-lab-x1-carbon:0.4",
+                    "build_plate_id": "engineering-plate",
+                },
+            )
+        finally:
+            failing_client.close()
+            target_logger.removeHandler(caplog.handler)
+
+        assert response.status_code == 422, response.text
+        detail = response.json()["detail"]
+        assert detail["error"] == "native_material_selection_required"
+        assert "Engineering Plate" in detail["message"]
+        events = {getattr(record, "event", None) for record in caplog.records}
+        assert "api_unhandled_exception" not in events
+
+    def test_calibration_core_processing_error_returns_sanitized_500(self) -> None:
+        from core.errors import CoreProcessingError
+
+        private_path = "/Users/min/private/single_stage.3mf"
+        with patch(
+            "api.routers.calibration.generate_single_stage_kit",
+            side_effect=CoreProcessingError(f"failed writing {private_path}"),
+        ):
+            response = client.post(
+                "/api/calibration/generate-single-stage-kit",
+                json={
+                    "palette": [
+                        {
+                            "color": "White",
+                            "material": "PLA Basic",
+                            "hex_color": "#FFFFFF",
+                            "color_name": "White",
+                        }
+                    ],
+                    "substrate_id": "white",
+                    "substrate_display_name": "White",
+                    "material_default": "PLA Basic",
+                    "layer_height_mm": 0.08,
+                },
+            )
+
+        assert response.status_code == 500
+        assert private_path not in response.text

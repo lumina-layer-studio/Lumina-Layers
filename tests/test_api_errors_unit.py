@@ -7,6 +7,7 @@ from core.errors import (
     CoreDependencyError,
     CoreProcessingError,
     CoreValidationError,
+    NativeMaterialSelectionError,
 )
 
 
@@ -62,3 +63,21 @@ def test_workshop_backend_error_keeps_code_and_message_contract() -> None:
         "backend-tool-unavailable": 503,
         "task-input-invalid": 422,
     }
+
+
+def test_native_material_selection_error_maps_to_structured_422() -> None:
+    message = "Source material slot 0 type 'PLA BASIC' does not support selected build plate 'Engineering Plate'."
+    exc = to_http_exception(
+        NativeMaterialSelectionError(
+            {
+                "device_profile_id": "BambuStudio:bbl:bambu-lab-x1-carbon:0.4",
+                "build_plate_id": "engineering-plate",
+                "issues": [{"message": message}],
+            }
+        ),
+        "Single-stage kit generation",
+    )
+    assert exc.status_code == 422
+    assert exc.detail["error"] == "native_material_selection_required"
+    assert exc.detail["message"] == message
+    assert exc.detail["material_selection"]["build_plate_id"] == "engineering-plate"

@@ -2121,6 +2121,7 @@ async def generate_material_swatch(
     )
     from api.file_bridge import pil_to_png_bytes
     from api.structured_logging import get_request_id
+    from core.errors import CoreValidationError
     from core.material_recipe_swatch import (
         MaterialRecipeSwatchItem,
         generate_material_recipe_swatch,
@@ -2148,18 +2149,21 @@ async def generate_material_swatch(
             )
         )
 
-    output_path, legend_img, status_msg = generate_material_recipe_swatch(
-        recipes=items,
-        block_size_mm=payload.block_size_mm,
-        gap_mm=payload.gap_mm,
-        cols=payload.cols,
-        structure_mode=payload.structure_mode,
-        printer_id=payload.printer_id,
-        slicer=payload.slicer,
-        nozzle_size=payload.nozzle_size,
-        device_profile_id=payload.device_profile_id,
-        build_plate_id=payload.build_plate_id,
-    )
+    try:
+        output_path, legend_img, status_msg = generate_material_recipe_swatch(
+            recipes=items,
+            block_size_mm=payload.block_size_mm,
+            gap_mm=payload.gap_mm,
+            cols=payload.cols,
+            structure_mode=payload.structure_mode,
+            printer_id=payload.printer_id,
+            slicer=payload.slicer,
+            nozzle_size=payload.nozzle_size,
+            device_profile_id=payload.device_profile_id,
+            build_plate_id=payload.build_plate_id,
+        )
+    except CoreValidationError as exc:
+        raise to_http_exception(exc, "Material recipe swatch export") from exc
 
     if not output_path:
         log.warning(

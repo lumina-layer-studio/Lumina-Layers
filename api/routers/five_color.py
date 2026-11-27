@@ -16,6 +16,7 @@ import numpy as np
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
 
 from api.dependencies import get_file_registry
+from api.errors import to_http_exception
 from api.project_workflows import resolve_project_lut
 
 ProjectContext = Annotated[str | None, Header(alias="X-Lumina-Project-Context")]
@@ -32,6 +33,7 @@ from api.schemas.five_color import (
     RecipeSwatchResponse,
 )
 from api.structured_logging import get_logger, get_request_id
+from core.errors import CoreValidationError
 from core.five_color_combination import (
     ColorCountDetector,
     ColorQueryEngine,
@@ -503,18 +505,21 @@ def generate_swatch(
             )
         )
 
-    output_path, legend_img, status_msg = generate_recipe_swatch(
-        recipes=items,
-        block_size_mm=request.block_size_mm,
-        gap_mm=request.gap_mm,
-        cols=request.cols,
-        structure_mode=request.structure_mode,
-        printer_id=request.printer_id,
-        slicer=request.slicer,
-        nozzle_size=request.nozzle_size,
-        device_profile_id=request.device_profile_id,
-        build_plate_id=request.build_plate_id,
-    )
+    try:
+        output_path, legend_img, status_msg = generate_recipe_swatch(
+            recipes=items,
+            block_size_mm=request.block_size_mm,
+            gap_mm=request.gap_mm,
+            cols=request.cols,
+            structure_mode=request.structure_mode,
+            printer_id=request.printer_id,
+            slicer=request.slicer,
+            nozzle_size=request.nozzle_size,
+            device_profile_id=request.device_profile_id,
+            build_plate_id=request.build_plate_id,
+        )
+    except CoreValidationError as exc:
+        raise to_http_exception(exc, "Five-color swatch export") from exc
 
     if not output_path:
         log.warning(

@@ -10,6 +10,7 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException
 
 from api.dependencies import get_file_registry
+from api.errors import to_http_exception
 from api.export_device_validation import validate_export_device_selection
 from api.file_bridge import pil_to_png_bytes
 from api.file_registry import FileRegistry
@@ -27,6 +28,7 @@ from core.calibration import (
     generate_smart_board,
     generate_smart_board_rybw,
 )
+from core.errors import CoreError, CoreValidationError
 from core.single_stage import generate_single_stage_kit
 from utils.bambu_3mf_writer import read_wipe_tower_placement_warnings
 
@@ -244,7 +246,9 @@ def calibration_generate(
             )
     except HTTPException:
         raise
-    except (OSError, RuntimeError, TypeError, ValueError) as e:
+    except CoreValidationError as e:
+        raise to_http_exception(e, "Calibration generation") from e
+    except (CoreError, OSError, RuntimeError, TypeError, ValueError) as e:
         _handle_core_error(
             e,
             context="Calibration generation",
@@ -392,7 +396,9 @@ def calibration_generate_single_stage_kit(
             device_profile_id=request.device_profile_id,
             build_plate_id=request.build_plate_id,
         )
-    except (OSError, RuntimeError, TypeError, ValueError) as e:
+    except CoreValidationError as e:
+        raise to_http_exception(e, "Single-stage kit generation") from e
+    except (CoreError, OSError, RuntimeError, TypeError, ValueError) as e:
         _handle_core_error(
             e,
             context="Single-stage kit generation",

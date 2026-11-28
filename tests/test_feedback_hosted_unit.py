@@ -267,3 +267,79 @@ def test_rejected_large_request_reports_failure_without_dropping_data(
     assert len(server.bundles) == 1
     assert server.bundles[0]["files"]
     assert section["held_back_attachments"] == []
+
+
+def test_direct_mode_bypasses_dead_local_proxy_env_first(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    ticket_dir, payload = _ticket_dir(tmp_path)
+    server = FakeServer()
+    real_client = httpx.AsyncClient
+    seen_trust_env: list[bool] = []
+    monkeypatch.setenv("LUMINA_FEEDBACK_SERVER_URL", "https://feedback.example.test")
+    monkeypatch.setenv("HTTPS_PROXY", "http://127.0.0.1:1")
+    monkeypatch.setattr(feedback_hosted, "_RETRY_DELAY_S", 0)
+
+    def _fake_async_client(*args: Any, **kwargs: Any) -> httpx.AsyncClient:
+        trust_env = kwargs.get("trust_env", True)
+        seen_trust_env.append(trust_env)
+        if trust_env:
+            raise AssertionError("dead proxy env should not be used when direct succeeds")
+        return real_client(
+            timeout=kwargs.get("timeout"),
+            transport=httpx.MockTransport(server),
+            follow_redirects=False,
+            trust_env=False,
+        )
+
+    monkeypatch.setattr(feedback_hosted.httpx, "AsyncClient", _fake_async_client)
+    section = asyncio.run(feedback_hosted.submit_ticket_directory(ticket_dir, payload))
+
+    assert section["status"] == "submitted"
+    assert seen_trust_env == [False]
+
+
+def test_falls_back_to_proxy_env_when_direct_cannot_connect(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    ticket_dir, payload = _ticket_dir(tmp_path)
+    server = FakeServer()
+    real_client = httpx.AsyncClient
+    seen_trust_env: list[bool] = []
+    monkeypatch.setenv("LUMINA_FEEDBACK_SERVER_URL", "https://feedback.example.test")
+    monkeypatch.setenv("HTTPS_PROXY", "http://proxy.corp.example:8080")
+    monkeypatch.setattr(feedback_hosted, "_RETRY_DELAY_S", 0)
+
+    def _refuse(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("direct blocked by firewall", request=request)
+
+    def _fake_async_client(*args: Any, **kwargs: Any) -> httpx.AsyncClient:
+        trust_env = kwargs.get("trust_env", True)
+        seen_trust_env.append(trust_env)
+        handler = server if trust_env else _refuse
+        return real_client(
+            timeout=kwargs.get("timeout"),
+            transport=httpx.MockTransport(handler),
+            follow_redirects=False,
+            trust_env=False,
+        )
+
+    monkeypatch.setattr(feedback_hosted.httpx, "AsyncClient", _fake_async_client)
+    section = asyncio.run(feedback_hosted.submit_ticket_directory(ticket_dir, payload))
+
+    assert section["status"] == "submitted"
+    assert seen_trust_env == [False, True]
+    assert len(server.bundles) == 1
+
+
+def test_upload_timeout_408_retries_with_fresh_challenge(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    ticket_dir, payload = _ticket_dir(tmp_path)
+    server = FakeServer(bundle_statuses=[408])
+
+    section = _submit(ticket_dir, payload, server, monkeypatch)
+
+    assert section["status"] == "submitted"
+    assert server.challenges == 2
+

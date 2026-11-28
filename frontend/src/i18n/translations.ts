@@ -8335,6 +8335,10 @@ export const translations: Record<string, Record<"zh" | "en", string>> = {
     zh: "SVG 预览",
     en: "SVG Preview",
   },
+  "vec.compare_slider": {
+    zh: "拖动对比原图与矢量化结果",
+    en: "Drag to compare the original with the vectorized result",
+  },
   "vec.shapes": {
     zh: "形状数",
     en: "Shapes",

@@ -119,6 +119,15 @@
   --warning-border: rgba(245, 158, 11, 0.28);
   --error-soft: rgba(239, 68, 68, 0.12);
   --error-border: rgba(239, 68, 68, 0.28);
+  /* Image comparison overlay. The wipe divider and its handle sit on top of
+   * artwork rather than a page surface, so they keep contrast from the image
+   * itself instead of following the card palette.
+   * 图像对比浮层：分割线与手柄叠在图片上，对比度取自图片本身，不跟随卡片配色。 */
+  --image-compare-line: rgba(255, 255, 255, 0.92);
+  --image-compare-line-outline: rgba(15, 23, 42, 0.45);
+  --image-compare-handle-surface: rgba(15, 23, 42, 0.78);
+  --image-compare-handle-border: rgba(255, 255, 255, 0.8);
+  --image-compare-label-surface: rgba(15, 23, 42, 0.65);
   --snap-guide-highlight-border: rgb(96 165 250 / 0.24);
   --snap-guide-highlight-top-bg: linear-gradient(
     to bottom,
@@ -206,6 +215,11 @@
   --warning-border: rgba(251, 191, 36, 0.32);
   --error-soft: rgba(239, 68, 68, 0.14);
   --error-border: rgba(248, 113, 113, 0.32);
+  --image-compare-line: rgba(255, 255, 255, 0.92);
+  --image-compare-line-outline: rgba(2, 6, 23, 0.62);
+  --image-compare-handle-surface: rgba(2, 6, 23, 0.86);
+  --image-compare-handle-border: rgba(255, 255, 255, 0.72);
+  --image-compare-label-surface: rgba(2, 6, 23, 0.78);
 }
 
 body {
@@ -443,6 +457,45 @@ body.lumina-canvas-orbiting [data-widget-id] {
 
 .panel-divider {
   border-color: var(--surface-divider);
+}
+
+/* Drag-to-compare overlay shared by image previews. The line is a hairline
+ * with a one-pixel outline so it stays visible on light and dark artwork; the
+ * handle reuses the same over-image palette. Shadows are intentionally not
+ * used here: the global shadow kill-switch would drop them along with any
+ * focus ring.
+ * 图像对比浮层：分割线用 1px 描边保证在明暗图上都可见；手柄沿用同一套
+ * 覆盖在图片上的配色。这里不用阴影——全局阴影开关会连焦点环一起清掉。 */
+.image-compare-divider {
+  border: 0;
+  background: transparent;
+}
+
+.image-compare-divider-line {
+  background: var(--image-compare-line);
+  outline: 1px solid var(--image-compare-line-outline);
+}
+
+.image-compare-handle {
+  background: var(--image-compare-handle-surface);
+  border: 1px solid var(--image-compare-handle-border);
+  color: var(--palette-white);
+}
+
+/* The slider itself is keyboard focusable; ring the round handle instead of the
+ * invisible full-height hit area. */
+.image-compare-divider:focus-visible {
+  outline: none;
+}
+
+.image-compare-divider:focus-visible .image-compare-handle {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.image-compare-label {
+  background: var(--image-compare-label-surface);
+  color: var(--palette-white);
 }
 
 /* Settings use a continuous split view; only individual controls have shells. */

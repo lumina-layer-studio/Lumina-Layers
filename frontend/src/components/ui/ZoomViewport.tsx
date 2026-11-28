@@ -4,6 +4,14 @@ import { wheelZoomDelta } from "../../utils/wheelZoom";
 interface ZoomViewportProps {
   src?: string;
   alt?: string;
+  /**
+   * 对比图路径。与 ``comparisonSplit`` 一起使用时，对比图叠加在同一视口里，
+   * 只在分割线右侧绘制（左侧保留主图），用于拖动滑条对比原图与矢量化结果。
+   */
+  comparisonSrc?: string;
+  comparisonAlt?: string;
+  /** 分割位置占视口宽度的比例（0–1）；``null`` 关闭对比。 */
+  comparisonSplit?: number | null;
   scale: number;
   translate: { x: number; y: number };
   zoom: (mouseX: number, mouseY: number, deltaY: number) => void;
@@ -20,6 +28,9 @@ interface ZoomViewportProps {
 export default function ZoomViewport({
   src,
   alt = "",
+  comparisonSrc,
+  comparisonAlt = "",
+  comparisonSplit = null,
   scale,
   translate,
   zoom,
@@ -50,6 +61,10 @@ export default function ZoomViewport({
     transform: `translate(${translate.x}px, ${translate.y}px) scale(${scale})`,
     transformOrigin: "0 0",
   };
+  const comparisonVisible = Boolean(comparisonSrc) && comparisonSplit !== null;
+  const comparisonPercent = comparisonSplit === null
+    ? 0
+    : Math.min(100, Math.max(0, comparisonSplit * 100));
 
   return (
     <div
@@ -66,6 +81,21 @@ export default function ZoomViewport({
           className="absolute top-0 left-0 w-full h-full object-contain pointer-events-none"
           style={transformStyle}
         />
+      )}
+      {comparisonVisible && (
+        <div
+          className="pointer-events-none absolute inset-0"
+          data-testid="zoom-viewport-comparison"
+          style={{ clipPath: `inset(0 0 0 ${comparisonPercent}%)` }}
+        >
+          <img
+            src={comparisonSrc}
+            alt={comparisonAlt}
+            draggable={false}
+            className="absolute top-0 left-0 w-full h-full object-contain pointer-events-none"
+            style={transformStyle}
+          />
+        </div>
       )}
       {children}
     </div>

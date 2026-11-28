@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type PointerEvent as ReactPointerEvent,
+} from "react";
 import { motion } from "framer-motion";
 import { useShallow } from "zustand/react/shallow";
 import { useI18n } from "../i18n/context";
@@ -130,6 +137,62 @@ export default function VectorizerPanel() {
   }, [svgUrl, t]);
 
   const isDetailEnabled = params.detail_level >= 0;
+
+  // Wipe comparison between the uploaded bitmap (left) and the vectorized SVG
+  // (right). Both layers share the same zoom/pan state, so the divider only
+  // changes how much of each side is visible.
+  // 原图（左）与矢量化 SVG（右）的擦除对比：两层共用缩放/平移状态，
+  // 分割线只决定各自露出多少。
+  const [compareSplit, setCompareSplit] = useState(0.5);
+  const compareWrapperRef = useRef<HTMLDivElement>(null);
+  const comparePointerIdRef = useRef<number | null>(null);
+  const comparePercent = Math.min(100, Math.max(0, Math.round(compareSplit * 10000) / 100));
+
+  const updateCompareSplit = useCallback((clientX: number) => {
+    const rect = compareWrapperRef.current?.getBoundingClientRect();
+    if (!rect || rect.width <= 0) return;
+    setCompareSplit(Math.min(1, Math.max(0, (clientX - rect.left) / rect.width)));
+  }, []);
+
+  const handleComparePointerDown = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    if (event.button !== 0) return;
+    // Keep the press away from the viewport pan handler underneath.
+    event.preventDefault();
+    event.stopPropagation();
+    comparePointerIdRef.current = event.pointerId;
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+    updateCompareSplit(event.clientX);
+  }, [updateCompareSplit]);
+
+  const handleComparePointerMove = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    if (comparePointerIdRef.current !== event.pointerId) return;
+    event.preventDefault();
+    event.stopPropagation();
+    updateCompareSplit(event.clientX);
+  }, [updateCompareSplit]);
+
+  const handleComparePointerUp = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    if (comparePointerIdRef.current !== event.pointerId) return;
+    event.stopPropagation();
+    comparePointerIdRef.current = null;
+    try {
+      event.currentTarget.releasePointerCapture?.(event.pointerId);
+    } catch {
+      // Capture may already be gone after pointercancel.
+    }
+  }, []);
+
+  const handleCompareKeyDown = useCallback((event: ReactKeyboardEvent<HTMLDivElement>) => {
+    const step = event.shiftKey ? 0.1 : 0.02;
+    if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
+      event.preventDefault();
+      const delta = event.key === "ArrowLeft" ? -step : step;
+      setCompareSplit((value) => Math.min(1, Math.max(0, value + delta)));
+    } else if (event.key === "Home" || event.key === "End") {
+      event.preventDefault();
+      setCompareSplit(event.key === "Home" ? 0 : 1);
+    }
+  }, []);
 
   return (
     <motion.div
@@ -501,37 +564,65 @@ export default function VectorizerPanel() {
               </button>
             </div>
 
-            {/* Synced side-by-side comparison */}
-            <div className={`grid grid-cols-1 gap-4 ${workspace.isWide ? "2xl:grid-cols-2" : ""}`}>
-              {/* Original */}
-              <div className="flex flex-col gap-2">
-                <span className="text-xs font-medium text-slate-500 dark:text-slate-400">
-                  {t("vec.original")}
-                </span>
-                <ZoomViewport
-                  src={imagePreviewUrl ?? undefined}
-                  alt={t("vec.original")}
-                  scale={compareZoom.scale}
-                  translate={compareZoom.translate}
-                  zoom={compareZoom.zoom}
-                  mouseHandlers={compareZoom.mouseHandlers}
-                />
-              </div>
-
-              {/* SVG Preview */}
-              <div className="flex flex-col gap-2">
-                <span className="text-xs font-medium text-slate-500 dark:text-slate-400">
-                  {t("vec.svg_preview")}
-                </span>
-                <ZoomViewport
-                  src={svgUrl ?? undefined}
-                  alt={t("vec.svg_preview")}
-                  scale={compareZoom.scale}
-                  translate={compareZoom.translate}
-                  zoom={compareZoom.zoom}
-                  mouseHandlers={compareZoom.mouseHandlers}
-                />
-              </div>
+            {/* Drag-to-compare wipe: original on the left, vectorized SVG on
+                the right, sharing one zoom/pan viewport. */}
+            <div ref={compareWrapperRef} className="relative">
+              <ZoomViewport
+                src={imagePreviewUrl ?? undefined}
+                alt={t("vec.original")}
+                comparisonSrc={svgUrl ?? undefined}
+                comparisonAlt={t("vec.svg_preview")}
+                comparisonSplit={svgUrl ? compareSplit : null}
+                scale={compareZoom.scale}
+                translate={compareZoom.translate}
+                zoom={compareZoom.zoom}
+                mouseHandlers={compareZoom.mouseHandlers}
+              />
+              {svgUrl && (
+                <>
+                  <div
+                    data-testid="vectorizer-compare-divider"
+                    role="slider"
+                    tabIndex={0}
+                    aria-orientation="horizontal"
+                    aria-valuemin={0}
+                    aria-valuemax={100}
+                    aria-valuenow={Math.round(comparePercent)}
+                    aria-label={t("vec.compare_slider")}
+                    className="image-compare-divider group absolute inset-y-0 z-10 w-8 -translate-x-1/2 cursor-col-resize touch-none select-none"
+                    style={{ left: `${comparePercent}%` }}
+                    onPointerDown={handleComparePointerDown}
+                    onPointerMove={handleComparePointerMove}
+                    onPointerUp={handleComparePointerUp}
+                    onPointerCancel={handleComparePointerUp}
+                    onLostPointerCapture={handleComparePointerUp}
+                    onKeyDown={handleCompareKeyDown}
+                  >
+                    <div className="image-compare-divider-line pointer-events-none absolute inset-y-0 left-1/2 w-0.5 -translate-x-1/2" />
+                    <div className="image-compare-handle pointer-events-none absolute left-1/2 top-1/2 flex h-8 w-8 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full backdrop-blur-sm">
+                      <svg
+                        width="14"
+                        height="14"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        aria-hidden="true"
+                      >
+                        <path d="M9 6 4 12l5 6M15 6l5 6-5 6" />
+                      </svg>
+                    </div>
+                  </div>
+                  <div className="image-compare-label pointer-events-none absolute bottom-2 left-2 z-10 rounded-full px-2 py-0.5 text-[10px] font-medium backdrop-blur-sm">
+                    {t("vec.original")}
+                  </div>
+                  <div className="image-compare-label pointer-events-none absolute bottom-2 right-2 z-10 rounded-full px-2 py-0.5 text-[10px] font-medium backdrop-blur-sm">
+                    {t("vec.svg_preview")}
+                  </div>
+                </>
+              )}
             </div>
 
             {/* Stats & Download */}

@@ -128,11 +128,39 @@ def feedback_server_url() -> str | None:
 
 def _timeout() -> httpx.Timeout:
     try:
-        seconds = float(os.environ.get(ENV_FEEDBACK_SERVER_TIMEOUT_S, "60"))
+        seconds = float(os.environ.get(ENV_FEEDBACK_SERVER_TIMEOUT_S, "180"))
     except ValueError:
-        seconds = 60.0
-    seconds = seconds if seconds > 0 else 60.0
+        seconds = 180.0
+    seconds = seconds if seconds > 0 else 180.0
     return httpx.Timeout(seconds, connect=min(seconds, 15.0))
+
+
+_PROXY_ENV_KEYS = (
+    "HTTP_PROXY",
+    "HTTPS_PROXY",
+    "ALL_PROXY",
+    "http_proxy",
+    "https_proxy",
+    "all_proxy",
+)
+
+
+def _has_proxy_env() -> bool:
+    return any(bool((os.environ.get(name) or "").strip()) for name in _PROXY_ENV_KEYS)
+
+
+def _build_http_client(
+    *,
+    timeout: httpx.Timeout,
+    transport: httpx.AsyncBaseTransport | None,
+    trust_env: bool,
+) -> httpx.AsyncClient:
+    return httpx.AsyncClient(
+        timeout=timeout,
+        transport=transport,
+        follow_redirects=False,
+        trust_env=trust_env,
+    )
 
 
 def _attachment_kind(name: str) -> str:
@@ -253,8 +281,8 @@ async def _request_proof(client: httpx.AsyncClient, base_url: str, ticket_id: st
 def _raise_for_status(response: httpx.Response) -> None:
     if response.status_code < 400:
         return
-    categories = {403: "ProofRejected", 409: "TicketConflict", 413: "BundleTooLarge",
-                  422: "BundleRejected", 429: "RateLimited"}
+    categories = {403: "ProofRejected", 408: "UploadTimeout", 409: "TicketConflict",
+                  413: "BundleTooLarge", 422: "BundleRejected", 429: "RateLimited"}
     error_type = categories.get(response.status_code)
     if error_type is None:
         error_type = "ServerUnavailable" if response.status_code >= 500 else "ServerRejected"
@@ -312,22 +340,31 @@ async def submit_ticket_bundle(
         HostedSubmissionError: Upload failed after retries. / 重试后仍失败。
     """
     last_error = HostedSubmissionError("NotAttempted", "Upload was not attempted.")
-    async with httpx.AsyncClient(timeout=_timeout(), transport=transport, follow_redirects=False) as client:
-        for attempt in range(_ATTEMPTS):
-            try:
-                headers = await _request_proof(client, base_url, bundle.ticket_id)
-                return await _post_bundle(client, base_url, bundle, headers)
-            except HostedSubmissionError as exc:
-                last_error = exc
-                retryable = exc.error_type in {"ProofRejected", "ServerUnavailable"}
-            except httpx.HTTPError as exc:
-                last_error = HostedSubmissionError(
-                    type(exc).__name__, f"Feedback server unreachable: {exc}"
-                )
-                retryable = True
-            if not retryable or attempt + 1 >= _ATTEMPTS:
-                break
-            await asyncio.sleep(_RETRY_DELAY_S)
+    trust_modes = [True] if transport is not None else ([False, True] if _has_proxy_env() else [False])
+    non_fallback_errors = {"TicketConflict", "BundleTooLarge", "BundleRejected", "RateLimited"}
+    for mode_index, trust_env in enumerate(trust_modes):
+        async with _build_http_client(
+            timeout=_timeout(),
+            transport=transport,
+            trust_env=trust_env,
+        ) as client:
+            for attempt in range(_ATTEMPTS):
+                try:
+                    headers = await _request_proof(client, base_url, bundle.ticket_id)
+                    return await _post_bundle(client, base_url, bundle, headers)
+                except HostedSubmissionError as exc:
+                    last_error = exc
+                    retryable = exc.error_type in {"ProofRejected", "ServerUnavailable", "UploadTimeout"}
+                except httpx.HTTPError as exc:
+                    last_error = HostedSubmissionError(
+                        type(exc).__name__, f"Feedback server unreachable: {exc}"
+                    )
+                    retryable = True
+                if not retryable or attempt + 1 >= _ATTEMPTS:
+                    break
+                await asyncio.sleep(_RETRY_DELAY_S)
+        if last_error.error_type in non_fallback_errors or mode_index + 1 >= len(trust_modes):
+            break
     raise last_error
 
 

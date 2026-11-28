@@ -41,6 +41,9 @@ describe("VectorizerPanel comparison slider", () => {
     expect(screen.getByAltText("vec.original")).toHaveAttribute("src", "/files/source.png")
     expect(screen.getByAltText("vec.svg_preview")).toHaveAttribute("src", "/files/vectorized.svg")
     expect(divider).toHaveStyle({ left: "50%" })
+    // The overlay palette comes from tokens, not raw colours.
+    expect(divider).toHaveClass("image-compare-divider")
+    expect(divider.firstElementChild).toHaveClass("image-compare-divider-line")
     expect(screen.getByTestId("zoom-viewport-comparison")).toHaveStyle({
       clipPath: "inset(0 0 0 50%)",
     })

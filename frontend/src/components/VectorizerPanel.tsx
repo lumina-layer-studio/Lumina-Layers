@@ -589,7 +589,7 @@ export default function VectorizerPanel() {
                     aria-valuemax={100}
                     aria-valuenow={Math.round(comparePercent)}
                     aria-label={t("vec.compare_slider")}
-                    className="group absolute inset-y-0 z-10 w-8 -translate-x-1/2 cursor-col-resize touch-none outline-none"
+                    className="image-compare-divider group absolute inset-y-0 z-10 w-8 -translate-x-1/2 cursor-col-resize touch-none select-none"
                     style={{ left: `${comparePercent}%` }}
                     onPointerDown={handleComparePointerDown}
                     onPointerMove={handleComparePointerMove}
@@ -598,8 +598,8 @@ export default function VectorizerPanel() {
                     onLostPointerCapture={handleComparePointerUp}
                     onKeyDown={handleCompareKeyDown}
                   >
-                    <div className="pointer-events-none absolute inset-y-0 left-1/2 w-0.5 -translate-x-1/2 bg-white/90 shadow-[0_0_0_1px_rgba(15,23,42,0.45)]" />
-                    <div className="pointer-events-none absolute left-1/2 top-1/2 flex h-8 w-8 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-white/80 bg-slate-900/80 text-slate-100 shadow-md backdrop-blur-sm group-focus-visible:ring-2 group-focus-visible:ring-sky-400">
+                    <div className="image-compare-divider-line pointer-events-none absolute inset-y-0 left-1/2 w-0.5 -translate-x-1/2" />
+                    <div className="image-compare-handle pointer-events-none absolute left-1/2 top-1/2 flex h-8 w-8 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full backdrop-blur-sm">
                       <svg
                         width="14"
                         height="14"
@@ -615,10 +615,10 @@ export default function VectorizerPanel() {
                       </svg>
                     </div>
                   </div>
-                  <div className="pointer-events-none absolute bottom-2 left-2 z-10 rounded-full bg-slate-900/65 px-2 py-0.5 text-[10px] font-medium text-slate-100 backdrop-blur-sm">
+                  <div className="image-compare-label pointer-events-none absolute bottom-2 left-2 z-10 rounded-full px-2 py-0.5 text-[10px] font-medium backdrop-blur-sm">
                     {t("vec.original")}
                   </div>
-                  <div className="pointer-events-none absolute bottom-2 right-2 z-10 rounded-full bg-slate-900/65 px-2 py-0.5 text-[10px] font-medium text-slate-100 backdrop-blur-sm">
+                  <div className="image-compare-label pointer-events-none absolute bottom-2 right-2 z-10 rounded-full px-2 py-0.5 text-[10px] font-medium backdrop-blur-sm">
                     {t("vec.svg_preview")}
                   </div>
                 </>
